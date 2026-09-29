@@ -1,18 +1,92 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 vi.mock('virtual:pwa-register/vue', () => ({ useRegisterSW: () => ({ needRefresh: { value: false }, offlineReady: { value: false }, updateServiceWorker: vi.fn() }) }))
-afterEach(() => { vi.unstubAllGlobals(); history.replaceState({}, '', '/') })
+beforeEach(() => { localStorage.clear(); localStorage.setItem('chathermes.profiles.v1', JSON.stringify(profileList)) })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const profileList = [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }]
+const profileList = [{ id: 'alpha', label: 'Alpha', baseUrl: 'https://example.test/p/alpha/', key: 'alpha-key' }, { id: 'beta', label: 'Beta', baseUrl: 'https://example.test/p/beta/', key: 'beta-key' }]
 const streaming = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('profile navigation', () => {
+  it('keeps add, edit, and removal unchanged when browser storage rejects writes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })))
+    const wrapper = mount(App)
+    await flushPromises()
+    const initial = localStorage.getItem('chathermes.profiles.v1')
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota exceeded') })
+    await wrapper.get('.manage-profiles').trigger('click')
+    await wrapper.get('input[placeholder="Personal"]').setValue('Changed')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not save profile')
+    expect(wrapper.text()).toContain('Alpha session')
+    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
+    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
+    await wrapper.get('.profile-tabs button:last-child').trigger('click')
+    await wrapper.get('input[placeholder="Personal"]').setValue('New')
+    await wrapper.get('input[type="url"]').setValue('https://new.test/')
+    await wrapper.get('.secret-field input').setValue('new-key')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not save profile')
+    expect(wrapper.findAll('.profile-tabs button')).toHaveLength(3)
+    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    await wrapper.get('.profile-tabs button:first-child').trigger('click')
+    await wrapper.get('.remove-profile').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not remove profile')
+    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
+    expect(wrapper.findAll('.profile-tabs button')).toHaveLength(3)
+    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
+    write.mockRestore()
+    wrapper.unmount()
+  })
+  it('clears content at the root and replaces removed-profile history with a valid fallback', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
+      : input.includes('/messages') ? json([{ role: 'assistant', content: 'Private history' }])
+      : input.includes('/alpha/api/sessions?') ? json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })
+      : json({ sessions: [{ id: 'two', title: 'Beta session' }], total: 1 })))
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Private history')
+    history.pushState({}, '', '/')
+    dispatchEvent(new PopStateEvent('popstate'))
+    await flushPromises()
+    expect(wrapper.get('.topbar-profile').text()).toBe('No profile')
+    expect(wrapper.text()).not.toContain('Private history')
+    expect(wrapper.text()).not.toContain('Alpha session')
+    expect(location.pathname).toBe('/')
+    history.pushState({}, '', '/p/removed/s/one')
+    dispatchEvent(new PopStateEvent('popstate'))
+    await flushPromises()
+    expect(location.pathname).toBe('/p/alpha')
+    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
+    expect(wrapper.text()).not.toContain('Private history')
+    expect(wrapper.text()).toContain('Alpha session')
+    wrapper.unmount()
+  })
+  it('explains browser PATCH failures when renaming', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') throw new TypeError('Failed to fetch')
+      return input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Original' }], total: 1 })
+    }))
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('rename', 'one', 'New title')
+    await flushPromises()
+    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('CORS preflight')
+    expect(wrapper.text()).toContain('Original')
+    expect(wrapper.text()).not.toContain('New title')
+    wrapper.unmount()
+  })
   it('uses Hermes page offsets when pinned sessions are included beyond the limit', async () => {
-    const fake = vi.fn(async (input: string) => input === '/api/profiles' ? json(profileList)
-      : input.includes('/v1/capabilities') ? json({})
+    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
       : input.includes('offset=30') ? json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'second', title: 'Second page' }], limit: 30, offset: 30, has_more: false })
       : json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'first', title: 'First page' }], limit: 30, offset: 0, has_more: true }))
     vi.stubGlobal('fetch', fake)
@@ -27,7 +101,6 @@ describe('profile navigation', () => {
   })
   it('shows Hermes envelopes and completed stream output in each profile', async () => {
     const fake = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input === '/api/profiles') return json(profileList)
       if (input.includes('/v1/capabilities')) return json(streaming)
       const profile = input.includes('/alpha/') ? 'alpha' : 'beta'
       if (input.includes('/chat/stream')) return new Response('event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' + profile + '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
@@ -58,8 +131,7 @@ describe('profile navigation', () => {
   })
   it('clears the previous profile sessions when switching', async () => {
     const fake = vi.fn(async (input: string) => {
-      const value = input === '/api/profiles' ? [{ id: 'alpha', label: 'Alpha' }, { id: 'beta', label: 'Beta' }]
-        : input.includes('/v1/capabilities') ? streaming
+      const value = input.includes('/v1/capabilities') ? streaming
         : input.includes('/alpha/api/sessions') ? { sessions: [{ id: 'alpha-one', title: 'Alpha only' }], total: 1 }
         : input.includes('/beta/api/sessions') ? { sessions: [{ id: 'beta-one', title: 'Beta only' }], total: 1 } : {}
       return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -76,8 +148,7 @@ describe('profile navigation', () => {
   })
   it('keeps the session list request alive when a conversation is selected', async () => {
     const list = deferred<Response>()
-    const fake = vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    const fake = vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? list.promise : Promise.resolve(json({})))
     vi.stubGlobal('fetch', fake)
@@ -94,8 +165,7 @@ describe('profile navigation', () => {
   })
   it('does not let an older list request clear a newer loading state or show its error', async () => {
     const alpha = deferred<Response>(), beta = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json({}))
+    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
       : input.includes('/alpha/api/sessions?') ? alpha.promise
       : input.includes('/beta/api/sessions?') ? beta.promise : Promise.resolve(json({}))))
     const wrapper = mount(App)
@@ -114,8 +184,7 @@ describe('profile navigation', () => {
   })
   it('does not apply a delayed rename to the next profile with the same session ID', async () => {
     const rename = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json({}))
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
       : init?.method === 'PATCH' ? rename.promise
       : input.includes('/alpha/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Alpha title' }], total: 1 }))
       : input.includes('/beta/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Beta title' }], total: 1 })) : Promise.resolve(json({}))))
@@ -132,8 +201,7 @@ describe('profile navigation', () => {
   })
   it('keeps sending locked after an approval history reload without run completion', async () => {
     let messageLoads = 0
-    vi.stubGlobal('fetch', vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Conversation' }], total: 1 }))
       : input.includes('/messages') ? (messageLoads++, Promise.resolve(json([])))
       : input.includes('/chat/stream') ? Promise.resolve(new Response('event: approval.request\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } }))
@@ -158,8 +226,7 @@ describe('profile navigation', () => {
   })
   it('discards a popstate session when the user switches profile before capabilities return', async () => {
     const betaCapabilities = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/beta/v1/capabilities') ? betaCapabilities.promise
+    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/beta/v1/capabilities') ? betaCapabilities.promise
       : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
@@ -177,8 +244,7 @@ describe('profile navigation', () => {
     wrapper.unmount()
   })
   it('clears unsent text on session and profile changes', async () => {
-    vi.stubGlobal('fetch', vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
     const wrapper = mount(App)
@@ -196,8 +262,7 @@ describe('profile navigation', () => {
   })
   it('does not select an in-flight create after a newer session selection or show its stale error', async () => {
     const create = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? create.promise
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
@@ -213,8 +278,7 @@ describe('profile navigation', () => {
   })
   it('does not select a completed create after a newer session selection', async () => {
     const create = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? create.promise
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
@@ -228,8 +292,7 @@ describe('profile navigation', () => {
     wrapper.unmount()
   })
   it('allows a successful create to select its new session when selection is unchanged', async () => {
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? Promise.resolve(json({ id: 'new' }))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
@@ -242,8 +305,7 @@ describe('profile navigation', () => {
   })
   it('locks sending until the documented streaming capability and endpoint are confirmed', async () => {
     const capabilities = deferred<Response>()
-    const fake = vi.fn((input: string) => input === '/api/profiles' ? Promise.resolve(json(profileList))
-      : input.includes('/alpha/v1/capabilities') ? capabilities.promise
+    const fake = vi.fn((input: string) => input.includes('/alpha/v1/capabilities') ? capabilities.promise
       : input.includes('/beta/v1/capabilities') ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 }))

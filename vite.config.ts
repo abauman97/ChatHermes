@@ -3,18 +3,6 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  server: { proxy: { '/api': {
-    target: 'http://127.0.0.1:8787',
-    changeOrigin: true,
-    configure(proxy) {
-      proxy.on('proxyReq', (proxyReq, req) => {
-        const host = req.headers.host
-        if (host && /^(?:127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(host) && req.headers.origin === `http://${host}`) {
-          proxyReq.setHeader('origin', 'http://127.0.0.1:8787')
-        }
-      })
-    },
-  } } },
   plugins: [
     vue(),
     VitePWA({

@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/main/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes scopes each route to the selected profile through its local proxy.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/main/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes appends each route to the selected browser-stored profile base URL and sends its bearer key directly.
 
 | Operation | Hermes route | Request | Expected response |
 | --- | --- | --- | --- |
@@ -12,6 +12,8 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | Turn | `POST /api/sessions/{id}/chat/stream` | `{ "input": "…" }` | SSE stream |
 | Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
 | Run state/stop | `GET /v1/runs/{id}`, `POST /v1/runs/{id}/stop` | None | Run state |
+
+The installed Hermes gateway currently omits PATCH from its CORS preflight allowed methods. A cross-origin browser cannot use the rename route until the gateway or a trusted reverse proxy allows PATCH in the OPTIONS response. See [deployment](deployment.md) for setup. ChatHermes retains the PATCH route for compatible environments and reports browser request failures in the conversation list.
 
 The stream sends `assistant.delta` with `delta` and `tool.started` with `tool_name`. Events also carry `session_id`, `run_id`, `seq`, and `ts`. A successful turn ends with a `run.completed` event containing `session_id`, `message_id`, `messages`, `usage`, and `runtime`; it does not need a `status` field. `run.failed`, `run.cancelled`, and `error` mean the turn did not complete. SSE keepalive comments and `done` are ignored. ChatHermes loads history again after completion and only clears streamed text once that reload succeeds. Message history is requested oldest first in 500 item pages so earlier messages are not hidden by Hermes' default latest 500 page. A malformed page raises an error and leaves the previously displayed messages intact. The gateway advertises this route with `features.session_chat_streaming: true` and `endpoints.session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" }`; sending stays disabled until both are confirmed. An `approval.request` blocks further sends in that conversation. Refreshing history does not confirm run completion, so the send lock remains until explicit navigation or a page reload with a warning to verify the previous turn. ChatHermes does not surface an approval action or a stop control without a verified run ID flow.
 

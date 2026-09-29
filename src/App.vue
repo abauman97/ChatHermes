@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, eventPayload } from './lib/hermes-api'
+import { loadProfiles, saveProfiles } from './lib/profiles'
+import ProfileManager from './components/ProfileManager.vue'
 import type { Capabilities, Message, Profile, Session } from './types/hermes'
 import ProfileSwitcher from './components/ProfileSwitcher.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
@@ -9,12 +11,12 @@ import ChatComposer from './components/ChatComposer.vue'
 import UpdatePrompt from './components/UpdatePrompt.vue'
 const profiles = ref<Profile[]>([]), profile = ref(''), session = ref(''), sessions = ref<Session[]>([]), messages = ref<Message[]>([])
 const capabilities = ref<Capabilities>({}), offset = ref(0), hasMore = ref(false), loading = ref(false), chatLoading = ref(false), sending = ref(false), approvalPending = ref(false), offline = ref(!navigator.onLine)
-const error = ref(''), chatError = ref(''), draft = ref(''), progress = ref<string[]>([]), drawer = ref(false)
+const error = ref(''), chatError = ref(''), profileError = ref(''), draft = ref(''), progress = ref<string[]>([]), drawer = ref(false), managing = ref(false)
 const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
 const canStream = computed(() => capabilities.value.features?.session_chat_streaming === true && capabilities.value.endpoints?.session_chat_stream?.method === 'POST' && capabilities.value.endpoints.session_chat_stream.path === '/api/sessions/{session_id}/chat/stream')
 let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0
 function urlState() { const parts = location.pathname.match(/^\/p\/([a-zA-Z0-9_-]+)(?:\/s\/([a-zA-Z0-9_-]+))?\/?$/); return { profile: parts?.[1] || '', session: parts?.[2] || '' } }
-function setUrl() { history.pushState({}, '', profile.value ? `/p/${encodeURIComponent(profile.value)}${session.value ? `/s/${encodeURIComponent(session.value)}` : ''}` : '/') }
+function setUrl(replace = false) { history[replace ? 'replaceState' : 'pushState']({}, '', profile.value ? `/p/${encodeURIComponent(profile.value)}${session.value ? `/s/${encodeURIComponent(session.value)}` : ''}` : '/') }
 function cancelChat() { generation++; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadSessions(more = false) {
@@ -67,7 +69,7 @@ async function createSession() {
 async function rename(id: string, title: string) {
   const p = profile.value, current = generation
   try { await api.rename(p, id, title); if (current !== generation || p !== profile.value) return; const found = sessions.value.find(s => s.id === id); if (found) found.title = title }
-  catch (cause) { if (current === generation && p === profile.value) error.value = cause instanceof Error ? cause.message : 'Could not rename session' }
+  catch (cause) { if (current === generation && p === profile.value) error.value = cause instanceof TypeError ? 'Browser could not send PATCH to Hermes. Check that the gateway or reverse proxy allows PATCH in its CORS preflight response, then retry.' : cause instanceof Error ? cause.message : 'Could not rename session' }
 }
 async function send(text: string) {
   if (!profile.value || !session.value || sending.value || approvalPending.value || offline.value || !canStream.value) return
@@ -96,22 +98,45 @@ async function send(text: string) {
 }
 async function reloadAfterApproval() { await loadMessages() }
 function onlineChange() { offline.value = !navigator.onLine }
-function pop() { const state = urlState(); if (state.profile && profiles.value.some(p => p.id === state.profile)) { const pending = chooseProfile(state.profile, true), current = generation; void pending.then(() => { const url = urlState(); if (current === generation && profile.value === state.profile && !session.value && state.session && url.profile === state.profile && url.session === state.session) chooseSession(state.session, true) }) } }
+function pop() {
+  const state = urlState()
+  if (!state.profile) { clearProfile(); return }
+  const fallback = profiles.value.some(p => p.id === state.profile) ? state.profile : profiles.value[0]?.id
+  if (!fallback) { clearProfile(); setUrl(true); return }
+  const pending = chooseProfile(fallback, true), current = generation
+  if (fallback !== state.profile) setUrl(true)
+  void pending.then(() => { const url = urlState(); if (current === generation && profile.value === state.profile && !session.value && state.session && url.profile === state.profile && url.session === state.session) chooseSession(state.session, true) })
+}
+function clearProfile() { cancel(); profileGeneration++; profile.value = ''; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false }
+function saveProfile(updated: Profile) {
+  const existing = profiles.value.some(p => p.id === updated.id)
+  const next = existing ? profiles.value.map(p => p.id === updated.id ? updated : p) : [...profiles.value, updated]
+  try { saveProfiles(next) } catch { profileError.value = 'Could not save profile in browser storage. Check available storage and try again.'; return }
+  profiles.value = next; profileError.value = ''; managing.value = false
+  if (profile.value === updated.id || !existing) void chooseProfile(updated.id)
+}
+function removeProfile(id: string) {
+  const next = profiles.value.filter(p => p.id !== id)
+  try { saveProfiles(next) } catch { profileError.value = 'Could not remove profile from browser storage. Check available storage and try again.'; return }
+  profiles.value = next; profileError.value = ''; managing.value = false
+  if (profile.value === id) { clearProfile(); if (next[0]) void chooseProfile(next[0].id); else setUrl() }
+}
 function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
 function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
-onMounted(async () => { addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); try { profiles.value = await api.profiles(); const state = urlState(); const first = profiles.value.find(p => p.id === state.profile)?.id || profiles.value[0]?.id; if (first) { const pending = chooseProfile(first, true), current = generation; await pending; if (current !== generation || profile.value !== first) return; if (state.session && state.profile === first) chooseSession(state.session, true); else setUrl() } } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not load profiles' } })
+onMounted(async () => { addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); try { profiles.value = loadProfiles(); const state = urlState(); const first = profiles.value.find(p => p.id === state.profile)?.id || profiles.value[0]?.id; if (first) { const pending = chooseProfile(first, true), current = generation; await pending; if (current !== generation || profile.value !== first) return; if (state.session && state.profile === first) chooseSession(state.session, true); else setUrl() } } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not load profiles' } })
 onUnmounted(() => { cancel(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
 </script>
 <template>
   <div class="app-shell">
     <aside class="sidebar" :class="{ open: drawer }" aria-label="Navigation">
       <div class="brand"><span class="brand-mark">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close" aria-label="Close navigation" @click="closeDrawer">×</button></div>
-      <ProfileSwitcher :profiles="profiles" :selected="profile" @change="chooseProfile" />
+      <ProfileSwitcher :profiles="profiles" :selected="profile" @change="chooseProfile" /><button class="manage-profiles" @click="profileError = ''; managing = true">Manage connections</button>
       <SessionSidebar :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline || !profile" @select="chooseSession" @create="createSession" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
-      <div class="sidebar-foot"><span class="status-dot" :class="{ disconnected: offline }" />{{ offline ? 'Offline · read only' : 'Local connection' }}</div>
+      <div class="sidebar-foot"><span class="status-dot" :class="{ disconnected: offline }" />{{ offline ? 'Offline · read only' : 'Direct connection' }}</div>
     </aside>
     <div v-if="drawer" class="scrim" @click="closeDrawer" />
+    <ProfileManager :profiles="profiles" :selected="profile" :open="managing" :save-error="profileError" @close="managing = false" @save="saveProfile" @remove="removeProfile" />
     <main class="main-panel">
       <header class="topbar"><button ref="menuButton" class="mobile-menu" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer">☰</button><div><small>HERMES AGENT</small><h1>{{ sessions.find(s => s.id === session)?.title || (session ? 'Conversation' : 'New conversation') }}</h1></div><span class="topbar-profile">{{ profiles.find(p => p.id === profile)?.label || 'No profile' }}</span></header>
       <div v-if="offline" class="notice" role="status">You are offline. Saved app pages may open, but messages cannot be loaded or sent.</div>

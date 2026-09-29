@@ -10,7 +10,7 @@ function save() { if (title.value.trim()) emit('rename', editing.value, title.va
 <template>
   <div class="session-head"><h2>Conversations</h2><button class="primary small" :disabled="busy" @click="emit('create')">New chat</button></div>
   <p v-if="error" class="notice error" role="alert">{{ error }} <button @click="emit('retry')">Retry</button></p>
-  <p v-else-if="loading && !sessions.length" class="muted">Loading sessions…</p>
+  <p v-if="loading && !sessions.length" class="muted">Loading sessions…</p>
   <p v-else-if="!sessions.length" class="muted">No conversations yet.</p>
   <nav v-else aria-label="Sessions" class="session-list">
     <div v-for="session in sessions" :key="session.id" class="session-row" :class="{ active: selected === session.id }">
