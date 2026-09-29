@@ -1,0 +1,7 @@
+: keepalive
+
+event: assistant.delta
+data: {"text":"Hello from a fake server."}
+
+event: run.completed
+data: {"status":"completed"}
