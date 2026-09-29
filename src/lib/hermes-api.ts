@@ -1,9 +1,23 @@
-import type { Capabilities, Message, Profile, Session, SessionPage } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
+import { getProfile } from './profiles'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
-const scope = (profile: string) => `/api/profiles/${encodeURIComponent(profile)}`
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { ...options, headers: { accept: 'application/json', ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'same-origin', cache: 'no-store' })
+function endpoint(profile: string, path: string): { url: string; key: string } {
+  const config = getProfile(profile)
+  // Paths are built only from fixed API routes and encoded single-segment IDs below.
+  if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/capabilities|v1\/runs\/[A-Za-z0-9_-]+\/stop)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  const url = new URL(path.slice(1), config.baseUrl).href
+  if (!url.startsWith(config.baseUrl)) throw new Error('Invalid Hermes API path.')
+  return { url, key: config.key }
+}
+async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
+  const target = endpoint(profile, path)
+  const response = await fetch(target.url, { ...options, headers: { authorization: `Bearer ${target.key}`, accept, ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'omit', redirect: 'manual', cache: 'no-store', referrerPolicy: 'no-referrer' })
+  if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new Error('Hermes redirected the request. Check the saved base URL.')
+  return response
+}
+async function request<T>(profile: string, path: string, options: RequestInit = {}): Promise<T> {
+  const response = await directFetch(profile, path, options)
   if (!response.ok) throw new ApiError(response.status, `Request failed (${response.status})`)
   return response.json() as Promise<T>
 }
@@ -32,28 +46,27 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
     ? { returned: pagination.returned, limit: pagination.limit } : undefined }
 }
 export const api = {
-  profiles: (signal?: AbortSignal) => request<Profile[]>('/api/profiles', { signal }),
-  capabilities: (profile: string, signal?: AbortSignal) => request<Capabilities>(`${scope(profile)}/v1/capabilities`, { signal }),
-  sessions: async (profile: string, offset = 0, signal?: AbortSignal) => sessionsPage(await request<unknown>(`${scope(profile)}/api/sessions?limit=30&offset=${offset}`, { signal })),
-  create: async (profile: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(`${scope(profile)}/api/sessions`, { method: 'POST', body: '{}', signal })),
-  session: async (profile: string, id: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(`${scope(profile)}/api/sessions/${encodeURIComponent(id)}`, { signal })),
-  rename: async (profile: string, id: string, title: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(`${scope(profile)}/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ title }), signal })),
+  capabilities: (profile: string, signal?: AbortSignal) => request<Capabilities>(profile, `/v1/capabilities`, { signal }),
+  sessions: async (profile: string, offset = 0, signal?: AbortSignal) => sessionsPage(await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal })),
+  create: async (profile: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions`, { method: 'POST', body: '{}', signal })),
+  session: async (profile: string, id: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { signal })),
+  rename: async (profile: string, id: string, title: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ title }), signal })),
   async messages(profile: string, id: string, signal?: AbortSignal): Promise<Message[]> {
     const messages: Message[] = []
     for (let offset = 0; ; ) {
-      const page = messagePage(await request<unknown>(`${scope(profile)}/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false`, { signal }))
+      const page = messagePage(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false`, { signal }))
       messages.push(...page.messages)
       if (!page.pagination || page.pagination.returned < page.pagination.limit || !page.messages.length) return messages
       offset += page.messages.length
     }
   },
   async *stream(profile: string, session: string, input: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-    const response = await fetch(`${scope(profile)}/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'text/event-stream' }, body: JSON.stringify({ input }), signal, credentials: 'same-origin', cache: 'no-store' })
+    const response = await directFetch(profile, `/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },
-  stop: (profile: string, run: string) => request<{ status: string }>(`${scope(profile)}/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
+  stop: (profile: string, run: string) => request<{ status: string }>(profile, `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
 }
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content

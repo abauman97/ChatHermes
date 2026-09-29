@@ -1,4 +1,4 @@
-export interface Profile { id: string; label: string }
+export interface Profile { id: string; label: string; baseUrl: string; key: string }
 export interface Session { id: string; title?: string | null; source?: string | null; created_at?: string; updated_at?: string }
 export interface SessionPage { sessions: Session[]; total?: number; limit?: number; offset?: number; has_more?: boolean }
 export interface Message { id?: string; role: string; content: unknown; created_at?: string; tool_name?: string }
