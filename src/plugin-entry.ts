@@ -25,6 +25,6 @@ function ChatHermesPlugin() {
     }).catch(() => { if (!disposed && element.current) element.current.textContent = 'ChatHermes could not load.' })
     return () => { disposed = true; app?.unmount() }
   }, [])
-  return React!.createElement('div', { ref: element, className: 'chathermes-plugin' })
+  return React!.createElement('div', { ref: element, className: 'chathermes-plugin chathermes-embedded' })
 }
 window.__HERMES_PLUGINS__.register('chathermes', ChatHermesPlugin)

@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+/* Embedded mode: when mounted inside a Hermes dashboard plugin mount, fill the
+   dashboard's own content column instead of the viewport. The dashboard's top
+   bar takes space above the plugin, so 100dvh would push the composer below
+   the fold. The plugin content column is `position: relative` and is exactly
+   the available height, so anchor the mount to it and size the app to the
+   mount. */
+.chathermes-embedded { position: absolute; inset: 0; }
+.chathermes-embedded .app-shell { height: 100%; min-height: 0; }
+.chathermes-embedded .main-panel { height: 100%; }
+/* Scope the mobile drawer + scrim to the plugin mount (the dashboard content
+   column) instead of the viewport, so they start below the dashboard's own
+   top bar rather than getting clipped behind it. */
+.chathermes-embedded .sidebar { position: absolute; }
+.chathermes-embedded .scrim { position: absolute; }
