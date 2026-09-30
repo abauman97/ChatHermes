@@ -11,6 +11,9 @@
 .chathermes-embedded .main-panel { height: 100%; }
 /* Scope the mobile drawer + scrim to the plugin mount (the dashboard content
    column) instead of the viewport, so they start below the dashboard's own
-   top bar rather than getting clipped behind it. */
-.chathermes-embedded .sidebar { position: absolute; }
-.chathermes-embedded .scrim { position: absolute; }
+   top bar rather than getting clipped behind it. Mobile range only (<701px):
+   on desktop the sidebar is a static flex column and must stay in flow. */
+@media (max-width: 700px) {
+  .chathermes-embedded .sidebar { position: absolute; }
+  .chathermes-embedded .scrim { position: absolute; }
+}
