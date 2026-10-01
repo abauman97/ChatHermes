@@ -9,7 +9,7 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | Read | `GET /api/sessions/{id}` | None | `{ "object":"hermes.session", "session":{…} }` |
 | Rename | `PATCH /api/sessions/{id}` | `{ "title": "…" }` | `{ "object":"hermes.session", "session":{…} }` |
 | History | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
-| Turn | `POST /api/sessions/{id}/chat/stream` | `{ "input": "…" }` | SSE stream |
+| Turn | `POST /api/sessions/{id}/chat/stream` | `{ "input": "…", "model": "…", "provider": "…", "require_model_lock": true }` (selection fields optional) | SSE stream |
 | Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
 | Run state/stop | `GET /v1/runs/{id}`, `POST /v1/runs/{id}/stop` | None | Run state |
 
@@ -17,7 +17,7 @@ The stream sends `assistant.delta` with `delta` and `tool.started` with `tool_na
 
 ## Plugin-specific routes
 
-`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. Explicit model selection adds `model` and `require_model_lock: true` to each streamed turn, so Hermes confirms the requested runtime rather than silently retaining a session model.
+`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. `GET /api/model/options` proxies the selected profile's Hermes provider inventory and returns only `provider`, `model`, and provider rows containing `slug`, `name`, `is_current`, and model IDs. Provider transport and authentication metadata are excluded; unconfigured non-current providers are omitted. The UI defaults to the current provider, resets selection on profile changes, and keeps gateway route aliases in a separate **Model routes** choice. A missing inventory falls back to the configured default and route aliases; the virtual gateway alias (`parent: null`) is not a provider model. Explicit model selection adds `model`, `provider` (for inventory models), and `require_model_lock: true` to each streamed turn, so Hermes confirms the requested runtime rather than silently retaining a session model.
 
 `POST /uploads` accepts a filename and base64 data URL (20 MB decoded maximum), validates the profile and body, and stores a generated filename under that profile's `uploads/chathermes/`. It returns the path for agent file tools. Image attachments use `{type: "image_url", image_url: {url: "data:image/..."}}` alongside text in the session input array.
 

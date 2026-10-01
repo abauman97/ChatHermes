@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { Activity, Message } from '../types/hermes'
 import ActivityRow from './ActivityRow.vue'
+import { renderMarkdown } from '../lib/markdown'
 import { messageText } from '../lib/hermes-api'
 const props = defineProps<{ messages: Message[]; draft: string; loading: boolean; progress: Activity[]; thinking?: boolean; home?: boolean }>()
 const emit = defineEmits<{ suggest: [text: string] }>()
@@ -43,13 +44,13 @@ watch(() => [props.messages.length, props.draft, JSON.stringify(props.progress)]
     <template v-for="(message, index) in visible" :key="message.id || index">
       <ActivityRow v-if="message.role === 'tool'" :activity="{ id: message.id || String(index), title: message.tool_name || 'Tool call', content: messageText(message.content), complete: true, kind: 'tool' }" />
       <article v-else class="message max-w-full" :class="message.role === 'user' ? 'user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]' : 'assistant w-full self-start'">
-        <div class="message-content whitespace-pre-wrap break-words text-base leading-7">{{ displayText(message) }}</div>
+        <div class="message-content markdown-content break-words text-base leading-7" v-html="renderMarkdown(displayText(message))" />
         <img v-for="url in images(message.content)" :key="url" :src="url" alt="Attached image" class="mt-2 max-h-72 max-w-full rounded-xl object-contain" />
       </article>
       <div v-if="index === lastUser && progress.length" class="grid gap-1">
         <ActivityRow v-for="item in progress" :key="item.id" :activity="item" />
       </div>
     </template>
-    <article v-if="draft" class="message assistant w-full self-start"><div class="message-content whitespace-pre-wrap break-words text-base leading-7">{{ draft }}</div></article>
+    <article v-if="draft" class="message assistant w-full self-start"><div class="message-content markdown-content break-words text-base leading-7" v-html="renderMarkdown(draft)" /></article>
   </div>
 </template>

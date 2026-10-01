@@ -6,3 +6,6 @@ export interface Capabilities { features?: Record<string, unknown>; endpoints?: 
 export interface Attachment { name: string; type: string; data: string; size: number }
 export interface Activity { id: string; title: string; content: string; output?: string; complete: boolean; kind: 'thinking' | 'tool' }
 export interface ModelOption { id: string; root?: string; parent?: string | null }
+
+export interface ProviderOption { slug: string; name: string; is_current?: boolean; models: string[] }
+export interface ModelInventory { providers: ProviderOption[]; provider: string; model: string }

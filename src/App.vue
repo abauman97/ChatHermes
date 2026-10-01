@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
 import type { SSEEvent } from './lib/sse'
-import type { Activity, Attachment, Capabilities, Message, ModelOption, Session } from './types/hermes'
+import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session } from './types/hermes'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
@@ -12,6 +12,7 @@ const error = ref(''), chatError = ref(''), draft = ref(''), progress = ref<Acti
 const sentContent = new Map<string, unknown>()
 const optimisticMessage = ref<Message>(), priorUserCount = ref(0)
 const profiles = ref<{ name: string }[]>([]), models = ref<ModelOption[]>([]), model = ref(''), defaultModel = ref(''), creating = ref(false)
+const providers = ref<ProviderOption[]>([]), provider = ref(''), modelsLoading = ref(false)
 const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
 const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
 const canStream = computed(() => capabilities.value.features?.session_chat_streaming === true && capabilities.value.endpoints?.session_chat_stream?.method === 'POST' && capabilities.value.endpoints.session_chat_stream.path === '/api/sessions/{session_id}/chat/stream')
@@ -54,11 +55,20 @@ async function loadMessages() {
 }
 async function chooseProfile(id: string, fromHistory = false) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) { error.value = 'Invalid profile name'; return }
-  cancel(); profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; model.value = ''; defaultModel.value = ''; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
+  cancel(); profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
   if (!fromHistory) setUrl()
   const current = ++profileGeneration
   void loadSessions()
-  void api.models(id).then(result => { if (current === profileGeneration) { models.value = (result.data || []).filter(item => item.parent !== null); defaultModel.value = result.default_model || '' } }).catch(() => {})
+  void Promise.allSettled([api.models(id), api.modelOptions(id)]).then(([catalog, inventory]) => {
+    if (current !== profileGeneration) return
+    if (catalog.status === 'fulfilled') { models.value = catalog.value.data || []; defaultModel.value = catalog.value.default_model || '' }
+    if (inventory.status === 'fulfilled' && Array.isArray(inventory.value.providers)) {
+      providers.value = inventory.value.providers.filter(item => item.models.length || item.is_current)
+      provider.value = providers.value.find(item => item.is_current)?.slug || inventory.value.provider || ''
+      defaultModel.value = inventory.value.model || defaultModel.value
+    }
+    modelsLoading.value = false
+  })
   try { const result = await api.capabilities(id); if (current === profileGeneration && profile.value === id) capabilities.value = result } catch { if (current === profileGeneration && profile.value === id) capabilities.value = {} }
 }
 async function chooseSession(id: string, fromHistory = false) {
@@ -133,7 +143,7 @@ function reduceFrame(frame: SSEEvent): 'completed' | 'approval' | undefined {
   else if (['run.failed', 'run.cancelled', 'error'].includes(frame.event)) { finishActivities(); activeRun.value = ''; throw new Error('Turn failed. Check session history before retrying.') }
 }
 async function send(text: string, attachments: Attachment[] = []) {
-  if (sending.value || creating.value || approvalPending.value || offline.value || !canStream.value) return
+  if (sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
   if (!session.value && !await createSession()) return
   if (sending.value || approvalPending.value) return
   sending.value = true; thinking.value = true; activeRun.value = ''; chatError.value = ''; draft.value = ''; progress.value = []
@@ -151,7 +161,7 @@ async function send(text: string, attachments: Attachment[] = []) {
       if (file.type.startsWith('image/')) parts.push({ type: 'image_url', image_url: { url: file.data } })
       else { const uploaded = await api.upload(p, file); if (current !== generation) return; parts.push({ type: 'text', text: `Attached file ${file.name}: ${uploaded.path}` }) }
     }
-    for await (const frame of api.stream(p, s, attachments.length ? parts : text, streamAbort.signal, model.value || defaultModel.value)) {
+    for await (const frame of api.stream(p, s, attachments.length ? parts : text, streamAbort.signal, model.value || defaultModel.value, provider.value)) {
       if (current !== generation) return
       if (streamCurrent !== streamGeneration) continue
       const outcome = reduceFrame(frame)
@@ -244,7 +254,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityC
       <div v-if="approvalPending" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">Approval is pending. Resolve the request in Hermes, then reload this conversation here to inspect history. Sending stays locked until you leave this conversation or reload the page; confirm the previous turn finished before sending again. <button class="underline disabled:opacity-55" :disabled="chatLoading" @click="reloadAfterApproval">Reload conversation</button></div>
       <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="loadMessages">Refresh history</button></div>
       <ChatTranscript :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest" />
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="offline || creating || chatLoading || approvalPending || !canStream" :models="models" :default-model="defaultModel" v-model:model="model" :sending="sending" :suggested-prompt="suggestedPrompt" :reason="offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :suggested-prompt="suggestedPrompt" :reason="offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
     </main>
   </div>
 </template>
