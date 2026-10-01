@@ -1,6 +1,18 @@
 # ChatHermes
 
-A Vue PWA for browsing and chatting in Hermes sessions. The browser connects directly to each configured Hermes API endpoint with that profile’s bearer key.
+A chat UI for Hermes Agent sessions. The primary path is a dashboard plugin (cookie auth, no keys in the browser); the same Vue app also runs standalone as a PWA that connects directly to Hermes API endpoints with per-profile bearer keys.
+
+## Install as a Hermes dashboard plugin
+
+The repo includes a pre-built dashboard plugin (`plugin/chathermes/`). From a public repo, install it in one command:
+
+```sh
+hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
+```
+
+Restart the dashboard and a **ChatHermes** tab appears. No keys in the browser: the dashboard's cookie auth gates the tab, and a server-side proxy carries the gateway key (`platforms.api_server.key`) to the gateway. The `httpx` package must be available in the dashboard environment.
+
+To rebuild the plugin assets from source: `npm ci && npm run build:plugin` (output lands in `plugin/chathermes/dashboard/dist/`, which is committed for drop-in installs). To install manually from a clone, use `npm run install:plugin` after the build, then `hermes plugins enable chathermes`.
 
 ## Run locally
 

@@ -1,0 +1,11 @@
+{
+  "name": "chathermes",
+  "label": "ChatHermes",
+  "description": "Conversations with Hermes Agent",
+  "icon": "MessageSquare",
+  "version": "1.0.0",
+  "tab": { "path": "/chathermes", "position": "end" },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

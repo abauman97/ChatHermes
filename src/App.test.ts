@@ -3,75 +3,52 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
-vi.mock('virtual:pwa-register/vue', () => ({ useRegisterSW: () => ({ needRefresh: { value: false }, offlineReady: { value: false }, updateServiceWorker: vi.fn() }) }))
-beforeEach(() => { localStorage.clear(); localStorage.setItem('chathermes.profiles.v1', JSON.stringify(profileList)) })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/'); localStorage.clear() })
+beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const profileList = [{ id: 'alpha', label: 'Alpha', baseUrl: 'https://example.test/p/alpha/', key: 'alpha-key' }, { id: 'beta', label: 'Beta', baseUrl: 'https://example.test/p/beta/', key: 'beta-key' }]
 const streaming = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('profile navigation', () => {
-  it('keeps add, edit, and removal unchanged when browser storage rejects writes', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })))
+  it('rejects invalid profile names without requesting or storing credentials', async () => {
+    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
+    vi.stubGlobal('fetch', fake)
     const wrapper = mount(App)
     await flushPromises()
-    const initial = localStorage.getItem('chathermes.profiles.v1')
-    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota exceeded') })
-    await wrapper.get('.manage-profiles').trigger('click')
-    await wrapper.get('input[placeholder="Personal"]').setValue('Changed')
-    await wrapper.get('form').trigger('submit')
+    const calls = fake.mock.calls.length
+    await wrapper.get('.profile-field').setValue('../x')
     await flushPromises()
-    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not save profile')
+    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('Invalid profile name')
+    expect(fake).toHaveBeenCalledTimes(calls)
     expect(wrapper.text()).toContain('Alpha session')
-    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
-    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
-    await wrapper.get('.profile-tabs button:last-child').trigger('click')
-    await wrapper.get('input[placeholder="Personal"]').setValue('New')
-    await wrapper.get('input[type="url"]').setValue('https://new.test/')
-    await wrapper.get('.secret-field input').setValue('new-key')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not save profile')
-    expect(wrapper.findAll('.profile-tabs button')).toHaveLength(3)
-    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
-    vi.stubGlobal('confirm', vi.fn(() => true))
-    await wrapper.get('.profile-tabs button:first-child').trigger('click')
-    await wrapper.get('.remove-profile').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toContain('Could not remove profile')
-    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
-    expect(wrapper.findAll('.profile-tabs button')).toHaveLength(3)
-    expect(localStorage.getItem('chathermes.profiles.v1')).toBe(initial)
-    write.mockRestore()
+    expect(localStorage.length).toBe(0)
     wrapper.unmount()
   })
-  it('clears content at the root and replaces removed-profile history with a valid fallback', async () => {
+  it('clears old history when browser navigation selects the current or another profile', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
       : input.includes('/messages') ? json([{ role: 'assistant', content: 'Private history' }])
-      : input.includes('/alpha/api/sessions?') ? json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })
-      : json({ sessions: [{ id: 'two', title: 'Beta session' }], total: 1 })))
+      : input.includes('profile=alpha') ? json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })
+      : json({ sessions: [{ id: 'two', title: 'Current session' }], total: 1 })))
     const wrapper = mount(App)
     await flushPromises()
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
     await flushPromises()
     expect(wrapper.text()).toContain('Private history')
-    history.pushState({}, '', '/')
+    history.pushState({}, '', '/chathermes')
     dispatchEvent(new PopStateEvent('popstate'))
     await flushPromises()
-    expect(wrapper.get('.topbar-profile').text()).toBe('No profile')
+    expect(wrapper.get('.topbar-profile').text()).toBe('Current profile')
     expect(wrapper.text()).not.toContain('Private history')
     expect(wrapper.text()).not.toContain('Alpha session')
-    expect(location.pathname).toBe('/')
-    history.pushState({}, '', '/p/removed/s/one')
+    expect(wrapper.text()).toContain('Current session')
+    history.pushState({}, '', '/chathermes?profile=alpha')
     dispatchEvent(new PopStateEvent('popstate'))
     await flushPromises()
-    expect(location.pathname).toBe('/p/alpha')
-    expect(wrapper.get('.topbar-profile').text()).toBe('Alpha')
+    expect(wrapper.get('.topbar-profile').text()).toBe('alpha')
     expect(wrapper.text()).not.toContain('Private history')
     expect(wrapper.text()).toContain('Alpha session')
     wrapper.unmount()
   })
-  it('explains browser PATCH failures when renaming', async () => {
+  it('shows PATCH failures when renaming', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
       if (init?.method === 'PATCH') throw new TypeError('Failed to fetch')
       return input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Original' }], total: 1 })
@@ -80,7 +57,7 @@ describe('profile navigation', () => {
     await flushPromises()
     wrapper.findComponent(SessionSidebar).vm.$emit('rename', 'one', 'New title')
     await flushPromises()
-    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('CORS preflight')
+    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('Failed to fetch')
     expect(wrapper.text()).toContain('Original')
     expect(wrapper.text()).not.toContain('New title')
     wrapper.unmount()
@@ -102,7 +79,7 @@ describe('profile navigation', () => {
   it('shows Hermes envelopes and completed stream output in each profile', async () => {
     const fake = vi.fn(async (input: string, init?: RequestInit) => {
       if (input.includes('/v1/capabilities')) return json(streaming)
-      const profile = input.includes('/alpha/') ? 'alpha' : 'beta'
+      const profile = input.includes('profile=alpha') ? 'alpha' : 'beta'
       if (input.includes('/chat/stream')) return new Response('event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' + profile + '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
       if (input.includes('/messages')) return json({ object: 'list', session_id: `${profile}-new`, data: [{ id: `${profile}-user`, role: 'user', content: 'Question' }, { id: `${profile}-reply`, role: 'assistant', content: `Answer from ${profile}` }], pagination: { limit: 500, offset: 0, order: 'oldest', returned: 2 } })
       if (init?.method === 'POST') return json({ object: 'hermes.session', session: { id: `${profile}-new` } })
@@ -113,12 +90,12 @@ describe('profile navigation', () => {
     const wrapper = mount(App)
     await flushPromises()
     for (const profile of ['alpha', 'beta']) {
-      if (profile === 'beta') await wrapper.get('.profile-picker select').setValue('beta')
+      if (profile === 'beta') await wrapper.get('.profile-field').setValue('beta')
       await flushPromises()
       expect(wrapper.text()).toContain(`${profile} conversation`)
       wrapper.findComponent(SessionSidebar).vm.$emit('create')
       await flushPromises()
-      expect(location.pathname).toBe(`/p/${profile}/s/${profile}-new`)
+      expect(location.search).toBe(`?profile=${profile}&session=${profile}-new`)
       expect(wrapper.text()).toContain(`Answer from ${profile}`)
       await wrapper.get('.composer textarea').setValue('Question')
       await wrapper.get('.composer').trigger('submit')
@@ -132,15 +109,15 @@ describe('profile navigation', () => {
   it('clears the previous profile sessions when switching', async () => {
     const fake = vi.fn(async (input: string) => {
       const value = input.includes('/v1/capabilities') ? streaming
-        : input.includes('/alpha/api/sessions') ? { sessions: [{ id: 'alpha-one', title: 'Alpha only' }], total: 1 }
-        : input.includes('/beta/api/sessions') ? { sessions: [{ id: 'beta-one', title: 'Beta only' }], total: 1 } : {}
+        : input.includes('profile=alpha') ? { sessions: [{ id: 'alpha-one', title: 'Alpha only' }], total: 1 }
+        : input.includes('profile=beta') ? { sessions: [{ id: 'beta-one', title: 'Beta only' }], total: 1 } : {}
       return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
     })
     vi.stubGlobal('fetch', fake)
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.text()).toContain('Alpha only')
-    await wrapper.get('.profile-picker select').setValue('beta')
+    await wrapper.get('.profile-field').setValue('beta')
     await flushPromises()
     expect(wrapper.text()).toContain('Beta only')
     expect(wrapper.text()).not.toContain('Alpha only')
@@ -166,11 +143,11 @@ describe('profile navigation', () => {
   it('does not let an older list request clear a newer loading state or show its error', async () => {
     const alpha = deferred<Response>(), beta = deferred<Response>()
     vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
-      : input.includes('/alpha/api/sessions?') ? alpha.promise
-      : input.includes('/beta/api/sessions?') ? beta.promise : Promise.resolve(json({}))))
+      : input.includes('profile=alpha') ? alpha.promise
+      : input.includes('profile=beta') ? beta.promise : Promise.resolve(json({}))))
     const wrapper = mount(App)
     await flushPromises()
-    await wrapper.get('.profile-picker select').setValue('beta')
+    await wrapper.get('.profile-field').setValue('beta')
     await flushPromises()
     alpha.reject(new Error('Old profile failed'))
     await flushPromises()
@@ -186,12 +163,12 @@ describe('profile navigation', () => {
     const rename = deferred<Response>()
     vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
       : init?.method === 'PATCH' ? rename.promise
-      : input.includes('/alpha/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Alpha title' }], total: 1 }))
-      : input.includes('/beta/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Beta title' }], total: 1 })) : Promise.resolve(json({}))))
+      : input.includes('profile=alpha') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Alpha title' }], total: 1 }))
+      : input.includes('profile=beta') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Beta title' }], total: 1 })) : Promise.resolve(json({}))))
     const wrapper = mount(App)
     await flushPromises()
     wrapper.findComponent(SessionSidebar).vm.$emit('rename', 'shared', 'Renamed alpha')
-    await wrapper.get('.profile-picker select').setValue('beta')
+    await wrapper.get('.profile-field').setValue('beta')
     await flushPromises()
     rename.resolve(json({ id: 'shared', title: 'Renamed alpha' }))
     await flushPromises()
@@ -226,21 +203,21 @@ describe('profile navigation', () => {
   })
   it('discards a popstate session when the user switches profile before capabilities return', async () => {
     const betaCapabilities = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/beta/v1/capabilities') ? betaCapabilities.promise
+    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities?profile=beta') ? betaCapabilities.promise
       : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
     const wrapper = mount(App)
     await flushPromises()
-    history.pushState({}, '', '/p/beta/s/beta-one')
+    history.pushState({}, '', '/chathermes?profile=beta&session=beta-one')
     dispatchEvent(new PopStateEvent('popstate'))
     await flushPromises()
-    await wrapper.get('.profile-picker select').setValue('alpha')
+    await wrapper.get('.profile-field').setValue('alpha')
     betaCapabilities.resolve(json(streaming))
     await flushPromises()
-    expect((wrapper.get('.profile-picker select').element as HTMLSelectElement).value).toBe('alpha')
+    expect((wrapper.get('.profile-field').element as HTMLInputElement).value).toBe('alpha')
     expect(wrapper.text()).toContain('Select or create a conversation')
-    expect(location.pathname).toBe('/p/alpha')
+    expect(location.search).toBe('?profile=alpha')
     wrapper.unmount()
   })
   it('clears unsent text on session and profile changes', async () => {
@@ -256,7 +233,7 @@ describe('profile navigation', () => {
     await flushPromises()
     expect((wrapper.get('.composer textarea').element as HTMLTextAreaElement).value).toBe('')
     await wrapper.get('.composer textarea').setValue('another draft')
-    await wrapper.get('.profile-picker select').setValue('beta')
+    await wrapper.get('.profile-field').setValue('beta')
     expect((wrapper.get('.composer textarea').element as HTMLTextAreaElement).value).toBe('')
     wrapper.unmount()
   })
@@ -272,7 +249,7 @@ describe('profile navigation', () => {
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'existing')
     create.reject(new Error('Stale create failed'))
     await flushPromises()
-    expect(location.pathname).toBe('/p/alpha/s/existing')
+    expect(location.search).toBe('?profile=alpha&session=existing')
     expect(wrapper.text()).not.toContain('Stale create failed')
     wrapper.unmount()
   })
@@ -288,7 +265,7 @@ describe('profile navigation', () => {
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'existing')
     create.resolve(json({ id: 'new' }))
     await flushPromises()
-    expect(location.pathname).toBe('/p/alpha/s/existing')
+    expect(location.search).toBe('?profile=alpha&session=existing')
     wrapper.unmount()
   })
   it('allows a successful create to select its new session when selection is unchanged', async () => {
@@ -300,13 +277,13 @@ describe('profile navigation', () => {
     await flushPromises()
     wrapper.findComponent(SessionSidebar).vm.$emit('create')
     await flushPromises()
-    expect(location.pathname).toBe('/p/alpha/s/new')
+    expect(location.search).toBe('?profile=alpha&session=new')
     wrapper.unmount()
   })
   it('locks sending until the documented streaming capability and endpoint are confirmed', async () => {
     const capabilities = deferred<Response>()
-    const fake = vi.fn((input: string) => input.includes('/alpha/v1/capabilities') ? capabilities.promise
-      : input.includes('/beta/v1/capabilities') ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
+    const fake = vi.fn((input: string) => input.includes('/v1/capabilities?profile=alpha') ? capabilities.promise
+      : input.includes('/v1/capabilities?profile=beta') ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 }))
       : input.includes('/chat/stream') ? Promise.resolve(new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })) : Promise.resolve(json({})))
@@ -323,7 +300,7 @@ describe('profile navigation', () => {
     await wrapper.get('.composer').trigger('submit')
     await flushPromises()
     expect(fake.mock.calls.some(([input]) => String(input).includes('/chat/stream'))).toBe(true)
-    await wrapper.get('.profile-picker select').setValue('beta')
+    await wrapper.get('.profile-field').setValue('beta')
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'two')
     await flushPromises()
     expect(wrapper.get('.composer textarea').attributes('disabled')).toBeDefined()
