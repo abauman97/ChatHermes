@@ -15,7 +15,7 @@ test('native Project browsing, refresh, navigation and fail-closed workspace UI'
     else if (url.pathname.endsWith('/v1/models')) body = { data: [{ id: 'Instant' }], default_model: 'Instant' }
     else if (url.pathname.endsWith('/api/model/options')) body = { providers: [{ slug: 'fixture', name: 'Test provider', is_current: true, models: ['Instant', 'Thinking'] }], model: 'Instant', provider: 'fixture' }
     else if (url.pathname.includes('/messages')) body = { messages: Array.from({ length: 16 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `Isolated chat message ${i + 1}` })) }
-    else if (url.pathname.endsWith('/api/sessions')) body = { sessions: [{ id: 's1', title: 'Workspace lookalike chat', cwd: '/tmp/chathermes-issue7-runtime/workspace-a' }], total: 1 }
+    else if (url.pathname.endsWith('/api/sessions')) body = { sessions: [{ id: 's1', title: 'Workspace lookalike chat', cwd: '/tmp/chathermes-issue7-runtime/workspace-a' }, ...Array.from({ length: 20 }, (_, i) => ({ id: `other-${i}`, title: `Other chat ${i + 1}` }))], total: 21 }
     else return route.continue()
     await route.fulfill({ json: body })
   })
@@ -30,6 +30,9 @@ test('native Project browsing, refresh, navigation and fail-closed workspace UI'
   await open()
   await expect(nav.getByRole('button', { name: 'Hermes Mobile', exact: true })).toBeVisible()
   await expect(nav.getByRole('button', { name: 'AcumaticaMCP', exact: true })).toBeVisible()
+  for (const name of ['Hermes Mobile', 'AcumaticaMCP', 'Unavailable workspace']) {
+    expect(await nav.getByRole('button', { name, exact: true }).evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(48)
+  }
   await expect(nav.getByRole('button', { name: 'Workspace lookalike chat Hermes', exact: true })).toBeVisible()
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('projects-list.png') })
   await nav.getByRole('button', { name: 'Hermes Mobile', exact: true }).click()

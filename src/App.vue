@@ -15,6 +15,9 @@ const capabilities = ref<Capabilities>({}), offset = ref(0), hasMore = ref(false
 const error = ref(''), chatError = ref(''), draft = ref(''), progress = ref<Activity[]>([]), drawer = ref(false)
 const sentContent = new Map<string, unknown>()
 const optimisticMessage = ref<Message>(), priorUserCount = ref(0)
+// Render-only IDs need uniqueness within this mount, not secure-context APIs.
+let localSequence = 0
+function localId() { return `chathermes-ui-${++localSequence}` }
 const profiles = ref<{ name: string }[]>([]), models = ref<ModelOption[]>([]), model = ref(''), defaultModel = ref(''), creating = ref(false)
 const providers = ref<ProviderOption[]>([]), provider = ref(''), modelsLoading = ref(false)
 const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
@@ -139,7 +142,7 @@ function finishActivities() { progress.value.forEach(item => { item.complete = t
 function activity(kind: 'thinking' | 'tool', title: string, id?: string) {
   const found = [...progress.value].reverse().find(item => !item.complete && item.kind === kind && item.title === title && (!id || item.id === id))
   if (found) return found
-  const item: Activity = { id: id || crypto.randomUUID(), kind, title, content: '', complete: false }
+  const item: Activity = { id: id || localId(), kind, title, content: '', complete: false }
   progress.value.push(item)
   return progress.value[progress.value.length - 1]!
 }
@@ -154,7 +157,7 @@ function reduceFrame(frame: SSEEvent): 'completed' | 'approval' | undefined {
   else if (frame.event === 'assistant.commentary' && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
     progress.value.filter(item => item.kind === 'thinking').forEach(item => { item.complete = true }); thinking.value = false
-    const item = activity('tool', name, callId || crypto.randomUUID())
+    const item = activity('tool', name, callId || localId())
     item.content = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
   } else if (['thinking.delta', 'reasoning.delta', 'reasoning.available', 'tool.progress', 'tool.delta'].includes(frame.event)) {
     const isThinking = frame.event.startsWith('thinking') || frame.event.startsWith('reasoning') || name === '_thinking'
@@ -177,7 +180,7 @@ async function send(text: string, attachments: Attachment[] = []) {
   sending.value = true; thinking.value = true; activeRun.value = ''; chatError.value = ''; draft.value = ''; progress.value = []
   activity('thinking', 'Thinking…')
   priorUserCount.value = messages.value.filter(item => item.role === 'user').length
-  optimisticMessage.value = { id: 'pending-' + crypto.randomUUID(), role: 'user', content: [
+  optimisticMessage.value = { id: 'pending-' + localId(), role: 'user', content: [
     { type: 'text', text }, ...attachments.map(file => file.type.startsWith('image/') ? { type: 'image_url', image_url: { url: file.data } } : { type: 'text', text: '📎 ' + file.name })
   ] }
   messages.value.push(optimisticMessage.value)

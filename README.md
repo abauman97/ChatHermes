@@ -62,3 +62,9 @@ with explicit Project membership and per-session workspace initialization,
 adopted by Desktop. No released minimum version supporting that complete
 contract was identified; metadata browsing requires `hermes_cli.projects_db`
 (the pinned source has it). See the [source audit and plan](docs/plans/2026-10-01-projects.md).
+
+The isolated test image seeds **Hermes Mobile**, **AcumaticaMCP** (no primary
+path), and **Unavailable workspace** using native `projects_db.create_project`.
+Repeated startup preserves their IDs and does not change the active Project.
+See [the test environment instructions](tests/docker/README.md) for fixture
+visual tests and separate real LiteLLM integration validation.

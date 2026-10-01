@@ -313,7 +313,8 @@ describe('profile navigation', () => {
 })
 
 describe('live turn presentation', () => {
-  it('shows the sent message and thinking before the first frame, then streams and collapses tool activity', async () => {
+  it('shows sent/thinking/tool activity without secure-context crypto APIs, then collapses completed activity', async () => {
+    vi.stubGlobal('crypto', {}) // LAN HTTP dashboards do not expose randomUUID.
     let controller!: ReadableStreamDefaultController<Uint8Array>
     const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
     const encoder = new TextEncoder()

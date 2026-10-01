@@ -35,6 +35,7 @@ dist-ssr
 !.hermes/config.yaml
 tmp/
 tests/visual-output/
+tests/integration-output/
 __pycache__/
 .pytest_cache/
 
