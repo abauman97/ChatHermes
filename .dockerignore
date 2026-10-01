@@ -1,0 +1,6 @@
+.git
+.env
+.env.*
+.hermes
+node_modules
+tmp

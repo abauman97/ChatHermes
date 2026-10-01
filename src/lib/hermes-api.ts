@@ -1,10 +1,10 @@
-import type { Capabilities, Message, Session, SessionPage } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/capabilities|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -42,6 +42,13 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
     ? { returned: pagination.returned, limit: pagination.limit } : undefined }
 }
 export const api = {
+  profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
+  models: (profile: string) => request<{ data: ModelOption[]; default_model?: string }>(profile, '/v1/models'),
+  async upload(profile: string, attachment: Attachment): Promise<{ path: string }> {
+    const response = await fetch(ROOT + '/uploads' + (profile ? '?profile=' + encodeURIComponent(profile) : ''), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(attachment) })
+    if (!response.ok) throw new ApiError(response.status, `Upload failed (${response.status})`)
+    return response.json()
+  },
   capabilities: (profile: string, signal?: AbortSignal) => request<Capabilities>(profile, `/v1/capabilities`, { signal }),
   sessions: async (profile: string, offset = 0, signal?: AbortSignal) => sessionsPage(await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal })),
   create: async (profile: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions`, { method: 'POST', body: '{}', signal })),
@@ -56,8 +63,8 @@ export const api = {
       offset += page.messages.length
     }
   },
-  async *stream(profile: string, session: string, input: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(profile, `/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input }), signal }, 'text/event-stream')
+  async *stream(profile: string, session: string, input: unknown, signal?: AbortSignal, model?: string): AsyncGenerator<SSEEvent> {
+    const response = await directFetch(profile, `/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input, ...(model ? { model, require_model_lock: true } : {}) }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)

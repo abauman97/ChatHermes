@@ -12,6 +12,17 @@ body { margin: 0; background: #212121; }
 .topbar { padding-top: env(safe-area-inset-top); height: calc(68px + env(safe-area-inset-top)); }
 .sidebar { padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 .composer { margin-bottom: max(12px, env(safe-area-inset-bottom)); }
-.thinking-dot { animation: thinking-pulse 1.2s ease-in-out infinite; }
-@keyframes thinking-pulse { 50% { opacity: .3; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } .sidebar { transition: none; } }
+/* iOS focuses controls without viewport zoom only at 16px or larger. */
+.chathermes-plugin input, .chathermes-plugin textarea, .chathermes-plugin select { font-size: 16px; }
+.chathermes-embedded, .chathermes-embedded * { touch-action: pan-y; }
+.activity { color: #b4b4b4; font-size: 14px; }
+.activity summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 6px 0; }
+.activity summary::-webkit-details-marker { display: none; }
+.activity summary::after { content: '⌄'; margin-left: 4px; }
+.activity[open] summary::after { transform: rotate(180deg); }
+.activity pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 monospace; margin: 8px 0 10px 24px; max-height: 240px; overflow: auto; }
+
+/* Host dashboard themes must not replace the plugin's readable system font. */
+.chathermes-embedded .app-shell { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.chathermes-embedded button, .chathermes-embedded input, .chathermes-embedded textarea, .chathermes-embedded select { font-family: inherit; }

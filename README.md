@@ -1,28 +1,35 @@
 # ChatHermes
 
-A chat UI for Hermes Agent sessions. The primary path is a dashboard plugin (cookie auth, no keys in the browser); the same Vue app also runs standalone as a PWA that connects directly to Hermes API endpoints with per-profile bearer keys.
+A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication protects the UI and its server-side gateway proxy; browser credentials and standalone SPA deployments are not supported.
 
-## Install as a Hermes dashboard plugin
-
-The repo includes a pre-built dashboard plugin (`plugin/chathermes/`). From a public repo, install it in one command:
+## Install
 
 ```sh
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
-Restart the dashboard and a **ChatHermes** tab appears. No keys in the browser: the dashboard's cookie auth gates the tab, and a server-side proxy carries the gateway key (`platforms.api_server.key`) to the gateway. The `httpx` package must be available in the dashboard environment.
+Restart the dashboard and open **ChatHermes**. Enable the Hermes API server with a strong `platforms.api_server.key`; the plugin requires its session chat streaming API and `httpx` in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
 
-To rebuild the plugin assets from source: `npm ci && npm run build:plugin` (output lands in `plugin/chathermes/dashboard/dist/`, which is committed for drop-in installs). To install manually from a clone, use `npm run install:plugin` after the build, then `hermes plugins enable chathermes`.
-
-## Run locally
+## Develop and test
 
 ```sh
 npm ci
-npm run dev
+npm test
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r tests/requirements.txt
+npm run test:api
+npm run build
+# Optional: LITELLM_BASE_URL and LITELLM_API_KEY in .env for real model calls
+docker compose up --build -d
 ```
 
-Open the Vite URL, select **Manage connections**, and add a label, Hermes base URL, and API key. Use `http://localhost:8642/` for a local API or `https://hermes.example.com/p/personal/` for a remote shared multiplexer profile. Build a static deployment with `npm run build` and serve `dist/` from a trusted single-user origin with SPA fallback for `/p/...` routes.
+For browser tests, run `npx playwright install chromium` once, then `npm run test:visual` with compose running. Screenshots and traces are saved to `tests/visual-output/`.
 
-The Hermes API must allow your ChatHermes origin through CORS, including `Authorization`, `Content-Type`, GET, POST, and PATCH. The installed Hermes gateway's preflight omits PATCH, so browser rename needs an upstream CORS change or a trusted reverse proxy. SSE uses fetch with bearer authorization. See [deployment](docs/deployment.md) for setup and security limits, and [API contract](docs/api-contract.md) for live verification status.
+Open `http://localhost:9119/chathermes` in the isolated dashboard. The compose environment uses a pinned Hermes source revision because the published base image predates session chat streaming. Configuration is seeded from `.hermes/config.yaml` on every start, runtime data lives in the `hermes-test-data` named volume, and plugin source is mounted read-only. Sign in as `tester` with password `chathermes-local-test` (local test credentials only). The default model is `gpt-6-luna` through a deterministic OpenAI-compatible fixture, while the actual Hermes agent handles sessions, streaming, and tools. For real model calls, set `LITELLM_BASE_URL` (e.g. `http://host.docker.internal:4000/v1`) and `LITELLM_API_KEY` in `.env`. Both `default` and `test-profile` are created inside this isolated volume to exercise profile selection. The `Instant` option uses the same model via Hermes model routes. The test gateway key is deliberately local-only and must not be used for deployment.
 
-Profiles and keys are stored in browser `localStorage`. Anyone with access to this browser profile or script execution on this origin can read them. Use a trusted single-user origin and device. ChatHermes does not cache API responses; its service worker caches the static shell only. Offline messaging is unavailable.
+Rebuild with `npm run build` after UI changes. Restart the service after Python route changes: `docker compose restart hermes`. `docker compose down` preserves test history; `docker compose down -v` discards the isolated test data.
+
+The composer starts a session on first send. Images and camera photos use Hermes multimodal image parts; large photos are resized to fit the gateway request limit. other files (up to 20 MB each, five per turn) are uploaded into the selected profile's `uploads/chathermes/` directory and attached by path for the agent's file tools. Uploaded files remain in that profile until removed by its owner. Camera capture uses the device's native file picker on supported mobile browsers. Model options come from the gateway's `/v1/models` catalog, including configured model routes.
+
+See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
