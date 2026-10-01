@@ -3321,7 +3321,7 @@ var Oo = { class: "session-head flex flex-col-reverse items-stretch gap-6" }, ko
 		}
 		function pe(e) {
 			let t = Do(e);
-			if (!y.value && typeof t.run_id == "string" && (y.value = t.run_id), (e.event === "assistant.delta" || e.event === "tool.started" || e.event.startsWith("run.")) && (v.value = !1), (e.event === "run.failed" || e.event === "run.cancelled" || e.event === "error") && (y.value = ""), e.event === "assistant.delta") h.value += typeof t.delta == "string" ? t.delta : typeof t.text == "string" ? t.text : "";
+			if (!y.value && typeof t.run_id == "string" && (y.value = t.run_id), (e.event === "assistant.delta" || e.event === "tool.started") && (v.value = !1), (e.event === "run.failed" || e.event === "run.cancelled" || e.event === "error") && (y.value = ""), e.event === "assistant.delta") h.value += typeof t.delta == "string" ? t.delta : typeof t.text == "string" ? t.text : "";
 			else if (e.event === "tool.started") g.value.push(`Using ${typeof t.tool_name == "string" ? t.tool_name : typeof t.tool == "string" ? t.tool : "tool"}…`);
 			else if (e.event === "tool.completed") g.value.push("Tool completed.");
 			else if (e.event === "tool.failed") g.value.push("A tool failed.");

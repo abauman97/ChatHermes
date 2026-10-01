@@ -76,7 +76,9 @@ async function rename(id: string, title: string) {
 function reduceFrame(frame: SSEEvent): 'completed' | 'approval' | undefined {
   const data = eventPayload(frame)
   if (!activeRun.value && typeof data.run_id === 'string') activeRun.value = data.run_id
-  if (frame.event === 'assistant.delta' || frame.event === 'tool.started' || frame.event.startsWith('run.')) thinking.value = false
+  // Keep the thinking indicator up through run.started / message.started (emitted before any
+  // content) and tool activity; clear it only once real response text starts or a tool is used.
+  if (frame.event === 'assistant.delta' || frame.event === 'tool.started') thinking.value = false
   if (frame.event === 'run.failed' || frame.event === 'run.cancelled' || frame.event === 'error') activeRun.value = ''
   if (frame.event === 'assistant.delta') draft.value += typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text : ''
   else if (frame.event === 'tool.started') progress.value.push(`Using ${typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'tool'}…`)
