@@ -204,6 +204,37 @@ async def models(request: Request):
     return JSONResponse(payload)
 
 
+@router.get('/api/model/options')
+async def model_options(request: Request):
+    """Expose only picker IDs and labels, never provider transport/auth metadata."""
+    import json
+    from fastapi.responses import JSONResponse
+    response = await _proxy(request, '/api/model/options')
+    if response.status_code != 200:
+        raise HTTPException(response.status_code, 'Could not load model options')
+    try:
+        payload = json.loads(response.body)
+        providers = []
+        for row in payload.get('providers', []):
+            if not isinstance(row, dict) or not isinstance(row.get('slug'), str):
+                continue
+            if row.get('authenticated') is False and not row.get('is_current'):
+                continue
+            providers.append({
+                'slug': row['slug'],
+                'name': row.get('name') if isinstance(row.get('name'), str) else row['slug'],
+                'is_current': row.get('is_current') is True,
+                'models': [mid for mid in row.get('models', []) if isinstance(mid, str)]
+            })
+        return JSONResponse({
+            'providers': providers,
+            'provider': payload.get('provider') if isinstance(payload.get('provider'), str) else '',
+            'model': payload.get('model') if isinstance(payload.get('model'), str) else ''
+        })
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(502, 'Invalid Hermes model options')
+
+
 def _profile_gateway_key(profile: str):
     from agent.secret_scope import get_secret
     from hermes_cli.web_server_profiles import _config_profile_scope

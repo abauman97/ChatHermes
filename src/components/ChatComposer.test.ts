@@ -22,3 +22,25 @@ describe('composer availability', () => {
     expect((area.element as HTMLTextAreaElement).value).toBe('draft while loading')
   })
 })
+
+describe('provider and model picker', () => {
+  it('shows the current provider models and switches models with the provider', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false, provider: 'first', defaultModel: 'saved', providers: [
+      { slug: 'first', name: 'First', is_current: true, models: ['one', 'two'] },
+      { slug: 'custom:second', name: 'Second', models: ['other'] }
+    ], models: [{ id: 'gateway', parent: null }, { id: 'Instant', parent: 'gateway' }] } })
+    expect(wrapper.findAll('.model-select option').map(item => item.text())).toEqual(['saved', 'one', 'two'])
+    await wrapper.get('.provider-select').setValue('custom:second')
+    expect(wrapper.emitted('update:provider')?.[0]).toEqual(['custom:second'])
+    expect(wrapper.emitted('update:model')?.[0]).toEqual(['other'])
+    await wrapper.setProps({ provider: 'custom:second', model: 'other' })
+    expect(wrapper.findAll('.model-select option').map(item => item.text())).toEqual(['other'])
+    await wrapper.get('.provider-select').setValue('')
+    await wrapper.setProps({ provider: '', model: 'Instant' })
+    expect(wrapper.findAll('.model-select option').map(item => item.text())).toEqual(['Instant'])
+    await wrapper.setProps({ sending: true })
+    expect(wrapper.get('.provider-select').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.model-select').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+  })
+})

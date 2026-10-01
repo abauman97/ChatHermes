@@ -16,6 +16,7 @@ test('plugin composer, sent timeline, attachments, model and stream disclosures'
   await expect(textarea).toBeFocused()
   expect(await textarea.evaluate(element => getComputedStyle(element).fontSize)).toBe('16px')
   expect(await page.locator('meta[name="viewport"]').getAttribute('content')).toContain('maximum-scale=1')
+  await page.getByRole('combobox', { name: 'Provider', exact: true }).selectOption('')
   await expect(page.getByRole('combobox', { name: 'Model', exact: true })).toContainText('Instant')
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('Instant')
   await page.screenshot({ path: testInfo.outputPath('home.png') })

@@ -1,11 +1,25 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import type { Attachment, ModelOption } from '../types/hermes'
-const props = defineProps<{ disabled: boolean; sending: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string }>()
-const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; 'update:model': [model: string] }>()
+import { computed, ref, watch } from 'vue'
+import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
+const props = defineProps<{ disabled: boolean; sending: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>()
+const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
 watch(() => props.suggestedPrompt, text => { if (text) value.value = text }, { immediate: true })
+// parent:null identifies the virtual gateway alias, not a provider model ID.
+const routeModels = computed(() => (props.models || []).filter(item => item.parent !== null))
+const providerModels = computed(() => {
+  const selected = props.providers?.find(item => item.slug === props.provider)
+  const ids = selected ? selected.models : routeModels.value.map(item => item.id)
+  // Keep the configured default selectable even when it is absent from a remote catalog.
+  return [...new Set([...((selected?.is_current || !props.providers?.length) && props.defaultModel ? [props.defaultModel] : []), ...ids])]
+})
+function chooseProvider(event: Event) {
+  const slug = (event.target as HTMLSelectElement).value
+  const selected = props.providers?.find(item => item.slug === slug)
+  emit('update:provider', slug)
+  emit('update:model', selected?.is_current ? '' : selected?.models[0] || routeModels.value[0]?.id || '')
+}
 function send() {
   if (props.disabled || props.sending || reading.value) return
   const text = value.value.trim()
@@ -60,12 +74,20 @@ async function attach(event: Event) {
     <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-[#f4f4f4] outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
     <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
     <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
+    <div class="model-picker mb-2 grid grid-cols-2 gap-2 px-1">
+      <select aria-label="Provider" class="provider-select min-w-0 w-full rounded-xl border-0 bg-[#424242] px-3 py-2 text-base text-[#e5e5e5]" :value="provider || ''" :disabled="sending || modelsLoading" @change="chooseProvider">
+        <option v-if="!providers?.length" value="">Current provider</option>
+        <option v-for="item in providers" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+        <option v-if="providers?.length && routeModels.length" value="">Model routes</option>
+      </select>
+      <select aria-label="Model" class="model-select min-w-0 w-full rounded-xl border-0 bg-[#424242] px-3 py-2 text-base text-[#e5e5e5]" :value="model || defaultModel || ''" :disabled="sending || modelsLoading" @change="emit('update:model', ($event.target as HTMLSelectElement).value)">
+        <option v-if="!providerModels.length" value="">{{ modelsLoading ? 'Loading models…' : defaultModel || 'Default' }}</option>
+        <option v-for="id in providerModels" :key="id" :value="id">{{ id }}</option>
+      </select>
+    </div>
     <div class="flex items-center gap-3">
       <button class="grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="attachmentsOpen = !attachmentsOpen">+</button>
       <p class="composer-hint flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
-      <select aria-label="Model" class="model-select max-w-[45%] rounded-full border-0 bg-[#424242] px-3 py-2 text-base text-[#e5e5e5]" :value="model || ''" :disabled="sending" @change="emit('update:model', ($event.target as HTMLSelectElement).value)">
-        <option value="">{{ defaultModel || 'Default' }}</option><option v-for="option in models" :key="option.id" :value="option.id">{{ option.id }}</option>
-      </select>
       <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" type="submit" :disabled="disabled || sending || reading || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Working…' : 'Send message'" :title="sending ? 'Working…' : 'Send message'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>

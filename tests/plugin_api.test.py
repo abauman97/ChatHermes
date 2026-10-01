@@ -214,3 +214,40 @@ async def test_named_profile_uses_its_own_gateway_key(app, monkeypatch):
         response = await client.get('/api/plugins/chathermes/sessions?profile=secondary')
         assert response.status_code == 200
         assert secondary_key not in response.text
+
+
+@run_async
+async def test_model_inventory_is_profile_scoped_and_only_exposes_picker_fields(app, monkeypatch):
+    def gateway(request):
+        assert request.url.path == '/p/beta/api/model/options'
+        assert request.headers['authorization'] == f'Bearer {KEY}'
+        return httpx.Response(200, json={
+            'provider': 'custom:local', 'model': 'model-a', 'api_key': 'private-metadata',
+            'providers': [
+                {'slug': 'custom:local', 'name': 'Local', 'is_current': True,
+                 'models': ['model-a', 'model-b'], 'api_key': 'private-metadata',
+                 'base_url': 'https://private.test', 'key_env': 'LOCAL_KEY'},
+                {'slug': 'missing', 'authenticated': False, 'models': ['unavailable']},
+                {'slug': 'other', 'name': 'Other', 'models': ['model-c']}
+            ]})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/api/model/options?profile=beta')
+        assert response.json() == {'provider': 'custom:local', 'model': 'model-a', 'providers': [
+            {'slug': 'custom:local', 'name': 'Local', 'is_current': True, 'models': ['model-a', 'model-b']},
+            {'slug': 'other', 'name': 'Other', 'is_current': False, 'models': ['model-c']}]}
+        assert 'private' not in response.text
+        assert KEY not in response.text
+        invalid = await client.get('/api/plugins/chathermes/api/model/options?profile=../escape')
+        assert invalid.status_code == 422
+
+
+@run_async
+async def test_model_inventory_errors_do_not_expose_provider_secrets(app, monkeypatch):
+    def gateway(request):
+        return httpx.Response(500, json={'error': 'private-provider-credential'})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/api/model/options')
+        assert response.status_code == 500
+        assert 'private-provider-credential' not in response.text
