@@ -1,25 +1,68 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
 const props = defineProps<{ disabled: boolean; sending: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>()
 const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
 watch(() => props.suggestedPrompt, text => { if (text) value.value = text }, { immediate: true })
-// parent:null identifies the virtual gateway alias, not a provider model ID.
+// Gateway catalog roots describe the backing model; their children are selectable routes.
 const routeModels = computed(() => (props.models || []).filter(item => item.parent !== null))
+const pickerOpen = ref(false), pickerProvider = ref<string | null>(null)
+const pill = ref<HTMLButtonElement>(), panel = ref<HTMLElement>()
+const panelId = useId()
+const pickerDisabled = computed(() => props.sending || props.modelsLoading)
+const selectedProvider = computed(() => props.providers?.find(item => item.slug === pickerProvider.value))
+const pickerTitle = computed(() => selectedProvider.value?.name || 'Model routes')
 const providerModels = computed(() => {
-  const selected = props.providers?.find(item => item.slug === props.provider)
+  const selected = selectedProvider.value
   const ids = selected ? selected.models : routeModels.value.map(item => item.id)
   // Keep the configured default selectable even when it is absent from a remote catalog.
   return [...new Set([...((selected?.is_current || !props.providers?.length) && props.defaultModel ? [props.defaultModel] : []), ...ids])]
 })
-function chooseProvider(event: Event) {
-  const slug = (event.target as HTMLSelectElement).value
-  const selected = props.providers?.find(item => item.slug === slug)
-  emit('update:provider', slug)
-  emit('update:model', selected?.is_current ? '' : selected?.models[0] || routeModels.value[0]?.id || '')
+async function focusPanel() {
+  await nextTick()
+  if (pickerOpen.value) panel.value?.querySelector<HTMLButtonElement>('button')?.focus()
 }
+function closePicker() {
+  if (!pickerOpen.value) return
+  pickerOpen.value = false
+  pill.value?.focus()
+}
+function togglePicker() {
+  if (pickerOpen.value) { closePicker(); return }
+  if (pickerDisabled.value) return
+  attachmentsOpen.value = false
+  pickerProvider.value = null
+  pickerOpen.value = true
+  void focusPanel()
+}
+function showModels(slug: string) { pickerProvider.value = slug; void focusPanel() }
+function showProviders() { pickerProvider.value = null; void focusPanel() }
+function chooseModel(id: string) {
+  if (pickerDisabled.value) return
+  emit('update:provider', pickerProvider.value || '')
+  emit('update:model', selectedProvider.value?.is_current && id === props.defaultModel ? '' : id)
+  closePicker()
+}
+function outsideClick(event: MouseEvent) {
+  // Rows can be replaced before the document listener runs; keep the original event path.
+  const path = event.composedPath()
+  if (panel.value && !path.includes(panel.value) && pill.value && !path.includes(pill.value)) closePicker()
+}
+function pickerKeydown(event: KeyboardEvent) {
+  if (!pickerOpen.value) return
+  if (event.key === 'Escape') { event.preventDefault(); closePicker() }
+  if (event.key === 'Tab') {
+    const buttons = Array.from(panel.value?.querySelectorAll<HTMLButtonElement>('button') || [])
+    const target = event.shiftKey ? buttons.at(-1) : buttons[0]
+    if (document.activeElement === (event.shiftKey ? buttons[0] : buttons.at(-1))) { event.preventDefault(); target?.focus() }
+  }
+}
+watch(pickerDisabled, disabled => { if (disabled) closePicker() })
+watch(() => props.providers, () => closePicker())
+onMounted(() => { document.addEventListener('click', outsideClick); document.addEventListener('keydown', pickerKeydown) })
+onBeforeUnmount(() => { document.removeEventListener('click', outsideClick); document.removeEventListener('keydown', pickerKeydown) })
 function send() {
   if (props.disabled || props.sending || reading.value) return
   const text = value.value.trim()
@@ -74,23 +117,39 @@ async function attach(event: Event) {
     <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-[#f4f4f4] outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
     <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
     <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
-    <div class="model-picker mb-2 grid grid-cols-2 gap-2 px-1">
-      <select aria-label="Provider" class="provider-select min-w-0 w-full rounded-xl border-0 bg-[#424242] px-3 py-2 text-base text-[#e5e5e5]" :value="provider || ''" :disabled="sending || modelsLoading" @change="chooseProvider">
-        <option v-if="!providers?.length" value="">Current provider</option>
-        <option v-for="item in providers" :key="item.slug" :value="item.slug">{{ item.name }}</option>
-        <option v-if="providers?.length && routeModels.length" value="">Model routes</option>
-      </select>
-      <select aria-label="Model" class="model-select min-w-0 w-full rounded-xl border-0 bg-[#424242] px-3 py-2 text-base text-[#e5e5e5]" :value="model || defaultModel || ''" :disabled="sending || modelsLoading" @change="emit('update:model', ($event.target as HTMLSelectElement).value)">
-        <option v-if="!providerModels.length" value="">{{ modelsLoading ? 'Loading models…' : defaultModel || 'Default' }}</option>
-        <option v-for="id in providerModels" :key="id" :value="id">{{ id }}</option>
-      </select>
-    </div>
     <div class="flex items-center gap-3">
-      <button class="grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="attachmentsOpen = !attachmentsOpen">+</button>
-      <p class="composer-hint flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
+      <button class="grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="closePicker(); attachmentsOpen = !attachmentsOpen">+</button>
+      <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
+      <button ref="pill" type="button" class="model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-[#e5e5e5] disabled:opacity-55" aria-label="Choose model" aria-haspopup="dialog" :aria-expanded="pickerOpen" :aria-controls="panelId" :disabled="pickerDisabled" @click="togglePicker">
+        <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
       <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" type="submit" :disabled="disabled || sending || reading || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Working…' : 'Send message'" :title="sending ? 'Working…' : 'Send message'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>
+    </div>
+    <div v-if="pickerOpen" :id="panelId" ref="panel" role="dialog" aria-modal="true" :aria-label="pickerProvider === null ? 'Choose provider' : pickerTitle" class="model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-[#e5e5e5] shadow-xl">
+      <div class="flex shrink-0 items-center gap-2 border-b border-[#424242] p-2">
+        <button v-if="pickerProvider !== null" type="button" aria-label="Back to providers" class="picker-back rounded-full p-2 hover:bg-[#424242]" @click="showProviders">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-5" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        </button>
+        <h2 class="min-w-0 flex-1 truncate">{{ pickerProvider === null ? 'Choose provider' : pickerTitle }}</h2>
+        <button type="button" aria-label="Close model picker" class="rounded-full px-3 py-2 hover:bg-[#424242]" @click="closePicker">×</button>
+      </div>
+      <div class="min-h-0 overflow-y-auto overscroll-contain">
+        <template v-if="pickerProvider === null">
+          <button v-for="item in providers" :key="item.slug" type="button" class="provider-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]" :data-provider="item.slug" @click="showModels(item.slug)">
+            <span class="min-w-0 flex-1 truncate">{{ item.name }}</span><span v-if="item.is_current" class="text-sm text-[#a3a3a3]">Current</span>
+          </button>
+          <button type="button" class="provider-option w-full rounded-xl px-3 py-3 text-left hover:bg-[#424242]" data-provider="" @click="showModels('')">Model routes</button>
+        </template>
+        <template v-else>
+          <button v-for="id in providerModels" :key="id" type="button" class="model-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]" :data-model="id" @click="chooseModel(id)">
+            <span class="min-w-0 flex-1 break-all">{{ id }}</span><span v-if="(provider || '') === pickerProvider && id === (model || defaultModel)" aria-label="Selected">✓</span>
+          </button>
+          <p v-if="!providerModels.length" class="px-3 py-3 text-[#a3a3a3]">No models available</p>
+        </template>
+      </div>
     </div>
     <div v-if="attachmentsOpen" class="absolute bottom-full left-0 mb-2 grid min-w-48 gap-1 rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base shadow-xl">
       <button type="button" class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]" @click="files?.click()">Upload files</button>
