@@ -1,19 +1,15 @@
 import type { Capabilities, Message, Session, SessionPage } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
-import { getProfile } from './profiles'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
-function endpoint(profile: string, path: string): { url: string; key: string } {
-  const config = getProfile(profile)
-  // Paths are built only from fixed API routes and encoded single-segment IDs below.
+const ROOT = '/api/plugins/chathermes'
+function endpoint(profile: string, path: string): string {
+  if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
   if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/capabilities|v1\/runs\/[A-Za-z0-9_-]+\/stop)$/.test(path)) throw new Error('Invalid Hermes API path.')
-  const url = new URL(path.slice(1), config.baseUrl).href
-  if (!url.startsWith(config.baseUrl)) throw new Error('Invalid Hermes API path.')
-  return { url, key: config.key }
+  return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
-  const target = endpoint(profile, path)
-  const response = await fetch(target.url, { ...options, headers: { authorization: `Bearer ${target.key}`, accept, ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'omit', redirect: 'manual', cache: 'no-store', referrerPolicy: 'no-referrer' })
-  if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new Error('Hermes redirected the request. Check the saved base URL.')
+  const response = await fetch(endpoint(profile, path), { ...options, headers: { accept, ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'same-origin', redirect: 'manual', cache: 'no-store' })
+  if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new Error('Hermes redirected the request. Sign in to the dashboard and retry.')
   return response
 }
 async function request<T>(profile: string, path: string, options: RequestInit = {}): Promise<T> {
