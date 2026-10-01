@@ -29,3 +29,13 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Isolated Hermes runtime state; keep only the test configuration.
+.hermes/*
+!.hermes/config.yaml
+tmp/
+tests/visual-output/
+__pycache__/
+.pytest_cache/
+
+.venv/

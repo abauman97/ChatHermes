@@ -1,0 +1,50 @@
+name: chathermes-test
+services:
+  hermes:
+    build:
+      context: .
+      dockerfile: tests/docker/Dockerfile
+    image: chathermes-test:3632f917
+    init: true
+    entrypoint: ["/bin/sh", "/test/start.sh"]
+    command: gateway run
+    ports:
+      - "127.0.0.1:8642:8642"
+      - "127.0.0.1:9119:9119"
+    volumes:
+      - hermes-test-data:/opt/data
+      - ./.hermes/config.yaml:/test/config.yaml:ro
+      - ./tests/docker/init.py:/test/init.py:ro
+      - ./tests/docker/start.sh:/test/start.sh:ro
+      - ./plugin/chathermes:/opt/data/plugins/chathermes:ro
+    environment:
+      HERMES_UID: "1000"
+      HERMES_GID: "1000"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: tester
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: chathermes-local-test
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_TUI: "0"
+      API_SERVER_ENABLED: "true"
+      API_SERVER_KEY: chathermes-isolated-test-key-2026
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-chathermes-model-fixture}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://model:4000/v1}
+    depends_on:
+      - model
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9119/api/auth/providers', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+  model:
+    image: nousresearch/hermes-agent@sha256:cdcda342ff2b3919eaa7b3dbd7c5178b7b7676db62ddac273af2b921e9be4aa3
+    entrypoint: /opt/hermes/.venv/bin/python
+    command: /test/model_fixture.py
+    volumes:
+      - ./tests/docker/model_fixture.py:/test/model_fixture.py:ro
+volumes:
+  hermes-test-data:

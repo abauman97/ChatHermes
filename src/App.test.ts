@@ -6,16 +6,20 @@ import SessionSidebar from './components/SessionSidebar.vue'
 beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
+function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response>) {
+  vi.stubGlobal('fetch', (input: string, init?: RequestInit) => input.endsWith('/profiles') ? Promise.resolve(json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] }))
+    : input.includes('/v1/models') ? Promise.resolve(json({ data: [{ id: 'Instant' }] })) : fake(input, init))
+}
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('profile navigation', () => {
   it('rejects invalid profile names without requesting or storing credentials', async () => {
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     const calls = fake.mock.calls.length
-    await wrapper.get('.profile-field').setValue('../x')
+    history.pushState({}, '', '/chathermes?profile=../x'); dispatchEvent(new PopStateEvent('popstate'))
     await flushPromises()
     expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('Invalid profile name')
     expect(fake).toHaveBeenCalledTimes(calls)
@@ -24,7 +28,7 @@ describe('profile navigation', () => {
     wrapper.unmount()
   })
   it('clears old history when browser navigation selects the current or another profile', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
+    mockFetch( vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
       : input.includes('/messages') ? json([{ role: 'assistant', content: 'Private history' }])
       : input.includes('profile=alpha') ? json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })
       : json({ sessions: [{ id: 'two', title: 'Current session' }], total: 1 })))
@@ -49,7 +53,7 @@ describe('profile navigation', () => {
     wrapper.unmount()
   })
   it('shows PATCH failures when renaming', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    mockFetch( vi.fn(async (input: string, init?: RequestInit) => {
       if (init?.method === 'PATCH') throw new TypeError('Failed to fetch')
       return input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Original' }], total: 1 })
     }))
@@ -66,7 +70,7 @@ describe('profile navigation', () => {
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
       : input.includes('offset=30') ? json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'second', title: 'Second page' }], limit: 30, offset: 30, has_more: false })
       : json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'first', title: 'First page' }], limit: 30, offset: 0, has_more: true }))
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     await wrapper.get('.load-more').trigger('click')
@@ -86,7 +90,7 @@ describe('profile navigation', () => {
       if (input.includes('/api/sessions?')) return json({ object: 'list', data: [{ id: `${profile}-new`, title: `${profile} conversation` }], limit: 30, offset: 0, has_more: false })
       return json({})
     })
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     for (const profile of ['alpha', 'beta']) {
@@ -113,7 +117,7 @@ describe('profile navigation', () => {
         : input.includes('profile=beta') ? { sessions: [{ id: 'beta-one', title: 'Beta only' }], total: 1 } : {}
       return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
     })
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.text()).toContain('Alpha only')
@@ -128,7 +132,7 @@ describe('profile navigation', () => {
     const fake = vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? list.promise : Promise.resolve(json({})))
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.text()).toContain('Loading sessions…')
@@ -142,7 +146,7 @@ describe('profile navigation', () => {
   })
   it('does not let an older list request clear a newer loading state or show its error', async () => {
     const alpha = deferred<Response>(), beta = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
+    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
       : input.includes('profile=alpha') ? alpha.promise
       : input.includes('profile=beta') ? beta.promise : Promise.resolve(json({}))))
     const wrapper = mount(App)
@@ -161,7 +165,7 @@ describe('profile navigation', () => {
   })
   it('does not apply a delayed rename to the next profile with the same session ID', async () => {
     const rename = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
+    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
       : init?.method === 'PATCH' ? rename.promise
       : input.includes('profile=alpha') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Alpha title' }], total: 1 }))
       : input.includes('profile=beta') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Beta title' }], total: 1 })) : Promise.resolve(json({}))))
@@ -178,7 +182,7 @@ describe('profile navigation', () => {
   })
   it('keeps sending locked after an approval history reload without run completion', async () => {
     let messageLoads = 0
-    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Conversation' }], total: 1 }))
       : input.includes('/messages') ? (messageLoads++, Promise.resolve(json([])))
       : input.includes('/chat/stream') ? Promise.resolve(new Response('event: approval.request\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } }))
@@ -192,18 +196,18 @@ describe('profile navigation', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('Approval is pending')
     expect(wrapper.text()).not.toContain('Working…')
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
     expect(messageLoads).toBe(1)
     await wrapper.get('.notice button').trigger('click')
     await flushPromises()
     expect(messageLoads).toBe(2)
     expect(wrapper.text()).toContain('Approval is pending')
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
   it('discards a popstate session when the user switches profile before capabilities return', async () => {
     const betaCapabilities = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities?profile=beta') ? betaCapabilities.promise
+    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities?profile=beta') ? betaCapabilities.promise
       : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
@@ -216,12 +220,12 @@ describe('profile navigation', () => {
     betaCapabilities.resolve(json(streaming))
     await flushPromises()
     expect((wrapper.get('.profile-field').element as HTMLInputElement).value).toBe('alpha')
-    expect(wrapper.text()).toContain('Select or create a conversation')
+    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeUndefined()
     expect(location.search).toBe('?profile=alpha')
     wrapper.unmount()
   })
   it('clears unsent text on session and profile changes', async () => {
-    vi.stubGlobal('fetch', vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
     const wrapper = mount(App)
@@ -239,7 +243,7 @@ describe('profile navigation', () => {
   })
   it('does not select an in-flight create after a newer session selection or show its stale error', async () => {
     const create = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? create.promise
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
@@ -255,7 +259,7 @@ describe('profile navigation', () => {
   })
   it('does not select a completed create after a newer session selection', async () => {
     const create = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? create.promise
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
@@ -269,7 +273,7 @@ describe('profile navigation', () => {
     wrapper.unmount()
   })
   it('allows a successful create to select its new session when selection is unchanged', async () => {
-    vi.stubGlobal('fetch', vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
+    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
       : init?.method === 'POST' ? Promise.resolve(json({ id: 'new' }))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
@@ -287,12 +291,12 @@ describe('profile navigation', () => {
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 }))
       : input.includes('/chat/stream') ? Promise.resolve(new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })) : Promise.resolve(json({})))
-    vi.stubGlobal('fetch', fake)
+    mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
     await flushPromises()
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
     capabilities.resolve(json(streaming))
     await flushPromises()
     expect(wrapper.get('.composer textarea').attributes('disabled')).toBeUndefined()
@@ -303,7 +307,67 @@ describe('profile navigation', () => {
     await wrapper.get('.profile-field').setValue('beta')
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'two')
     await flushPromises()
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+})
+
+describe('live turn presentation', () => {
+  it('shows the sent message and thinking before the first frame, then streams and collapses tool activity', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
+    const encoder = new TextEncoder()
+    const frame = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json(streaming)
+      : input.includes('/messages') ? json([])
+      : input.includes('/chat/stream') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      : json({ sessions: [], total: 0 }))
+    mockFetch(fake)
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Show this immediately')
+    await wrapper.get('.composer').trigger('submit')
+    expect(wrapper.get('.message.user').text()).toBe('Show this immediately')
+    expect(wrapper.get('.activity').attributes('open')).toBeDefined()
+    expect(wrapper.get('.activity').text()).toContain('Thinking')
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(wrapper.get('.message.user').text()).toBe('Show this immediately')
+    frame('tool.started', { tool_name: 'search', args: { query: 'example' } })
+    await flushPromises()
+    expect(wrapper.findAll('.activity')[0]!.attributes('open')).toBeUndefined()
+    expect(wrapper.findAll('.activity')[1]!.attributes('open')).toBeDefined()
+    expect(wrapper.text()).toContain('example')
+    frame('tool.progress', { tool_name: 'search', delta: 'Partial search output' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Partial search output')
+    frame('tool.completed', { tool_name: 'search' })
+    await flushPromises()
+    expect(wrapper.findAll('.activity')[1]!.attributes('open')).toBeUndefined()
+    frame('run.completed', {})
+    controller.close()
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('creates a session on the first home-screen send', async () => {
+    history.replaceState({}, '', '/chathermes')
+    const fake = vi.fn(async (input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? json(streaming)
+      : input.includes('/messages') ? json([])
+      : input.includes('/chat/stream') ? new Response('event: run.completed\ndata: {}\n\n')
+      : init?.method === 'POST' ? json({ session: { id: 'auto-created' } }) : json({ sessions: [], total: 0 }))
+    mockFetch(fake)
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+    await wrapper.get('textarea').setValue('Start here')
+    await wrapper.get('.composer').trigger('submit')
+    await flushPromises()
+    expect(location.search).toBe('?session=auto-created')
+    expect(fake.mock.calls.find(([input]) => input.includes('/chat/stream'))?.[1]?.body).toBe(JSON.stringify({ input: 'Start here' }))
     wrapper.unmount()
   })
 })

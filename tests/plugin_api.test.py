@@ -25,6 +25,8 @@ def run_async(fn):
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.setattr(plugin, "_gateway_settings", lambda: ("http://gateway.test", KEY))
+    monkeypatch.setattr(plugin, '_profile_gateway_key', lambda profile: KEY)
+    monkeypatch.setattr(plugin, '_configured_default_model', lambda profile: '')
     app = FastAPI()
     app.include_router(plugin.router, prefix="/api/plugins/chathermes")
     return app
@@ -157,3 +159,58 @@ async def test_stream_redacts_key_split_across_gateway_chunks(app, monkeypatch):
     assert response.status_code == 200
     assert response.content == b"data: [redacted]\n\n"
     assert KEY not in response.text and KEY not in str(response.headers)
+
+
+@run_async
+async def test_upload_stores_file_under_profile_with_generated_name(app, monkeypatch, tmp_path):
+    import base64
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: tmp_path)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/uploads', json={
+            'name': '../../example.txt', 'data': 'data:text/plain;base64,' + base64.b64encode(b'test attachment').decode()})
+        assert response.status_code == 201
+        stored = Path(response.json()['path'])
+        assert stored.parent == tmp_path / 'uploads' / 'chathermes'
+        assert stored.name != 'example.txt' and stored.suffix == '.txt'
+        assert stored.read_bytes() == b'test attachment'
+        assert stored.stat().st_mode & 0o777 == 0o600
+        response = await client.post('/api/plugins/chathermes/uploads', json={'name': 'bad.txt', 'data': 'data:text/plain;base64,%%%%'})
+        assert response.status_code == 422
+        assert len(list(stored.parent.iterdir())) == 1
+
+
+@run_async
+async def test_upload_rejects_invalid_profile_before_writing(app, monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'hermes_cli.profiles', types.SimpleNamespace(get_profile_dir=lambda name: '/tmp'))
+    monkeypatch.setitem(sys.modules, 'hermes_constants', types.SimpleNamespace(get_hermes_home=lambda: '/tmp'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/uploads?profile=../escape', json={})
+        assert response.status_code == 422
+
+
+@run_async
+async def test_model_catalog_uses_gateway_proxy(app, monkeypatch):
+    def gateway(request):
+        assert request.url.path == '/p/alpha/v1/models'
+        assert request.headers['authorization'] == f'Bearer {KEY}'
+        return httpx.Response(200, json={'data': [{'id': 'Instant'}]})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/v1/models?profile=alpha')
+        assert response.json() == {'data': [{'id': 'Instant'}]}
+
+
+@run_async
+async def test_named_profile_uses_its_own_gateway_key(app, monkeypatch):
+    secondary_key = 'secondary-profile-key-for-test'
+    monkeypatch.setattr(plugin, '_profile_gateway_key', lambda profile: secondary_key)
+    def gateway(request):
+        assert request.headers['authorization'] == f'Bearer {secondary_key}'
+        return httpx.Response(200, json={'data': []})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/sessions?profile=secondary')
+        assert response.status_code == 200
+        assert secondary_key not in response.text

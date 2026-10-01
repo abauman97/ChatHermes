@@ -21,13 +21,21 @@ function ChatHermesPlugin() {
     const overlay = document.createElement('div')
     overlay.className = 'chathermes-plugin chathermes-embedded'
     document.body.append(overlay)
+    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    const previousViewport = viewport?.content
+    const ownedViewport = viewport || document.createElement('meta')
+    ownedViewport.name = 'viewport'
+    ownedViewport.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+    if (!viewport) document.head.append(ownedViewport)
+    const preventGesture = (event: Event) => event.preventDefault()
+    overlay.addEventListener('gesturestart', preventGesture, { passive: false })
     let app: { mount: (element: HTMLDivElement) => void; unmount: () => void } | undefined
     void import(/* @vite-ignore */ appUrl).then(({ createChatHermesApp }) => {
       if (disposed || !element.current) return
       app = createChatHermesApp()
       app!.mount(overlay)
     }).catch(() => { if (!disposed) { overlay.textContent = 'ChatHermes could not load.'; const back = document.createElement('a'); back.href = '/'; back.textContent = ' Back to dashboard'; overlay.append(back) } })
-    return () => { disposed = true; app?.unmount(); overlay.remove() }
+    return () => { disposed = true; app?.unmount(); overlay.remove(); if (viewport) viewport.content = previousViewport!; else ownedViewport.remove() }
   }, [])
   return React!.createElement('div', { ref: element, className: 'chathermes-plugin' })
 }

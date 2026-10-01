@@ -20,7 +20,9 @@ _AUTH_ERROR = "Hermes gateway authentication failed; check platforms.api_server.
 def _gateway_settings():
     from hermes_cli.config import load_config
 
-    config = load_config() or {}
+    from hermes_cli.web_server_profiles import _config_profile_scope
+    with _config_profile_scope(None):
+        config = load_config() or {}
     server = (config.get("platforms") or {}).get("api_server") or {}
     host = server.get("host") or os.environ.get("API_SERVER_HOST") or "127.0.0.1"
     port = server.get("port") or os.environ.get("API_SERVER_PORT") or "8642"
@@ -33,6 +35,8 @@ def _target(request: Request, route: str):
     if profile and not _PROFILE.fullmatch(profile):
         raise HTTPException(422, "Invalid profile name")
     base, key = _gateway_settings()
+    if profile and profile != "default":
+        key = _profile_gateway_key(profile)
     if not key:
         raise HTTPException(503, _AUTH_ERROR)
     prefix = f"/p/{profile}" if profile else ""
@@ -176,3 +180,100 @@ async def run_status(request: Request, run_id: str):
 @router.get("/v1/runs/{run_id}/events", include_in_schema=False)
 async def run_events(request: Request, run_id: str):
     return await _stream(request, "/v1/runs/" + quote(run_id, safe="") + "/events")
+
+
+@router.get('/profiles')
+async def profiles():
+    from hermes_cli.profiles import list_profiles
+    from starlette.concurrency import run_in_threadpool
+    entries = await run_in_threadpool(list_profiles)
+    return {'profiles': [{'name': entry.name} for entry in entries]}
+
+
+@router.get('/v1/models')
+async def models(request: Request):
+    import json
+    from fastapi.responses import JSONResponse
+    response = await _proxy(request, '/v1/models')
+    if response.status_code != 200:
+        return response
+    payload = json.loads(response.body)
+    default = _configured_default_model(request.query_params.get('profile', ''))
+    if default:
+        payload['default_model'] = default
+    return JSONResponse(payload)
+
+
+def _profile_gateway_key(profile: str):
+    from agent.secret_scope import get_secret
+    from hermes_cli.web_server_profiles import _config_profile_scope
+    with _config_profile_scope(profile):
+        return get_secret('API_SERVER_KEY', '')
+
+
+def _configured_default_model(profile: str):
+    from hermes_cli.config import load_config
+    from hermes_cli.web_server_profiles import _config_profile_scope
+    with _config_profile_scope(profile or None):
+        config = load_config() or {}
+        model = config.get('model', {})
+        value = model.get('default', '') if isinstance(model, dict) else model
+        return value if isinstance(value, str) else ''
+
+
+def _upload_home(request: Request):
+    from pathlib import Path
+    from hermes_cli.profiles import get_profile_dir
+    from hermes_constants import get_hermes_home
+    profile = request.query_params.get('profile', '')
+    if profile and not _PROFILE.fullmatch(profile):
+        raise HTTPException(422, 'Invalid profile name')
+    home = Path(get_profile_dir(profile) if profile else get_hermes_home())
+    if not home.is_dir():
+        raise HTTPException(404, 'Profile not found')
+    return home
+
+
+@router.post('/uploads', status_code=201)
+async def upload(request: Request):
+    """Store bounded file uploads in the agent's profile, without accepting client paths."""
+    import base64
+    import binascii
+    import json
+    import uuid
+    from starlette.concurrency import run_in_threadpool
+
+    home = _upload_home(request)
+    limit = 20 * 1024 * 1024
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > (limit * 4 // 3) + 4096:
+            raise HTTPException(413, 'File must be 20 MB or smaller')
+    try:
+        payload = json.loads(body)
+        name = payload['name']
+        encoded = payload['data']
+        if not isinstance(name, str) or len(name) > 255 or not isinstance(encoded, str):
+            raise ValueError()
+        header, separator, data = encoded.partition(',')
+        if not separator or not header.startswith('data:') or not header.endswith(';base64'):
+            raise ValueError()
+        content = base64.b64decode(data, validate=True)
+    except (ValueError, KeyError, TypeError, binascii.Error):
+        raise HTTPException(422, 'Invalid file upload')
+    if len(content) > limit:
+        raise HTTPException(413, 'File must be 20 MB or smaller')
+    if not content:
+        raise HTTPException(422, 'File is empty')
+    # Never use the supplied filename as a path; retain only a short safe extension.
+    extension = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    extension = '.' + extension if re.fullmatch(r'[a-z0-9]{1,12}', extension) else ''
+    path = home / 'uploads' / 'chathermes' / (uuid.uuid4().hex + extension)
+    def store():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('xb') as handle:
+            handle.write(content)
+        path.chmod(0o600)
+    await run_in_threadpool(store)
+    return {'path': str(path)}
