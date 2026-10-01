@@ -139,6 +139,16 @@ async def capabilities(request: Request):
 @router.get("/api/sessions", include_in_schema=False)
 @router.post("/api/sessions", include_in_schema=False)
 async def sessions(request: Request):
+    if request.method == 'POST':
+        # Pinned Hermes silently ignores these fields. Refuse before any write.
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(422, 'Invalid session request')
+        if not isinstance(body, dict):
+            raise HTTPException(422, 'Invalid session request')
+        if any(field in body for field in ('project_id', 'project', 'cwd')):
+            raise HTTPException(501, 'Project chats require Hermes support for explicit Project membership and session working directories')
     return await _proxy(request, "/api/sessions")
 
 
@@ -308,3 +318,41 @@ async def upload(request: Request):
         path.chmod(0o600)
     await run_in_threadpool(store)
     return {'path': str(path)}
+
+
+def _read_projects(request: Request, project_id=None):
+    """Use Desktop's native store; never consult or mutate its active_id."""
+    from hermes_cli import projects_db
+    home = _upload_home(request)
+    with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
+        if project_id is None:
+            return {'projects': [project.to_dict() for project in projects_db.list_projects(conn)]}
+        project = projects_db.get_project(conn, project_id)
+        if project is None:
+            raise HTTPException(404, 'Project no longer exists')
+        result = project.to_dict()
+        result['workspace_available'] = bool(project.primary_path and os.path.isdir(project.primary_path))
+        return {'project': result}
+
+
+async def _projects_response(request: Request, project_id=None):
+    from starlette.concurrency import run_in_threadpool
+    try:
+        return await run_in_threadpool(_read_projects, request, project_id)
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(501, 'This Hermes version does not support Projects')
+    except Exception:
+        # Database/path failures must not expose connection settings or secrets.
+        raise HTTPException(503, 'Could not load Hermes Projects')
+
+
+@router.get('/projects')
+async def projects(request: Request):
+    return await _projects_response(request)
+
+
+@router.get('/projects/{project_id}')
+async def project(request: Request, project_id: str):
+    return await _projects_response(request, project_id)

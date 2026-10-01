@@ -8,7 +8,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceSt
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
 function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response>) {
   vi.stubGlobal('fetch', (input: string, init?: RequestInit) => input.endsWith('/profiles') ? Promise.resolve(json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] }))
-    : input.includes('/v1/models') ? Promise.resolve(json({ data: [{ id: 'Instant' }] })) : fake(input, init))
+    : /\/projects(?:\?|$)/.test(input) ? Promise.resolve(json({ projects: [] })) : input.includes('/v1/models') ? Promise.resolve(json({ data: [{ id: 'Instant' }] })) : fake(input, init))
 }
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }

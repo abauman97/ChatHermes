@@ -9,3 +9,6 @@ export interface ModelOption { id: string; root?: string; parent?: string | null
 
 export interface ProviderOption { slug: string; name: string; is_current?: boolean; models: string[] }
 export interface ModelInventory { providers: ProviderOption[]; provider: string; model: string }
+
+// Native Hermes Project metadata, projected from projects_db.Project.to_dict().
+export interface Project { id: string; name: string; primary_path?: string | null; description?: string | null; folders: { path: string; label?: string | null; is_primary: boolean }[]; workspace_available?: boolean }

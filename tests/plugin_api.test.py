@@ -251,3 +251,60 @@ async def test_model_inventory_errors_do_not_expose_provider_secrets(app, monkey
         response = await client.get('/api/plugins/chathermes/api/model/options')
         assert response.status_code == 500
         assert 'private-provider-credential' not in response.text
+
+
+@run_async
+async def test_project_creation_fails_closed_before_gateway_write(app, monkeypatch):
+    seen = []
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: seen.append(request))))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for endpoint in ('/sessions', '/api/sessions'):
+            for payload in ({'project_id': 'p_a', 'cwd': '/a'}, {'project_id': 'p_b', 'cwd': '/b'}, {'cwd': '/a'}, {'project': None}):
+                response = await client.post('/api/plugins/chathermes' + endpoint, json=payload)
+                assert response.status_code == 501
+                assert 'explicit Project membership' in response.text
+    assert not seen  # Independent tabs cannot mutate global state or create fallback rows.
+
+
+@run_async
+async def test_native_projects_store_and_profile_isolation(app, monkeypatch, tmp_path):
+    import os
+    monkeypatch.syspath_prepend(os.environ.get('HERMES_SOURCE', '/opt/hermes'))
+    projects_db = pytest.importorskip('hermes_cli.projects_db', reason='Native store integration requires installed Hermes source or HERMES_SOURCE')
+    homes = {name: tmp_path / name for name in ('alpha', 'beta')}
+    ids = {}
+    for name, home in homes.items():
+        home.mkdir()
+        workspace = home / 'workspace'
+        workspace.mkdir()
+        with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
+            ids[name] = projects_db.create_project(conn, name=name, folders=[str(workspace)], primary_path=str(workspace))
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: homes[request.query_params['profile']])
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for name in homes:
+            response = await client.get('/api/plugins/chathermes/projects', params={'profile': name})
+            assert response.status_code == 200
+            assert [p['id'] for p in response.json()['projects']] == [ids[name]]
+            detail = await client.get('/api/plugins/chathermes/projects/' + ids[name], params={'profile': name})
+            assert detail.json()['project']['primary_path'] == str(homes[name] / 'workspace')
+            assert detail.json()['project']['workspace_available'] is True
+        wrong = await client.get('/api/plugins/chathermes/projects/' + ids['alpha'], params={'profile': 'beta'})
+        assert wrong.status_code == 404
+        (homes['alpha'] / 'workspace').rmdir()
+        missing = await client.get('/api/plugins/chathermes/projects/' + ids['alpha'], params={'profile': 'alpha'})
+        assert missing.json()['project']['workspace_available'] is False
+    for home in homes.values():
+        with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
+            assert projects_db.get_active_id(conn) is None
+
+
+@run_async
+async def test_projects_failures_do_not_expose_secrets(app, monkeypatch):
+    def broken(*args):
+        raise RuntimeError(KEY)
+    monkeypatch.setattr(plugin, '_read_projects', broken)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/projects')
+        assert response.status_code == 503
+        assert KEY not in response.text

@@ -33,3 +33,32 @@ Rebuild with `npm run build` after UI changes. Restart the service after Python 
 The composer starts a session on first send. Images and camera photos use Hermes multimodal image parts; large photos are resized to fit the gateway request limit. other files (up to 20 MB each, five per turn) are uploaded into the selected profile's `uploads/chathermes/` directory and attached by path for the agent's file tools. Uploaded files remain in that profile until removed by its owner. Camera capture uses the device's native file picker on supported mobile browsers. The native provider and model selects use Hermes's `/api/model/options` inventory and start with the selected profile's current provider and model. Choose **Model routes** to use configured gateway aliases from `/v1/models`. If the inventory is unavailable, the picker falls back to the profile default and gateway routes. Model selection locks the provider/model for each streamed turn. Chat messages, including streamed responses, render Markdown with raw HTML disabled.
 
 See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
+
+### Projects (browse-only compatibility preview)
+
+ChatHermes lists the native, profile-scoped Hermes `projects_db.Project` records
+used by Desktop; selecting one shows its metadata and primary workspace. URLs
+such as `/chathermes?profile=default&project=p_…` preserve that selection through
+refresh and browser navigation. No separate Project database or global active
+Project is used. Chats remain accessible under **Other chats**.
+
+**Issue #7 is blocked by the upstream session contract.** The pinned test source
+`3632f9173d218fd24f3fa595d7affa159b0774cd` supports Project metadata, but stores no
+explicit chat-to-Project relationship. Desktop groups chats by workspace paths.
+The gateway's session-create REST handler ignores `project_id` and `cwd`.
+Consequently Project-specific New chat and sending are unavailable, and the
+plugin rejects requests with workspace/Project fields before forwarding them.
+It cannot safely display Desktop chats as explicitly Project-bound sessions.
+A missing Project, missing primary path, or unavailable directory is shown in the
+UI; creation never silently falls back to the default workspace.
+
+In Desktop, `primary_path` supplies the initial workspace through native
+`session.create` RPC's `cwd`; native resume restores the saved working directory.
+Hermes then discovers context files using its existing prompt builder, with
+`.hermes.md`/`HERMES.md`, AGENTS directory chain, CLAUDE, then Cursor rules
+precedence. ChatHermes does not inject or parse Project instructions. Full mobile
+Project chat support requires an upstream create/list/detail/runtime contract
+with explicit Project membership and per-session workspace initialization,
+adopted by Desktop. No released minimum version supporting that complete
+contract was identified; metadata browsing requires `hermes_cli.projects_db`
+(the pinned source has it). See the [source audit and plan](docs/plans/2026-10-01-projects.md).

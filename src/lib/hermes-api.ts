@@ -1,10 +1,10 @@
-import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:projects(?:\/[A-Za-z0-9_-]+)?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -43,6 +43,12 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
 }
 export const api = {
   profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
+  projects: (profile: string, signal?: AbortSignal) => request<{ projects: Project[] }>(profile, '/projects', { signal }),
+  project: async (profile: string, id: string, signal?: AbortSignal) => {
+    const result = await request<{ project: Project }>(profile, `/projects/${encodeURIComponent(id)}`, { signal })
+    if (result.project?.id !== id || typeof result.project.name !== 'string') throw new Error('Invalid Hermes Project response')
+    return result.project
+  },
   models: (profile: string) => request<{ data: ModelOption[]; default_model?: string }>(profile, '/v1/models'),
   modelOptions: (profile: string) => request<ModelInventory>(profile, '/api/model/options'),
   async upload(profile: string, attachment: Attachment): Promise<{ path: string }> {
