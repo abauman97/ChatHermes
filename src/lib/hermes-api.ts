@@ -4,7 +4,7 @@ export class ApiError extends Error { status: number; constructor(status: number
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/capabilities|v1\/runs\/[A-Za-z0-9_-]+\/stop)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/capabilities|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -59,6 +59,13 @@ export const api = {
   async *stream(profile: string, session: string, input: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
     const response = await directFetch(profile, `/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
+    if (!response.body) throw new Error('Stream unavailable')
+    yield* readSSE(response.body, signal)
+  },
+  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<{ status?: string; run?: { status?: string } }>(profile, `/v1/runs/${encodeURIComponent(run)}`, { signal }),
+  async *runEvents(profile: string, run: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    const response = await directFetch(profile, `/v1/runs/${encodeURIComponent(run)}/events`, { signal }, 'text/event-stream')
+    if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },

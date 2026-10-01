@@ -17,14 +17,18 @@ function ChatHermesPlugin() {
   const element = React!.useRef(null)
   React!.useEffect(() => {
     let disposed = false
+    // Mount at the body so transformed host panels cannot contain the fixed overlay.
+    const overlay = document.createElement('div')
+    overlay.className = 'chathermes-plugin chathermes-embedded'
+    document.body.append(overlay)
     let app: { mount: (element: HTMLDivElement) => void; unmount: () => void } | undefined
     void import(/* @vite-ignore */ appUrl).then(({ createChatHermesApp }) => {
       if (disposed || !element.current) return
       app = createChatHermesApp()
-      app!.mount(element.current)
-    }).catch(() => { if (!disposed && element.current) element.current.textContent = 'ChatHermes could not load.' })
-    return () => { disposed = true; app?.unmount() }
+      app!.mount(overlay)
+    }).catch(() => { if (!disposed) { overlay.textContent = 'ChatHermes could not load.'; const back = document.createElement('a'); back.href = '/'; back.textContent = ' Back to dashboard'; overlay.append(back) } })
+    return () => { disposed = true; app?.unmount(); overlay.remove() }
   }, [])
-  return React!.createElement('div', { ref: element, className: 'chathermes-plugin chathermes-embedded' })
+  return React!.createElement('div', { ref: element, className: 'chathermes-plugin' })
 }
 window.__HERMES_PLUGINS__.register('chathermes', ChatHermesPlugin)

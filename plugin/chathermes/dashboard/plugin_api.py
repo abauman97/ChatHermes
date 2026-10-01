@@ -81,7 +81,7 @@ async def _stream(request: Request, route: str):
     url, key, params = _target(request, route)
     body = await request.body()
     client = _client()
-    stream = client.stream("POST", url, params=params, content=body,
+    stream = client.stream(request.method, url, params=params, content=body if body else None,
         headers={"Authorization": f"Bearer {key}", "Content-Type": request.headers.get("content-type", "application/json"),
                  "Accept": "text/event-stream"})
     try:
@@ -164,3 +164,15 @@ async def chat_stream(request: Request, session_id: str):
 @router.post("/v1/runs/{run_id}/stop", include_in_schema=False)
 async def stop(request: Request, run_id: str):
     return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/stop")
+
+
+@router.get("/runs/{run_id}")
+@router.get("/v1/runs/{run_id}", include_in_schema=False)
+async def run_status(request: Request, run_id: str):
+    return await _proxy(request, "/v1/runs/" + quote(run_id, safe=""))
+
+
+@router.get("/runs/{run_id}/events")
+@router.get("/v1/runs/{run_id}/events", include_in_schema=False)
+async def run_events(request: Request, run_id: str):
+    return await _stream(request, "/v1/runs/" + quote(run_id, safe="") + "/events")
