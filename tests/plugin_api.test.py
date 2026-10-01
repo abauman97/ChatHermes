@@ -121,6 +121,30 @@ async def test_missing_key_is_safe(app, monkeypatch, route):
 
 
 @run_async
+async def test_run_status_and_events_routes(app, monkeypatch):
+    status = []
+    def gateway(request):
+        status.append(request)
+        if request.url.path.endswith("/events"):
+            return httpx.Response(200, content=b'event: run.completed\ndata: {}\n\n', headers={"content-type": "text/event-stream"})
+        return httpx.Response(200, json={"state": "completed"})
+    monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test") as client:
+        response = await client.get("/api/plugins/chathermes/runs/r1", params={"profile": "gamma"})
+        assert response.status_code == 200
+        assert response.json() == {"state": "completed"}
+        assert KEY not in response.text and KEY not in str(response.headers)
+        stream = await client.get("/api/plugins/chathermes/v1/runs/r1/events", params={"profile": "gamma"})
+        assert stream.status_code == 200
+        assert stream.content == b'event: run.completed\ndata: {}\n\n'
+        assert KEY not in stream.text and KEY not in str(stream.headers)
+    assert all(request.headers["authorization"] == f"Bearer {KEY}" for request in status)
+    assert all(request.url.path.startswith("/p/gamma/") for request in status)
+    assert status[0].url.path == "/p/gamma/v1/runs/r1"
+    assert status[1].url.path == "/p/gamma/v1/runs/r1/events"
+
+
+@run_async
 async def test_stream_redacts_key_split_across_gateway_chunks(app, monkeypatch):
     class SplitStream(httpx.AsyncByteStream):
         async def __aiter__(self):
