@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { api, eventPayload } from './lib/hermes-api'
+import { api, ApiError, eventPayload } from './lib/hermes-api'
+import type { SSEEvent } from './lib/sse'
 import type { Capabilities, Message, Session } from './types/hermes'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
@@ -8,12 +9,14 @@ import ChatComposer from './components/ChatComposer.vue'
 const profile = ref(''), session = ref(''), sessions = ref<Session[]>([]), messages = ref<Message[]>([])
 const capabilities = ref<Capabilities>({}), offset = ref(0), hasMore = ref(false), loading = ref(false), chatLoading = ref(false), sending = ref(false), approvalPending = ref(false), offline = ref(!navigator.onLine)
 const error = ref(''), chatError = ref(''), draft = ref(''), progress = ref<string[]>([]), drawer = ref(false)
+const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
 const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
 const canStream = computed(() => capabilities.value.features?.session_chat_streaming === true && capabilities.value.endpoints?.session_chat_stream?.method === 'POST' && capabilities.value.endpoints.session_chat_stream.path === '/api/sessions/{session_id}/chat/stream')
-let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0
+let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0, streamGeneration = 0, historyGeneration = 0
+let visibilityAbort: AbortController | undefined, retiredStreamAbort: AbortController | undefined, reconnecting = false
 function urlState() { const params = new URLSearchParams(location.search); return { profile: params.get('profile') || '', session: params.get('session') || '' } }
 function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); if (profile.value) url.searchParams.set('profile', profile.value); if (session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
-function cancelChat() { generation++; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
+function cancelChat() { generation++; streamGeneration++; visibilityAbort?.abort(); retiredStreamAbort?.abort(); activeRun.value = ''; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadSessions(more = false) {
   listAbort?.abort(); const controller = new AbortController(); listAbort = controller; const id = profile.value
@@ -30,7 +33,7 @@ async function loadSessions(more = false) {
 }
 async function loadMessages() {
   if (!session.value) return false
-  chatAbort?.abort(); const controller = new AbortController(); chatAbort = controller; const current = generation, p = profile.value, s = session.value
+  historyGeneration++; visibilityAbort?.abort(); chatAbort?.abort(); const controller = new AbortController(); chatAbort = controller; const current = generation, p = profile.value, s = session.value
   chatLoading.value = true; chatError.value = ''
   try { const result = await api.messages(p, s, controller.signal); if (current === generation && controller === chatAbort) { messages.value = result; return true } }
   catch (cause) { if (current === generation && controller === chatAbort && !controller.signal.aborted) chatError.value = cause instanceof Error ? cause.message : 'Could not load messages' }
@@ -46,7 +49,7 @@ async function chooseProfile(id: string, fromHistory = false) {
   try { const result = await api.capabilities(id); if (current === profileGeneration && profile.value === id) capabilities.value = result } catch { if (current === profileGeneration && profile.value === id) capabilities.value = {} }
 }
 function chooseSession(id: string, fromHistory = false) {
-  cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
+  suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
   void loadMessages(); menuButton.value?.focus()
 }
@@ -58,39 +61,96 @@ async function createSession() {
     if (current !== generation || profile.value !== id || session.value !== selected) return
     await loadSessions()
     if (current !== generation || profile.value !== id || session.value !== selected) return
-    chooseSession(made.id)
+    chooseSession(made.id); return made.id
   } catch (cause) { if (current === generation && profile.value === id && session.value === selected) error.value = cause instanceof Error ? cause.message : 'Could not create session' }
+}
+async function suggest(text: string) {
+  const current = generation, p = profile.value, id = await createSession()
+  if (id && current + 1 === generation && p === profile.value && session.value === id) suggestedPrompt.value = text
 }
 async function rename(id: string, title: string) {
   const p = profile.value, current = generation
   try { await api.rename(p, id, title); if (current !== generation || p !== profile.value) return; const found = sessions.value.find(s => s.id === id); if (found) found.title = title }
   catch (cause) { if (current === generation && p === profile.value) error.value = cause instanceof Error ? cause.message : 'Could not rename session' }
 }
+function reduceFrame(frame: SSEEvent): 'completed' | 'approval' | undefined {
+  const data = eventPayload(frame)
+  if (!activeRun.value && typeof data.run_id === 'string') activeRun.value = data.run_id
+  // Keep the thinking indicator up through run.started / message.started (emitted before any
+  // content) and tool activity; clear it only once real response text starts or a tool is used.
+  if (frame.event === 'assistant.delta' || frame.event === 'tool.started') thinking.value = false
+  if (frame.event === 'run.failed' || frame.event === 'run.cancelled' || frame.event === 'error') activeRun.value = ''
+  if (frame.event === 'assistant.delta') draft.value += typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text : ''
+  else if (frame.event === 'tool.started') progress.value.push(`Using ${typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'tool'}…`)
+  else if (frame.event === 'tool.completed') progress.value.push('Tool completed.')
+  else if (frame.event === 'tool.failed') progress.value.push('A tool failed.')
+  else if (frame.event === 'approval.request') { approvalPending.value = true; streamAbort?.abort(); return 'approval' }
+  else if (frame.event === 'run.completed') { activeRun.value = ''; return 'completed' }
+  else if (frame.event === 'run.failed' || frame.event === 'run.cancelled') throw new Error(`Turn ${frame.event.slice(4)}. Check session history before retrying.`)
+  else if (frame.event === 'error') throw new Error('Turn failed. Check session history before retrying.')
+}
 async function send(text: string) {
   if (!session.value || sending.value || approvalPending.value || offline.value || !canStream.value) return
-  sending.value = true; chatError.value = ''; draft.value = ''; progress.value = []
-  streamAbort = new AbortController(); const current = generation, p = profile.value, s = session.value
+  sending.value = true; thinking.value = true; activeRun.value = ''; chatError.value = ''; draft.value = ''; progress.value = []
+  streamAbort = new AbortController(); const current = generation, streamCurrent = ++streamGeneration, p = profile.value, s = session.value
   let completed = false
   try {
     for await (const frame of api.stream(p, s, text, streamAbort.signal)) {
       if (current !== generation) return
-      const data = eventPayload(frame)
-      if (frame.event === 'assistant.delta') draft.value += typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text : ''
-      else if (frame.event === 'tool.started') progress.value.push(`Using ${typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'tool'}…`)
-      else if (frame.event === 'tool.completed') progress.value.push('Tool completed.')
-      else if (frame.event === 'tool.failed') progress.value.push('A tool failed.')
-      else if (frame.event === 'approval.request') { approvalPending.value = true; streamAbort.abort(); break }
-      else if (frame.event === 'run.completed') completed = true
-      else if (frame.event === 'run.failed' || frame.event === 'run.cancelled') throw new Error(`Turn ${frame.event.slice(4)}. Check session history before retrying.`)
-      else if (frame.event === 'error') throw new Error('Turn failed. Check session history before retrying.')
+      // Drain the original connection during reattachment; disconnecting it could interrupt the run.
+      if (streamCurrent !== streamGeneration) continue
+      const outcome = reduceFrame(frame)
+      if (outcome === 'completed') completed = true
+      if (outcome === 'approval') break
     }
-    if (approvalPending.value) return
+    if (current !== generation || streamCurrent !== streamGeneration || approvalPending.value) return
+    if (completed) activeRun.value = ''
     if (!completed) throw new Error('Stream ended without confirmation. Check session history before retrying.')
     if (!await loadMessages()) throw new Error('Turn completed, but history could not be loaded. Refresh history before sending again.')
     draft.value = ''; progress.value = []; await loadSessions()
-  } catch (cause) { if (current === generation && !approvalPending.value) chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.' }
-  finally { if (current === generation) sending.value = false }
+  } catch (cause) { if (current === generation && streamCurrent === streamGeneration && !approvalPending.value) chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.' }
+  finally { if (current === generation && streamCurrent === streamGeneration) { sending.value = false; thinking.value = false } }
 }
+async function refreshVisibleHistory(current: number, p: string, s: string, controller: AbortController) {
+  if (current !== generation || controller.signal.aborted) return false
+  const historyCurrent = ++historyGeneration, pendingHistory = chatAbort
+  try { const result = await api.messages(p, s, controller.signal); if (current === generation && historyCurrent === historyGeneration && !controller.signal.aborted && !pendingHistory) { messages.value = result; return true } } catch { /* Visibility refresh is best-effort; preserve the existing history. */ }
+  return false
+}
+async function visibilityChange() {
+  if (document.visibilityState !== 'visible' || !session.value || reconnecting) return
+  visibilityAbort?.abort(); const controller = new AbortController(); visibilityAbort = controller
+  const current = generation, p = profile.value, s = session.value, run = activeRun.value
+  reconnecting = true
+  let streamCurrent: number | undefined
+  try {
+    await refreshVisibleHistory(current, p, s, controller)
+    if (current !== generation || controller.signal.aborted || !run || activeRun.value !== run || approvalPending.value) return
+    const result = await api.runStatus(p, run, controller.signal)
+    if (current !== generation || controller.signal.aborted || activeRun.value !== run) return
+    const status = typeof result.status === 'string' ? result.status : typeof result.run?.status === 'string' ? result.run.status : ''
+    streamCurrent = ++streamGeneration
+    if (['completed', 'failed', 'cancelled', 'interrupted', 'stopped'].includes(status)) { streamAbort?.abort(); activeRun.value = ''; return }
+    retiredStreamAbort = streamAbort; streamAbort = controller; sending.value = true; thinking.value = true; draft.value = ''; progress.value = []; chatError.value = ''
+    for await (const frame of api.runEvents(p, run, controller.signal)) {
+      if (current !== generation || streamCurrent !== streamGeneration) return
+      const outcome = reduceFrame(frame)
+      if (outcome === 'completed' || outcome === 'approval') break
+    }
+  } catch (cause) {
+    if (current === generation && cause instanceof ApiError && cause.status === 404) { streamCurrent = ++streamGeneration; streamAbort?.abort(); activeRun.value = '' }
+  } finally {
+    if (current === generation && streamCurrent === streamGeneration) {
+      if (!activeRun.value) { retiredStreamAbort?.abort(); retiredStreamAbort = undefined }
+      activeRun.value = ''; sending.value = false; thinking.value = false
+      const refreshed = await refreshVisibleHistory(current, p, s, controller)
+      if (refreshed && current === generation && !controller.signal.aborted) { draft.value = ''; progress.value = []; chatError.value = '' }
+    }
+    reconnecting = false
+    if (visibilityAbort === controller) visibilityAbort = undefined
+  }
+}
+function exitPlugin() { location.href = '/' }
 async function reloadAfterApproval() { await loadMessages() }
 function onlineChange() { offline.value = !navigator.onLine }
 function pop() {
@@ -101,28 +161,34 @@ function pop() {
 function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
 function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
-onMounted(async () => { addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile && state.session) chooseSession(state.session, true) })
-onUnmounted(() => { cancel(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
+onMounted(async () => { embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile && state.session) chooseSession(state.session, true) })
+onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityChange); cancel(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
 </script>
 <template>
-  <div class="app-shell flex min-h-dvh bg-[#f5f2e9] font-sans text-[#20372f] dark:bg-[#182820] dark:text-[#edf0e8]">
-    <aside class="sidebar fixed inset-y-0 left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-6 bg-[#15382f] px-[18px] py-6 text-[#f4f1e7] shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-[#102b23] dark:text-[#f2eee3]" :class="drawer ? 'translate-x-0' : '-translate-x-full'" aria-label="Navigation">
-      <div class="brand flex items-center gap-2.5 px-2 font-serif text-2xl font-semibold"><span class="brand-mark grid size-9 shrink-0 place-items-center rounded-[10px] bg-[#dfb476] text-[#15382f] dark:bg-[#d7ae75]">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#dfb476]" aria-label="Close navigation" @click="closeDrawer">×</button></div>
+  <div class="app-shell flex min-h-dvh bg-[#212121] font-sans text-[#f4f4f4] dark:bg-[#212121] dark:text-[#f4f4f4]">
+    <aside class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-5 bg-[#171717] px-[18px] py-6 text-[#f4f4f4] shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-[#171717] dark:text-[#f4f4f4]" :class="drawer ? 'translate-x-0' : '-translate-x-full'" aria-label="Navigation">
+      <div class="brand flex items-center gap-2.5 px-2 text-2xl font-semibold"><span class="brand-mark grid size-9 shrink-0 place-items-center text-white">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" aria-label="Close navigation" @click="closeDrawer">×</button></div>
       <SessionSidebar :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline" @select="chooseSession" @create="createSession" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
-      <div class="sidebar-foot mt-auto grid gap-2 border-t border-[#3d5c4e] px-2 pt-4 text-xs text-[#c5d0c4] dark:border-[#496755] dark:text-[#c8d5c7]">
+      <div class="sidebar-foot mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile (blank uses current)</label>
-        <input id="profile-field" class="profile-field w-full rounded-md border border-[#718e7c] bg-[#15382f] px-2 py-2 text-sm text-white focus-visible:outline-3 focus-visible:outline-[#dfb476]" :value="profile" placeholder="Current profile" @change="chooseProfile(($event.target as HTMLInputElement).value.trim())" />
+        <input id="profile-field" class="profile-field w-full rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-sm text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" :value="profile" placeholder="Current profile" @change="chooseProfile(($event.target as HTMLInputElement).value.trim())" />
         <span><span class="status-dot mr-2 inline-block size-2 rounded-full" :class="offline ? 'disconnected bg-[#dcae6e]' : 'bg-[#94c9a5]'" />{{ offline ? 'Offline · read only' : 'Connected through dashboard' }}</span>
       </div>
     </aside>
     <div v-if="drawer" class="scrim fixed inset-0 z-10 bg-black/55 min-[701px]:hidden" @click="closeDrawer" />
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
-      <header class="topbar flex h-[76px] shrink-0 items-center gap-3 border-b border-[#deded2] bg-[#fbf9f3] px-[18px] min-[701px]:h-[91px] min-[701px]:px-[35px] dark:border-[#375044] dark:bg-[#20372e]"><button ref="menuButton" class="mobile-menu px-1 text-2xl min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#c18b53]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer">☰</button><div class="min-w-0 flex-1"><small class="text-[10px] font-bold tracking-[0.17em] text-[#768d7f] dark:text-[#b2c6b7]">HERMES AGENT</small><h1 class="mt-1 truncate font-serif text-lg min-[701px]:text-[22px]">{{ sessions.find(s => s.id === session)?.title || (session ? 'Conversation' : 'New conversation') }}</h1></div><span class="topbar-profile max-w-[30%] truncate rounded-full border border-[#d9dfd5] px-3 py-1.5 text-[11px] text-[#5d7466] min-[701px]:text-xs dark:border-[#5e7867] dark:text-[#c2d4c5]">{{ profile || 'Current profile' }}</span></header>
-      <div v-if="offline" class="notice bg-[#ece4ce] px-5 py-3 text-sm text-[#594830] dark:bg-[#4e422d] dark:text-[#f3dfb7]" role="status">You are offline. Messages cannot be loaded or sent.</div>
-      <div v-if="approvalPending" class="notice bg-[#ece4ce] px-5 py-3 text-sm text-[#594830] dark:bg-[#4e422d] dark:text-[#f3dfb7]" role="status">Approval is pending. Resolve the request in Hermes, then reload this conversation here to inspect history. Sending stays locked until you leave this conversation or reload the page; confirm the previous turn finished before sending again. <button class="underline disabled:opacity-55" :disabled="chatLoading" @click="reloadAfterApproval">Reload conversation</button></div>
-      <div v-if="chatError" class="notice error bg-[#f5dfd7] px-5 py-3 text-sm text-[#70382b] dark:bg-[#59332e] dark:text-[#ffe1d4]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="loadMessages">Refresh history</button></div>
-      <ChatTranscript :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" />
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="!session || offline || chatLoading || approvalPending || !canStream" :sending="sending" :reason="!session ? 'Select or create a conversation to begin.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
+        <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
+        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ sessions.find(s => s.id === session)?.title || (session ? 'Conversation' : 'ChatHermes') }}</h1>
+        <span class="topbar-profile max-w-[30%] truncate rounded-full bg-[#303030] px-3 py-1.5 text-xs text-[#b4b4b4]">{{ profile || 'Current profile' }}</span>
+        <span class="grid size-8 shrink-0 place-items-center text-2xl" aria-label="ChatHermes logo">✳</span>
+        <button v-if="embedded" class="shrink-0 rounded-lg px-2 py-2 text-xs hover:bg-[#303030]" @click="exitPlugin">← Back to dashboard</button>
+      </header>
+      <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
+      <div v-if="approvalPending" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">Approval is pending. Resolve the request in Hermes, then reload this conversation here to inspect history. Sending stays locked until you leave this conversation or reload the page; confirm the previous turn finished before sending again. <button class="underline disabled:opacity-55" :disabled="chatLoading" @click="reloadAfterApproval">Reload conversation</button></div>
+      <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="loadMessages">Refresh history</button></div>
+      <ChatTranscript :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest" />
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="!session || offline || chatLoading || approvalPending || !canStream" :sending="sending" :suggested-prompt="suggestedPrompt" :reason="!session ? 'Select or create a conversation to begin.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
     </main>
   </div>
 </template>

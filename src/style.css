@@ -1,19 +1,17 @@
 @import "tailwindcss";
 
-/* Embedded mode: when mounted inside a Hermes dashboard plugin mount, fill the
-   dashboard's own content column instead of the viewport. The dashboard's top
-   bar takes space above the plugin, so 100dvh would push the composer below
-   the fold. The plugin content column is `position: relative` and is exactly
-   the available height, so anchor the mount to it and size the app to the
-   mount. */
-.chathermes-embedded { position: absolute; inset: 0; }
-.chathermes-embedded .app-shell { height: 100%; min-height: 0; }
-.chathermes-embedded .main-panel { height: 100%; }
-/* Scope the mobile drawer + scrim to the plugin mount (the dashboard content
-   column) instead of the viewport, so they start below the dashboard's own
-   top bar rather than getting clipped behind it. Mobile range only (<701px):
-   on desktop the sidebar is a static flex column and must stay in flow. */
-@media (max-width: 700px) {
-  .chathermes-embedded .sidebar { position: absolute; }
-  .chathermes-embedded .scrim { position: absolute; }
-}
+html { -webkit-text-size-adjust: 100%; }
+html, body { touch-action: manipulation; overscroll-behavior: none; }
+body { margin: 0; background: #212121; }
+#app, .app-shell, .transcript { touch-action: pan-y; }
+.composer, .sidebar, .scrim, .topbar, .chathermes-embedded { touch-action: manipulation; }
+/* pan-y on the app shell also excludes pinch gestures in embedded mode. */
+.chathermes-embedded { position: fixed; inset: 0; z-index: 10000; background: #212121; }
+.chathermes-embedded .app-shell { height: 100dvh; min-height: 0; }
+.chathermes-embedded .main-panel { height: 100dvh; }
+.topbar { padding-top: env(safe-area-inset-top); height: calc(68px + env(safe-area-inset-top)); }
+.sidebar { padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.composer { margin-bottom: max(12px, env(safe-area-inset-bottom)); }
+.thinking-dot { animation: thinking-pulse 1.2s ease-in-out infinite; }
+@keyframes thinking-pulse { 50% { opacity: .3; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } .sidebar { transition: none; } }
