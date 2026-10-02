@@ -26,3 +26,66 @@ The stream sends `assistant.delta` with `delta` and `tool.started` with `tool_na
 ## Test environment
 
 The compose environment pins Hermes revision `3632f9173d218fd24f3fa595d7affa159b0774cd` on a digest-pinned runtime image. Runtime state is isolated in a named volume. See README for commands and model endpoint configuration.
+
+## Project gateway RPC adapter
+
+Cookie-authenticated plugin routes use the dashboard's existing
+`tui_gateway.server.dispatch` and `Transport` contract, the same backend as
+`/api/ws`. No browser WebSocket connection configuration or gateway credentials
+are introduced. Every operation pins the selected profile (`default` when the
+current/default profile is selected). Gateway exceptions are returned as generic
+errors, and reflected gateway Bearer keys are redacted from RPC frames.
+
+| Plugin route | Native RPC | Behavior |
+| --- | --- | --- |
+| `GET /projects` | `projects.tree {profile, preview_limit: 3}` | Unmodified authoritative hierarchy, auto/Home nodes and scoped IDs |
+| `GET /projects/detail?project_id=…` | `projects.project_sessions {profile, project_id}` | Hydrated repo/lane sessions; null Project becomes 404 |
+| `POST /projects/session?project_id=…` | Project read → `config.get {key: 'project', cwd: root, profile}` → `session.create` | Path then first repo path; resolved cwd and `source: 'desktop'`; no Project ID on create |
+| `GET /project-events` | Native change-watcher transport | SSE refresh on session/Project changes, initial connect and reconnect |
+| `GET /workspace/sessions/{id}/messages` | `session.resume` | Unpersisted draft fallback; stored ID, no cwd override; compact transcript projected to Message shape |
+| `POST /workspace/sessions/{id}/chat/stream` | `session.resume` → session-only `config.set` model → optional `image.attach_bytes` → `prompt.submit` | Native runtime/context, events adapted to existing SSE reducer |
+| `/workspace/runs/{stored_id}` / `events` / `stop` | Resume snapshot / transport fanout / `session.interrupt` | Existing client run abstraction; `workspace-` prefix distinguishes RPC runs |
+
+RPC drafts return a `stored_session_id` distinct from their runtime `session_id`;
+URLs always use the durable ID. Empty drafts are native live sessions, with no DB
+row until their first prompt. Project changes never send `session.cwd.set`,
+`session.workspace.move`, or `projects.set_active`. Resume uses the stored
+session's workspace even in another UI scope. Workspace images use authenticated
+RPC bytes; other files reuse the existing authenticated upload path.
+
+Workspace `session.create` sends `cwd_explicit: true` when a resolved cwd exists.
+For older Hermes versions, only a schema-validation error identifying
+`cwd_explicit` as an extra input triggers one retry without that field, and only
+if the resolved cwd is an existing local directory (the older handler infers
+explicit cwd from this condition). Timeouts, unknown methods, and all other RPC
+errors are returned without retrying.
+
+`config.set {key: 'model', session_id, value: '<model> --session --provider <slug>'}`
+uses the pin's actual word parser. IDs cannot contain flags or whitespace, and
+`--session` prevents profile-wide model changes. Confirmation/deferred responses
+block the turn instead of silently using a different model. Workspace picker
+models come from the configured provider inventory; REST aliases are not shown.
+
+Native event mapping: `message.delta` → `assistant.delta`; `message.complete`
+→ final assistant text plus completed/failed/cancelled; `tool.start/complete`
+→ existing tool disclosures with stable tool IDs and output; reasoning events
+retain their text. Approval/clarification requests keep the existing approval
+lock and require resolution in Hermes. Detaching the browser stream detaches its
+viewer and leaves the native turn running; explicit stop uses the native interrupt.
+
+The Project event subscription optionally resumes the displayed workspace session
+as a native viewer. This keeps unpersisted drafts alive while composing and avoids
+Hermes's 20-second disconnected-session reap. Profile/session changes replace the
+subscription; unmount/disconnect uses Hermes's normal transport teardown and
+preserves any other Desktop/browser viewers. No native session cache is added.
+
+Automatic Project IDs are literal repository paths, not database IDs. Detail and
+create routes carry them as encoded query values, including spaces and slashes;
+there is no client-side ID rewriting. The older path routes remain aliases for
+simple persisted IDs. Home's `__no_project__` ID is retained as returned by Hermes.
+
+Persisted workspace chats reuse the existing paginated REST history. The native
+RPC display projection omits terminal and most other tool results; using REST for
+history preserves completed disclosure output and attachments. Only a 404 for a
+known workspace draft falls back to the native resume transcript. No non-404
+history error or different profile silently switches transport.

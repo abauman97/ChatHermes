@@ -20,16 +20,55 @@ python3 -m venv .venv
 pip install -r tests/requirements.txt
 npm run test:api
 npm run build
-# Optional: LITELLM_BASE_URL and LITELLM_API_KEY in .env for real model calls
-docker compose up --build -d
+docker compose up -d --wait
 ```
 
 For browser tests, run `npx playwright install chromium` once, then `npm run test:visual` with compose running. Screenshots and traces are saved to `tests/visual-output/`.
 
-Open `http://localhost:9119/chathermes` in the isolated dashboard. The compose environment uses a pinned Hermes source revision because the published base image predates session chat streaming. Configuration is seeded from `.hermes/config.yaml` on every start, runtime data lives in the `hermes-test-data` named volume, and plugin source is mounted read-only. Sign in as `tester` with password `chathermes-local-test` (local test credentials only). The default model is `gpt-6-luna` through a deterministic OpenAI-compatible fixture, while the actual Hermes agent handles sessions, streaming, and tools. For real model calls, set `LITELLM_BASE_URL` (e.g. `http://host.docker.internal:4000/v1`) and `LITELLM_API_KEY` in `.env`. Both `default` and `test-profile` are created inside this isolated volume to exercise profile selection. The `Instant` option uses the same model via Hermes model routes. The test gateway key is deliberately local-only and must not be used for deployment.
+Open `http://localhost:9119/chathermes` in the isolated dashboard. Compose always pulls `nousresearch/hermes-agent:latest`; its contents may change between runs. Configuration is seeded from `.hermes/config.yaml` on every start, runtime data lives in the dedicated `hermes-test-data` named volume, and read-only plugin/test inputs are copied into that home before the image's native startup. No personal Hermes home is mounted. Sign in as `tester` with password `chathermes-local-test` (local test credentials only).
 
-Rebuild with `npm run build` after UI changes. Restart the service after Python route changes: `docker compose restart hermes`. `docker compose down` preserves test history; `docker compose down -v` discards the isolated test data.
+The default model is `gpt-6-luna` through the repository's deterministic OpenAI-compatible fixture, while the actual Hermes agent handles sessions, streaming, and tools. Compose uses literal synthetic credentials and ignores real provider settings in the host `.env`. Hermes and the fixture use an internal network without internet egress; a TCP relay publishes dashboard/gateway ports on localhost. Both `default` and `test-profile` use the fixture. Send `[tool]` to exercise a terminal call; the `Instant` model route also uses the fixture. Local test credentials must not be used for deployment.
+
+Rebuild with `npm run build` after UI changes, then run `docker compose restart hermes` to copy updated plugin assets. The same restart loads Python route changes. `docker compose down` preserves test history; `docker compose down -v` discards this environment's test data. The older pinned source/base-image harness and explicitly invoked real integration remain available separately through `tests/docker/Dockerfile` and `tests/docker/run.sh`; see [test documentation](tests/docker/README.md).
 
 The composer starts a session on first send. Images and camera photos use Hermes multimodal image parts; large photos are resized to fit the gateway request limit. other files (up to 20 MB each, five per turn) are uploaded into the selected profile's `uploads/chathermes/` directory and attached by path for the agent's file tools. Uploaded files remain in that profile until removed by its owner. Camera capture uses the device's native file picker on supported mobile browsers. The native provider and model selects use Hermes's `/api/model/options` inventory and start with the selected profile's current provider and model. Choose **Model routes** to use configured gateway aliases from `/v1/models`. If the inventory is unavailable, the picker falls back to the profile default and gateway routes. Model selection locks the provider/model for each streamed turn. Chat messages, including streamed responses, render Markdown with raw HTML disabled.
 
 See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
+
+### Projects
+
+Projects use Hermes's `projects.tree` gateway RPC, including automatic repository
+Projects and Home. Selecting a Project loads its fully hydrated
+`projects.project_sessions` hierarchy and displays its recent chats. Project and
+session query parameters preserve scope across refresh and browser navigation.
+Other chats remain available. Hermes owns all membership and Git/worktree grouping.
+
+**New chat** uses the Project path, then its first repository path, resolves the
+workspace with `config.get` under the owning profile, and creates a native
+`session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
+`project_id` is sent to session creation. A pathless Project cannot start a chat;
+Home starts a chat without a Project workspace. Empty native drafts persist on
+first prompt, following Desktop. An unavailable workspace fails before creation.
+
+Opening another Project changes UI scope while retaining the current chat and
+its workspace. Existing sessions always resume with their own saved cwd. Native
+`prompt.submit` turns, image attachment RPCs, and session-only model selection
+are adapted through authenticated plugin routes into the existing composer,
+transcript, activity and cancellation interfaces. Workspace chats use provider
+inventory models; gateway REST model-route aliases apply to ordinary REST chats.
+Hermes discovers context files normally; the plugin injects no Project prompt.
+
+Project/session change events, reconnect, foregrounding, completion and profile
+changes refresh the tree and selected hierarchy. No separate Project database,
+frontend path classifier, or active Project mutation exists. Project management
+and session moves remain in Desktop/CLI for this initial workflow.
+
+The implementation is verified against the unchanged test source pin
+`3632f9173d218fd24f3fa595d7affa159b0774cd`. Session creation always sends
+`cwd_explicit: true` for workspace Projects. If an older Hermes gateway rejects
+exactly that field as an extra schema input, ChatHermes retries without it only
+when the resolved workspace exists locally; older handlers infer explicit cwd
+from an existing directory. Other RPC errors are never retried. See the
+[source audit](docs/plans/2026-10-01-projects.md),
+[verification report](docs/verification/2026-10-01-projects.md), and
+[test environment instructions](tests/docker/README.md).

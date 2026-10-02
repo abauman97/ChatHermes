@@ -23,10 +23,13 @@ class Model(BaseHTTPRequestHandler):
         used_tool = any(item.get('role') == 'tool' for item in messages[last_user + 1:])
         tools = body.get('tools', [])
         tool_name = next((item['function']['name'] for item in tools if item.get('function', {}).get('name') == 'terminal'), None)
+        project_context = any('CHATHERMES_NATIVE_CONTEXT' in str(item.get('content', '')) for item in messages if item.get('role') == 'system')
         call = tool_name and '[tool]' in text and not used_tool
         message = {'role': 'assistant', 'content': None if call else 'Isolated Hermes reply. ' + ('Tool completed successfully.' if used_tool else 'Your message was received.')}
+        if project_context and '[workspace]' in text and not call:
+            message['content'] += ' Project context discovered.'
         if call:
-            message['tool_calls'] = [{'id': 'call_fixture_terminal', 'type': 'function', 'function': {'name': tool_name, 'arguments': json.dumps({'command': "printf 'hermes-isolated-tool-ok'"})}}]
+            message['tool_calls'] = [{'id': 'call_fixture_terminal', 'type': 'function', 'function': {'name': tool_name, 'arguments': json.dumps({'command': "pwd; printf 'hermes-isolated-tool-ok'" if '[workspace]' in text else "printf 'hermes-isolated-tool-ok'"})}}]
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream' if body.get('stream') else 'application/json')
         self.end_headers()

@@ -1,6 +1,12 @@
 .git
 .env
 .env.*
-.hermes
+.hermes/*
+!.hermes/config.yaml
+tests/visual-output
+tests/integration-output
+.venv
+__pycache__
+.pytest_cache
 node_modules
 tmp

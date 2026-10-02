@@ -30,6 +30,18 @@ describe('dashboard plugin Hermes client', () => {
     expect(fake.mock.calls.at(-1)?.[0]).toBe('/api/plugins/chathermes/api/sessions/one/chat/stream?profile=alpha')
     expect(fake.mock.calls.at(-1)?.[1]).toMatchObject({ method: 'POST', headers: { accept: 'text/event-stream' }, credentials: 'same-origin' })
   })
+  it('uses durable tool history for workspace chats and falls back only for unpersisted drafts', async () => {
+    const fake = vi.fn(async (url: string) => url.includes('/workspace/')
+      ? new Response(JSON.stringify({ messages: [] }))
+      : url.includes('/draft-workspace/') ? new Response('{}', { status: 404 })
+      : new Response(JSON.stringify({ data: [{ role: 'tool', content: 'Full native tool output' }], pagination: { returned: 1, limit: 500 } })))
+    vi.stubGlobal('fetch', fake)
+    api.workspace('alpha', 'stored-workspace'); api.workspace('alpha', 'draft-workspace')
+    expect(await api.messages('alpha', 'stored-workspace')).toEqual([{ role: 'tool', content: 'Full native tool output' }])
+    expect(fake.mock.calls[0]?.[0]).toContain('/api/sessions/stored-workspace/messages')
+    expect(await api.messages('alpha', 'draft-workspace')).toEqual([])
+    expect(fake.mock.calls.at(-1)?.[0]).toBe('/api/plugins/chathermes/workspace/sessions/draft-workspace/messages?profile=alpha')
+  })
   it('rejects redirects and HTTP failures without following them', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 302, headers: { location: 'https://evil.test/' } })))
     await expect(api.sessions('alpha')).rejects.toThrow('redirected')
