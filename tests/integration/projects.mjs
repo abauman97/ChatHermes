@@ -28,32 +28,30 @@ try {
     const list = await page.request.get(`${api}/projects`)
     expect(list.status()).toBe(200)
     const projects = (await list.json()).projects
-    expect(projects.map(p => p.name)).toEqual(expect.arrayContaining(['Hermes Mobile', 'AcumaticaMCP', 'Unavailable workspace']))
-    const project = projects.find(p => p.name === 'Hermes Mobile')
+    expect(projects.map(p => p.label)).toEqual(expect.arrayContaining(['Hermes Mobile', 'AcumaticaMCP', 'Unavailable workspace']))
+    const project = projects.find(p => p.label === 'Hermes Mobile')
     const detail = await page.request.get(`${api}/projects/${project.id}`)
-    expect((await detail.json()).project.workspace_available).toBe(true)
-    const blocked = await page.request.post(`${api}/sessions`, { data: { project_id: project.id, cwd: project.primary_path } })
-    expect(blocked.status()).toBe(501)
-    // Real Hermes create and streaming runtime, through dashboard authentication.
-    stage = `${name}: native session creation`
-    const created = await page.request.post(`${api}/sessions`, { data: { model: 'Instant', require_model_lock: true } })
+    expect((await detail.json()).project.path).toBe('/tmp/chathermes-issue7-runtime/workspace-a')
+    // Real native workspace create and prompt runtime, through dashboard auth.
+    stage = `${name}: native Project session creation`
+    const created = await page.request.post(`${api}/projects/${project.id}/sessions`)
     expect(created.status()).toBe(201)
     const session = (await created.json()).session
+    expect(session.cwd).toBe(project.path)
     stage = `${name}: real chat stream`
-    const stream = await page.request.post(`${api}/sessions/${session.id}/chat/stream`, {
+    const stream = await page.request.post(`${api}/workspace/sessions/${session.id}/chat/stream`, {
       timeout: 180_000,
-      data: { model: 'Instant', require_model_lock: true, input: 'Reply with exactly: ChatHermes integration verified. Do not use tools.' },
+      data: { model: 'gpt-6-luna', provider: 'litellm', input: 'Reply with exactly: ChatHermes integration verified. Do not use tools.' },
     })
     expect(stream.status()).toBe(200)
     const frames = await stream.text()
     const completion = frames.split('\n\n').find(frame => frame.includes('event: run.completed'))
     expect(completion).toBeDefined()
     const payload = JSON.parse(completion.split('data: ')[1])
-    expect(payload.runtime.model_lock).toBe('confirmed')
-    expect(payload.runtime.model).toBe('gpt-6-luna')
+    expect(payload.usage.model).toBe('gpt-6-luna')
     expect(frames).not.toContain('Isolated Hermes reply')
     stage = `${name}: UI resume and screenshots`
-    await page.goto(`/chathermes?session=${encodeURIComponent(session.id)}`)
+    await page.goto(`/chathermes?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`)
     await expect(plugin.locator('.message.assistant').last()).toContainText('ChatHermes integration verified', { timeout: 30_000 })
     const composer = plugin.getByRole('textbox', { name: 'Message Hermes' })
     await composer.click(); await expect(composer).toBeFocused()
@@ -66,16 +64,16 @@ try {
       expect(await plugin.getByRole('button', { name, exact: true }).evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(48)
     }
     await page.screenshot({ path: `${output}/${name}-projects-list.png`, animations: 'disabled' })
-    await plugin.getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
+    await page.goto(`/chathermes?project=${encodeURIComponent(project.id)}`)
     const view = plugin.getByRole('region', { name: 'Selected Project' })
-    await expect(view).toContainText(project.primary_path)
-    await expect(view.getByRole('button', { name: 'New chat', exact: true })).toBeDisabled()
+    await expect(view).toContainText(project.path)
+    await expect(view.getByRole('button', { name: 'New chat', exact: true })).toBeEnabled()
     await composer.click(); await expect(composer).toBeFocused()
     await page.screenshot({ path: `${output}/${name}-project-detail.png`, animations: 'disabled' })
     await page.reload(); await expect(view).toContainText('Hermes Mobile')
     expect(errors).toEqual([])
     // Store only synthetic validation results, no credentials or session data.
-    results.push({ viewport: name, projects: projects.length, create: 201, stream: 200, model: 'gpt-6-luna', modelLock: 'confirmed', projectCreation: 501, resume: true, refresh: true })
+    results.push({ viewport: name, projects: projects.length, create: 201, stream: 200, model: 'gpt-6-luna', projectCreation: 201, workspace: true, resume: true, refresh: true })
     await context.close()
   }
   await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2) + '\n')

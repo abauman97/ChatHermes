@@ -62,15 +62,25 @@ sh tests/docker/run.sh fixture
 ```
 
 The separate script authenticates through the dashboard form, exercises native
-Project list/detail and fail-closed creation, creates a real native session,
-streams an `Instant` route reply locked to `gpt-6-luna`, resumes it in the plugin,
+authoritative Project tree/detail and native workspace creation,
+streams a provider-inventory `gpt-6-luna` reply through `prompt.submit`, resumes it in the plugin,
 and checks refresh and focus at desktop/mobile sizes. Screenshots and a
 credential-free result summary go to `tests/integration-output/issue-7/` (ignored
 by Git). The full fixture suite writes screenshots to `tests/visual-output/`.
 Inspect both sets before committing. No synthetic or real user session data is
 committed.
 
-Full Project creation, explicit grouping and Project cwd/context/resume cannot
-be validated on this pin because that upstream contract does not exist. The
-native prompt-builder check validates context discovery in the seeded directory,
-not a mobile Project session. The separate integration does not claim otherwise.
+Project tests now exercise native Project creation, prompt streaming, workspace
+tool execution, context discovery, membership in the hydrated server tree,
+resume/refresh, scope changes, pathless and unavailable Projects, and profiles.
+The fixture sees the runtime's system message and only reports context discovery
+when the seeded `.hermes.md` marker actually arrived; the terminal fixture runs
+`pwd` in the real agent workspace. No Project route or workspace chat is mocked.
+Other activity/attachment UI tests retain their deterministic fixtures.
+
+Compose is the environment specification. On a remote daemon without the Compose
+plugin, the existing `run.sh` runs its equivalent isolated network/services and
+named data volume. Preserve the source pin and base-image digest. After changing
+the model fixture, recreate the dedicated fixture container so it uses the rebuilt
+image as well. Physical iOS keyboard/camera hardware and a launched Desktop client
+remain outside browser automation.

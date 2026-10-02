@@ -1,10 +1,12 @@
-import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
+const workspaceSessions = new Set<string>()
+const workspaceKey = (profile: string, id: string) => JSON.stringify([profile, id])
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:projects(?:\/[A-Za-z0-9_-]+)?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:projects(?:\/(?:detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -43,11 +45,22 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
 }
 export const api = {
   profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
-  projects: (profile: string, signal?: AbortSignal) => request<{ projects: Project[] }>(profile, '/projects', { signal }),
+  projects: (profile: string, signal?: AbortSignal) => request<ProjectTree>(profile, '/projects', { signal }),
   project: async (profile: string, id: string, signal?: AbortSignal) => {
-    const result = await request<{ project: Project }>(profile, `/projects/${encodeURIComponent(id)}`, { signal })
-    if (result.project?.id !== id || typeof result.project.name !== 'string') throw new Error('Invalid Hermes Project response')
+    const result = await request<{ project: Project }>(profile, `/projects/detail?project_id=${encodeURIComponent(id)}`, { signal })
+    if (result.project?.id !== id || typeof result.project.label !== 'string') throw new Error('Invalid Hermes Project response')
     return result.project
+  },
+  isWorkspace(profile: string, id: string) { return workspaceSessions.has(workspaceKey(profile, id)) },
+  workspace(profile: string, id: string) { workspaceSessions.add(workspaceKey(profile, id)) },
+  projectCreate: async (profile: string, id: string) => {
+    const made = unwrapSession(await request<unknown>(profile, `/projects/session?project_id=${encodeURIComponent(id)}`, { method: 'POST', body: '{}' }))
+    workspaceSessions.add(workspaceKey(profile, made.id)); return made
+  },
+  projectEvents(profile: string, refresh: () => void, session?: string) {
+    const source = new EventSource(ROOT + '/project-events?profile=' + encodeURIComponent(profile || 'default') + (session ? '&session=' + encodeURIComponent(session) : ''), { withCredentials: true })
+    source.addEventListener('refresh', refresh)
+    return () => source.close()
   },
   models: (profile: string) => request<{ data: ModelOption[]; default_model?: string }>(profile, '/v1/models'),
   modelOptions: (profile: string) => request<ModelInventory>(profile, '/api/model/options'),
@@ -59,31 +72,43 @@ export const api = {
   capabilities: (profile: string, signal?: AbortSignal) => request<Capabilities>(profile, `/v1/capabilities`, { signal }),
   sessions: async (profile: string, offset = 0, signal?: AbortSignal) => sessionsPage(await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal })),
   create: async (profile: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions`, { method: 'POST', body: '{}', signal })),
-  session: async (profile: string, id: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { signal })),
+  session: async (profile: string, id: string, signal?: AbortSignal) => {
+    const row = unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { signal }))
+    if (row.cwd || row.source === 'desktop') workspaceSessions.add(workspaceKey(profile, id))
+    return row
+  },
   rename: async (profile: string, id: string, title: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ title }), signal })),
   async messages(profile: string, id: string, signal?: AbortSignal): Promise<Message[]> {
     const messages: Message[] = []
     for (let offset = 0; ; ) {
-      const page = messagePage(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false`, { signal }))
+      let page: ReturnType<typeof messagePage>
+      try { page = messagePage(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false`, { signal })) }
+      catch (cause) {
+        // Empty gateway drafts have no durable REST row yet. Persisted chats
+        // keep the existing paginated history, including full tool outputs.
+        if (offset === 0 && cause instanceof ApiError && cause.status === 404 && workspaceSessions.has(workspaceKey(profile, id)))
+          return messagePage(await request<unknown>(profile, `/workspace/sessions/${encodeURIComponent(id)}/messages`, { signal })).messages
+        throw cause
+      }
       messages.push(...page.messages)
       if (!page.pagination || page.pagination.returned < page.pagination.limit || !page.messages.length) return messages
       offset += page.messages.length
     }
   },
   async *stream(profile: string, session: string, input: unknown, signal?: AbortSignal, model?: string, provider?: string): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(profile, `/api/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input, ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }), signal }, 'text/event-stream')
+    const response = await directFetch(profile, `/${workspaceSessions.has(workspaceKey(profile, session)) ? 'workspace' : 'api'}/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input, ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },
-  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<{ status?: string; run?: { status?: string } }>(profile, `/v1/runs/${encodeURIComponent(run)}`, { signal }),
+  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<{ status?: string; run?: { status?: string } }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal }),
   async *runEvents(profile: string, run: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(profile, `/v1/runs/${encodeURIComponent(run)}/events`, { signal }, 'text/event-stream')
+    const response = await directFetch(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events` : `/v1/runs/${encodeURIComponent(run)}/events`, { signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },
-  stop: (profile: string, run: string) => request<{ status: string }>(profile, `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
+  stop: (profile: string, run: string) => request<{ status: string }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop` : `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
 }
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content

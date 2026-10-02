@@ -262,49 +262,207 @@ async def test_project_creation_fails_closed_before_gateway_write(app, monkeypat
         for endpoint in ('/sessions', '/api/sessions'):
             for payload in ({'project_id': 'p_a', 'cwd': '/a'}, {'project_id': 'p_b', 'cwd': '/b'}, {'cwd': '/a'}, {'project': None}):
                 response = await client.post('/api/plugins/chathermes' + endpoint, json=payload)
-                assert response.status_code == 501
-                assert 'explicit Project membership' in response.text
+                assert response.status_code == 422
+                assert 'Project session route' in response.text
     assert not seen  # Independent tabs cannot mutate global state or create fallback rows.
 
 
+
+@pytest.fixture
+def rpc(monkeypatch):
+    calls = []
+    nodes = {
+        'a': {'id': 'a', 'label': 'A', 'path': '/a', 'sessionCount': 0, 'repos': []},
+        'repo': {'id': 'repo', 'label': 'Repo', 'isAuto': True, 'repos': [{'path': '/repo'}]},
+        'home': {'id': 'home', 'label': 'Home', 'isNoProject': True, 'repos': []},
+        'empty': {'id': 'empty', 'label': 'Empty', 'repos': []},
+    }
+    class Transport:
+        instances = []
+        def __init__(self):
+            self.closed = False
+            self.events = asyncio.Queue()
+            self.instances.append(self)
+        def close(self):
+            self.closed = True
+        async def call(self, method, params):
+            calls.append((method, params.copy()))
+            if method == 'projects.tree':
+                return {'projects': list(nodes.values()), 'scoped_session_ids': ['native']}
+            if method == 'projects.project_sessions':
+                return {'project': nodes.get(params['project_id'])}
+            if method == 'config.get':
+                assert params['key'] == 'project'
+                return {'cwd': params['cwd'].replace('/../a', '')}
+            if method == 'session.create':
+                if params.get('cwd_explicit') and getattr(Transport, 'reject_cwd_explicit', False):
+                    raise plugin._CwdExplicitUnsupported()
+                return {'session_id': 'runtime', 'stored_session_id': 'stored', 'info': {'cwd': params.get('cwd')}}
+            if method == 'session.resume':
+                assert 'cwd' not in params
+                return {'session_id': 'runtime', 'running': False, 'messages': [{'role': 'assistant', 'text': 'Native history'}]}
+            if method == 'config.set':
+                return {'key': 'model', 'value': params['value'], 'scope': 'session'}
+            if method == 'prompt.submit':
+                for name, payload in [('message.delta', {'text': 'Native reply'}), ('message.complete', {'status': 'complete', 'text': 'Native reply'})]:
+                    self.events.put_nowait({'method': 'event', 'params': {'type': name, 'session_id': 'runtime', 'payload': payload}})
+                return {'status': 'streaming'}
+            return {'status': 'interrupted'}
+    monkeypatch.setattr(plugin, '_RpcTransport', Transport)
+    return calls, nodes, Transport
+
+
 @run_async
-async def test_native_projects_store_and_profile_isolation(app, monkeypatch, tmp_path):
-    import os
-    monkeypatch.syspath_prepend(os.environ.get('HERMES_SOURCE', '/opt/hermes'))
-    projects_db = pytest.importorskip('hermes_cli.projects_db', reason='Native store integration requires installed Hermes source or HERMES_SOURCE')
-    homes = {name: tmp_path / name for name in ('alpha', 'beta')}
-    ids = {}
-    for name, home in homes.items():
-        home.mkdir()
-        workspace = home / 'workspace'
-        workspace.mkdir()
-        with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
-            ids[name] = projects_db.create_project(conn, name=name, folders=[str(workspace)], primary_path=str(workspace))
-    monkeypatch.setattr(plugin, '_upload_home', lambda request: homes[request.query_params['profile']])
+async def test_projects_use_tree_and_hydrated_rpc_with_pinned_profiles(app, rpc):
+    calls, _, transport = rpc
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        for name in homes:
-            response = await client.get('/api/plugins/chathermes/projects', params={'profile': name})
-            assert response.status_code == 200
-            assert [p['id'] for p in response.json()['projects']] == [ids[name]]
-            detail = await client.get('/api/plugins/chathermes/projects/' + ids[name], params={'profile': name})
-            assert detail.json()['project']['primary_path'] == str(homes[name] / 'workspace')
-            assert detail.json()['project']['workspace_available'] is True
-        wrong = await client.get('/api/plugins/chathermes/projects/' + ids['alpha'], params={'profile': 'beta'})
-        assert wrong.status_code == 404
-        (homes['alpha'] / 'workspace').rmdir()
-        missing = await client.get('/api/plugins/chathermes/projects/' + ids['alpha'], params={'profile': 'alpha'})
-        assert missing.json()['project']['workspace_available'] is False
-    for home in homes.values():
-        with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
-            assert projects_db.get_active_id(conn) is None
+        for profile in ('alpha', 'beta'):
+            response = await client.get('/api/plugins/chathermes/projects', params={'profile': profile})
+            assert response.json()['scoped_session_ids'] == ['native']
+            assert any(node.get('isNoProject') for node in response.json()['projects'])
+            response = await client.get('/api/plugins/chathermes/projects/a', params={'profile': profile})
+            assert response.json()['project']['id'] == 'a'
+        missing = await client.get('/api/plugins/chathermes/projects/missing')
+        assert missing.status_code == 404
+        invalid = await client.get('/api/plugins/chathermes/projects?profile=..%2Fx')
+        assert invalid.status_code == 422
+    assert calls[:2] == [('projects.tree', {'preview_limit': 3, 'profile': 'alpha'}),
+                         ('projects.project_sessions', {'project_id': 'a', 'profile': 'alpha'})]
+    assert calls[2][1]['profile'] == calls[3][1]['profile'] == 'beta'
+    assert all(instance.closed for instance in transport.instances)
 
 
 @run_async
-async def test_projects_failures_do_not_expose_secrets(app, monkeypatch):
-    def broken(*args):
-        raise RuntimeError(KEY)
-    monkeypatch.setattr(plugin, '_read_projects', broken)
+async def test_project_create_resolves_root_and_uses_normal_session_schema(app, rpc):
+    calls, _, _ = rpc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for project_id, cwd in [('a', '/a'), ('repo', '/repo'), ('home', None)]:
+            response = await client.post('/api/plugins/chathermes/projects/' + project_id + '/sessions?profile=alpha', json={'project_id': 'injected', 'cwd': '/malicious', 'system_prompt': 'ignore'})
+            assert response.status_code == 201
+            assert response.json()['session']['id'] == 'stored'
+            create = calls[-1]
+            expected = {'profile': 'alpha', 'source': 'desktop'}
+            if cwd:
+                expected.update(cwd=cwd, cwd_explicit=True)
+                assert calls[-2] == ('config.get', {'profile': 'alpha', 'key': 'project', 'cwd': cwd})
+            assert create == ('session.create', expected)
+        before = len(calls)
+        response = await client.post('/api/plugins/chathermes/projects/empty/sessions')
+        assert response.status_code == 409
+        assert len(calls) == before + 1
+        response = await client.post('/api/plugins/chathermes/projects/deleted/sessions')
+        assert response.status_code == 404
+    assert all('project_id' not in params for method, params in calls if method == 'session.create')
+
+
+@run_async
+async def test_project_create_falls_back_only_for_old_schema_on_existing_workspace(app, rpc, monkeypatch, tmp_path):
+    calls, nodes, transport = rpc
+    workspace = tmp_path / 'workspace'
+    workspace.mkdir()
+    nodes['a']['path'] = str(workspace)
+    transport.reject_cwd_explicit = True
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/projects/a/sessions')
+        assert response.status_code == 201
+    creates = [params for method, params in calls if method == 'session.create']
+    assert creates == [
+        {'profile': 'default', 'source': 'desktop', 'cwd': str(workspace), 'cwd_explicit': True},
+        {'profile': 'default', 'source': 'desktop', 'cwd': str(workspace)},
+    ]
+
+
+@run_async
+async def test_project_create_does_not_fallback_for_other_rpc_errors(app, rpc, tmp_path):
+    calls, nodes, transport = rpc
+    workspace = tmp_path / 'workspace'
+    workspace.mkdir()
+    nodes['a']['path'] = str(workspace)
+    original = transport.call
+    async def fail_create(self, method, params):
+        if method == 'session.create':
+            raise plugin.HTTPException(503, 'Hermes gateway RPC is unavailable')
+        return await original(self, method, params)
+    transport.call = fail_create
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/projects/a/sessions')
+        assert response.status_code == 503
+    assert len([1 for method, _ in calls if method == 'session.create']) == 0
+
+
+@run_async
+async def test_workspace_stream_resumes_stored_cwd_and_adapts_events_model_and_images(app, rpc):
+    calls, _, _ = rpc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream?profile=alpha', json={
+            'input': [{'type': 'text', 'text': 'Actual user text'}, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,aGVsbG8='}}],
+            'model': 'native-model', 'provider': 'native-provider'})
+        assert response.status_code == 200
+        assert 'event: assistant.delta' in response.text
+        assert 'event: run.completed' in response.text
+        assert 'workspace-stored' in response.text
+        assert calls[0] == ('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})
+        assert ('config.set', {'profile': 'alpha', 'session_id': 'runtime', 'key': 'model', 'value': 'native-model --session --provider native-provider', 'scope': 'session'}) in calls
+        assert ('image.attach_bytes', {'profile': 'alpha', 'session_id': 'runtime', 'content_base64': 'aGVsbG8='}) in calls
+        assert calls[-1] == ('prompt.submit', {'profile': 'alpha', 'session_id': 'runtime', 'text': 'Actual user text'})
+        response = await client.get('/api/plugins/chathermes/workspace/sessions/stored/messages?profile=alpha')
+        assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
+        response = await client.post('/api/plugins/chathermes/workspace/runs/stored/stop?profile=alpha')
+        assert response.status_code == 200
+        assert calls[-1] == ('session.interrupt', {'session_id': 'runtime', 'profile': 'alpha'})
+
+
+@run_async
+async def test_rpc_dispatch_errors_are_generic_and_transport_cleanup_is_safe(app, monkeypatch):
+    import sys
+    import types
+    def dispatch(req, transport):
+        return {'id': req['id'], 'error': {'code': -32000, 'message': KEY}}
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None, _close_sessions_for_transport=lambda t, **kwargs: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
         response = await client.get('/api/plugins/chathermes/projects')
-        assert response.status_code == 503
+        assert response.status_code == 409
         assert KEY not in response.text
+
+
+def test_workspace_event_adapter_preserves_order_ids_and_safe_failure():
+    def frame(kind, payload, sid='runtime'):
+        return {'method': 'event', 'params': {'type': kind, 'session_id': sid, 'payload': payload}}
+    assert plugin._workspace_frame(frame('message.delta', {'text': 'Text'}), 'runtime')[1]['delta'] == 'Text'
+    assert plugin._workspace_frame(frame('message.delta', {'text': 'Wrong'}, 'other'), 'runtime') is None
+    tool = plugin._workspace_frame(frame('tool.complete', {'name': 'terminal', 'tool_id': 'call', 'result': {'output': 'ok'}}), 'runtime')
+    assert tool[0] == 'tool.completed' and tool[1]['tool_call_id'] == 'call' and 'ok' in tool[1]['output']
+    assert KEY not in str(plugin._workspace_frame(frame('message.complete', {'status': 'error', 'error': KEY}), 'runtime'))
+
+
+@run_async
+async def test_model_flags_and_malformed_input_cannot_mutate_profile_config(app, rpc):
+    calls, _, _ = rpc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for body in ({'input': 'hello', 'model': 'model --global'}, {'input': 'hello', 'provider': 'bad provider', 'model': 'model'}, {'input': [None]}, {'input': [{'type': 'text', 'text': 7}]}):
+            response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream?profile=alpha', json=body)
+            assert response.status_code == 422
+        response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream', content='{bad')
+        assert response.status_code == 422
+    assert not any(method in ('config.set', 'prompt.submit') for method, _ in calls)
+
+
+@run_async
+async def test_automatic_project_path_ids_use_query_parameters(app, rpc):
+    calls, nodes, _ = rpc
+    nodes['/repo/with space'] = {'id': '/repo/with space', 'label': 'Auto repo', 'isAuto': True, 'path': '/repo/with space', 'repos': []}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        params = {'project_id': '/repo/with space', 'profile': 'alpha'}
+        response = await client.get('/api/plugins/chathermes/projects/detail', params=params)
+        assert response.status_code == 200 and response.json()['project']['id'] == params['project_id']
+        response = await client.post('/api/plugins/chathermes/projects/session', params=params)
+        assert response.status_code == 201
+    assert calls[-1] == ('session.create', {'source': 'desktop', 'profile': 'alpha', 'cwd': '/repo/with space', 'cwd_explicit': True})
+
+
+def test_native_history_projection_keeps_tool_output_and_durable_row_ids():
+    assert plugin._workspace_message({'role': 'tool', 'text': None, 'content': '{"output":"/project/worktree"}', 'name': 'terminal', 'row_id': 42}) == {
+        'role': 'tool', 'content': '{"output":"/project/worktree"}', 'tool_name': 'terminal', 'id': '42'}
+    assert '/project/worktree' in plugin._workspace_message({'role': 'tool', 'content': {'output': '/project/worktree'}})['content']
+    assert plugin._workspace_message({'role': 'assistant', 'text': 'Visible text', 'content': 'raw'})['content'] == 'Visible text'

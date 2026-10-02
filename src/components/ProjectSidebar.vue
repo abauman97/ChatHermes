@@ -10,7 +10,7 @@ const emit = defineEmits<{ select: [id: string]; retry: [] }>()
     <p v-else-if="loading" class="text-sm text-[#a3a3a3]">Loading Projects…</p>
     <p v-else-if="!projects.length" class="text-sm text-[#a3a3a3]">No Projects yet.</p>
     <nav class="grid min-h-0 auto-rows-max gap-1 overflow-y-auto" aria-label="Project list">
-      <button v-for="project in projects" :key="project.id" class="min-h-[48px] truncate rounded-lg px-2.5 py-3 text-left text-base hover:bg-[#303030] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" :class="selected === project.id ? 'bg-[#303030]' : ''" :aria-current="selected === project.id ? 'page' : undefined" @click="emit('select', project.id)">{{ project.name }}</button>
+      <button v-for="project in projects" :key="project.id" class="min-h-[48px] truncate rounded-lg px-2.5 py-3 text-left text-base hover:bg-[#303030] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" :class="selected === project.id ? 'bg-[#303030]' : ''" :aria-label="project.label" :aria-current="selected === project.id ? 'page' : undefined" @click="emit('select', project.id)"><span>{{ project.label }}</span><small class="ml-2 text-xs text-[#a3a3a3]">{{ project.sessionCount }} {{ project.sessionCount === 1 ? 'chat' : 'chats' }}</small></button>
     </nav>
   </section>
 </template>

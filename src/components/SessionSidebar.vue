@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { Session } from '../types/hermes'
-defineProps<{ sessions: Session[]; selected: string; loading: boolean; error: string; hasMore: boolean; busy: boolean }>()
+defineProps<{ sessions: Session[]; selected: string; loading: boolean; error: string; hasMore: boolean; busy: boolean; heading?: string }>()
 const emit = defineEmits<{ select: [id: string]; create: []; more: []; retry: []; rename: [id: string, title: string] }>()
 const editing = ref(''); const title = ref('')
 function edit(session: Session) { editing.value = session.id; title.value = session.title || '' }
 function save() { if (title.value.trim()) emit('rename', editing.value, title.value.trim()); editing.value = '' }
 </script>
 <template>
-  <div class="session-head flex flex-col-reverse items-stretch gap-6"><h2 class="text-xs font-semibold text-[#a3a3a3] dark:text-[#a3a3a3]">Other chats</h2><button class="primary small rounded-xl text-left bg-[#303030] px-3 py-3 text-base font-medium text-[#f4f4f4] hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#b4b4b4] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-[#303030] dark:hover:bg-[#424242]" :disabled="busy" @click="emit('create')">New chat</button></div>
+  <div class="session-head flex flex-col-reverse items-stretch gap-6"><h2 class="text-xs font-semibold text-[#a3a3a3] dark:text-[#a3a3a3]">{{ heading || 'Other chats' }}</h2><button class="primary small rounded-xl text-left bg-[#303030] px-3 py-3 text-base font-medium text-[#f4f4f4] hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#b4b4b4] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-[#303030] dark:hover:bg-[#424242]" :disabled="busy" @click="emit('create')">New chat</button></div>
   <p v-if="error" class="notice error rounded-lg bg-[#402b2b] p-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ error }} <button class="underline" @click="emit('retry')">Retry</button></p>
   <p v-if="loading && !sessions.length" class="muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]">Loading sessions…</p>
   <p v-else-if="!sessions.length" class="muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]">No conversations yet.</p>

@@ -3,100 +3,155 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
 import { api } from './lib/hermes-api'
-const a = { id: 'p_a', name: 'Project A', primary_path: '/workspace/a', folders: [], workspace_available: true }
-const b = { id: 'p_b', name: 'Project B', primary_path: null, folders: [], workspace_available: false }
+import { projectRoot, projectSessions } from './lib/projects'
+import type { Project } from './types/hermes'
+const a: Project = { id: 'p_a', label: 'Project A', path: '/workspace/a', sessionCount: 1, repos: [{ id: 'repo', label: 'Repo', path: '/repo', groups: [{ id: 'worktree', label: 'Outside worktree', path: '/elsewhere/worktree', sessions: [{ id: 'project_s1', title: 'Native worktree chat', cwd: '/elsewhere/worktree', last_active: 3 }] }] }] }
+const b: Project = { id: 'p_b', label: 'Project B', sessionCount: 0, repos: [] }
+const auto: Project = { ...b, id: '/auto/repo', label: 'Automatic repo', isAuto: true, repos: [{ id: 'repo', label: 'Repo', path: '/auto/repo', groups: [] }] }
+const home: Project = { ...b, id: 'home', label: 'Home', isNoProject: true }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
-afterEach(() => { vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes') })
-function setup(detail: (id: string) => Promise<Response> = async id => json({ project: id === a.id ? a : b })) {
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); history.replaceState({}, '', '/chathermes') })
+function setup(detail: (id: string) => Promise<Response> = async id => json({ project: [a, b, auto, home].find(p => p.id === id) })) {
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.includes('/profiles')) return json({ profiles: [] })
-    if (/\/projects(?:\?|$)/.test(url)) return json({ projects: [a, b] })
-    if (url.includes('/projects/')) return detail(url.includes(a.id) ? a.id : b.id)
+    if (url.includes('/profiles')) return json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] })
+    if (url.includes('/projects/session?')) return json({ session: { id: 'project_created', source: 'desktop', cwd: '/workspace/a', workspace_rpc: true } }, 201)
+    if (/\/projects(?:\?|$)/.test(url)) return json({ projects: [a, b, auto, home], scoped_session_ids: ['project_s1'] })
+    if (url.includes('/projects/')) return detail(new URL(url, 'http://dashboard.test').searchParams.get('project_id')!)
     if (url.includes('/capabilities')) return json({ features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } })
     if (url.includes('/v1/models')) return json({ data: [] })
     if (url.includes('/model/options')) return json({ providers: [] })
-    if (url.includes('/messages')) return json([{ role: 'assistant', content: 'Native chat history' }])
-    if (init?.method === 'POST') throw new Error('Unexpected write')
-    // Deliberately has a cwd equal to Project A: it must remain ungrouped.
-    return json({ sessions: [{ id: 's1', title: 'Ungrouped', cwd: a.primary_path }], total: 1 })
+    if (url.includes('/api/sessions/project_created/messages')) return json({}, 404)
+    if (url.includes('/messages')) return json({ messages: [{ role: 'assistant', content: 'Native chat history' }] })
+    if (url.includes('/chat/stream')) return new Response('event: run.completed\ndata: {}\n\n')
+    if (init?.method === 'POST') return json({ session: { id: 'other_created' } }, 201)
+    // Deliberately same cwd as A but not claimed by the tree: frontend must not classify it.
+    return json({ sessions: [{ id: 's1', title: 'Ungrouped', cwd: a.path }, { id: 'project_s1', title: 'Native worktree chat' }], total: 2 })
   })
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
-describe('native Projects on the pinned backend', () => {
-  it('lists A and B, keeps a same-path chat ungrouped, and blocks Project sending', async () => {
-    history.replaceState({}, '', '/chathermes?profile=alpha')
+describe('authoritative gateway Projects', () => {
+  it('retains auto/Home nodes and flattens only hydrated server lanes, without path grouping', async () => {
     const fetch = setup(); const wrapper = mount(App); await flushPromises()
-    expect(wrapper.get('[aria-label="Projects"]').text()).toContain('Project A')
-    expect(wrapper.get('[aria-label="Projects"]').text()).toContain('Project B')
+    expect(wrapper.get('[aria-label="Projects"]').text()).toContain('Automatic repo')
+    expect(wrapper.get('[aria-label="Projects"]').text()).toContain('Home')
     expect(wrapper.get('[aria-label="Sessions"]').text()).toContain('Ungrouped')
-    await wrapper.get('[aria-label="Project list"] button').trigger('click'); await flushPromises()
-    expect(location.search).toContain('project=p_a')
-    expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('/workspace/a')
-    expect(wrapper.get('[aria-label="Selected Project"] button[disabled]').text()).toBe('New chat')
+    expect(wrapper.get('[aria-label="Sessions"]').text()).not.toContain('Native worktree chat')
+    await wrapper.get('[aria-label="Project A"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('Native worktree chat')
     expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
-    expect(wrapper.text()).toContain('Project chats are unavailable')
-    await wrapper.get('textarea').setValue('Do not create a generic chat')
-    expect(wrapper.find('button[aria-label="Send message"]').attributes('disabled')).toBeDefined()
-    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
-    await wrapper.get('.sidebar > button').trigger('click'); await flushPromises()
-    expect(location.search).not.toContain('project=')
     await wrapper.get('.session-select').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('Native chat history')
+    expect(location.search).toContain('project=p_a')
+    expect(location.search).toContain('session=project_s1')
+    expect(api.isWorkspace('', 'project_s1')).toBe(true)
+    expect(fetch.mock.calls.some(([url]) => url.includes('/api/sessions/project_s1/messages'))).toBe(true)
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
     wrapper.unmount()
   })
-  it('restores Project selection across refresh and browser navigation, including an empty Project', async () => {
-    history.replaceState({}, '', '/chathermes?project=p_b&profile=alpha')
+  it('opening another Project keeps the existing session and performs no workspace mutation', async () => {
+    history.replaceState({}, '', '/chathermes?project=p_a&session=project_s1')
+    const fetch = setup(); const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Project B"]').trigger('click'); await flushPromises()
+    expect(location.search).toContain('session=project_s1')
+    expect(location.search).toContain('project=p_b')
+    expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('Project B')
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+  it('creates a scoped chat and uses the existing composer/runtime interface', async () => {
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a')
+    const fetch = setup(); const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Selected Project"] button').trigger('click'); await flushPromises()
+    expect(location.search).toContain('session=project_created')
+    expect(fetch.mock.calls.find(([url, init]) => url.includes('/projects/session?project_id=p_a') && init?.method === 'POST')).toEqual(expect.arrayContaining(['/api/plugins/chathermes/projects/session?project_id=p_a&profile=alpha', expect.objectContaining({ body: '{}' })]))
+    await wrapper.get('textarea').setValue('Check this workspace')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(fetch.mock.calls.some(([url]) => url.includes('/workspace/sessions/project_created/chat/stream?profile=alpha'))).toBe(true)
+    wrapper.unmount()
+  })
+  it('holds a native draft viewer through the existing event subscription', async () => {
+    vi.stubGlobal('EventSource', class {})
+    const close = vi.fn()
+    const events = vi.spyOn(api, 'projectEvents').mockReturnValue(close)
+    setup(); history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a')
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Selected Project"] button').trigger('click'); await flushPromises()
+    expect(events).toHaveBeenLastCalledWith('alpha', expect.any(Function), 'project_created')
+    wrapper.unmount(); expect(close).toHaveBeenCalled()
+  })
+  it('ignores a late create after profile changes, and keeps the request pinned to its owner', async () => {
+    setup(); let finish!: (value: { id: string }) => void
+    const create = vi.spyOn(api, 'projectCreate').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a')
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Selected Project"] button').trigger('click'); await flushPromises()
+    await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
+    finish({ id: 'late_project_session' }); await flushPromises()
+    expect(create).toHaveBeenCalledWith('alpha', 'p_a')
+    expect(location.search).toContain('profile=beta')
+    expect(location.search).not.toContain('late_project_session')
+    wrapper.unmount()
+  })
+  it('ignores late creation after changing Project scope', async () => {
+    setup(); let finish!: (value: { id: string }) => void
+    vi.spyOn(api, 'projectCreate').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    history.replaceState({}, '', '/chathermes?project=p_a')
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Selected Project"] button').trigger('click'); await flushPromises()
+    await wrapper.get('[aria-label="Project B"]').trigger('click'); await flushPromises()
+    finish({ id: 'late_other_scope' }); await flushPromises()
+    expect(location.search).toContain('project=p_b')
+    expect(location.search).not.toContain('session=')
+    wrapper.unmount()
+  })
+  it('restores Project scope with a session and browser navigation', async () => {
+    history.replaceState({}, '', '/chathermes?project=p_a&session=project_s1&profile=alpha')
     setup(); let wrapper = mount(App); await flushPromises()
+    expect(wrapper.text()).toContain('Native chat history'); wrapper.unmount()
+    wrapper = mount(App); await flushPromises()
+    expect(wrapper.get('[aria-label="Project A"]').attributes('aria-current')).toBe('page')
+    history.pushState({}, '', '/chathermes?project=p_b'); dispatchEvent(new PopStateEvent('popstate')); await flushPromises()
     expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('Project B')
-    expect(wrapper.text()).toContain('This Project has no primary path')
-    wrapper.unmount(); wrapper = mount(App); await flushPromises()
-    expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('Project B')
-    history.pushState({}, '', '/chathermes?project=p_a'); dispatchEvent(new PopStateEvent('popstate')); await flushPromises()
-    expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain('Project A')
+    expect(wrapper.get('[aria-label="Selected Project"] button').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
-  it('surfaces deleted Projects and unavailable directories without creating a chat', async () => {
+  it('surfaces deleted/failed Projects and ignores cancelled late reads', async () => {
     history.replaceState({}, '', '/chathermes?project=p_a')
     setup(async () => json({}, 404)); let wrapper = mount(App); await flushPromises()
     expect(wrapper.text()).toContain('Project no longer exists'); wrapper.unmount()
-    setup(async () => json({ project: { ...a, workspace_available: false } })); wrapper = mount(App); await flushPromises()
-    expect(wrapper.text()).toContain('Project directory is unavailable'); wrapper.unmount()
-  })
-  it('rejects mismatched metadata and clears selection on profile changes', async () => {
-    setup(async () => json({ project: b })); history.replaceState({}, '', '/chathermes?project=p_a')
-    const wrapper = mount(App); await flushPromises()
-    expect(wrapper.text()).toContain('Could not load this Project')
-    await wrapper.get('#profile-field').setValue(''); await flushPromises()
-    expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('shows a Project-list failure while keeping Other chats accessible', async () => {
-    setup(); const original = globalThis.fetch
-    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => /\/projects(?:\?|$)/.test(url) ? Promise.resolve(json({}, 503)) : original(url, init))
-    history.replaceState({}, '', '/chathermes')
-    const wrapper = mount(App); await flushPromises()
-    expect(wrapper.get('[aria-label="Projects"]').text()).toContain('Could not load Projects')
-    expect(wrapper.get('[aria-label="Sessions"]').text()).toContain('Ungrouped')
-    wrapper.unmount()
-  })
-  it('ignores late Project metadata after navigation cancels the request', async () => {
     let finish!: (response: Response) => void
-    setup(() => new Promise(resolve => { finish = resolve }))
-    history.replaceState({}, '', '/chathermes')
-    const wrapper = mount(App); await flushPromises()
-    await wrapper.get('[aria-label="Project list"] button').trigger('click'); await flushPromises()
+    setup(() => new Promise(resolve => { finish = resolve })); wrapper = mount(App); await flushPromises()
     await wrapper.get('.sidebar > button').trigger('click'); await flushPromises()
     finish(json({ project: a })); await flushPromises()
     expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false)
-    expect(wrapper.get('[aria-label="Sessions"]').text()).toContain('Ungrouped')
-    expect(location.search).not.toContain('project=')
     wrapper.unmount()
   })
-  it('validates authenticated Project API paths', async () => {
-    const fetch = setup()
-    await api.projects('alpha'); await api.project('alpha', 'p_a')
+  it('refreshes selected hierarchy on gateway events and closes subscription on profile change/unmount', async () => {
+    let refresh!: () => void; const close = vi.fn()
+    vi.stubGlobal('EventSource', class {})
+    const events = vi.spyOn(api, 'projectEvents').mockImplementation((_profile, callback) => { refresh = callback; return close })
+    const fetch = setup(); history.replaceState({}, '', '/chathermes?project=p_a&profile=alpha')
+    const wrapper = mount(App); await flushPromises()
+    const before = fetch.mock.calls.length
+    refresh(); await new Promise(resolve => setTimeout(resolve, 150)); await flushPromises()
+    expect(fetch.mock.calls.slice(before).some(([url]) => url.includes('/projects/detail?project_id=p_a'))).toBe(true)
+    await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
+    expect(close).toHaveBeenCalledOnce(); expect(events).toHaveBeenLastCalledWith('beta', expect.any(Function))
+    wrapper.unmount(); expect(close).toHaveBeenCalledTimes(2)
+  })
+  it('uses Project path then first repository path; keeps hierarchy and deduplicates UI rows', () => {
+    expect(projectRoot(a)).toBe('/workspace/a'); expect(projectRoot(auto)).toBe('/auto/repo'); expect(projectRoot(home)).toBeUndefined()
+    const duplicate = { ...a, repos: [...a.repos, ...a.repos] }
+    expect(projectSessions(duplicate)).toHaveLength(1); expect(duplicate.repos).toHaveLength(2)
+  })
+  it('validates authenticated Project paths and keeps workspace operations profile scoped', async () => {
+    const fetch = setup(); await api.projects('alpha'); await api.project('alpha', 'p_a')
     expect(fetch.mock.calls[0]?.[0]).toBe('/api/plugins/chathermes/projects?profile=alpha')
-    await expect(api.project('alpha', '../x')).rejects.toThrow('Invalid Hermes API path')
+    await expect(api.project('alpha', '../x')).rejects.toThrow('Invalid Hermes Project response')
+    await api.project('alpha', '/auto/repo')
+    expect(fetch.mock.calls.at(-1)?.[0]).toBe('/api/plugins/chathermes/projects/detail?project_id=%2Fauto%2Frepo&profile=alpha')
+    await api.projectCreate('alpha', 'p_a'); await expect(api.messages('beta', 'project_created')).rejects.toMatchObject({ status: 404 })
+    expect(fetch.mock.calls.at(-1)?.[0]).toContain('/api/sessions/project_created/messages')
   })
 })

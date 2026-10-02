@@ -3,12 +3,25 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
 import type { SSEEvent } from './lib/sse'
 import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session, Project } from './types/hermes'
+import { projectRoot, projectSessions } from './lib/projects'
 import ProjectSidebar from './components/ProjectSidebar.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
+const projectView = ref(false)
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
-const projectChatUnavailable = 'Project chats are unavailable in this Hermes version. You can browse Projects and open existing conversations in Other chats.'
+const scopedSessionIds = ref<string[]>([])
+const visibleSessions = computed(() => projectId.value ? selectedProject.value ? projectSessions(selectedProject.value) : [] : sessions.value.filter(row => !scopedSessionIds.value.includes(row.id)))
+let closeProjectEvents: (() => void) | undefined
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+function subscribeProjectEvents() {
+  closeProjectEvents?.(); closeProjectEvents = undefined
+  if (typeof EventSource === 'undefined') return
+  closeProjectEvents = api.isWorkspace(profile.value, session.value)
+    ? api.projectEvents(profile.value, refreshProjects, session.value)
+    : api.projectEvents(profile.value, refreshProjects)
+}
+function refreshProjects() { clearTimeout(refreshTimer); refreshTimer = setTimeout(() => { void loadProjects(); if (projectId.value) void loadProject() }, 100) }
 let projectsAbort: AbortController | undefined, projectAbort: AbortController | undefined
 const profile = ref(''), session = ref(''), sessions = ref<Session[]>([]), messages = ref<Message[]>([])
 const capabilities = ref<Capabilities>({}), offset = ref(0), hasMore = ref(false), loading = ref(false), chatLoading = ref(false), sending = ref(false), approvalPending = ref(false), offline = ref(!navigator.onLine)
@@ -35,20 +48,27 @@ async function loadProjects() {
   try {
     const result = await api.projects(p, controller.signal)
     if (controller !== projectsAbort || p !== profile.value) return
-    if (!Array.isArray(result.projects) || result.projects.some(item => !item || typeof item.id !== 'string' || typeof item.name !== 'string')) throw new Error('Invalid Hermes Projects response')
-    projects.value = result.projects
+    if (!Array.isArray(result.projects) || result.projects.some(item => !item || typeof item.id !== 'string' || typeof item.label !== 'string')) throw new Error('Invalid Hermes Projects response')
+    projects.value = result.projects; scopedSessionIds.value = result.scoped_session_ids || []
   } catch { if (controller === projectsAbort && !controller.signal.aborted) projectsError.value = 'Could not load Projects.' }
   finally { if (controller === projectsAbort) projectsLoading.value = false }
 }
-async function chooseProject(id: string, fromHistory = false) {
-  cancelChat(); projectAbort?.abort(); projectId.value = id; selectedProject.value = undefined; projectError.value = ''; session.value = ''; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; projectLoading.value = false; drawer.value = false; suggestedPrompt.value = ''
-  if (!fromHistory) setUrl()
+async function loadProject() {
+  projectAbort?.abort(); const controller = new AbortController(); projectAbort = controller
+  const p = profile.value, id = projectId.value
   if (!id) return
-  const controller = new AbortController(); projectAbort = controller; const p = profile.value
-  projectLoading.value = true
-  try { const result = await api.project(p, id, controller.signal); if (controller === projectAbort && !controller.signal.aborted && p === profile.value) selectedProject.value = result }
-  catch (cause) { if (controller === projectAbort && !controller.signal.aborted) projectError.value = cause instanceof ApiError && cause.status === 404 ? 'Project no longer exists. Return to Other chats.' : 'Could not load this Project. Retry or return to Other chats.' }
+  projectLoading.value = true; projectError.value = ''
+  try {
+    const result = await api.project(p, id, controller.signal)
+    if (controller === projectAbort && !controller.signal.aborted && p === profile.value && id === projectId.value) selectedProject.value = result
+  } catch (cause) { if (controller === projectAbort && !controller.signal.aborted) projectError.value = cause instanceof ApiError && cause.status === 404 ? 'Project no longer exists. Return to Other chats.' : 'Could not load this Project. Retry or return to Other chats.' }
   finally { if (controller === projectAbort) projectLoading.value = false }
+}
+async function chooseProject(id: string, fromHistory = false) {
+  // Scope changes never touch the live/stored session or its working directory.
+  projectAbort?.abort(); projectId.value = id; projectView.value = !!id; selectedProject.value = undefined; projectError.value = ''; drawer.value = false
+  if (!fromHistory) setUrl()
+  await loadProject()
 }
 async function loadSessions(more = false) {
   listAbort?.abort(); const controller = new AbortController(); listAbort = controller; const id = profile.value
@@ -83,9 +103,10 @@ async function loadMessages() {
 }
 async function chooseProfile(id: string, fromHistory = false) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) { error.value = 'Invalid profile name'; return }
-  cancel(); projectsAbort?.abort(); projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined; projects.value = []; projectError.value = ''; projectsError.value = ''; projectLoading.value = false; profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
+  closeProjectEvents?.(); closeProjectEvents = undefined; clearTimeout(refreshTimer); scopedSessionIds.value = []; cancel(); projectsAbort?.abort(); projectAbort?.abort(); projectId.value = ''; projectView.value = false; selectedProject.value = undefined; projects.value = []; projectError.value = ''; projectsError.value = ''; projectLoading.value = false; profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
   if (!fromHistory) setUrl()
   const current = ++profileGeneration
+  subscribeProjectEvents()
   void loadProjects()
   void loadSessions()
   void Promise.allSettled([api.models(id), api.modelOptions(id)]).then(([catalog, inventory]) => {
@@ -101,24 +122,35 @@ async function chooseProfile(id: string, fromHistory = false) {
   try { const result = await api.capabilities(id); if (current === profileGeneration && profile.value === id) capabilities.value = result } catch { if (current === profileGeneration && profile.value === id) capabilities.value = {} }
 }
 async function chooseSession(id: string, fromHistory = false) {
-  projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined; projectError.value = ''; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
+  if (projectId.value) api.workspace(profile.value, id)
+  else if (sessions.value.find(row => row.id === id)?.cwd || sessions.value.find(row => row.id === id)?.source === 'desktop') api.workspace(profile.value, id)
+  projectView.value = false; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
+  const current = generation, p = profile.value
+  if (!projectId.value && !api.isWorkspace(p, id)) {
+    try { await api.session(p, id) } catch { /* History still supplies the route's error. */ }
+    if (current !== generation || p !== profile.value) return
+  }
+  subscribeProjectEvents()
   await loadMessages()
 }
 async function createSession() {
-  if (projectId.value) { projectError.value = projectChatUnavailable; return }
   if (offline.value || creating.value) return
-  const id = profile.value, selected = session.value, current = generation
+  const id = profile.value, scope = projectId.value, selected = session.value, current = generation
   creating.value = true
   try {
-    const made = await api.create(id)
-    if (current !== generation || profile.value !== id || session.value !== selected) return
+    if (scope && !provider.value) { provider.value = providers.value.find(item => item.is_current)?.slug || ''; model.value = '' }
+    const made = scope ? await api.projectCreate(id, scope) : await api.create(id)
+    if (current !== generation || profile.value !== id || session.value !== selected || projectId.value !== scope) return
     sessions.value = [made, ...sessions.value.filter(item => item.id !== made.id)]
+    // RPC drafts have no DB row until the first prompt; their normal resume path
+    // can still hydrate them by stored ID. Keep the same chat components.
     const pending = chooseSession(made.id), selectionGeneration = generation
+    refreshProjects()
     await pending
     if (selectionGeneration !== generation || profile.value !== id || session.value !== made.id) return
     return made.id
-  } catch (cause) { if (current === generation && profile.value === id) error.value = cause instanceof Error ? cause.message : 'Could not create session' }
+  } catch (cause) { if (current === generation && profile.value === id && projectId.value === scope) { const message = cause instanceof Error ? cause.message : 'Could not create session'; if (scope) projectError.value = message; else error.value = message } }
   finally { creating.value = false }
 }
 async function suggest(text: string) {
@@ -127,7 +159,7 @@ async function suggest(text: string) {
 }
 async function rename(id: string, title: string) {
   const p = profile.value, current = generation
-  try { await api.rename(p, id, title); if (current !== generation || p !== profile.value) return; const found = sessions.value.find(s => s.id === id); if (found) found.title = title }
+  try { await api.rename(p, id, title); if (current !== generation || p !== profile.value) return; const found = sessions.value.find(s => s.id === id); if (found) found.title = title; refreshProjects() }
   catch (cause) { if (current === generation && p === profile.value) error.value = cause instanceof Error ? cause.message : 'Could not rename session' }
 }
 function updateActivityOutputs(history: Message[]) {
@@ -135,7 +167,8 @@ function updateActivityOutputs(history: Message[]) {
   const last = history.reduce((index, item, current) => item.role === 'user' ? current : index, -1)
   const tools = progress.value.filter(item => item.kind === 'tool')
   history.slice(last + 1).filter(item => item.role === 'tool').forEach((message, index) => {
-    if (tools[index]) tools[index]!.output = messageText(message.content)
+    const output = messageText(message.content)
+    if (tools[index] && output) tools[index]!.output = output
   })
 }
 function finishActivities() { progress.value.forEach(item => { item.complete = true }); thinking.value = false }
@@ -169,13 +202,12 @@ function reduceFrame(frame: SSEEvent): 'completed' | 'approval' | undefined {
     const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId ? item.id === callId : item.title === name))
     if (item) { item.complete = true; if (typeof data.output === 'string') item.output = data.output; if (frame.event === 'tool.failed') item.title += ' (failed)' }
   } else if (frame.event === 'approval.request') { finishActivities(); approvalPending.value = true; streamAbort?.abort(); return 'approval' }
-  else if (frame.event === 'run.completed') { finishActivities(); activeRun.value = ''; return 'completed' }
+  else if (frame.event === 'run.completed') { refreshProjects(); finishActivities(); activeRun.value = ''; return 'completed' }
   else if (['run.failed', 'run.cancelled', 'error'].includes(frame.event)) { finishActivities(); activeRun.value = ''; throw new Error('Turn failed. Check session history before retrying.') }
 }
 async function send(text: string, attachments: Attachment[] = []) {
-  if (projectId.value) { projectError.value = projectChatUnavailable; return }
   if (sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
-  if (!session.value && !await createSession()) return
+  if ((projectView.value || !session.value) && !await createSession()) return
   if (sending.value || approvalPending.value) return
   sending.value = true; thinking.value = true; activeRun.value = ''; chatError.value = ''; draft.value = ''; progress.value = []
   activity('thinking', 'Thinking…')
@@ -213,7 +245,9 @@ async function refreshVisibleHistory(current: number, p: string, s: string, cont
   return false
 }
 async function visibilityChange() {
-  if (document.visibilityState !== 'visible' || !session.value || reconnecting) return
+  if (document.visibilityState !== 'visible') return
+  refreshProjects()
+  if (!session.value || reconnecting) return
   visibilityAbort?.abort(); const controller = new AbortController(); visibilityAbort = controller
   const current = generation, p = profile.value, s = session.value, run = activeRun.value
   reconnecting = true
@@ -247,17 +281,17 @@ async function visibilityChange() {
 }
 function exitPlugin() { location.href = '/' }
 async function reloadAfterApproval() { await loadMessages() }
-function onlineChange() { offline.value = !navigator.onLine }
+function onlineChange() { offline.value = !navigator.onLine; if (!offline.value) { refreshProjects(); void loadSessions() } }
 function pop() {
   const state = urlState()
   const pending = chooseProfile(state.profile, true), current = generation
-  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.project) { void chooseProject(state.project, true); if (state.session) projectError.value = 'This Hermes version cannot verify a Project/session association. Open this session from Other chats.' } else if (state.session) void chooseSession(state.session, true) } })
+  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session) void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 }
 function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
 function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.project) { void chooseProject(state.project, true); if (state.session) projectError.value = 'This Hermes version cannot verify a Project/session association. Open this session from Other chats.' } else if (state.session) void chooseSession(state.session, true) } })
-onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityChange); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
+onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session) void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onUnmounted(() => { closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
 </script>
 <template>
   <div class="app-shell flex min-h-dvh bg-[#212121] font-sans text-[#f4f4f4] dark:bg-[#212121] dark:text-[#f4f4f4]">
@@ -265,7 +299,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityC
       <div class="brand flex items-center gap-2.5 px-2 text-2xl font-semibold"><span class="brand-mark grid size-9 shrink-0 place-items-center text-white">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" aria-label="Close navigation" @click="closeDrawer">×</button></div>
       <ProjectSidebar :projects="projects" :selected="projectId" :loading="projectsLoading" :error="projectsError" @select="chooseProject" @retry="loadProjects" />
       <button v-if="projectId" class="rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]" @click="chooseProject('')">← Other chats</button>
-      <SessionSidebar v-if="!projectId" :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline" @select="chooseSession" @create="createSession" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
+      <SessionSidebar :heading="projectId ? selectedProject?.label || 'Project chats' : undefined" :sessions="visibleSessions" :selected="session" :loading="projectId ? projectLoading : loading" :error="projectId ? projectError : error" :has-more="!projectId && hasMore" :busy="offline || creating || (!!projectId && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject))))" @select="chooseSession" @create="createSession" @more="loadSessions(true)" @retry="projectId ? loadProject() : loadSessions()" @rename="rename" />
       <div class="sidebar-foot mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile</label>
         <select id="profile-field" class="profile-field w-full rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white" :value="profile" @change="chooseProfile(($event.target as HTMLSelectElement).value)">
@@ -278,7 +312,7 @@ onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityC
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
-        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ sessions.find(s => s.id === session)?.title || (session ? 'Conversation' : selectedProject?.name || 'ChatHermes') }}</h1>
+        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ (projectView ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
         <span class="topbar-profile max-w-[30%] truncate rounded-full bg-[#303030] px-3 py-1.5 text-xs text-[#b4b4b4]">{{ profile || 'Current profile' }}</span>
         <span class="grid size-8 shrink-0 place-items-center text-2xl" aria-label="ChatHermes logo">✳</span>
         <button v-if="embedded" class="shrink-0 rounded-lg px-2 py-2 text-sm hover:bg-[#303030]" aria-label="Back to dashboard" @click="exitPlugin">←<span class="hidden min-[701px]:inline"> Back to dashboard</span></button>
@@ -286,22 +320,21 @@ onUnmounted(() => { document.removeEventListener('visibilitychange', visibilityC
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
       <div v-if="approvalPending" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">Approval is pending. Resolve the request in Hermes, then reload this conversation here to inspect history. Sending stays locked until you leave this conversation or reload the page; confirm the previous turn finished before sending again. <button class="underline disabled:opacity-55" :disabled="chatLoading" @click="reloadAfterApproval">Reload conversation</button></div>
       <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="loadMessages">Refresh history</button></div>
-      <section v-if="projectId" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
+      <section v-if="projectView" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
         <p v-if="projectLoading" role="status">Loading Project…</p>
-        <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">{{ projectError }} <button class="underline" @click="chooseProject(projectId, true)">Retry Project</button></p>
+        <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">{{ projectError }} <button class="underline" @click="loadProject">Retry Project</button></p>
         <template v-if="selectedProject">
-          <h2 class="mb-3 text-2xl font-semibold">{{ selectedProject.name }}</h2>
-          <p v-if="selectedProject.description" class="mb-4 text-[#b4b4b4]">{{ selectedProject.description }}</p>
-          <p class="mb-4 break-all text-sm text-[#a3a3a3]">Workspace: {{ selectedProject.primary_path || 'No primary path configured' }}</p>
-          <p v-if="!selectedProject.primary_path" class="mb-4 text-[#fecaca]" role="alert">This Project has no primary path.</p>
-          <p v-else-if="selectedProject.workspace_available === false" class="mb-4 text-[#fecaca]" role="alert">The Project directory is unavailable on the Hermes server.</p>
-          <button class="mb-4 rounded-xl bg-[#303030] px-4 py-3 text-base opacity-55" disabled>New chat</button>
-          <p class="max-w-xl text-sm leading-relaxed text-[#b4b4b4]" role="status">{{ projectChatUnavailable }}</p>
+          <h2 class="mb-3 text-2xl font-semibold">{{ selectedProject.label }}</h2>
+          <p class="mb-4 break-all text-sm text-[#a3a3a3]">{{ projectRoot(selectedProject) ? 'Workspace: ' + projectRoot(selectedProject) : selectedProject.isNoProject ? 'No project workspace' : 'No workspace configured' }}</p>
+          <button class="mb-4 rounded-xl bg-[#303030] px-4 py-3 text-base disabled:opacity-55" :disabled="offline || creating || (!selectedProject.isNoProject && !projectRoot(selectedProject))" @click="createSession">New chat</button>
+          <h3 class="mb-3 text-sm text-[#a3a3a3]">Recent chats</h3>
+          <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">No conversations yet.</p>
+          <button v-for="row in visibleSessions" :key="row.id" class="block w-full rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" @click="chooseSession(row.id)">{{ row.title || 'Untitled session' }}</button>
           <button class="mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base" @click="chooseProject('')">Other chats</button>
         </template>
       </section>
       <ChatTranscript v-else :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest" />
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="!!projectId || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :suggested-prompt="suggestedPrompt" :reason="projectId ? 'Project chats are unavailable on this Hermes version.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="(projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="projectId || api.isWorkspace(profile, session) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :suggested-prompt="suggestedPrompt" :reason="projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
     </main>
   </div>
 </template>
