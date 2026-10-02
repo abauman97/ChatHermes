@@ -1,18 +1,35 @@
 name: chathermes-test
+
 services:
+  model:
+    image: nousresearch/hermes-agent:latest
+    pull_policy: always
+    entrypoint: ["/opt/hermes/.venv/bin/python"]
+    command: /test/model_fixture.py
+    volumes:
+      - ./tests/docker/model_fixture.py:/test/model_fixture.py:ro
+    networks: [test]
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/v1/models', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+
   hermes:
-    build:
-      context: .
-      dockerfile: tests/docker/Dockerfile
-    image: chathermes-test:3632f917
-    init: true
-    entrypoint: ["/bin/sh", "/test/start.sh"]
-    command: gateway run
-    ports:
-      - "127.0.0.1:8642:8642"
-      - "127.0.0.1:9119:9119"
+    image: nousresearch/hermes-agent:latest
+    pull_policy: always
+    # The wrapper seeds fixtures, then execs the image's native PID-1 dispatcher.
+    entrypoint: ["/bin/sh", "/test/start-latest.sh"]
+    command: ["gateway", "run"]
+    depends_on:
+      model:
+        condition: service_healthy
     volumes:
       - hermes-test-data:/opt/data
+      - ./.hermes/config.yaml:/test/config.yaml:ro
+      - ./tests/docker/init.py:/test/init.py:ro
+      - ./tests/docker/start-latest.sh:/test/start-latest.sh:ro
+      - ./plugin/chathermes:/opt/plugins-src/chathermes:ro
     environment:
       HERMES_UID: "1000"
       HERMES_GID: "1000"
@@ -22,24 +39,45 @@ services:
       HERMES_DASHBOARD_TUI: "0"
       API_SERVER_ENABLED: "true"
       API_SERVER_KEY: chathermes-isolated-test-key-2026
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-chathermes-model-fixture}
-      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://model:4000/v1}
-      CHATHERMES_TEST_REAL: ${CHATHERMES_TEST_REAL:-0}
-    depends_on:
-      - model
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - default
+      # Literal fixture values: never inherit real credentials from the host .env.
+      LITELLM_API_KEY: chathermes-model-fixture
+      LITELLM_BASE_URL: http://model:4000/v1
+      CHATHERMES_TEST_REAL: "0"
+    networks: [test]
     healthcheck:
       test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9119/api/auth/providers', timeout=5)"]
       interval: 10s
       timeout: 6s
-      retries: 12
+      retries: 18
       start_period: 30s
-  model:
-    image: chathermes-test:3632f917
-    entrypoint: /opt/hermes/.venv/bin/python
-    command: /test/model_fixture.py
+
+  browser:
+    # Docker does not publish ports on an internal-only network. Relay inbound
+    # dashboard/gateway TCP traffic without giving Hermes an egress network.
+    image: nousresearch/hermes-agent:latest
+    pull_policy: always
+    entrypoint: ["/opt/hermes/.venv/bin/python"]
+    command: /test/browser_relay.py
+    depends_on:
+      hermes:
+        condition: service_healthy
+    volumes:
+      - ./tests/docker/browser_relay.py:/test/browser_relay.py:ro
+    ports:
+      - "127.0.0.1:8642:8642"
+      - "127.0.0.1:9119:9119"
+    networks: [test, browser]
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9119/api/auth/providers', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      retries: 12
+
+networks:
+  browser:
+  test:
+    # No internet egress, including accidental provider fallback requests.
+    internal: true
+
 volumes:
   hermes-test-data:

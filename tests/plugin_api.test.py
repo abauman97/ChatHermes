@@ -466,3 +466,52 @@ def test_native_history_projection_keeps_tool_output_and_durable_row_ids():
         'role': 'tool', 'content': '{"output":"/project/worktree"}', 'tool_name': 'terminal', 'id': '42'}
     assert '/project/worktree' in plugin._workspace_message({'role': 'tool', 'content': {'output': '/project/worktree'}})['content']
     assert plugin._workspace_message({'role': 'assistant', 'text': 'Visible text', 'content': 'raw'})['content'] == 'Visible text'
+
+
+@pytest.mark.parametrize('error', [
+    {'code': 4000, 'message': 'invalid params for session.create: cwd_explicit: Extra inputs are not permitted'},
+    {'code': 4000, 'message': 'cwd_explicit', 'data': {'detail': 'Extra inputs are not permitted'}},
+])
+@run_async
+async def test_rpc_transport_preserves_cwd_schema_rejection_for_retry(monkeypatch, error):
+    import sys
+    import types
+
+    def dispatch(request, transport):
+        return {'id': request['id'], 'error': error}
+
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None, _close_sessions_for_transport=lambda t, **kwargs: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
+    transport = plugin._RpcTransport()
+    try:
+        with pytest.raises(plugin._CwdExplicitUnsupported):
+            await transport.call('session.create', {'cwd_explicit': True})
+    finally:
+        transport.close()
+
+
+@run_async
+async def test_workspace_resume_retries_native_rejection_of_inline_images(monkeypatch):
+    import sys
+    import types
+    calls = []
+
+    def dispatch(request, transport):
+        calls.append(request['params'].copy())
+        if 'inline_images' in request['params']:
+            return {'id': request['id'], 'error': {'code': 4000,
+                'message': 'invalid params for session.resume: inline_images: Extra inputs are not permitted'}}
+        return {'id': request['id'], 'result': {'session_id': 'runtime', 'messages': []}}
+
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None, _close_sessions_for_transport=lambda t, **kwargs: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
+    transport = plugin._RpcTransport()
+    try:
+        result = await plugin._workspace_resume(transport, 'alpha', 'stored')
+        assert result['session_id'] == 'runtime'
+        assert calls == [
+            {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False},
+            {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop'},
+        ]
+    finally:
+        transport.close()

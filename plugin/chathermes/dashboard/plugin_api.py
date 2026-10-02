@@ -387,9 +387,11 @@ class _RpcTransport:
                     message += ' ' + str(data)
                 if isinstance(message, str) and 'cwd_explicit' in message and 'Extra inputs are not permitted' in message:
                     raise _CwdExplicitUnsupported()
+                if method == 'session.resume' and isinstance(message, str) and 'inline_images' in message and 'Extra inputs are not permitted' in message:
+                    raise _InlineImagesUnsupported()
                 raise HTTPException(501 if code == -32601 else 409, 'Hermes RPC could not complete this operation')
             return frame['result']
-        except HTTPException:
+        except (HTTPException, _CwdExplicitUnsupported, _InlineImagesUnsupported):
             raise
         except Exception:
             raise HTTPException(503, 'Hermes gateway RPC is unavailable')
@@ -409,6 +411,10 @@ class _RpcTransport:
 
 
 class _CwdExplicitUnsupported(Exception):
+    pass
+
+
+class _InlineImagesUnsupported(Exception):
     pass
 
 
@@ -531,8 +537,13 @@ async def project_events(request: Request):
 
 async def _workspace_resume(transport, profile, stored_id):
     # Crucially, no cwd here. Hermes restores the session's own workspace.
-    return await transport.call('session.resume', {'profile': profile, 'session_id': stored_id,
-        'source': 'desktop', 'inline_images': False})
+    params = {'profile': profile, 'session_id': stored_id, 'source': 'desktop', 'inline_images': False}
+    try:
+        return await transport.call('session.resume', params)
+    except _InlineImagesUnsupported:
+        # Some published images lack this optional history projection flag.
+        params.pop('inline_images')
+        return await transport.call('session.resume', params)
 
 
 def _workspace_message(row):
