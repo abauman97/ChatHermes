@@ -220,9 +220,13 @@ function activity(kind: 'thinking' | 'tool', title: string, id?: string) {
 }
 function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   const data = eventPayload(frame)
+  // A foreign frame must not advance this run's applied cursor.
   if (typeof data.run_id === 'string' && activeRun.value && data.run_id !== activeRun.value) return
   const seq = typeof data.seq === 'number' ? data.seq : frame.id !== undefined ? Number(frame.id) : undefined
-  if (seq !== undefined && Number.isFinite(seq)) { if (seq <= lastSeq) return; lastSeq = seq }
+  if (seq !== undefined && Number.isSafeInteger(seq) && seq >= 0) {
+    if (seq <= lastSeq) return
+    lastSeq = seq
+  }
   if (!activeRun.value && typeof data.run_id === 'string') { activeRun.value = data.run_id; rememberRun(profile.value, session.value, data.run_id) }
   if (['message.delta', 'message.interim', 'assistant.delta', 'tool.started', 'reasoning.available', 'run.steered'].includes(frame.event) && !approvalPending.value) runStatus.value = 'running'
   const delta = typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text : ''
@@ -304,7 +308,7 @@ async function finishRun(current: number, p: string, s: string, run: string) {
   finishActivities(); approvalPending.value = false; approval.value = undefined
   if (!await loadMessages()) { reconnectNotice.value = true; throw new Error('Run ended, but history could not be loaded. Reconnecting…') }
   if (current !== generation) return
-  draft.value = ''; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false
+  draft.value = ''; lastSeq = -1; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false
   void loadSessions()
 }
 function retryDelay(signal: AbortSignal) {
@@ -316,13 +320,15 @@ function retryDelay(signal: AbortSignal) {
   })
 }
 async function followRun(current: number, p: string, s: string, run: string, restore: boolean) {
+  if (current !== generation) return
   streamAbort?.abort(); const controller = new AbortController(); streamAbort = controller
   const viewer = ++streamGeneration
   sending.value = true; reconnectNotice.value = restore
   while (current === generation && viewer === streamGeneration && !controller.signal.aborted) {
     try {
+      // Recheck authoritative status after both a closed stream and a failed GET.
       const state = await api.runStatus(p, run, controller.signal)
-      if (current !== generation || controller.signal.aborted) return
+      if (current !== generation || controller.signal.aborted || viewer !== streamGeneration) return
       const status = state.status || state.run?.status || ''
       runStatus.value = status
       if (terminalStatuses.includes(status)) {
@@ -333,7 +339,7 @@ async function followRun(current: number, p: string, s: string, run: string, res
       approvalPending.value = status === 'waiting_for_approval'
       approval.value = state.approval
       if (restore) {
-        // Rebuild the active turn from replay, retaining all earlier history.
+        // A new viewer has no live transcript: rebuild only the active turn.
         const last = messages.value.reduce((index, item, i) => item.role === 'user' ? i : index, -1)
         if (last >= 0) messages.value = messages.value.slice(0, last + 1)
         draft.value = ''; progress.value = []; lastSeq = -1; restore = false
@@ -402,7 +408,7 @@ async function releaseUnavailableRun() {
   if (!unavailableRun.value) return
   const previousStatus = runStatus.value; runStatus.value = 'stopped'
   if (!await loadMessages() || current !== generation) { if (current === generation) runStatus.value = previousStatus; return }
-  forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
+  lastSeq = -1; forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
 }
 function exitPlugin() { location.href = '/' }
 function onlineChange() { offline.value = !navigator.onLine; if (!offline.value) { refreshProjects(); void loadSessions(); void visibilityChange() } }
