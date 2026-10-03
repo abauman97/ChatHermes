@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
 import type { SSEEvent } from './lib/sse'
 import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session, Project, ProjectAction } from './types/hermes'
-import { activeRunFor, rememberRun, forgetRun } from './lib/active-runs'
+import { activeRunFor, idempotencyKeyFor, rememberIdempotencyKey, rememberRun, forgetRun } from './lib/active-runs'
 import { projectRoot, projectSessions } from './lib/projects'
 import ProjectsPage from './components/ProjectsPage.vue'
 import ProjectSettings from './components/ProjectSettings.vue'
@@ -262,6 +262,9 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   }
 
 }
+function createIdempotencyKey(): string {
+  return 'turn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
+}
 async function send(text: string, attachments: Attachment[] = []) {
   if (sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
   if ((projectView.value || !session.value) && !await createSession()) return
@@ -285,7 +288,17 @@ async function send(text: string, attachments: Attachment[] = []) {
     if (!api.isWorkspace(p, s)) {
       // Admission isn't aborted on navigation: record the accepted run even if
       // its viewer has left. Never repeat POST to repair a dropped event stream.
-      const made = await api.startRun(p, s, attachments.length ? parts : text, model.value || defaultModel.value, provider.value)
+      const requestKey = idempotencyKeyFor(p, s) || createIdempotencyKey()
+      rememberIdempotencyKey(p, s, requestKey)
+      const makeRequest = () => api.startRun(p, s, attachments.length ? parts : text, model.value || defaultModel.value, provider.value, requestKey)
+      let made
+      try { made = await makeRequest() }
+      catch (cause) {
+        if (cause instanceof ApiError && cause.status < 500) throw cause
+        // Retry once because a lost response may follow successful admission.
+        made = await makeRequest()
+      }
+      // Persist the active run before exposing the rest of the response path.
       rememberRun(p, s, made.run_id)
       if (current !== generation) return
       activeRun.value = made.run_id
@@ -301,7 +314,14 @@ async function send(text: string, attachments: Attachment[] = []) {
     if (!completed && activeRun.value) { await followRun(current, p, s, activeRun.value, false); return }
     if (!completed) throw new Error('Stream ended without a run ID. Check session history before retrying.')
     await finishRun(current, p, s, activeRun.value)
-  } catch (cause) { if (current === generation) chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.' }
+  } catch (cause) {
+    if (current === generation) {
+      if (cause instanceof ApiError && cause.status >= 500) {
+        try { await loadMessages() } catch { /* Preserve current history on refresh failure. */ }
+      }
+      chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.'
+    }
+  }
   finally { if (current === generation && !activeRun.value) { sending.value = false; finishActivities() } }
 }
 const terminalStatuses = ['completed', 'failed', 'cancelled', 'interrupted', 'stopped']
@@ -355,13 +375,35 @@ async function followRun(current: number, p: string, s: string, run: string, res
       if (ended) { await finishRun(current, p, s, run); return }
       reconnectNotice.value = true
     } catch (cause) {
-      if (current !== generation || controller.signal.aborted) return
+      if (current !== generation || controller.signal.aborted || viewer !== streamGeneration) return
       reconnectNotice.value = true
-      if (cause instanceof ApiError && [404, 403].includes(cause.status)) {
-        // Expired run buffers are not proof that the old turn finished.
-        unavailableRun.value = true
-        chatError.value = 'Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.'
+      if (cause instanceof ApiError && cause.status === 403) {
+        chatError.value = 'Hermes denied access to this run. Check the selected profile and permissions.'
         return
+      }
+      if (cause instanceof ApiError && cause.status === 404) {
+        // An expired event buffer is distinct from a missing run. Verify status
+        // before declaring the turn unavailable.
+        try {
+          const state = await api.runStatus(p, run, controller.signal)
+          if (current !== generation || controller.signal.aborted || viewer !== streamGeneration) return
+          const status = state.status || state.run?.status || ''
+          runStatus.value = status
+          if (terminalStatuses.includes(status)) { await finishRun(current, p, s, run); return }
+          chatError.value = 'The run event stream expired. Run status is still available; reconnecting…'
+        } catch (statusError) {
+          if (current !== generation || controller.signal.aborted || viewer !== streamGeneration) return
+          if (statusError instanceof ApiError && statusError.status === 403) {
+            chatError.value = 'Hermes denied access to this run. Check the selected profile and permissions.'
+            return
+          }
+          if (statusError instanceof ApiError && statusError.status === 404) {
+            unavailableRun.value = true
+            chatError.value = 'Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.'
+            return
+          }
+          chatError.value = 'Could not verify the run status. Reconnecting…'
+        }
       }
     }
     await retryDelay(controller.signal)
