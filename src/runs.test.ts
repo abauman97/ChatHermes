@@ -71,7 +71,7 @@ describe('durable Runs execution', () => {
     await f.ready(); f.frame('message.delta', 0, { delta: 'Hello' }); await flushPromises(); f.frame('message.delta', 0, { delta: 'Hello' }); await flushPromises()
     expect(wrapper.findAll('.message.assistant').at(-1)?.text()).toBe('Hello')
     f.viewers.at(-1)!.close(); await flushPromises()
-    expect(wrapper.text()).toContain('Reconnecting and restoring')
+    expect(wrapper.text()).toContain('Reconnecting to the live response')
     await vi.advanceTimersByTimeAsync(1000); await flushPromises()
     expect(f.fetch.mock.calls.filter(([url]) => String(url).includes('/events')).at(-1)?.[0]).toContain('last_seq=0')
     await f.ready(2); f.frame('message.delta', 0, { delta: 'Hello' }); f.frame('message.delta', 1, { delta: ' again' }); f.frame('message.delta', 1, { delta: ' again' }); await flushPromises()
