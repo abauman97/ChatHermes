@@ -28,6 +28,8 @@ class Model(BaseHTTPRequestHandler):
         message = {'role': 'assistant', 'content': None if call else 'Isolated Hermes reply. ' + ('Tool completed successfully.' if used_tool else 'Your message was received.')}
         if project_context and '[workspace]' in text and not call:
             message['content'] += ' Project context discovered.'
+        if '[long-run]' in text and not call:
+            message['content'] += ' ' + 'Still working through the isolated request. ' * 12
         if call:
             message['tool_calls'] = [{'id': 'call_fixture_terminal', 'type': 'function', 'function': {'name': tool_name, 'arguments': json.dumps({'command': "pwd; printf 'hermes-isolated-tool-ok'" if '[workspace]' in text else "printf 'hermes-isolated-tool-ok'"})}}]
         self.send_response(200)

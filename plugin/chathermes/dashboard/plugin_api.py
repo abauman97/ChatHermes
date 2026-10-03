@@ -174,6 +174,21 @@ async def chat_stream(request: Request, session_id: str):
     return await _stream(request, "/api/sessions/" + quote(session_id, safe="") + "/chat/stream")
 
 
+@router.post("/v1/runs")
+async def create_run(request: Request):
+    return await _proxy(request, "/v1/runs")
+
+
+@router.post("/v1/runs/{run_id}/approval")
+async def approve_run(request: Request, run_id: str):
+    return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/approval")
+
+
+@router.post("/v1/runs/{run_id}/steer")
+async def steer_run(request: Request, run_id: str):
+    return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/steer")
+
+
 @router.post("/runs/{run_id}/stop")
 @router.post("/v1/runs/{run_id}/stop", include_in_schema=False)
 async def stop(request: Request, run_id: str):

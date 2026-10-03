@@ -56,3 +56,19 @@ describe('dashboard plugin Hermes client', () => {
   })
   it('extracts text without interpreting HTML', () => { expect(messageText([{ type: 'text', text: '<script>fake</script>' }])).toBe('<script>fake</script>') })
 })
+
+it('wraps Runs image parts in a user message and sends authenticated actions and replay cursor', async () => {
+  const fake = vi.fn(async (url: string, _init?: RequestInit) => url.includes('/events') ? new Response('id: 43\ndata: {"event":"message.delta","seq":43,"delta":"hi"}\n\n') : new Response(JSON.stringify({ run_id: 'run_1', status: 'started' })))
+  vi.stubGlobal('fetch', fake)
+  const parts = [{ type: 'text', text: 'Describe' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,eA==' } }]
+  await api.startRun('alpha', 's1', parts, 'test-model', 'test-provider')
+  expect(JSON.parse(String(fake.mock.calls[0]?.[1]?.body))).toEqual({ session_id: 's1', input: [{ role: 'user', content: parts }], model: 'test-model', provider: 'test-provider', require_model_lock: true })
+  await api.approve('alpha', 'run_1', 'deny', 'req_1')
+  await api.steer('alpha', 'run_1', 'guidance')
+  await api.stop('alpha', 'run_1')
+  const frames = []
+  for await (const frame of api.runEvents('alpha', 'run_1', undefined, 42)) frames.push(frame)
+  expect(fake.mock.calls.at(-1)?.[0]).toBe('/api/plugins/chathermes/v1/runs/run_1/events?last_seq=42&profile=alpha')
+  expect(frames[0]?.id).toBe('43'); expect(frames[0]?.event).toBe('message.delta')
+  expect(fake.mock.calls.every(([, init]) => init?.credentials === 'same-origin')).toBe(true)
+})

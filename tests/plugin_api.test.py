@@ -562,3 +562,27 @@ async def test_workspace_resume_emits_text_snapshot_not_replayed_delta():
     assert 'event: assistant.delta' not in body
     assert 'event: run.completed' in body
     assert transport.closed
+
+
+@run_async
+async def test_runs_admission_actions_and_replay_cursor(app, monkeypatch):
+    import json
+    bodies = [{"session_id": "s1", "input": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]},
+              {"choice": "once", "request_id": "req1"}, {"input": "guidance"}, None]
+    seen = []
+    def gateway(request):
+        seen.append(request)
+        assert request.headers["authorization"] == f"Bearer {KEY}"
+        return httpx.Response(202 if request.url.path.endswith('/runs') else 200,
+                              json={"run_id": "run_1", "status": "started"})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for path, body in zip(['/v1/runs', '/v1/runs/run_1/approval', '/v1/runs/run_1/steer', '/v1/runs/run_1/stop'], bodies):
+            response = await client.post('/api/plugins/chathermes' + path + '?profile=alpha', json=body)
+            assert response.status_code in (200, 202)
+            assert KEY not in response.text
+        response = await client.get('/api/plugins/chathermes/v1/runs/run_1/events?profile=alpha&last_seq=42')
+        assert response.status_code == 200
+    assert [json.loads(request.content) for request in seen[:3]] == bodies[:3]
+    assert all(request.url.path.startswith('/p/alpha/v1/runs') for request in seen)
+    assert seen[-1].url.query == b'last_seq=42'

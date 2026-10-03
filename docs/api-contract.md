@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/main/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
 | Operation | Hermes route | Request | Expected response |
 | --- | --- | --- | --- |
@@ -9,19 +9,94 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | Read | `GET /api/sessions/{id}` | None | `{ "object":"hermes.session", "session":{…} }` |
 | Rename | `PATCH /api/sessions/{id}` | `{ "title": "…" }` | `{ "object":"hermes.session", "session":{…} }` |
 | History | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
-| Turn | `POST /api/sessions/{id}/chat/stream` | `{ "input": "…", "model": "…", "provider": "…", "require_model_lock": true }` (selection fields optional) | SSE stream |
+| Start turn | `POST /v1/runs` | `{ "session_id": "…", "input": "…", "model": "…", "provider": "…" }` (selection fields optional) | `{ "run_id": "run_…", "status": "started", "replayed": false }` (202) |
+| Run state | `GET /v1/runs/{run_id}` | None | Flat `{ "run_id":…, "session_id":…, "status":…, "output":…, "approval":… }` (fields vary by state) |
+| Run events | `GET /v1/runs/{run_id}/events?last_seq=N` | None | SSE replay after N, then live events |
+| Approval | `POST /v1/runs/{run_id}/approval` | `{ "choice": "once", "request_id": "…" }` | `{ "object":"hermes.run.approval_response", "run_id":…, "choice":…, "request_id":…, "resolved":1 }` |
+| Steer | `POST /v1/runs/{run_id}/steer` | `{ "input": "…" }` | `{ "object":"hermes.run.steer", "run_id":…, "accepted":true }`; 409 if not accepting |
+| Stop | `POST /v1/runs/{run_id}/stop` | None | `{ "run_id":…, "status":"stopping" }` or existing terminal status |
 | Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
-| Run state/stop | `GET /v1/runs/{id}`, `POST /v1/runs/{id}/stop` | None | Run state |
 
-The stream sends `assistant.delta` with `delta` and `tool.started` with `tool_name`. Events also carry `session_id`, `run_id`, `seq`, and `ts`. A successful turn ends with a `run.completed` event containing `session_id`, `message_id`, `messages`, `usage`, and `runtime`; it does not need a `status` field. `run.failed`, `run.cancelled`, and `error` mean the turn did not complete. SSE keepalive comments and `done` are ignored. ChatHermes loads history again after completion and only clears streamed text once that reload succeeds. Message history is requested oldest first in 500 item pages so earlier messages are not hidden by Hermes' default latest 500 page. A malformed page raises an error and leaves the previously displayed messages intact. The gateway advertises this route with `features.session_chat_streaming: true` and `endpoints.session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" }`; sending stays disabled until both are confirmed; the text input stays editable. An `approval.request` blocks further sends in that conversation. Refreshing history does not confirm run completion, so the send lock remains until explicit navigation or a page reload with a warning to verify the previous turn. ChatHermes does not surface an approval action or a stop control without a verified run ID flow.
+## Verified Runs contract and reconnection
+
+Before implementation, the pinned source archive was downloaded and inspected:
+[`api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/gateway/platforms/api_server_runs.py)
+(`_handle_runs`, `_accepted_response`, `_handle_get_run`, `_handle_run_events`,
+`_handle_run_approval`, `_handle_steer_run`, `_handle_stop_run`), the capabilities
+and route tables in `api_server.py`, and
+[`test_api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/tests/gateway/test_api_server_runs.py).
+Relevant upstream tests include `test_start_returns_202`,
+`test_status_reflects_explicit_session_id`,
+`test_start_passes_request_model_provider_options_to_create_agent`,
+`test_reconnect_receives_exactly_missed_events_and_terminal`,
+`test_tool_completed_event_includes_redacted_bounded_result_preview`,
+`test_approval_resolve_all_is_scoped_to_target_run`, `test_steer_running_agent`,
+and `test_stop_running_agent`. These were inspected, not executed locally.
+
+Runs input is a string or **message array**, not a bare array of content parts.
+Images use `input: [{role: "user", content: [{type: "text", text: "…"},
+{type: "image_url", image_url: {url: "data:image/…"}}]}]`. `session_id` loads the
+existing conversation and persists the new turn to that session. Explicit
+`model`/`provider` fields become requested runtime overrides. The client also
+sends `require_model_lock: true` for compatibility, but the pin's Runs handler
+does not report the session-stream `model_lock` confirmation; terminal
+`runtime: {provider, model}` identifies the runtime actually served, including
+configured fallback providers.
+
+REST sending requires the advertised `runs` POST endpoint and `run_events_sse`
+feature. Authenticated same-origin plugin routes proxy all Runs actions; bearer
+keys remain on the server. Creating a run and attaching a viewer are separate
+operations. Navigation/unmount aborts only the viewer. Browser storage contains
+only a versioned `(profile, session) → run_id` pointer, never prompt text,
+attachments, transcript or credentials. Storage-disabled browsers retain pointers
+for this mount only. Opening/reloading retrieves status, rebuilds the active
+turn from replay and reconnects without another POST. Finished runs reload
+paginated Sessions history before removing the pointer and releasing send.
+
+Events contain `event`, `run_id`, `timestamp`, and a monotonically increasing
+`seq`, also sent as SSE `id`. Runs SSE frames are data-only: the event name
+is in JSON `event`, not an SSE `event:` line. The client normalizes that name.
+`message.delta` carries `delta`;
+`message.interim` carries `text` and `already_streamed`;
+`reasoning.available` carries `text`; `tool.started` carries `tool` and `preview`;
+`tool.completed` carries `tool`, `duration`, `error`, and a redacted result
+`preview` limited to 500 characters. Full tool results come from saved history.
+The Runs bridge does not emit `_thinking` token progress. Existing workspace
+reasoning/progress events remain supported. Active disclosures expand; completed
+disclosures collapse and can be reopened.
+
+Reconnects retain the transcript and resume with `last_seq`; sequence IDs at or
+below the applied cursor are ignored. New viewers replay from -1 and rebuild
+only the active turn, retaining previous turns. SSE comments are ignored.
+Disconnects show “Reconnecting and restoring conversation…” and retry status
+and event GETs with a delay. `replay.truncated` warns that retained event history
+is incomplete; completed saved history remains authoritative. The pin's replay
+buffer/status retention is bounded (orphan sweep TTL 300 seconds), so browser
+durability does not guarantee recovery after a gateway restart or expired
+buffer. A 404 retains the send lock and pointer until the user inspects history
+and explicitly confirms “I verified the run ended”; no prompt is resubmitted.
+
+Nonterminal statuses are `queued`, `running`, `waiting_for_approval`, and
+`stopping`; terminal statuses include `completed`, `failed`, `cancelled`, and
+`interrupted`. Terminal events carry output/usage/runtime where available.
+Stopping is a request, not confirmation of cancellation; the UI retains the run
+until terminal status/event and history restoration.
+
+`approval.request` or status `approval` supplies `request_id`, redacted command,
+and allowed `choices`. The UI sends only offered choices (`once`, `session`,
+`always`, `deny`) with that exact request ID and keeps the stream attached.
+`approval.responded` clears the pending approval. Steering sends a nonempty
+`input` to the running run. Approval/steer/stop errors preserve the active run
+and are shown without reflecting gateway errors. The composer remains editable
+while sending; its send button becomes a stop button after admission.
 
 ## Plugin-specific routes
 
-`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. `GET /api/model/options` proxies the selected profile's Hermes provider inventory and returns only `provider`, `model`, and provider rows containing `slug`, `name`, `is_current`, and model IDs. Provider transport and authentication metadata are excluded; unconfigured non-current providers are omitted. The UI defaults to the current provider, resets selection on profile changes, and keeps gateway route aliases in a separate **Model routes** choice. A missing inventory falls back to the configured default and route aliases; the virtual gateway alias (`parent: null`) is not a provider model. Explicit model selection adds `model`, `provider` (for inventory models), and `require_model_lock: true` to each streamed turn, so Hermes confirms the requested runtime rather than silently retaining a session model.
+`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. `GET /api/model/options` proxies the selected profile's Hermes provider inventory and returns only `provider`, `model`, and provider rows containing `slug`, `name`, `is_current`, and model IDs. Provider transport and authentication metadata are excluded; unconfigured non-current providers are omitted. The UI defaults to the current provider, resets selection on profile changes, and keeps gateway route aliases in a separate **Model routes** choice. A missing inventory falls back to the configured default and route aliases; the virtual gateway alias (`parent: null`) is not a provider model. Explicit model selection adds `model`, `provider` (for inventory models), and `require_model_lock: true` to each turn, so the selection reaches Hermes runtime overrides. See the Runs model-lock distinction above.
 
-`POST /uploads` accepts a filename and base64 data URL (20 MB decoded maximum), validates the profile and body, and stores a generated filename under that profile's `uploads/chathermes/`. It returns the path for agent file tools. Image attachments use `{type: "image_url", image_url: {url: "data:image/..."}}` alongside text in the session input array.
+`POST /uploads` accepts a filename and base64 data URL (20 MB decoded maximum), validates the profile and body, and stores a generated filename under that profile's `uploads/chathermes/`. It returns the path for agent file tools. Image attachments use `{type: "image_url", image_url: {url: "data:image/..."}}` alongside text in the user message content array.
 
-`tool.started` carries `tool_name`, `args`, and `preview`; `tool.progress` carries `delta` (including `_thinking` reasoning). Tool completion/failure and final assistant text close active disclosures. The UI displays available reasoning exactly as Hermes emits it; it cannot create token-level reasoning when the provider only publishes a completed reasoning segment.
+Workspace/session-stream `tool.started` carries `tool_name`, `args`, and `preview`; `tool.progress` carries `delta` (including `_thinking` reasoning). Tool completion/failure and final assistant text close active disclosures. The UI displays available reasoning exactly as Hermes emits it; it cannot create token-level reasoning when the provider only publishes a completed reasoning segment.
 
 ## Test environment
 
@@ -69,8 +144,8 @@ models come from the configured provider inventory; REST aliases are not shown.
 Native event mapping: `message.delta` → `assistant.delta`; `message.complete`
 → final assistant text plus completed/failed/cancelled; `tool.start/complete`
 → existing tool disclosures with stable tool IDs and output; reasoning events
-retain their text. Approval/clarification requests keep the existing approval
-lock and require resolution in Hermes. Detaching the browser stream detaches its
+retain their text. Workspace approval/clarification requests keep the existing approval
+lock and require resolution in Hermes; Runs approval actions apply to REST runs. Detaching the browser stream detaches its
 viewer and leaves the native turn running; explicit stop uses the native interrupt.
 
 The Project event subscription optionally resumes the displayed workspace session

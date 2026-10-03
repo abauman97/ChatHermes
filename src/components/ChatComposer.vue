@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
-const props = defineProps<{ disabled: boolean; sending: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>()
-const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
+const props = defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>()
+const emit = defineEmits<{ stop: []; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
 watch(() => props.suggestedPrompt, text => { if (text) value.value = text }, { immediate: true })
@@ -124,8 +124,9 @@ async function attach(event: Event) {
         <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" type="submit" :disabled="disabled || sending || reading || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Working…' : 'Send message'" :title="sending ? 'Working…' : 'Send message'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Stop response' : 'Send message'" :title="sending ? 'Stop response' : 'Send message'" @click="sending && stoppable && emit('stop')">
+        <svg v-if="sending" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>
     </div>
     <div v-if="pickerOpen" :id="panelId" ref="panel" role="dialog" aria-modal="true" :aria-label="pickerProvider === null ? 'Choose provider' : pickerTitle" class="model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-[#e5e5e5] shadow-xl">

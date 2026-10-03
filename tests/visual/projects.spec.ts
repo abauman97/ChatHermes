@@ -93,8 +93,12 @@ test('Other chats preserve sent/activity/response order and disclosure transitio
   await page.route('**/api/plugins/chathermes/**', async route => {
     const url = new URL(route.request().url())
     if (/\/projects(?:\/|$)/.test(url.pathname) || url.pathname.endsWith('/profiles')) return route.continue()
-    if (url.pathname.endsWith('/chat/stream')) {
+    if (url.pathname.endsWith('/v1/runs') && route.request().method() === 'POST') {
       sent = true
+      return route.fulfill({ status: 202, json: { run_id: 'run_visual', status: 'started', replayed: false } })
+    }
+    if (url.pathname.endsWith('/v1/runs/run_visual')) return route.fulfill({ json: { run_id: 'run_visual', status: 'running', session_id: 's1' } })
+    if (url.pathname.endsWith('/v1/runs/run_visual/events')) {
       await ready
       return route.fulfill({ contentType: 'text/event-stream', body: [
         'event: tool.started\ndata: {"tool_name":"terminal","tool_call_id":"t1","args":{"command":"pwd"}}',
@@ -104,7 +108,7 @@ test('Other chats preserve sent/activity/response order and disclosure transitio
       ].join('\n\n') })
     }
     let body: unknown
-    if (url.pathname.endsWith('/v1/capabilities')) body = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
+    if (url.pathname.endsWith('/v1/capabilities')) body = { features: { run_events_sse: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' } } }
     else if (url.pathname.endsWith('/v1/models')) body = { data: [{ id: 'Instant' }], default_model: 'Instant' }
     else if (url.pathname.endsWith('/api/model/options')) body = { providers: [], model: 'Instant' }
     else if (url.pathname.includes('/messages')) body = { messages: sent ? [{ role: 'user', content: 'Check activity order' }, { role: 'tool', tool_name: 'terminal', content: 'Isolated tool output' }, { role: 'assistant', content: 'Isolated reply' }] : [] }
