@@ -556,7 +556,8 @@ def _workspace_message(row):
         content = json.dumps(content)
     return {'role': role, 'content': content or '',
             **({'id': str(row['row_id'])} if row.get('row_id') is not None else {}),
-            **({'tool_name': row['name']} if role == 'tool' and row.get('name') else {})}
+            **({'tool_name': row['name']} if role == 'tool' and row.get('name') else {}),
+            **{key: row[key] for key in ('tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content') if row.get(key) is not None}}
 
 
 @router.get('/workspace/sessions/{session_id}/messages')
@@ -585,7 +586,7 @@ def _workspace_frame(frame, runtime_id, stored_id=None):
         status = payload.get('status')
         return ('run.completed' if status == 'complete' else 'run.cancelled' if status == 'interrupted' else 'run.failed'), data if status == 'complete' else {'run_id': data['run_id']}
     if name in ('tool.start', 'tool.complete'):
-        return ('tool.started' if name == 'tool.start' else 'tool.completed'), {
+        return ('tool.started' if name == 'tool.start' else 'tool.failed' if payload.get('is_error') else 'tool.completed'), {
             **data, 'tool_name': payload.get('name'), 'tool_call_id': payload.get('tool_id'), 'preview': payload.get('context', ''),
             'output': payload.get('result_text') or (json.dumps(payload['result']) if payload.get('result') is not None else '')}
     if name in ('reasoning.delta', 'thinking.delta', 'reasoning.available', 'tool.progress'):
@@ -662,7 +663,7 @@ def _workspace_events(request, transport, runtime_id, stored_id, snapshot=None):
         try:
             yield 'event: run.started\ndata: ' + json.dumps({'run_id': 'workspace-' + stored_id}) + '\n\n'
             if snapshot and (snapshot.get('inflight') or {}).get('assistant'):
-                yield 'event: assistant.delta\ndata: ' + json.dumps({'delta': snapshot['inflight']['assistant']}) + '\n\n'
+                yield 'event: assistant.snapshot\ndata: ' + json.dumps({'text': snapshot['inflight']['assistant']}) + '\n\n'
             if snapshot and not snapshot.get('running'):
                 yield 'event: run.completed\ndata: {}\n\n'
                 return

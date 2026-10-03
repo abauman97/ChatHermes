@@ -51,3 +51,7 @@ body { margin: 0; background: #212121; }
 .markdown-content th { font-weight: 600; }
 .markdown-content img { max-width: 100%; height: auto; border-radius: 12px; }
 .markdown-content hr { border-top: 1px solid #525252; margin: 1em 0; }
+.activity { min-width: 0; }
+.activity-failed summary { color: #fecaca; }
+.assistant-turn > .message { margin: 12px 0; }
+.activity pre { overscroll-behavior: contain; }

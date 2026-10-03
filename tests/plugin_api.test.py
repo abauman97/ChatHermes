@@ -515,3 +515,46 @@ async def test_workspace_resume_retries_native_rejection_of_inline_images(monkey
         ]
     finally:
         transport.close()
+
+
+def test_workspace_history_preserves_reasoning_and_tool_identity():
+    row = {'role': 'assistant', 'row_id': 7, 'text': 'Answer',
+           'reasoning_content': 'Plan', 'tool_calls': [{'id': 'call', 'function': {'name': 'terminal', 'arguments': '{}'}}]}
+    mapped = plugin._workspace_message(row)
+    assert mapped['reasoning_content'] == 'Plan'
+    assert mapped['tool_calls'] == row['tool_calls']
+    assert mapped['id'] == '7'
+    result = plugin._workspace_message({'role': 'tool', 'name': 'terminal', 'tool_call_id': 'call', 'content': {'output': 'ok'}})
+    assert result['tool_call_id'] == 'call'
+    assert 'ok' in result['content']
+
+
+def test_workspace_tool_error_retains_native_identity_and_details():
+    frame = {'method': 'event', 'params': {'type': 'tool.complete', 'session_id': 'runtime',
+             'payload': {'name': 'terminal', 'tool_id': 'call', 'is_error': True,
+                         'duration_s': 1.8, 'result': {'error': 'Command failed'}}}}
+    name, data = plugin._workspace_frame(frame, 'runtime', 'stored')
+    assert name == 'tool.failed'
+    assert data['tool_call_id'] == 'call'
+    assert data['duration_s'] == 1.8
+    assert 'Command failed' in data['output']
+
+
+@run_async
+async def test_workspace_resume_emits_text_snapshot_not_replayed_delta():
+    class Transport:
+        closed = False
+        def close(self):
+            self.closed = True
+    class Request:
+        async def is_disconnected(self):
+            return False
+    transport = Transport()
+    response = plugin._workspace_events(Request(), transport, 'runtime', 'stored',
+                                        {'running': False, 'inflight': {'assistant': 'Already received'}})
+    body = ''.join([part async for part in response.body_iterator])
+    assert 'event: assistant.snapshot' in body
+    assert '"text": "Already received"' in body
+    assert 'event: assistant.delta' not in body
+    assert 'event: run.completed' in body
+    assert transport.closed

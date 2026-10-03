@@ -460,3 +460,139 @@ describe('profile model inventory', () => {
     wrapper.unmount()
   })
 })
+
+describe('assistant turn recovery', () => {
+  for (const phase of ['tool', 'text', 'missed-tool']) it(`preserves the turn when resuming during ${phase} streaming`, async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
+    const encoder = new TextEncoder()
+    const emit = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+    let final = false
+    mockFetch(vi.fn(async (input: string) => {
+      if (input.includes('/v1/capabilities')) return json(streaming)
+      if (input.includes('/messages')) return json(final ? [
+        { id: 'user', role: 'user', content: 'Question' },
+        { role: 'assistant', content: '', reasoning_content: 'Plan', tool_calls: [{ id: 'call', function: { name: 'terminal' } }] },
+        { role: 'tool', tool_call_id: 'call', tool_name: 'terminal', content: 'result' },
+        ...(phase === 'missed-tool' ? [
+          { role: 'assistant', content: '', reasoning_content: 'Another plan', tool_calls: [{ id: 'missed', function: { name: 'read_file' } }] },
+          { role: 'tool', tool_call_id: 'missed', tool_name: 'read_file', content: 'file content' },
+        ] : []),
+        { role: 'assistant', content: 'Hello world' },
+      ] : [])
+      if (input.includes('/chat/stream')) return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      if (input.includes('/events')) {
+        final = true
+        return new Response('event: assistant.snapshot\ndata: {"text":"Hello world"}\n\nevent: tool.completed\ndata: {"tool_call_id":"call","output":"result"}\n\nevent: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+      }
+      if (input.includes('/runs/')) return json({ status: 'running' })
+      if (input.includes('/api/sessions/one')) return json({ id: 'one', source: 'desktop' })
+      return json({ sessions: [{ id: 'one' }], total: 1 })
+    }))
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Question')
+    await wrapper.get('.composer').trigger('submit')
+    emit('run.started', { run_id: 'workspace-one' })
+    emit('reasoning.delta', { delta: 'Plan' })
+    emit('tool.started', { tool_call_id: 'call', tool_name: 'terminal' })
+    if (phase === 'text') { emit('tool.completed', { tool_call_id: 'call', output: 'result' }); emit('assistant.delta', { delta: 'Hello' }) }
+    await flushPromises()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(wrapper.findAll('.activity')).toHaveLength(phase === 'missed-tool' ? 4 : 2)
+    expect(wrapper.findAll('.assistant-turn > *').at(-1)?.classes()).toContain('assistant')
+    expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
+    expect(wrapper.findAll('.message.assistant')).toHaveLength(1)
+    expect(wrapper.get('.message.assistant').text()).toBe('Hello world')
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('result')
+    wrapper.unmount()
+  })
+})
+
+describe('cached turn history isolation', () => {
+  it('recovers the sent turn rather than a later turn appended by another client', async () => {
+    let saved = false
+    mockFetch(async (input: string) => {
+      if (input.includes('/v1/capabilities')) return json(streaming)
+      if (input.includes('/messages')) return json(saved ? [
+        { id: 'first', role: 'user', content: 'Question' },
+        { role: 'assistant', content: 'Checking', tool_calls: [{ id: 'a' }] },
+        { role: 'tool', tool_call_id: 'a', content: 'result' },
+        { role: 'assistant', content: 'Intermediate', tool_calls: [{ id: 'b' }] },
+        { role: 'tool', tool_call_id: 'b', content: 'second result' },
+        { role: 'assistant', content: 'First answer' },
+        { id: 'second', role: 'user', content: 'Other question' },
+        { role: 'assistant', content: 'Other answer' },
+      ] : [])
+      if (input.includes('/chat/stream')) {
+        saved = true
+        return new Response('event: assistant.delta\ndata: {"delta":"Checking"}\n\nevent: tool.started\ndata: {"tool_call_id":"a"}\n\nevent: tool.completed\ndata: {"tool_call_id":"a","output":"result"}\n\nevent: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
+      }
+      return json({ sessions: [{ id: 'one' }], total: 1 })
+    })
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Question')
+    await wrapper.get('.composer').trigger('submit')
+    await flushPromises()
+    const turns = wrapper.findAll('.assistant-turn')
+    expect(turns).toHaveLength(2)
+    expect(turns[0]!.findAll('.message.assistant').map(item => item.text())).toEqual(['Checking', 'Intermediate', 'First answer'])
+    expect(turns[0]!.text()).not.toContain('Other answer')
+    expect(turns[1]!.text()).toBe('Other answer')
+    expect(wrapper.findAll('.message.user').map(item => item.text())).toEqual(['Question', 'Other question'])
+    wrapper.unmount()
+  })
+
+  it('ignores a visibility history request that resolves after a new send starts', async () => {
+    const stale = deferred<Response>()
+    let reads = 0, sends = 0
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    mockFetch(async (input: string) => {
+      if (input.includes('/v1/capabilities')) return json(streaming)
+      if (input.includes('/messages')) {
+        reads++
+        if (reads === 3) return stale.promise
+        return json(reads === 1 ? [] : [
+          { id: 'first', role: 'user', content: 'First' },
+          { role: 'assistant', content: 'First answer' },
+        ])
+      }
+      if (input.includes('/chat/stream')) {
+        if (++sends === 1) return new Response('event: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
+        return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value } }))
+      }
+      return json({ sessions: [{ id: 'one' }], total: 1 })
+    })
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('First')
+    await wrapper.get('.composer').trigger('submit')
+    await flushPromises()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(reads).toBe(3)
+    await wrapper.get('textarea').setValue('Second')
+    await wrapper.get('.composer').trigger('submit')
+    controller.enqueue(new TextEncoder().encode('event: assistant.delta\ndata: {"delta":"Second live answer"}\n\n'))
+    await flushPromises()
+    stale.resolve(json([
+      { id: 'first', role: 'user', content: 'First' },
+      { role: 'assistant', content: 'Stale first answer' },
+    ]))
+    await flushPromises()
+    expect(wrapper.findAll('.message.assistant').map(item => item.text())).toEqual(['First answer', 'Second live answer'])
+    expect(wrapper.findAll('.message.user').map(item => item.text())).toEqual(['First', 'Second'])
+    wrapper.unmount()
+  })
+})
