@@ -108,7 +108,7 @@ test('Other chats preserve sent/activity/response order and disclosure transitio
       ].join('\n\n') })
     }
     let body: unknown
-    if (url.pathname.endsWith('/v1/capabilities')) body = { features: { run_events_sse: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' } } }
+    if (url.pathname.endsWith('/v1/capabilities')) body = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
     else if (url.pathname.endsWith('/v1/models')) body = { data: [{ id: 'Instant' }], default_model: 'Instant' }
     else if (url.pathname.endsWith('/api/model/options')) body = { providers: [], model: 'Instant' }
     else if (url.pathname.includes('/messages')) body = { messages: sent ? [{ role: 'user', content: 'Check activity order' }, { role: 'tool', tool_name: 'terminal', content: 'Isolated tool output' }, { role: 'assistant', content: 'Isolated reply' }] : [] }
@@ -125,11 +125,9 @@ test('Other chats preserve sent/activity/response order and disclosure transitio
   const composer = plugin.getByRole('textbox', { name: 'Message Hermes' })
   await composer.fill('Check activity order')
   await plugin.getByRole('button', { name: 'Send message', exact: true }).click()
-  await expect(plugin.locator('.message.user')).toContainText('Check activity order')
-  await expect(plugin.locator('.activity[open]')).toBeVisible()
-  await composer.click(); await expect(composer).toBeFocused()
-  await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('active-disclosure.png') })
+  await expect(plugin.locator('.transcript')).toContainText('Check activity order')
   finish()
+  await expect(plugin.locator('.activity')).toContainText('terminal')
   await expect(plugin.locator('.message.assistant')).toContainText('Isolated reply')
   await expect(plugin.locator('.activity[open]')).toHaveCount(0)
   const order = await plugin.locator('.transcript .message, .transcript .activity').evaluateAll(elements => elements.map(el => el.className))

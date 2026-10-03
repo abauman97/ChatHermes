@@ -61,8 +61,9 @@ it('wraps Runs image parts in a user message and sends authenticated actions and
   const fake = vi.fn(async (url: string, _init?: RequestInit) => url.includes('/events') ? new Response('id: 43\ndata: {"event":"message.delta","seq":43,"delta":"hi"}\n\n') : new Response(JSON.stringify({ run_id: 'run_1', status: 'started' })))
   vi.stubGlobal('fetch', fake)
   const parts = [{ type: 'text', text: 'Describe' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,eA==' } }]
-  await api.startRun('alpha', 's1', parts, 'test-model', 'test-provider')
+  await api.startRun('alpha', 's1', parts, 'test-model', 'test-provider', 'turn-test')
   expect(JSON.parse(String(fake.mock.calls[0]?.[1]?.body))).toEqual({ session_id: 's1', input: [{ role: 'user', content: parts }], model: 'test-model', provider: 'test-provider', require_model_lock: true })
+  expect(new Headers(fake.mock.calls[0]?.[1]?.headers).get('Idempotency-Key')).toBe('turn-test')
   await api.approve('alpha', 'run_1', 'deny', 'req_1')
   await api.steer('alpha', 'run_1', 'guidance')
   await api.stop('alpha', 'run_1')

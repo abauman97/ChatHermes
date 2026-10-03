@@ -10,7 +10,7 @@ function endpoint(profile: string, path: string): string {
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
-  const response = await fetch(endpoint(profile, path), { ...options, headers: { accept, ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'same-origin', redirect: 'manual', cache: 'no-store' })
+  const response = await fetch(endpoint(profile, path), { ...options, headers: { ...(options.headers || {}), accept, ...(options.body ? { 'content-type': 'application/json' } : {}) }, credentials: 'same-origin', redirect: 'manual', cache: 'no-store' })
   if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) throw new Error('Hermes redirected the request. Sign in to the dashboard and retry.')
   return response
 }
@@ -102,10 +102,11 @@ export const api = {
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },
-  async startRun(profile: string, session: string, input: unknown, model?: string, provider?: string) {
+  async startRun(profile: string, session: string, input: unknown, model?: string, provider?: string, idempotencyKey?: string) {
     const result = await request<{ run_id: string; status: string }>(profile, '/v1/runs', { method: 'POST', body: JSON.stringify({ session_id: session,
       input: typeof input === 'string' ? input : [{ role: 'user', content: input }],
-      ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }) })
+      ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }),
+      ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}) })
     if (!/^[A-Za-z0-9_-]+$/.test(result.run_id || '')) throw new Error('Invalid Hermes run response')
     return result
   },
