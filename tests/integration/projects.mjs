@@ -1,7 +1,7 @@
 // Explicit integration run only; normal Playwright tests remain deterministic.
 import { chromium, expect } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
-const baseURL = process.env.CHATHERMES_TEST_URL || 'http://172.25.0.2:9119'
+const baseURL = process.env.CHATHERMES_TEST_URL || 'http://127.0.0.1:9119'
 const output = 'tests/integration-output/issue-7'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHATHERMES_CHROMIUM })
