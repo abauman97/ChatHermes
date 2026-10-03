@@ -289,6 +289,8 @@ def rpc(monkeypatch):
             calls.append((method, params.copy()))
             if method == 'projects.tree':
                 return {'projects': list(nodes.values()), 'scoped_session_ids': ['native']}
+            if method == 'projects.list':
+                return {'projects': [dict(id=n['id'], name=n['label'], primary_path=n.get('path'), folders=[], archived=n.get('archived', False)) for n in nodes.values() if not n.get('isAuto') and not n.get('isNoProject')]}
             if method == 'projects.project_sessions':
                 return {'project': nodes.get(params['project_id'])}
             if method == 'config.get':
@@ -326,9 +328,11 @@ async def test_projects_use_tree_and_hydrated_rpc_with_pinned_profiles(app, rpc)
         assert missing.status_code == 404
         invalid = await client.get('/api/plugins/chathermes/projects?profile=..%2Fx')
         assert invalid.status_code == 422
-    assert calls[:2] == [('projects.tree', {'preview_limit': 3, 'profile': 'alpha'}),
-                         ('projects.project_sessions', {'project_id': 'a', 'profile': 'alpha'})]
-    assert calls[2][1]['profile'] == calls[3][1]['profile'] == 'beta'
+    assert calls[:4] == [('projects.tree', {'preview_limit': 3, 'profile': 'alpha'}),
+                         ('projects.list', {'profile': 'alpha'}),
+                         ('projects.project_sessions', {'project_id': 'a', 'profile': 'alpha'}),
+                         ('projects.list', {'profile': 'alpha'})]
+    assert calls[4][1]['profile'] == calls[5][1]['profile'] == 'beta'
     assert all(instance.closed for instance in transport.instances)
 
 
