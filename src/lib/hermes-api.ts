@@ -1,4 +1,4 @@
-import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
 const workspaceSessions = new Set<string>()
@@ -6,7 +6,7 @@ const workspaceKey = (profile: string, id: string) => JSON.stringify([profile, i
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -102,12 +102,25 @@ export const api = {
     if (!response.body) throw new Error('Stream unavailable')
     yield* readSSE(response.body, signal)
   },
-  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<{ status?: string; run?: { status?: string } }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal }),
-  async *runEvents(profile: string, run: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events` : `/v1/runs/${encodeURIComponent(run)}/events`, { signal }, 'text/event-stream')
+  async startRun(profile: string, session: string, input: unknown, model?: string, provider?: string) {
+    const result = await request<{ run_id: string; status: string }>(profile, '/v1/runs', { method: 'POST', body: JSON.stringify({ session_id: session,
+      input: typeof input === 'string' ? input : [{ role: 'user', content: input }],
+      ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }) })
+    if (!/^[A-Za-z0-9_-]+$/.test(result.run_id || '')) throw new Error('Invalid Hermes run response')
+    return result
+  },
+  approve: (profile: string, run: string, choice: string, requestId?: string) => request(profile, `/v1/runs/${encodeURIComponent(run)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }) }),
+  steer: (profile: string, run: string, input: string) => request(profile, `/v1/runs/${encodeURIComponent(run)}/steer`, { method: 'POST', body: JSON.stringify({ input }) }),
+  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<RunState>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal }),
+  async *runEvents(profile: string, run: string, signal?: AbortSignal, lastSeq = -1): AsyncGenerator<SSEEvent> {
+    const response = await directFetch(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events` : `/v1/runs/${encodeURIComponent(run)}/events?last_seq=${lastSeq}`, { signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
-    yield* readSSE(response.body, signal)
+    for await (const frame of readSSE(response.body, signal)) {
+      // Runs uses data-only SSE with the event name inside the JSON payload.
+      const payload = eventPayload(frame)
+      yield { ...frame, event: typeof payload.event === 'string' ? payload.event : frame.event }
+    }
   },
   stop: (profile: string, run: string) => request<{ status: string }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop` : `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
 }

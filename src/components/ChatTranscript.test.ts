@@ -76,3 +76,18 @@ describe('ordered activity presentation', () => {
     expect(element.scrollTop).toBe(1900)
   })
 })
+
+it('restores saved reasoning and tool calls as inspectable completed disclosures', async () => {
+  const wrapper = mount(ChatTranscript, { props: { loading: false, progress: [], draft: '', messages: [
+    { role: 'user', content: 'Question' },
+    { role: 'assistant', content: '', reasoning_content: 'Saved reasoning', tool_calls: [{ id: 't1', function: { name: 'terminal', arguments: '{"command":"pwd"}' } }] },
+    { role: 'tool', tool_name: 'terminal', content: 'Full saved result' },
+    { role: 'assistant', content: 'Answer' }
+  ] } })
+  expect(wrapper.findAll('.activity')).toHaveLength(2)
+  expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
+  expect(wrapper.findAll('.assistant')).toHaveLength(1)
+  expect(wrapper.text()).toContain('Saved reasoning')
+  expect(wrapper.text()).toContain('pwd')
+  expect(wrapper.text()).toContain('Full saved result')
+})

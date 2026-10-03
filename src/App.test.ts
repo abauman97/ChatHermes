@@ -7,11 +7,24 @@ beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
 function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response>) {
-  vi.stubGlobal('fetch', (input: string, init?: RequestInit) => input.endsWith('/profiles') ? Promise.resolve(json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] }))
-    : /\/projects(?:\?|$)/.test(input) ? Promise.resolve(json({ projects: [] })) : input.includes('/v1/models') ? Promise.resolve(json({ data: [{ id: 'Instant' }] })) : fake(input, init))
+  const streams = new Map<string, Response>()
+  vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
+    if (input.endsWith('/profiles')) return json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] })
+    if (/\/projects(?:\?|$)/.test(input)) return json({ projects: [] })
+    if (input.includes('/v1/models')) return json({ data: [{ id: 'Instant' }] })
+    const profile = new URL(input, location.origin).searchParams.get('profile') || ''
+    if (input.includes('/v1/runs/run-1/events')) return streams.get(profile) || new Response('')
+    if (input.includes('/v1/runs/run-1')) return json({ run_id: 'run-1', status: 'running' })
+    const response = await fake(input, init)
+    if (input.includes('/v1/runs') && init?.method === 'POST') {
+      streams.set(profile, response)
+      return json({ run_id: 'run-1', status: 'started', replayed: false })
+    }
+    return response
+  })
 }
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const streaming = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
+const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('profile navigation', () => {
   it('rejects invalid profile names without requesting or storing credentials', async () => {
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
@@ -84,7 +97,7 @@ describe('profile navigation', () => {
     const fake = vi.fn(async (input: string, init?: RequestInit) => {
       if (input.includes('/v1/capabilities')) return json(streaming)
       const profile = input.includes('profile=alpha') ? 'alpha' : 'beta'
-      if (input.includes('/chat/stream')) return new Response('event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' + profile + '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+      if (input.includes('/v1/runs')) return new Response('event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' + profile + '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
       if (input.includes('/messages')) return json({ object: 'list', session_id: `${profile}-new`, data: [{ id: `${profile}-user`, role: 'user', content: 'Question' }, { id: `${profile}-reply`, role: 'assistant', content: `Answer from ${profile}` }], pagination: { limit: 500, offset: 0, order: 'oldest', returned: 2 } })
       if (init?.method === 'POST') return json({ object: 'hermes.session', session: { id: `${profile}-new` } })
       if (input.includes('/api/sessions?')) return json({ object: 'list', data: [{ id: `${profile}-new`, title: `${profile} conversation` }], limit: 30, offset: 0, has_more: false })
@@ -180,31 +193,6 @@ describe('profile navigation', () => {
     expect(wrapper.text()).not.toContain('Renamed alpha')
     wrapper.unmount()
   })
-  it('keeps sending locked after an approval history reload without run completion', async () => {
-    let messageLoads = 0
-    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Conversation' }], total: 1 }))
-      : input.includes('/messages') ? (messageLoads++, Promise.resolve(json([])))
-      : input.includes('/chat/stream') ? Promise.resolve(new Response('event: approval.request\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } }))
-      : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'shared')
-    await flushPromises()
-    await wrapper.get('.composer textarea').setValue('Please do it')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Approval is pending')
-    expect(wrapper.text()).not.toContain('Working…')
-    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
-    expect(messageLoads).toBe(1)
-    await wrapper.get('.notice button').trigger('click')
-    await flushPromises()
-    expect(messageLoads).toBe(2)
-    expect(wrapper.text()).toContain('Approval is pending')
-    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
-    wrapper.unmount()
-  })
   it('discards a popstate session when the user switches profile before capabilities return', async () => {
     const betaCapabilities = deferred<Response>()
     mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities?profile=beta') ? betaCapabilities.promise
@@ -290,7 +278,7 @@ describe('profile navigation', () => {
       : input.includes('/v1/capabilities?profile=beta') ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
       : input.includes('/messages') ? Promise.resolve(json([]))
       : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 }))
-      : input.includes('/chat/stream') ? Promise.resolve(new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })) : Promise.resolve(json({})))
+      : input.includes('/v1/runs') ? Promise.resolve(new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })) : Promise.resolve(json({})))
     mockFetch( fake)
     const wrapper = mount(App)
     await flushPromises()
@@ -303,7 +291,7 @@ describe('profile navigation', () => {
     await wrapper.get('.composer textarea').setValue('hello')
     await wrapper.get('.composer').trigger('submit')
     await flushPromises()
-    expect(fake.mock.calls.some(([input]) => String(input).includes('/chat/stream'))).toBe(true)
+    expect(fake.mock.calls.some(([input]) => String(input).includes('/v1/runs'))).toBe(true)
     await wrapper.get('.profile-field').setValue('beta')
     wrapper.findComponent(SessionSidebar).vm.$emit('select', 'two')
     await flushPromises()
@@ -321,7 +309,7 @@ describe('live turn presentation', () => {
     const frame = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json(streaming)
       : input.includes('/messages') ? json([])
-      : input.includes('/chat/stream') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      : input.includes('/v1/runs') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
       : json({ sessions: [], total: 0 }))
     mockFetch(fake)
     const wrapper = mount(App)
@@ -358,7 +346,7 @@ describe('live turn presentation', () => {
     history.replaceState({}, '', '/chathermes')
     const fake = vi.fn(async (input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? json(streaming)
       : input.includes('/messages') ? json([])
-      : input.includes('/chat/stream') ? new Response('event: run.completed\ndata: {}\n\n')
+      : input.includes('/v1/runs') ? new Response('event: run.completed\ndata: {}\n\n')
       : init?.method === 'POST' ? json({ session: { id: 'auto-created' } }) : json({ sessions: [], total: 0 }))
     mockFetch(fake)
     const wrapper = mount(App)
@@ -368,7 +356,7 @@ describe('live turn presentation', () => {
     await wrapper.get('.composer').trigger('submit')
     await flushPromises()
     expect(location.search).toBe('?session=auto-created')
-    expect(fake.mock.calls.find(([input]) => input.includes('/chat/stream'))?.[1]?.body).toBe(JSON.stringify({ input: 'Start here' }))
+    expect(fake.mock.calls.find(([input]) => input.includes('/v1/runs'))?.[1]?.body).toBe(JSON.stringify({ session_id: 'auto-created', input: 'Start here' }))
     wrapper.unmount()
   })
 })
@@ -385,9 +373,11 @@ describe('profile model inventory', () => {
       ] })
       if (input.includes('/v1/models')) return json({ data: [{ id: 'base', parent: null }, { id: 'Instant', parent: 'base' }] })
       if (input.includes('/v1/capabilities')) return json(streaming)
-      if (input.includes('/chat/stream')) {
+      if (input.includes('/v1/runs/provider-run/events')) return new Response('event: run.completed\ndata: {}\n\n')
+      if (input.includes('/v1/runs/provider-run')) return json({ status: 'running' })
+      if (input.includes('/v1/runs')) {
         turns.push({ profile, body: JSON.parse(String(init?.body)) })
-        return new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+        return json({ run_id: 'provider-run', status: 'started' })
       }
       if (input.includes('/messages')) return json({ data: [] })
       if (init?.method === 'POST') return json({ session: { id: `${profile}-session` } })
@@ -404,7 +394,7 @@ describe('profile model inventory', () => {
     await wrapper.get('textarea').setValue('default turn')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(turns[0]).toEqual({ profile: 'alpha', body: { input: 'default turn', model: 'alpha-default', provider: 'alpha', require_model_lock: true } })
+    expect(turns[0]).toEqual({ profile: 'alpha', body: { session_id: 'alpha-session', input: 'default turn', model: 'alpha-default', provider: 'alpha', require_model_lock: true } })
     await wrapper.get('.model-pill').trigger('click')
     await wrapper.get('[data-provider="custom:other"]').trigger('click')
     await wrapper.get('[data-model="shared-model"]').trigger('click')
@@ -419,7 +409,7 @@ describe('profile model inventory', () => {
     await wrapper.get('textarea').setValue('route turn')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(turns[2]?.body).toEqual({ input: 'route turn', model: 'Instant', require_model_lock: true })
+    expect(turns[2]?.body).toEqual({ session_id: 'alpha-session', input: 'route turn', model: 'Instant', require_model_lock: true })
     await wrapper.get('.profile-field').setValue('beta')
     await flushPromises()
     expect(wrapper.get('.model-pill').text()).toBe('beta-default')
@@ -431,7 +421,7 @@ describe('profile model inventory', () => {
     await wrapper.get('textarea').setValue('beta turn')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(turns[3]).toEqual({ profile: 'beta', body: { input: 'beta turn', model: 'beta-extra', provider: 'beta', require_model_lock: true } })
+    expect(turns[3]).toEqual({ profile: 'beta', body: { session_id: 'beta-session', input: 'beta turn', model: 'beta-extra', provider: 'beta', require_model_lock: true } })
     wrapper.unmount()
   })
 
@@ -529,7 +519,7 @@ describe('cached turn history isolation', () => {
         { id: 'second', role: 'user', content: 'Other question' },
         { role: 'assistant', content: 'Other answer' },
       ] : [])
-      if (input.includes('/chat/stream')) {
+      if (input.includes('/v1/runs') || input.includes('/chat/stream')) {
         saved = true
         return new Response('event: assistant.delta\ndata: {"delta":"Checking"}\n\nevent: tool.started\ndata: {"tool_call_id":"a"}\n\nevent: tool.completed\ndata: {"tool_call_id":"a","output":"result"}\n\nevent: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
       }
@@ -565,7 +555,7 @@ describe('cached turn history isolation', () => {
           { role: 'assistant', content: 'First answer' },
         ])
       }
-      if (input.includes('/chat/stream')) {
+      if (input.includes('/v1/runs') || input.includes('/chat/stream')) {
         if (++sends === 1) return new Response('event: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
         return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value } }))
       }

@@ -20,3 +20,4 @@ export interface Project { archived?: boolean; folders?: ProjectFolder[]; descri
 export interface ProjectTree { projects: Project[]; scoped_session_ids: string[]; active_id?: string | null }
 
 export type TurnBlock = Activity | { id: string; kind: 'text'; content: string; images?: string[] }
+export interface RunState { run_id?: string; session_id?: string; status?: string; output?: string; approval?: Record<string, unknown>; run?: { status?: string } }
