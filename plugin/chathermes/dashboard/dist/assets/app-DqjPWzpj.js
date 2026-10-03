@@ -7437,7 +7437,7 @@ var xf = {
 			let t = Vo(e);
 			if (typeof t.run_id == "string" && j.value && t.run_id !== j.value) return;
 			let n = typeof t.seq == "number" ? t.seq : e.id === void 0 ? void 0 : Number(e.id);
-			if (n !== void 0 && Number.isFinite(n)) {
+			if (n !== void 0 && Number.isSafeInteger(n) && n >= 0) {
 				if (n <= Le) return;
 				Le = n;
 			}
@@ -7552,7 +7552,7 @@ var xf = {
 		async function st(e, t, n, r) {
 			if (e === P) {
 				if (R(), E.value = !1, I.value = void 0, !await Ze()) throw Pe.value = !0, Error("Run ended, but history could not be loaded. Reconnecting…");
-				e === P && (k.value = "", Ko(t, n, r), j.value = "", T.value = !1, Pe.value = !1, Ye());
+				e === P && (k.value = "", Le = -1, Ko(t, n, r), j.value = "", T.value = !1, Pe.value = !1, Ye());
 			}
 		}
 		function ct(e) {
@@ -7564,6 +7564,7 @@ var xf = {
 			});
 		}
 		async function lt(e, t, n, r, i) {
+			if (e !== P) return;
 			Oe?.abort();
 			let a = new AbortController();
 			Oe = a;
@@ -7571,7 +7572,7 @@ var xf = {
 			for (T.value = !0, Pe.value = i; e === P && o === Ae && !a.signal.aborted;) {
 				try {
 					let s = await Y.runStatus(t, r, a.signal);
-					if (e !== P || a.signal.aborted) return;
+					if (e !== P || a.signal.aborted || o !== Ae) return;
 					let c = s.status || s.run?.status || "";
 					if (F.value = c, ot.includes(c)) {
 						typeof s.output == "string" && (k.value = s.output), c !== "completed" && (O.value = `Run ${c}.`), await st(e, t, n, r);
@@ -7670,7 +7671,7 @@ var xf = {
 				e === P && (F.value = i);
 				return;
 			}
-			Ko(t, n, r), Oe?.abort(), j.value = "", T.value = !1, Ne.value = !1, Pe.value = !1, E.value = !1, k.value = "", A.value = [];
+			Le = -1, Ko(t, n, r), Oe?.abort(), j.value = "", T.value = !1, Ne.value = !1, Pe.value = !1, E.value = !1, k.value = "", A.value = [];
 		}
 		function ht() {
 			location.href = "/";
