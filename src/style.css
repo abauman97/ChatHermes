@@ -3,9 +3,9 @@
 html { -webkit-text-size-adjust: 100%; }
 html, body { touch-action: manipulation; overscroll-behavior: none; }
 body { margin: 0; background: #212121; }
-#app, .app-shell, .transcript { touch-action: pan-y; }
+#app, .app-shell, .transcript { touch-action: pan-x pan-y; }
 .composer, .sidebar, .scrim, .topbar, .chathermes-embedded { touch-action: manipulation; }
-/* pan-y on the app shell also excludes pinch gestures in embedded mode. */
+/* Allow code blocks to pan horizontally while excluding pinch gestures. */
 .chathermes-embedded { position: fixed; inset: 0; z-index: 10000; background: #212121; }
 .chathermes-embedded .app-shell { height: 100dvh; min-height: 0; }
 .chathermes-embedded .main-panel { height: 100dvh; }
@@ -15,7 +15,7 @@ body { margin: 0; background: #212121; }
 @media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } .sidebar { transition: none; } }
 /* iOS focuses controls without viewport zoom only at 16px or larger. */
 .chathermes-plugin input, .chathermes-plugin textarea, .chathermes-plugin select { font-size: 16px; }
-.chathermes-embedded, .chathermes-embedded * { touch-action: pan-y; }
+.chathermes-embedded, .chathermes-embedded * { touch-action: pan-x pan-y; }
 .activity { color: #b4b4b4; font-size: 14px; }
 .activity summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 6px 0; }
 .activity summary::-webkit-details-marker { display: none; }
@@ -27,6 +27,7 @@ body { margin: 0; background: #212121; }
 .chathermes-embedded .app-shell { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .chathermes-embedded button, .chathermes-embedded input, .chathermes-embedded textarea, .chathermes-embedded select { font-family: inherit; }
 
+.transcript, .message, .markdown-content { min-width: 0; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }
@@ -43,9 +44,9 @@ body { margin: 0; background: #212121; }
 .markdown-content li > p { margin-bottom: .4em; }
 .markdown-content blockquote { border-left: 3px solid #525252; padding-left: 1em; color: #b4b4b4; }
 .markdown-content a { color: #93c5fd; text-decoration: underline; }
-.markdown-content code { background: #171717; padding: .15em .3em; border-radius: 4px; font: .875em/1.6 monospace; }
-.markdown-content pre { max-width: 100%; overflow-x: auto; padding: 1em; border-radius: 12px; background: #171717; white-space: pre; }
-.markdown-content pre code { padding: 0; background: transparent; }
+.markdown-content code { color: #f4f4f4; background: #171717; padding: .15em .3em; border-radius: 4px; font: .875em/1.6 monospace; }
+.markdown-content pre { min-width: 0; max-width: 100%; overflow-x: auto; padding: 1em; border-radius: 12px; color: #f4f4f4; background: #171717; white-space: pre; overflow-wrap: normal; }
+.markdown-content pre code { padding: 0; color: inherit; background: transparent; white-space: inherit; overflow-wrap: normal; }
 .markdown-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .markdown-content th, .markdown-content td { border: 1px solid #525252; padding: .4em .75em; }
 .markdown-content th { font-weight: 600; }
