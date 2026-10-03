@@ -1,0 +1,63 @@
+import { expect, test } from '@playwright/test'
+
+test('loaded Projects do not shift during background refreshes', async ({ page }, testInfo) => {
+  await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
+  await page.goto('/login?next=/chathermes?view=projects')
+  await page.getByLabel('Username').fill('tester')
+  await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  const plugin = page.locator('.chathermes-embedded')
+  const projects = plugin.locator('.projects-page')
+  await expect(projects).toBeVisible()
+  await expect(projects.getByRole('button', { name: 'Hermes Mobile', exact: true })).toBeVisible()
+  await expect(projects.getByRole('status')).toHaveCount(0)
+  const composer = plugin.getByRole('textbox', { name: 'Message Hermes' })
+  await composer.click(); await expect(composer).toBeFocused()
+  let release!: () => void
+  let pending = false
+  const gate = new Promise<void>(resolve => { release = resolve })
+  // Keep authenticated Hermes responses, but hold refreshes long enough to
+  // inspect the layout while the background requests are in flight.
+  await page.route(/\/api\/plugins\/chathermes\/projects(?:\?|$)/, async route => {
+    const response = await route.fetch()
+    pending = true
+    await gate
+    await route.fulfill({ response })
+  })
+  for (const archived of [false, true]) {
+    await projects.getByRole('button', { name: archived ? 'Archived' : 'Active', exact: true }).click()
+    await expect.poll(() => pending).toBe(true)
+    const list = projects.getByRole('navigation', { name: 'Project list' })
+    const before = await list.boundingBox()
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await page.waitForTimeout(400)
+    await expect(projects.getByRole('status')).toHaveCount(0)
+    expect(await list.boundingBox()).toEqual(before)
+    if (archived) await expect(projects).toContainText('No archived projects.')
+    await composer.click(); await expect(composer).toBeFocused()
+    await page.screenshot({ path: testInfo.outputPath(archived ? 'archived-refresh.png' : 'projects-refresh.png') })
+  }
+  release()
+  await page.unrouteAll({ behavior: 'wait' })
+  await projects.getByRole('button', { name: 'Active', exact: true }).click()
+  await projects.getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
+  const detail = plugin.getByRole('region', { name: 'Selected Project' })
+  await expect(detail.getByRole('heading', { name: 'Hermes Mobile', exact: true })).toBeVisible()
+  const heading = detail.getByRole('heading', { name: 'Hermes Mobile', exact: true })
+  const before = await heading.boundingBox()
+  let finish!: () => void
+  const detailGate = new Promise<void>(resolve => { finish = resolve })
+  pending = false
+  await page.route(/\/api\/plugins\/chathermes\/projects\/detail\?/, async route => {
+    const response = await route.fetch(); pending = true
+    await detailGate; await route.fulfill({ response })
+  })
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => pending).toBe(true)
+  await expect(detail.getByRole('status')).toHaveCount(0)
+  expect(await heading.boundingBox()).toEqual(before)
+  await composer.click(); await expect(composer).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath('project-detail-refresh.png') })
+  finish()
+  await page.unrouteAll({ behavior: 'wait' })
+})

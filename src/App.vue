@@ -13,6 +13,7 @@ import ChatComposer from './components/ChatComposer.vue'
 const projectView = ref(false), projectsPage = ref(false), archivedProjects = ref(false), projectBusy = ref(false), manageError = ref('')
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
 const scopedSessionIds = ref<string[]>([])
+const projectsLoaded = ref(false)
 const visibleSessions = computed(() => projectId.value ? selectedProject.value ? projectSessions(selectedProject.value) : [] : sessions.value.filter(row => !scopedSessionIds.value.includes(row.id)))
 let closeProjectEvents: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -49,12 +50,12 @@ function cancelChat() { sentContent.clear(); optimisticMessage.value = undefined
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadProjects() {
   projectsAbort?.abort(); const controller = new AbortController(); projectsAbort = controller; const p = profile.value
-  projectsLoading.value = true; projectsError.value = ''
+  projectsLoading.value = !projectsLoaded.value; projectsError.value = ''
   try {
     const result = await api.projects(p, controller.signal)
     if (controller !== projectsAbort || p !== profile.value) return
     if (!Array.isArray(result.projects) || result.projects.some(item => !item || typeof item.id !== 'string' || typeof item.label !== 'string')) throw new Error('Invalid Hermes Projects response')
-    projects.value = result.projects; scopedSessionIds.value = result.scoped_session_ids || []
+    projects.value = result.projects; scopedSessionIds.value = result.scoped_session_ids || []; projectsLoaded.value = true
   } catch { if (controller === projectsAbort && !controller.signal.aborted) projectsError.value = 'Could not load Projects.' }
   finally { if (controller === projectsAbort) projectsLoading.value = false }
 }
@@ -62,7 +63,7 @@ async function loadProject() {
   projectAbort?.abort(); const controller = new AbortController(); projectAbort = controller
   const p = profile.value, id = projectId.value
   if (!id) return
-  projectLoading.value = true; projectError.value = ''
+  projectLoading.value = !selectedProject.value; projectError.value = ''
   try {
     const result = await api.project(p, id, controller.signal)
     if (controller === projectAbort && !controller.signal.aborted && p === profile.value && id === projectId.value) selectedProject.value = result
@@ -138,6 +139,7 @@ async function loadMessages() {
 }
 async function chooseProfile(id: string, fromHistory = false) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) { error.value = 'Invalid profile name'; return }
+  projectsLoaded.value = false
   closeProjectEvents?.(); closeProjectEvents = undefined; clearTimeout(refreshTimer); scopedSessionIds.value = []; cancel(); projectsAbort?.abort(); projectAbort?.abort(); projectId.value = ''; projectView.value = false; projectsPage.value = false; archivedProjects.value = false; projectBusy.value = false; manageError.value = ''; selectedProject.value = undefined; projects.value = []; projectError.value = ''; projectsError.value = ''; projectLoading.value = false; profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
   if (!fromHistory) setUrl()
   const current = ++profileGeneration

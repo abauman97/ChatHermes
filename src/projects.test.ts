@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
 import { api } from './lib/hermes-api'
 import { projectRoot, projectSessions } from './lib/projects'
-import type { Project } from './types/hermes'
+import type { Project, ProjectTree } from './types/hermes'
 const a: Project = { id: 'p_a', label: 'Project A', path: '/workspace/a', sessionCount: 1, repos: [{ id: 'repo', label: 'Repo', path: '/repo', groups: [{ id: 'worktree', label: 'Outside worktree', path: '/elsewhere/worktree', sessions: [{ id: 'project_s1', title: 'Native worktree chat', cwd: '/elsewhere/worktree', last_active: 3 }] }] }] }
 const b: Project = { id: 'p_b', label: 'Project B', sessionCount: 0, repos: [] }
 const auto: Project = { ...b, id: '/auto/repo', label: 'Automatic repo', isAuto: true, repos: [{ id: 'repo', label: 'Repo', path: '/auto/repo', groups: [] }] }
@@ -31,6 +31,65 @@ function setup(detail: (id: string) => Promise<Response> = async id => json({ pr
   return fetch
 }
 describe('authoritative gateway Projects', () => {
+  it.each([{ label: 'populated', rows: [a, b] }, { label: 'empty', rows: [] }])('keeps $label Projects stable during event refreshes', async ({ rows }) => {
+    setup(); vi.stubGlobal('EventSource', class {})
+    let refresh!: () => void, finish!: (value: ProjectTree) => void
+    vi.spyOn(api, 'projectEvents').mockImplementation((_profile, callback) => { refresh = callback; return vi.fn() })
+    const read = vi.spyOn(api, 'projects').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    history.replaceState({}, '', '/chathermes?view=projects')
+    const wrapper = mount(App); await flushPromises()
+    expect(wrapper.get('.projects-page [role="status"]').text()).toBe('Loading Projects…')
+    finish({ projects: rows, scoped_session_ids: [] }); await flushPromises()
+    expect(wrapper.find('.projects-page [role="status"]').exists()).toBe(false)
+    const content = wrapper.get('.projects-page').text(), before = read.mock.calls.length
+    refresh(); await new Promise(resolve => setTimeout(resolve, 150)); await flushPromises()
+    expect(read.mock.calls.length).toBe(before + 1)
+    expect(wrapper.get('.projects-page').text()).toBe(content)
+    expect(wrapper.find('.projects-page [role="status"]').exists()).toBe(false)
+    finish({ projects: rows, scoped_session_ids: [] }); await flushPromises()
+    await wrapper.findAll('.project-tabs button')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('No archived projects.')
+    expect(wrapper.find('.projects-page [role="status"]').exists()).toBe(false)
+    finish({ projects: rows, scoped_session_ids: [] }); await flushPromises()
+    await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
+    await wrapper.get('.projects-nav').trigger('click'); await flushPromises()
+    expect(wrapper.get('.projects-page [role="status"]').text()).toBe('Loading Projects…')
+    expect(wrapper.find('[aria-label="Project A"]').exists()).toBe(false)
+    finish({ projects: [], scoped_session_ids: [] }); await flushPromises()
+    expect(wrapper.text()).toContain('No projects yet.')
+    wrapper.unmount()
+  })
+  it('keeps initial loading on retry until Projects have loaded successfully', async () => {
+    setup()
+    const read = vi.spyOn(api, 'projects').mockRejectedValue(new Error('Unavailable'))
+    history.replaceState({}, '', '/chathermes?view=projects')
+    const wrapper = mount(App); await flushPromises()
+    expect(wrapper.get('.projects-page [role="alert"]').text()).toContain('Could not load Projects.')
+    let finish!: (value: ProjectTree) => void
+    read.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    await wrapper.get('.projects-page [role="alert"] button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.projects-page [role="status"]').text()).toBe('Loading Projects…')
+    finish({ projects: [], scoped_session_ids: [] }); await flushPromises()
+    expect(wrapper.find('.projects-page [role="status"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('No projects yet.')
+    wrapper.unmount()
+  })
+  it('keeps selected Project content stable while its hierarchy refreshes', async () => {
+    setup(); vi.stubGlobal('EventSource', class {})
+    let refresh!: () => void, finish!: (value: Project) => void
+    vi.spyOn(api, 'projectEvents').mockImplementation((_profile, callback) => { refresh = callback; return vi.fn() })
+    vi.spyOn(api, 'project').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    history.replaceState({}, '', '/chathermes?project=p_a')
+    const wrapper = mount(App); await flushPromises()
+    expect(wrapper.get('[aria-label="Selected Project"] [role="status"]').text()).toBe('Loading Project…')
+    finish(a); await flushPromises()
+    const content = wrapper.get('[aria-label="Selected Project"]').text()
+    refresh(); await new Promise(resolve => setTimeout(resolve, 150)); await flushPromises()
+    expect(wrapper.get('[aria-label="Selected Project"]').text()).toBe(content)
+    expect(wrapper.find('[aria-label="Selected Project"] [role="status"]').exists()).toBe(false)
+    finish(a); await flushPromises()
+    wrapper.unmount()
+  })
   it('moves Projects out of the drawer and navigates to selected project sessions', async () => {
     const fetch = setup(); const wrapper = mount(App); await flushPromises()
     expect(wrapper.find('.sidebar [aria-label="Project A"]').exists()).toBe(false)
