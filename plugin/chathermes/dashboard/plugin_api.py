@@ -446,18 +446,73 @@ async def _rpc(request, method, params=None):
         transport.close()
 
 
+def _project_node(stored, node=None):
+    # Keep Hermes's session hierarchy; enrich it with the native management row.
+    return {**(node or {'sessionCount': 0, 'repos': []}),
+            'id': stored['id'], 'label': stored['name'], 'path': stored.get('primary_path'),
+            **{key: stored.get(key) for key in
+               ('folders', 'description', 'icon', 'color', 'board_slug', 'archived')}}
+
+
 @router.get('/projects')
 async def projects(request: Request):
-    return await _rpc(request, 'projects.tree', {'preview_limit': 3})
+    tree = await _rpc(request, 'projects.tree', {'preview_limit': 3})
+    stored = (await _rpc(request, 'projects.list'))['projects']
+    by_id = {node['id']: node for node in tree['projects']}
+    ids = {row['id'] for row in stored}
+    return {**tree, 'projects': [_project_node(row, by_id.get(row['id'])) for row in stored]
+            + [node for node in tree['projects'] if node['id'] not in ids]}
 
 
 @router.get('/projects/{project_id}')
 @router.get('/projects/detail')
 async def project(request: Request, project_id: str):
     result = await _rpc(request, 'projects.project_sessions', {'project_id': project_id})
-    if result.get('project') is None:
+    node = result.get('project')
+    if node and (node.get('isAuto') or node.get('isNoProject')):
+        return result
+    # Archived projects are deliberately absent from the native active tree.
+    stored = (await _rpc(request, 'projects.list'))['projects']
+    row = next((row for row in stored if row['id'] == project_id), None)
+    if row is None:
         raise HTTPException(404, 'Project no longer exists')
-    return result
+    return {'project': _project_node(row, node)}
+
+
+@router.post('/projects/manage')
+async def manage_project(request: Request):
+    # Fixed native operations and schemas: never dispatch browser-supplied RPC names.
+    schemas = {
+        'create': {'name': str, 'primary_path': str},
+        'update': {'id': str, 'name': str, 'description': str, 'icon': str, 'color': str, 'board_slug': str},
+        'add_folder': {'id': str, 'path': str, 'label': str, 'is_primary': bool},
+        'remove_folder': {'id': str, 'path': str},
+        'set_primary': {'id': str, 'path': str},
+        'archive': {'id': str, 'restore': bool},
+        'delete': {'id': str},
+    }
+    _rpc_profile(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(422, 'Invalid project operation')
+    if not isinstance(body, dict) or not isinstance(body.get('action'), str) or body.get('action') not in schemas:
+        raise HTTPException(422, 'Invalid project operation')
+    action = body['action']
+    schema = schemas[action]
+    params = {key: value for key, value in body.items() if key != 'action'}
+    if any(key not in schema or type(value) is not schema[key] for key, value in params.items()):
+        raise HTTPException(422, 'Invalid project fields')
+    required = ['name'] if action == 'create' else ['id']
+    if action in ('add_folder', 'remove_folder', 'set_primary'):
+        required.append('path')
+    if any(not params.get(key, '').strip() for key in required):
+        raise HTTPException(422, 'Missing project fields')
+    if 'name' in params and (not params['name'].strip() or len(params['name']) > 160):
+        raise HTTPException(422, 'Invalid project name')
+    if any(isinstance(value, str) and ('\x00' in value or len(value) > 4096) for value in params.values()):
+        raise HTTPException(422, 'Invalid project fields')
+    return await _rpc(request, 'projects.' + action, params)
 
 
 @router.post('/projects/{project_id}/sessions', status_code=201)

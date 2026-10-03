@@ -14,7 +14,9 @@ export interface ModelInventory { providers: ProviderOption[]; provider: string;
 // flatten only at the rendering boundary, never infer membership from cwd.
 export interface ProjectLane { id: string; label: string; path?: string | null; isMain?: boolean; isKanban?: boolean; sessions: Session[] }
 export interface ProjectRepo { id: string; label: string; path?: string | null; groups: ProjectLane[]; sessionCount?: number }
-export interface Project { id: string; label: string; path?: string | null; color?: string | null; icon?: string | null; isAuto?: boolean; isNoProject?: boolean; sessionCount: number; repos: ProjectRepo[]; previewSessions?: Session[]; sessionIds?: string[] }
+export interface ProjectFolder { path: string; label?: string | null; is_primary: boolean }
+export type ProjectAction = 'create' | 'update' | 'add_folder' | 'remove_folder' | 'set_primary' | 'archive' | 'delete'
+export interface Project { archived?: boolean; folders?: ProjectFolder[]; description?: string | null; board_slug?: string | null; id: string; label: string; path?: string | null; color?: string | null; icon?: string | null; isAuto?: boolean; isNoProject?: boolean; sessionCount: number; repos: ProjectRepo[]; previewSessions?: Session[]; sessionIds?: string[] }
 export interface ProjectTree { projects: Project[]; scoped_session_ids: string[]; active_id?: string | null }
 
 export type TurnBlock = Activity | { id: string; kind: 'text'; content: string; images?: string[] }
