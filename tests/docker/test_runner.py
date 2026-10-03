@@ -30,7 +30,7 @@ exit 0
             env = {**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
                    'CALLS': str(root / 'calls'), 'DOCKER_HOST': 'tcp://docker:2375',
                    'CHATHERMES_BIND_ADDRESS': '127.0.0.1',
-                   'CHATHERMES_DASHBOARD_PORT': '9119', 'CHATHERMES_TEST_URL': 'http://127.0.0.1:9119',
+                   'CHATHERMES_DASHBOARD_PORT': '9119',
                    'LITELLM_API_KEY': '', 'LITELLM_BASE_URL': '',
                    'EXPECTED_HOST': 'tcp://172.25.0.2:2375', **environment}
             result = subprocess.run(['sh', str(RUNNER), mode], env=env, capture_output=True, text=True)
@@ -64,6 +64,8 @@ exit 0
 
     def test_invalid_scope_and_missing_real_credentials_fail_before_build(self):
         for environment in ({'CHATHERMES_BIND_ADDRESS': '0.0.0.0'},
+                            {'CHATHERMES_BIND_ADDRESS': '999.2.3.4'},
+                            {'CHATHERMES_BIND_ADDRESS': '1.2.3'},
                             {'CHATHERMES_DASHBOARD_PORT': '65536'}, {}):
             result, calls = self.run_launcher('real', **environment)
             self.assertNotEqual(result.returncode, 0)

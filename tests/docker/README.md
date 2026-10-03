@@ -28,6 +28,8 @@ unchanged. `compose.yml` remains the local environment specification:
 Both expose only the dashboard on loopback by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
 
+The launcher derives its readiness probe from the bind address and dashboard port.
+
 ## Remote Docker without Compose
 
 The documented daemon in this development environment is accessible at
@@ -44,7 +46,6 @@ interface and provide its browser URL explicitly:
 export DOCKER_HOST=tcp://172.25.0.2:2375
 export CHATHERMES_BIND_ADDRESS=172.25.0.2
 export CHATHERMES_DASHBOARD_PORT=9121
-export CHATHERMES_TEST_URL=http://172.25.0.2:9121
 npm run live
 ```
 

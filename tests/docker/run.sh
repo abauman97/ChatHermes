@@ -44,11 +44,25 @@ esac
 if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
   echo 'CHATHERMES_DASHBOARD_PORT must be an integer from 1 to 65535.' >&2; exit 2
 fi
-url="${CHATHERMES_TEST_URL:-http://127.0.0.1:$port}"
 case "$bind" in
   ''|0.0.0.0|::|'[::]'|*[!0-9.]*)
     echo 'CHATHERMES_BIND_ADDRESS must be a specific IPv4 interface (default 127.0.0.1).' >&2; exit 2 ;;
 esac
+case "$bind" in
+  *[!0-9.]*|.*|*..*|*.)
+    echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2 ;;
+esac
+old_ifs=$IFS; IFS=.; set -- $bind; IFS=$old_ifs
+if [ "$#" -ne 4 ]; then
+  echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2
+fi
+for octet do
+  case "$octet" in ''|*[!0-9]*) echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2 ;; esac
+  if [ "$octet" -gt 255 ]; then
+    echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2
+  fi
+done
+url="http://$bind:$port"
 case "$mode" in
   fixture)
     export LITELLM_API_KEY=chathermes-model-fixture
@@ -86,7 +100,7 @@ attempt=0
 until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 90 ]; then
-    echo 'Dashboard did not become ready. Check the container and CHATHERMES_TEST_URL; avoid sharing raw logs containing credentials.' >&2
+    echo 'Dashboard did not become ready. Check the container and CHATHERMES_BIND_ADDRESS/CHATHERMES_DASHBOARD_PORT.' >&2
     exit 1
   fi
   sleep 1
