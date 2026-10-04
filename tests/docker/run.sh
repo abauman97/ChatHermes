@@ -91,7 +91,7 @@ docker volume create "$volume" >/dev/null
 config_file="$(pwd)/.hermes/config.yaml"
 if [ "$mode" = real ]; then
   config_file="${TMPDIR:-/tmp}/chathermes-$instance-config-$$.yaml"
-  LLM_API_MODEL="$LLM_API_MODEL" CONFIG_OUTPUT="$config_file" python3 - <<'PY'
+  if ! LLM_API_MODEL="$LLM_API_MODEL" CONFIG_OUTPUT="$config_file" python3 - <<'PY'
 import os
 from pathlib import Path
 import re
@@ -104,6 +104,9 @@ config = Path(os.environ['CONFIG_OUTPUT'])
 config.parent.mkdir(parents=True, exist_ok=True)
 config.write_text(source.replace('${LLM_API_MODEL:-fixture-model}', json.dumps(model)))
 PY
+  then
+    exit 2
+  fi
 fi
 remove_container "$gateway"
 remove_container "$model"
