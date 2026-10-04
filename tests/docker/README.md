@@ -7,26 +7,37 @@ npm ci
 npm run live
 ```
 
-Open `http://127.0.0.1:9119/chathermes` and sign in through Hermes's login form
+Open the printed dashboard URL (default `http://127.0.0.1:9119/chathermes`) and
+sign in through Hermes's login form
 as `tester` / `chathermes-local-test`. These are synthetic local test credentials.
 This is the actual Hermes dashboard and agent runtime, with ChatHermes installed
-and enabled, not a standalone preview. The default model is a deterministic
-OpenAI-compatible fixture, so no provider key is required.
+and enabled, not a standalone preview. The default `litellm` model is
+`fixture-model`; deterministic fixture mode provides repeatable responses without
+a real provider key. The LLM interface is generic: `LLM_API_BASE_URL`,
+`LLM_API_KEY`, and `LLM_API_MODEL` configure any OpenAI-compatible provider.
+`npm run live:real` passes these environment settings into Hermes without writing
+credentials to repository files or logging them.
 
-`npm run live` builds plugin assets and the Docker image, recreates only
-`chathermes-test-hermes` and `chathermes-test-model`, then waits for the dashboard's
+`npm run live` builds plugin assets and the Docker image, recreates only its
+revision-scoped Hermes and model containers, then waits for the dashboard's
 `/api/auth/providers` readiness route. Every launch refreshes the baked plugin,
 config and fixture. Docker and curl are required. No host bind mounts or personal
-Hermes home are used. Data stays in `chathermes-test-hermes-test-data`, matching
-Compose's dedicated volume; the runner uses the `chathermes-test` network.
-Do not run Compose and the shell launcher simultaneously on the same data volume.
+Hermes home is used. Data stays in a dedicated named volume. Containers, network,
+and volume are scoped to the current commit to keep concurrent checkouts isolated;
+set `CHATHERMES_INSTANCE` to override the instance name. Provide `CHATHERMES_DASHBOARD_PORT` and
+`CHATHERMES_BIND_ADDRESS` together when using remote Docker; the port must be
+available on that daemon host.
+Each shell launcher instance uses isolated, revision-scoped Docker resources.
 
 The source remains pinned to `3632f9173d218fd24f3fa595d7affa159b0774cd`, with
 its download checksum verified, and the base image digest in `Dockerfile` is
-unchanged. `compose.yml` remains the local environment specification:
-`npm run build && docker compose up --build -d` is an alternative launcher.
+unchanged. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
 Both expose only the dashboard on loopback by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
+
+Fixture settings can be overridden for an ad hoc model label with
+`LLM_API_MODEL`; fixture requests remain deterministic and do not call a real
+provider. Use `npm run live:real` with all three variables for live model calls.
 
 The launcher derives its readiness probe from the bind address and dashboard port.
 
@@ -51,8 +62,8 @@ npm run live
 
 The runner rejects wildcard binds. `CHATHERMES_DASHBOARD_PORT` defaults to 9119;
 choose a free port if other dashboards are running. No fixture or gateway port
-needs publishing. The remote daemon needs no Compose plugin and cannot access
-this checkout via host bind mounts; all inputs are baked into the image.
+needs publishing. The remote daemon needs no Compose plugin. Plugin assets and scripts are baked
+into the image; only the read-only generated config is mounted from the checkout.
 
 ## Optional Playwright verification
 
@@ -83,18 +94,29 @@ npm run test:visual
 
 ## Real provider calls (explicit opt-in)
 
-Export `LITELLM_API_KEY` from your secret provider and `LITELLM_BASE_URL` with a
-provider address reachable from the container, then run `npm run live:real`.
+Export generic settings for any OpenAI-compatible provider (the base URL and
+model identifier must be supported by that provider; the URL must be reachable
+from the container):
+
+```sh
+export LLM_API_BASE_URL="https://your-openai-compatible-endpoint/v1"
+export LLM_API_KEY="your-provider-key"
+export LLM_API_MODEL="your-model-id"
+npm run live:real
+```
+
 Do not echo the key, write it into tracked files, or share raw container logs.
-The runner inherits credentials through Docker environment names, not command
-arguments. Real mode keeps provider credentials out of profile files and removes
-only the synthetic `test-profile` home because the pinned native multiplexer
+The runner inherits all three settings through Docker environment names, not
+command arguments. It substitutes the model into a short-lived runtime config
+file outside the repository; the URL and key stay environment-only. Real mode
+keeps credentials out of profile files and removes only the synthetic
+`test-profile` home because the pinned native multiplexer
 requires profile `.env` credentials. Fixture mode recreates that profile.
 A local provider must listen on an address reachable from the container; the
 shell runner does not invent a provider address or add host aliases.
 
-`node tests/integration/projects.mjs` optionally verifies real provider replies
-through authenticated native Project/workspace routes at desktop/mobile sizes.
+`node tests/integration/projects.mjs` verifies provider replies using
+`LLM_API_MODEL` through authenticated native Project/workspace routes at desktop/mobile sizes.
 Its screenshots and synthetic result summary go to ignored
 `tests/integration-output/issue-7/`. Restore fixtures with `npm run live` afterward.
 Real provider calls may incur costs and are separate from default verification.
@@ -110,9 +132,9 @@ npm run test:docker
 npm run build
 ```
 
-For Compose, `docker compose down` preserves history and `docker compose down -v`
-discards its isolated data. The shell runner never deletes volumes. Its network
-and volume are retained across stops. Never commit generated state or credentials.
+The shell runner never deletes volumes. Its network and volume are retained
+across stops. Remove test data only by explicitly removing the confirmed
+disposable test volume. Never commit generated state or credentials.
 
 Startup uses native `hermes_cli.projects_db` to create the three synthetic
 Projects expected by `projects.spec.ts`. It creates `.hermes.md` and a lower

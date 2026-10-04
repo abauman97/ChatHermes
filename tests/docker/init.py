@@ -2,12 +2,18 @@
 import json
 import os
 import shutil
+import base64
 from pathlib import Path
 
 from hermes_cli import projects_db
 
 home = Path('/opt/data')
 home.mkdir(parents=True, exist_ok=True)
+config_data = os.environ.pop('CHATHERMES_TEST_CONFIG_B64', None)
+if config_data:
+    (home / '.chathermes-config.yaml').write_bytes(base64.b64decode(config_data, validate=True))
+    shutil.copyfile(home / '.chathermes-config.yaml', '/test/config.yaml')
+    (home / '.chathermes-config.yaml').unlink()
 shutil.copyfile('/test/config.yaml', home / 'config.yaml')
 real = os.environ.get('CHATHERMES_TEST_REAL') == '1'
 # Real credentials stay in the process environment. The pin's multiplexer reads
@@ -20,11 +26,14 @@ if real:
     (home / 'config.yaml').write_text(yaml.safe_dump(config))
     (home / '.env').unlink(missing_ok=True)
 else:
-    if os.environ.get('LITELLM_API_KEY') != 'chathermes-model-fixture':
-        raise RuntimeError('Fixture mode requires the fixture key; use CHATHERMES_TEST_REAL=1 for real integration')
+    if (os.environ.get('LLM_API_KEY') != 'chathermes-model-fixture'
+            or os.environ.get('LLM_API_BASE_URL') != 'http://model:4000/v1'
+            or os.environ.get('LLM_API_MODEL') != 'fixture-model'):
+        raise RuntimeError('Fixture mode requires its isolated fixture endpoint and key; use CHATHERMES_TEST_REAL=1 for real integration')
     values = {
-        'LITELLM_BASE_URL': os.environ['LITELLM_BASE_URL'],
-        'LITELLM_API_KEY': 'chathermes-model-fixture',
+        'LLM_API_BASE_URL': os.environ['LLM_API_BASE_URL'],
+        'LLM_API_KEY': 'chathermes-model-fixture',
+        'LLM_API_MODEL': os.environ['LLM_API_MODEL'],
         'API_SERVER_KEY': 'chathermes-isolated-test-key-2026',
     }
     (home / '.env').write_text(''.join(key + '=' + json.dumps(value) + '\n' for key, value in values.items()))
@@ -40,9 +49,10 @@ else:
     secondary.mkdir(parents=True, exist_ok=True)
     shutil.copyfile('/test/config.yaml', secondary / 'config.yaml')
     (secondary / '.env').write_text(
-        'LITELLM_API_KEY=chathermes-model-fixture\n'
+        'LLM_API_KEY=chathermes-model-fixture\n'
         'API_SERVER_KEY=chathermes-isolated-test-key-2026\n'
-        'LITELLM_BASE_URL=' + json.dumps(os.environ['LITELLM_BASE_URL']) + '\n'
+        'LLM_API_BASE_URL=' + json.dumps(os.environ['LLM_API_BASE_URL']) + '\n'
+        'LLM_API_MODEL=' + json.dumps(os.environ['LLM_API_MODEL']) + '\n'
     )
     (secondary / '.env').chmod(0o600)
 
