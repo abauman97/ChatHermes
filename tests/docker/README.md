@@ -12,9 +12,11 @@ sign in through Hermes's login form
 as `tester` / `chathermes-local-test`. These are synthetic local test credentials.
 This is the actual Hermes dashboard and agent runtime, with ChatHermes installed
 and enabled, not a standalone preview. The default `litellm` model is
-`qwen3.8:27b`; deterministic fixture mode provides repeatable model responses
-without a real provider key, while `npm run live:real` uses environment-injected
-LiteLLM credentials and its provider response.
+`fixture-model`; deterministic fixture mode provides repeatable responses without
+a real provider key. The LLM interface is generic: `LLM_API_BASE_URL`,
+`LLM_API_KEY`, and `LLM_API_MODEL` configure any OpenAI-compatible provider.
+`npm run live:real` passes these environment settings into Hermes without writing
+credentials to repository files or logging them.
 
 `npm run live` builds plugin assets and the Docker image, recreates only its
 revision-scoped Hermes and model containers, then waits for the dashboard's
@@ -29,10 +31,14 @@ Do not run Compose and the shell launcher simultaneously on the same data volume
 
 The source remains pinned to `3632f9173d218fd24f3fa595d7affa159b0774cd`, with
 its download checksum verified, and the base image digest in `Dockerfile` is
-unchanged. `compose.yml` remains the local environment specification:
-`npm run build && docker compose up --build -d` is an alternative launcher.
+unchanged. `compose.yml` remains the local fixture specification:
+`npm run build && docker compose up --build -d` is an alternative fixture launcher.
 Both expose only the dashboard on loopback by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
+
+Compose fixture settings can be overridden for an ad hoc model label with
+`LLM_API_MODEL`; fixture requests remain deterministic and do not call a real
+provider. Use `npm run live:real` with all three variables for live model calls.
 
 The launcher derives its readiness probe from the bind address and dashboard port.
 
@@ -89,18 +95,29 @@ npm run test:visual
 
 ## Real provider calls (explicit opt-in)
 
-Export `LITELLM_API_KEY` from your secret provider and `LITELLM_BASE_URL` with a
-provider address reachable from the container, then run `npm run live:real`.
+Export generic settings for any OpenAI-compatible provider (the base URL and
+model identifier must be supported by that provider; the URL must be reachable
+from the container):
+
+```sh
+export LLM_API_BASE_URL="https://your-openai-compatible-endpoint/v1"
+export LLM_API_KEY="your-provider-key"
+export LLM_API_MODEL="your-model-id"
+npm run live:real
+```
+
 Do not echo the key, write it into tracked files, or share raw container logs.
-The runner inherits credentials through Docker environment names, not command
-arguments. Real mode keeps provider credentials out of profile files and removes
+The runner inherits all three settings through Docker environment names, not
+command arguments. It substitutes the model into a short-lived runtime config
+file outside the repository; the URL and key stay environment-only. Real mode
+keeps credentials out of profile files and removes
 only the synthetic `test-profile` home because the pinned native multiplexer
 requires profile `.env` credentials. Fixture mode recreates that profile.
 A local provider must listen on an address reachable from the container; the
 shell runner does not invent a provider address or add host aliases.
 
-`node tests/integration/projects.mjs` optionally verifies real provider replies
-through authenticated native Project/workspace routes at desktop/mobile sizes.
+`node tests/integration/projects.mjs` verifies provider replies using
+`LLM_API_MODEL` through authenticated native Project/workspace routes at desktop/mobile sizes.
 Its screenshots and synthetic result summary go to ignored
 `tests/integration-output/issue-7/`. Restore fixtures with `npm run live` afterward.
 Real provider calls may incur costs and are separate from default verification.

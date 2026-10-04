@@ -7,7 +7,7 @@ from agent.prompt_builder import build_context_files_prompt
 from hermes_cli import projects_db
 
 if os.environ.get('CHATHERMES_TEST_REAL') == '1':
-    key = os.environ['LITELLM_API_KEY']
+    key = os.environ['LLM_API_KEY']
     for path in (Path('/opt/data/.env'), Path('/opt/data/config.yaml')):
         assert not path.exists() or key not in path.read_text(), 'Real credentials must remain environment-only'
 

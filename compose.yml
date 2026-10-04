@@ -40,8 +40,9 @@ services:
       API_SERVER_ENABLED: "true"
       API_SERVER_KEY: chathermes-isolated-test-key-2026
       # Literal fixture values: never inherit real credentials from the host .env.
-      LITELLM_API_KEY: chathermes-model-fixture
-      LITELLM_BASE_URL: http://model:4000/v1
+      LLM_API_KEY: chathermes-model-fixture
+      LLM_API_BASE_URL: http://model:4000/v1
+      LLM_API_MODEL: fixture-model
       CHATHERMES_TEST_REAL: "0"
     networks: [test]
     healthcheck:

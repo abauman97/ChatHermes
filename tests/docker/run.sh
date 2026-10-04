@@ -70,13 +70,15 @@ done
 url="http://$bind:$port"
 case "$mode" in
   fixture)
-    export LITELLM_API_KEY=chathermes-model-fixture
-    export LITELLM_BASE_URL=http://model:4000/v1
+    export LLM_API_KEY=chathermes-model-fixture
+    export LLM_API_BASE_URL=http://model:4000/v1
+    export LLM_API_MODEL=fixture-model
     export CHATHERMES_TEST_REAL=0 ;;
   real)
-    : "${LITELLM_API_KEY:?Load the integration key into the environment first}"
-    : "${LITELLM_BASE_URL:?Set the provider URL reachable from the container}"
-    export LITELLM_API_KEY LITELLM_BASE_URL
+    : "${LLM_API_KEY:?Set LLM_API_KEY in your environment}"
+    : "${LLM_API_BASE_URL:?Set LLM_API_BASE_URL reachable from the container}"
+    : "${LLM_API_MODEL:?Set LLM_API_MODEL in your environment}"
+    export LLM_API_KEY LLM_API_BASE_URL LLM_API_MODEL
     export CHATHERMES_TEST_REAL=1 ;;
 esac
 # Bake the current checkout into both services; never reuse stale fixture code.
@@ -85,6 +87,24 @@ if ! docker network inspect "$network" >/dev/null 2>&1; then
   docker network create "$network" >/dev/null
 fi
 docker volume create "$volume" >/dev/null
+# Resolve environment-controlled YAML scalars without modifying tracked files.
+config_file="$(pwd)/.hermes/config.yaml"
+if [ "$mode" = real ]; then
+  config_file="${TMPDIR:-/tmp}/chathermes-$instance-config-$$.yaml"
+  LLM_API_MODEL="$LLM_API_MODEL" CONFIG_OUTPUT="$config_file" python3 - <<'PY'
+import os
+from pathlib import Path
+import re
+import json
+source = Path('.hermes/config.yaml').read_text()
+model = os.environ['LLM_API_MODEL']
+if not re.fullmatch(r'[A-Za-z0-9._:/-]+', model):
+    raise SystemExit('LLM_API_MODEL may contain only letters, digits, dot, underscore, colon, slash or hyphen.')
+config = Path(os.environ['CONFIG_OUTPUT'])
+config.parent.mkdir(parents=True, exist_ok=True)
+config.write_text(source.replace('${LLM_API_MODEL:-fixture-model}', json.dumps(model)))
+PY
+fi
 remove_container "$gateway"
 remove_container "$model"
 if [ "$mode" = fixture ]; then
@@ -99,7 +119,8 @@ docker run -d --init --name "$gateway" \
   -e HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester \
   -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test \
   -e API_SERVER_KEY=chathermes-isolated-test-key-2026 \
-  -e LITELLM_API_KEY -e LITELLM_BASE_URL -e CHATHERMES_TEST_REAL \
+  -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
+  -v "$config_file:/test/config.yaml:ro" \
   "$image" >/dev/null
 attempt=0
 until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do

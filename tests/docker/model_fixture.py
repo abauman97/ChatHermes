@@ -1,5 +1,6 @@
 """Deterministic OpenAI-compatible fixture; actual Hermes still executes the turn/tools."""
 import json
+import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -12,7 +13,7 @@ class Model(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps({'data': [{'id': 'qwen3.8:27b', 'object': 'model'}]}).encode())
+        self.wfile.write(json.dumps({'data': [{'id': 'fixture-model', 'object': 'model'}]}).encode())
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
@@ -36,10 +37,10 @@ class Model(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'text/event-stream' if body.get('stream') else 'application/json')
         self.end_headers()
         if not body.get('stream'):
-            self.wfile.write(json.dumps({'id': 'fixture', 'object': 'chat.completion', 'model': body.get('model', 'qwen3.8:27b'), 'choices': [{'index': 0, 'message': message, 'finish_reason': 'tool_calls' if call else 'stop'}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 12, 'total_tokens': 22}}).encode())
+            self.wfile.write(json.dumps({'id': 'fixture', 'object': 'chat.completion', 'model': body.get('model', 'fixture-model'), 'choices': [{'index': 0, 'message': message, 'finish_reason': 'tool_calls' if call else 'stop'}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 12, 'total_tokens': 22}}).encode())
             return
         def chunk(delta, finish=None):
-            payload = {'id': 'fixture', 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': body.get('model', 'qwen3.8:27b'), 'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}
+            payload = {'id': 'fixture', 'object': 'chat.completion.chunk', 'created': int(time.time()), 'model': body.get('model', 'fixture-model'), 'choices': [{'index': 0, 'delta': delta, 'finish_reason': finish}]}
             self.wfile.write(('data: ' + json.dumps(payload) + '\n\n').encode()); self.wfile.flush(); time.sleep(.15)
         try:
             chunk({'role': 'assistant'})
