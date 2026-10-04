@@ -586,3 +586,204 @@ async def test_runs_admission_actions_and_replay_cursor(app, monkeypatch):
     assert [json.loads(request.content) for request in seen[:3]] == bodies[:3]
     assert all(request.url.path.startswith('/p/alpha/v1/runs') for request in seen)
     assert seen[-1].url.query == b'last_seq=42'
+
+
+@pytest.fixture
+def scheduled(monkeypatch, tmp_path):
+    import sys
+    import types
+    from contextlib import nullcontext
+    from datetime import datetime
+    homes = {name: tmp_path / name for name in ('default', 'beta')}
+    jobs = {name: [{'id': 'audit', 'name': 'Security Audit', 'enabled': True,
+                    'prompt': KEY, 'base_url': 'private', 'hermes_home': '/secret'}] for name in homes}
+    history = {name: [] for name in homes}
+    messages = {}
+    conversations = {}
+    tips = {}
+    opened = []
+    class DB:
+        def __init__(self, profile): self.profile = profile
+        def list_cron_job_runs(self, job, limit, offset): return history[self.profile][offset:offset + limit]
+        def get_session(self, run): return next((row for row in history[self.profile] if row['id'] == run), None)
+        def get_messages(self, run): return messages.get((self.profile, run), [])
+        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
+            return conversations.get((self.profile, run), self.get_messages(run))
+        def resolve_resume_session_id(self, run): return tips.get((self.profile, run), run)
+        def close(self): pass
+    def open_db(profile, read_only):
+        assert read_only
+        opened.append(profile)
+        return DB(profile)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace(
+        _cron_profile_home=lambda profile: (profile or 'default', homes[profile or 'default']),
+        _call_cron_for_profile=lambda profile, method, *args: jobs[profile],
+        _cron_store_scope=lambda home: nullcontext()))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=open_db))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.cron', types.SimpleNamespace(
+        _iso_to_epoch=lambda value: datetime.fromisoformat(value).timestamp() if value else None,
+        _execution_contains=lambda attempt, stamp, grace: stamp >= attempt['claimed_at'] and (attempt['finished_at'] is None or stamp <= attempt['finished_at'] + grace),
+        _cron_output_run_timestamp=lambda path: datetime.strptime(path.stem, '%Y-%m-%d_%H-%M-%S').timestamp(),
+        _doc_matches_session=lambda stamp, row, grace: row['started_at'] - grace <= stamp <= (row.get('ended_at') or row['started_at']) + grace))
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: [])
+    return homes, jobs, history, messages, opened
+
+
+@run_async
+async def test_scheduled_profile_history_pagination_output_and_redaction(app, scheduled):
+    homes, jobs, history, messages, opened = scheduled
+    history['beta'] = [{'id': f'cron_audit_20260101_{i:06d}', 'source': 'cron', 'started_at': i,
+                        'ended_at': i + 1, 'system_prompt': 'private'} for i in range(530)]
+    run = history['beta'][0]['id']
+    messages['beta', run] = [{'role': 'system', 'content': 'hidden'}, {'role': 'assistant', 'content': KEY},
+                            {'role': 'tool', 'content': 'full tool output', 'tool_name': 'terminal'}]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        listed = await client.get('/api/plugins/chathermes/scheduled?profile=beta')
+        assert listed.status_code == 200
+        assert KEY not in listed.text and '/secret' not in listed.text and 'base_url' not in listed.text
+        page = await client.get('/api/plugins/chathermes/scheduled/runs?profile=beta&job_id=audit&offset=500')
+        assert page.status_code == 200
+        assert len(page.json()['runs']) == 30 and not page.json()['has_more']
+        assert page.json()['runs'][0]['started_at'] == 29
+        assert 'system_prompt' not in page.text
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'profile': 'beta', 'job_id': 'audit', 'run_id': run})
+        assert output.status_code == 200 and KEY not in output.text
+        assert [row['role'] for row in output.json()['messages']] == ['assistant', 'tool']
+        assert output.json()['session_id'] == run
+        denied = await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})
+        assert denied.status_code == 404
+    assert set(opened) == {'default', 'beta'}
+
+
+@run_async
+async def test_scheduled_saved_outputs_mixed_history_and_invalid_selections(app, scheduled):
+    from datetime import datetime
+    homes, jobs, history, messages, _ = scheduled
+    root = homes['default'] / 'cron' / 'output' / 'audit'
+    root.mkdir(parents=True)
+    (root / '2026-01-01_00-00-00.md').write_text('# Old audit\nAll clear')
+    (root / '2026-01-02_00-00-00.md').write_text('Duplicate agent output')
+    (root / '2026-01-03_00-00-00.md').symlink_to(root / '2026-01-01_00-00-00.md')
+    history['default'] = [{'id': 'cron_audit_20260102_000000', 'source': 'cron', 'started_at': datetime(2026, 1, 2).timestamp()}]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        result = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+        assert [row['id'] for row in result.json()['runs']] == ['cron_audit_20260102_000000', 'output:2026-01-01_00-00-00']
+        output = await client.get('/api/plugins/chathermes/scheduled/output?job_id=audit&run_id=output:2026-01-01_00-00-00')
+        assert output.json()['output'] == '# Old audit\nAll clear'
+        for params in ({'job_id': '../audit'}, {'job_id': 'missing'}, {'job_id': 'audit', 'offset': -1}, {'job_id': 'audit', 'limit': 101}):
+            assert (await client.get('/api/plugins/chathermes/scheduled/runs', params=params)).status_code in (404, 422)
+        for run in ('output:../../secret', 'output:2026-01-03_00-00-00', 'cron_other_20260102_000000'):
+            assert (await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})).status_code in (404, 422)
+
+
+@run_async
+async def test_scheduled_internal_failure_does_not_expose_details(app, monkeypatch):
+    def fail(request): raise RuntimeError(KEY + '/private/home')
+    monkeypatch.setattr(plugin, '_scheduled_context', fail)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled')
+    assert response.status_code == 502 and KEY not in response.text and '/private' not in response.text
+
+
+@run_async
+async def test_scheduled_failed_execution_without_output_is_inspectable(app, scheduled, monkeypatch):
+    import sys
+    import types
+    homes, *_ = scheduled
+    run = 'execution:' + 'a' * 32
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: [
+        {'id': run, 'started_at': 100, 'source': 'cron_execution', 'title': 'Failed', 'end_reason': 'failed'}])
+    monkeypatch.setitem(sys.modules, 'cron.executions', types.SimpleNamespace(get_execution=lambda identifier: {
+        'job_id': 'audit', 'claimed_at': '2026-01-01T00:00:00', 'error': KEY}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        page = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+        assert page.json()['runs'][0]['id'] == run
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})
+        assert output.status_code == 200 and output.json()['messages'] == [] and KEY not in output.text
+
+
+def test_scheduled_execution_ledger_reads_older_pages_in_profile_scope(monkeypatch, tmp_path):
+    import sys
+    import types
+    from contextlib import contextmanager
+    from datetime import datetime, timedelta
+    scoped = []
+    @contextmanager
+    def scope(home):
+        scoped.append(home)
+        yield
+        scoped.pop()
+    rows = [{'id': f'{i:032x}', 'claimed_at': (datetime(2026, 1, 1) + timedelta(seconds=i)).isoformat(), 'status': 'failed'} for i in range(520)]
+    rows.reverse()
+    calls = []
+    def page(*, job_id, limit, before_claimed_at):
+        assert scoped == [tmp_path]
+        assert job_id == 'audit'
+        calls.append(before_claimed_at)
+        return [row for row in rows if not before_claimed_at or row['claimed_at'] < before_claimed_at][:limit]
+    monkeypatch.setitem(sys.modules, 'cron.executions', types.SimpleNamespace(list_executions=page))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace(_cron_store_scope=scope))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.cron', types.SimpleNamespace(_iso_to_epoch=lambda value: datetime.fromisoformat(value).timestamp() if value else None))
+    result = plugin._scheduled_attempts(tmp_path, 'audit')
+    assert len(result) == 520 and len(calls) == 2
+    assert result[-1]['id'] == 'execution:' + '0' * 32
+    assert not scoped
+
+
+@run_async
+async def test_scheduled_older_hermes_returns_compatibility_error(app, monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled')
+    assert response.status_code == 503
+    assert response.json()['detail'] == 'Scheduled history is unavailable in this Hermes version'
+
+
+@run_async
+async def test_scheduled_distinct_failed_attempts_are_never_deduplicated(app, scheduled, monkeypatch):
+    import sys
+    import types
+    attempts = [
+        {'id': 'execution:' + '1' * 32, 'source': 'cron_execution', 'started_at': 101, 'ended_at': 102, 'title': 'Failed'},
+        {'id': 'execution:' + '2' * 32, 'source': 'cron_execution', 'started_at': 102, 'ended_at': 103, 'title': 'Failed'},
+    ]
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: attempts)
+    monkeypatch.setattr(plugin, '_scheduled_docs', lambda home, job: [])
+    monkeypatch.setattr(plugin, '_scheduled_job', lambda profile, job: {'id': job})
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=lambda profile, read_only: type('DB', (), {'list_cron_job_runs': lambda self, job, limit, offset: [], 'close': lambda self: None})()))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+    assert response.status_code == 200, response.text
+    assert len(response.json()['runs']) == 2
+
+
+@run_async
+async def test_scheduled_reads_complete_compressed_run_lineage(app, scheduled, monkeypatch):
+    import sys
+    import types
+    root = 'cron_audit_20260101_000000'
+    child = root + '_child'
+    class DB:
+        def get_session(self, run):
+            return {'id': run, 'source': 'cron', 'started_at': 100} if run in (root, child) else None
+        def resolve_resume_session_id(self, run):
+            assert run == root
+            return child
+        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
+            assert run == child and include_ancestors and include_compacted
+            return [{'role': 'system', 'content': 'hidden'},
+                    {'role': 'tool', 'tool_name': 'terminal', 'content': 'Earlier audit checks'},
+                    {'role': 'assistant', 'content': 'Final answer from compressed child', 'reasoning_content': 'Audited dependencies'}]
+        def close(self): pass
+    def open_db(profile, read_only):
+        assert profile == 'beta' and read_only
+        return DB()
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=open_db))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'profile': 'beta', 'job_id': 'audit', 'run_id': root})
+    assert output.status_code == 200
+    assert output.json()['session_id'] == root
+    assert [row['content'] for row in output.json()['messages']] == ['Earlier audit checks', 'Final answer from compressed child']
+    assert output.json()['messages'][-1]['reasoning_content'] == 'Audited dependencies'

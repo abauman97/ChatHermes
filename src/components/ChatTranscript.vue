@@ -5,7 +5,7 @@ import { historyBlocks } from '../lib/assistant-turn'
 import ActivityRow from './ActivityRow.vue'
 import { renderMarkdown } from '../lib/markdown'
 import { messageText } from '../lib/hermes-api'
-const props = defineProps<{ messages: Message[]; draft: string; loading: boolean; progress: Activity[]; blocks?: TurnBlock[]; turnUserCount?: number; thinking?: boolean; home?: boolean }>()
+const props = defineProps<{ messages: Message[]; draft: string; loading: boolean; progress: Activity[]; blocks?: TurnBlock[]; turnUserCount?: number; thinking?: boolean; home?: boolean; followInitially?: boolean }>()
 const emit = defineEmits<{ suggest: [text: string] }>()
 const visible = computed(() => props.messages.filter(message => message.role !== 'system'))
 const entries = computed(() => {
@@ -32,7 +32,7 @@ const entries = computed(() => {
   return result
 })
 const transcript = ref<HTMLElement>()
-const following = ref(true)
+const following = ref(props.followInitially !== false)
 function onScroll() { const element = transcript.value; if (element) following.value = element.scrollHeight - element.scrollTop - element.clientHeight < 120 }
 async function disclosureChanged() { await nextTick(); if (following.value && transcript.value) transcript.value.scrollTop = transcript.value.scrollHeight }
 function images(content: unknown): string[] {

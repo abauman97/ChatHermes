@@ -59,3 +59,43 @@ with projects_db.connect_closing(db_path=home / 'projects.db') as conn:
         if projects_db.get_project(conn, slug) is None:
             projects_db.create_project(conn, name=name, slug=slug, primary_path=path)
 # Do not set active_id or fabricate Project/session links.
+
+# Scheduled history fixtures use native cron jobs and SessionDB. Every document
+# and message is synthetic; no personal cron store is read or mounted.
+if not real:
+    from datetime import datetime, timedelta, timezone
+    from hermes_cli.web_server_cron import _cron_store_scope
+    from hermes_state import SessionDB
+    for profile_home in (home, secondary):
+        with _cron_store_scope(profile_home) as cron_jobs:
+            existing = cron_jobs.list_jobs(include_disabled=True)
+            audit = next((row for row in existing if row.get('name') == 'Security Audit'), None)
+            if audit is None:
+                audit = cron_jobs.create_job(prompt='Review this synthetic security audit fixture.', schedule='0 0 1 1 *', name='Security Audit', deliver='local')
+            if not any(row.get('name') == 'Paused audit' for row in existing):
+                cron_jobs.create_job(prompt='Paused synthetic fixture.', schedule='0 0 1 1 *', name='Paused audit', paused=True)
+            failed_job = next((row for row in existing if row.get('name') == 'Failed run fixture'), None)
+            if failed_job is None:
+                failed_job = cron_jobs.create_job(prompt='Synthetic failure with no output.', schedule='0 0 1 1 *', name='Failed run fixture', paused=True)
+            from cron.executions import create_execution, finish_execution, list_executions
+            if not list_executions(job_id=failed_job['id'], limit=1):
+                attempt = create_execution(failed_job['id'], source='manual')
+                finish_execution(attempt['id'], success=False, error='Synthetic fixture failure')
+            output_dir = profile_home / 'cron' / 'output' / audit['id']
+            output_dir.mkdir(parents=True, exist_ok=True)
+            for index in range(35):
+                when = datetime(2025, 1, 1, tzinfo=timezone.utc) + timedelta(days=index)
+                (output_dir / (when.strftime('%Y-%m-%d_%H-%M-%S') + '.md')).write_text(
+                    f'# Security audit {index + 1}\n\nSynthetic saved output for {profile_home.name}.\n\nNo critical findings.\n')
+            db = SessionDB(db_path=profile_home / 'state.db')
+            try:
+                run_id = f"cron_{audit['id']}_20250205_000000"
+                if not db.get_session(run_id):
+                    db.create_session(run_id, source='cron')
+                    db.append_message(run_id, 'user', content='Run the synthetic security audit')
+                    db.append_message(run_id, 'assistant', content='', tool_calls=[{'id': 'audit-tool', 'type': 'function', 'function': {'name': 'terminal', 'arguments': '{"command":"audit"}'}}])
+                    db.append_message(run_id, 'tool', content='Synthetic audit checks passed.', tool_name='terminal', tool_call_id='audit-tool')
+                    db.append_message(run_id, 'assistant', content='# Security audit\n\nSynthetic persisted agent output. No critical findings.\n\n' + '\n\n'.join(f'Check {i}: passed.' for i in range(30)))
+                    db.end_session(run_id, 'completed')
+            finally:
+                db.close()

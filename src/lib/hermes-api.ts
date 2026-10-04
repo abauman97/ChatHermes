@@ -1,4 +1,4 @@
-import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState } from '../types/hermes'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState, ScheduledJob, ScheduledRunPage, ScheduledOutput } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
 const workspaceSessions = new Set<string>()
@@ -6,7 +6,7 @@ const workspaceKey = (profile: string, id: string) => JSON.stringify([profile, i
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -45,6 +45,9 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
 }
 export const api = {
   profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
+  scheduled: (profile: string, signal?: AbortSignal) => request<{ jobs: ScheduledJob[] }>(profile, '/scheduled', { signal }),
+  scheduledRuns: (profile: string, job: string, offset = 0, signal?: AbortSignal) => request<ScheduledRunPage>(profile, `/scheduled/runs?job_id=${encodeURIComponent(job)}&offset=${offset}`, { signal }),
+  scheduledOutput: (profile: string, job: string, run: string, signal?: AbortSignal) => request<ScheduledOutput>(profile, `/scheduled/output?job_id=${encodeURIComponent(job)}&run_id=${encodeURIComponent(run)}`, { signal }),
   projects: (profile: string, signal?: AbortSignal) => request<ProjectTree>(profile, '/projects', { signal }),
   project: async (profile: string, id: string, signal?: AbortSignal) => {
     const result = await request<{ project: Project }>(profile, `/projects/detail?project_id=${encodeURIComponent(id)}`, { signal })
