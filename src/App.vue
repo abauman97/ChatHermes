@@ -43,10 +43,11 @@ let listAbort: AbortController | undefined, chatAbort: AbortController | undefin
 let visibilityAbort: AbortController | undefined
 const unavailableRun = ref(false)
 const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<string, unknown>>(), actionBusy = ref(false), steerText = ref('')
+const eventStreamExpired = ref(false)
 let lastSeq = -1
 function urlState() { const params = new URLSearchParams(location.search); return { profile: params.get('profile') || '', session: params.get('session') || '', project: params.get('project') || '', view: params.get('view') || '', archived: params.get('archived') === '1' } }
 function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); url.searchParams.delete('project'); url.searchParams.delete('view'); url.searchParams.delete('archived'); if (projectsPage.value) { url.searchParams.set('view', 'projects'); if (archivedProjects.value) url.searchParams.set('archived', '1') } else if (projectView.value) url.searchParams.set('view', 'project'); if (projectId.value) url.searchParams.set('project', projectId.value); if (profile.value) url.searchParams.set('profile', profile.value); if (session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
-function cancelChat() { sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; unavailableRun.value = false; runStatus.value = ''; approval.value = undefined; steerText.value = ''; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
+function cancelChat() { sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; approval.value = undefined; steerText.value = ''; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadProjects() {
   projectsAbort?.abort(); const controller = new AbortController(); projectsAbort = controller; const p = profile.value
@@ -328,9 +329,9 @@ const terminalStatuses = ['completed', 'failed', 'cancelled', 'interrupted', 'st
 async function finishRun(current: number, p: string, s: string, run: string) {
   if (current !== generation) return
   finishActivities(); approvalPending.value = false; approval.value = undefined
-  if (!await loadMessages()) { reconnectNotice.value = true; throw new Error('Run ended, but history could not be loaded. Reconnecting…') }
+  if (!await loadMessages()) { reconnectNotice.value = true; throw new Error('Run ended, but history could not be loaded. Retry loading history before starting another turn.') }
   if (current !== generation) return
-  draft.value = ''; lastSeq = -1; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false
+  draft.value = ''; lastSeq = -1; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false; eventStreamExpired.value = false
   void loadSessions()
 }
 function retryDelay(signal: AbortSignal) {
@@ -342,7 +343,7 @@ function retryDelay(signal: AbortSignal) {
   })
 }
 async function followRun(current: number, p: string, s: string, run: string, restore: boolean) {
-  if (current !== generation) return
+  if (current !== generation || eventStreamExpired.value) return
   streamAbort?.abort(); const controller = new AbortController(); streamAbort = controller
   const viewer = ++streamGeneration
   sending.value = true; reconnectNotice.value = restore
@@ -390,7 +391,27 @@ async function followRun(current: number, p: string, s: string, run: string, res
           const status = state.status || state.run?.status || ''
           runStatus.value = status
           if (terminalStatuses.includes(status)) { await finishRun(current, p, s, run); return }
-          chatError.value = 'The run event stream expired. Run status is still available; reconnecting…'
+          // The run is still executing, but Hermes has discarded this run's
+          // live event transport. Poll status instead of retrying an endpoint
+          // that can no longer attach; history is authoritative after completion.
+          eventStreamExpired.value = true
+          reconnectNotice.value = false
+          chatError.value = 'The live stream expired, so new progress cannot reconnect. Hermes is still working; you can refresh session history at any time.'
+          while (current === generation && viewer === streamGeneration && !controller.signal.aborted) {
+            await retryDelay(controller.signal)
+            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted) return
+            const polled = await api.runStatus(p, run, controller.signal)
+            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted) return
+            const polledStatus = polled.status || polled.run?.status || ''
+            runStatus.value = polledStatus
+            approvalPending.value = polledStatus === 'waiting_for_approval'
+            approval.value = polled.approval
+            if (!terminalStatuses.includes(polledStatus)) continue
+            if (typeof polled.output === 'string') draft.value = polled.output
+            if (polledStatus !== 'completed') chatError.value = `Run ${polledStatus}.`
+            await finishRun(current, p, s, run); return
+          }
+          return
         } catch (statusError) {
           if (current !== generation || controller.signal.aborted || viewer !== streamGeneration) return
           if (statusError instanceof ApiError && statusError.status === 403) {
@@ -402,7 +423,33 @@ async function followRun(current: number, p: string, s: string, run: string, res
             chatError.value = 'Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.'
             return
           }
-          chatError.value = 'Could not verify the run status. Reconnecting…'
+          chatError.value = 'Could not verify run status. Retrying status checks; the event stream cannot be reattached.'
+          eventStreamExpired.value = true
+          reconnectNotice.value = false
+          while (current === generation && viewer === streamGeneration && !controller.signal.aborted) {
+            await retryDelay(controller.signal)
+            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted) return
+            let polled: Awaited<ReturnType<typeof api.runStatus>>
+            try { polled = await api.runStatus(p, run, controller.signal) }
+            catch (pollError) {
+              if (pollError instanceof ApiError && (pollError.status === 403 || pollError.status === 404)) {
+                if (pollError.status === 404) { unavailableRun.value = true; chatError.value = 'Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.' }
+                else chatError.value = 'Hermes denied access to this run. Check the selected profile and permissions.'
+                return
+              }
+              continue
+            }
+            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted) return
+            const polledStatus = polled.status || polled.run?.status || ''
+            runStatus.value = polledStatus
+            approvalPending.value = polledStatus === 'waiting_for_approval'
+            approval.value = polled.approval
+            if (!terminalStatuses.includes(polledStatus)) continue
+            if (typeof polled.output === 'string') draft.value = polled.output
+            if (polledStatus !== 'completed') chatError.value = `Run ${polledStatus}.`
+            await finishRun(current, p, s, run); return
+          }
+          return
         }
       }
     }
@@ -437,8 +484,15 @@ async function steerRun() {
 async function visibilityChange() {
   if (document.visibilityState !== 'visible') return
   refreshProjects()
-  if (activeRun.value) { void followRun(generation, profile.value, session.value, activeRun.value, false); return }
+  if (activeRun.value && !eventStreamExpired.value) { void followRun(generation, profile.value, session.value, activeRun.value, false); return }
   if (!session.value) return
+  if (eventStreamExpired.value && activeRun.value) {
+    try {
+      if (!await loadMessages()) throw new Error('history')
+      chatError.value = 'Session history refreshed. Live progress cannot reconnect; another turn will be available after this run finishes.'
+    } catch { chatError.value = 'Could not refresh session history. Retry history; the current run is still locked.' }
+    return
+  }
   visibilityAbort?.abort(); const controller = new AbortController(); visibilityAbort = controller
   const current = generation, historyCurrent = ++historyGeneration, p = profile.value, s = session.value, pendingHistory = chatAbort
   try {
@@ -452,7 +506,7 @@ async function releaseUnavailableRun() {
   if (!unavailableRun.value) return
   const previousStatus = runStatus.value; runStatus.value = 'stopped'
   if (!await loadMessages() || current !== generation) { if (current === generation) runStatus.value = previousStatus; return }
-  lastSeq = -1; forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
+  lastSeq = -1; forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; eventStreamExpired.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
 }
 function exitPlugin() { location.href = '/' }
 function onlineChange() { offline.value = !navigator.onLine; if (!offline.value) { refreshProjects(); void loadSessions(); void visibilityChange() } }
@@ -491,7 +545,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
         <button v-if="embedded" class="shrink-0 rounded-lg px-2 py-2 text-sm hover:bg-[#303030]" aria-label="Back to dashboard" @click="exitPlugin">←<span class="hidden min-[701px]:inline"> Back to dashboard</span></button>
       </header>
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
-      <div v-if="reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">Reconnecting and restoring conversation… <button class="underline" @click="visibilityChange">Retry connection</button></div>
+      <div v-if="reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
       <div v-if="activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : 'Working…' }}</div>
       <div v-if="approvalPending" class="notice px-5 py-3 text-sm" role="status">
@@ -505,7 +559,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
         <input v-model="steerText" aria-label="Guide this run" placeholder="Guide this run…" class="min-w-0 flex-1 rounded-lg bg-[#303030] px-3 py-2 text-base" />
         <button class="rounded-lg bg-[#303030] px-3 text-base disabled:opacity-55" :disabled="actionBusy || runStatus !== 'running' || !steerText.trim()">Send guidance</button>
       </form>
-      <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="loadMessages">Refresh history</button> <button v-if="unavailableRun" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
+      <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="unavailableRun" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
       <ProjectsPage v-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
       <section v-else-if="projectView" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
         <button class="project-back" @click="showProjects(!!selectedProject?.archived)">← Projects</button>

@@ -17,6 +17,7 @@ test('actual dashboard resumes the same run after reload, accepts guidance and s
   await page.reload()
   await expect(page.locator('.chathermes-embedded #prompt')).toBeVisible()
   await expect(page.locator('.message.assistant').last()).toContainText('Isolated Hermes reply')
+  await page.screenshot({ path: info.outputPath('resumed-run.png') })
   const composer = page.locator('.composer #prompt')
   await composer.click(); await expect(composer).toBeFocused(); await composer.fill('Draft remains editable')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
