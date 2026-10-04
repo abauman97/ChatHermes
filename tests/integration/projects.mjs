@@ -41,14 +41,14 @@ try {
     stage = `${name}: real chat stream`
     const stream = await page.request.post(`${api}/workspace/sessions/${session.id}/chat/stream`, {
       timeout: 180_000,
-      data: { model: 'gpt-6-luna', provider: 'litellm', input: 'Reply with exactly: ChatHermes integration verified. Do not use tools.' },
+      data: { model: 'qwen3.8:27b', provider: 'litellm', input: 'Reply with exactly: ChatHermes integration verified. Do not use tools.' },
     })
     expect(stream.status()).toBe(200)
     const frames = await stream.text()
     const completion = frames.split('\n\n').find(frame => frame.includes('event: run.completed'))
     expect(completion).toBeDefined()
     const payload = JSON.parse(completion.split('data: ')[1])
-    expect(payload.usage.model).toBe('gpt-6-luna')
+    expect(payload.usage.model).toBe('qwen3.8:27b')
     expect(frames).not.toContain('Isolated Hermes reply')
     stage = `${name}: UI resume and screenshots`
     await page.goto(`/chathermes?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`)
@@ -73,7 +73,7 @@ try {
     await page.reload(); await expect(view).toContainText('Hermes Mobile')
     expect(errors).toEqual([])
     // Store only synthetic validation results, no credentials or session data.
-    results.push({ viewport: name, projects: projects.length, create: 201, stream: 200, model: 'gpt-6-luna', projectCreation: 201, workspace: true, resume: true, refresh: true })
+    results.push({ viewport: name, projects: projects.length, create: 201, stream: 200, model: 'qwen3.8:27b', projectCreation: 201, workspace: true, resume: true, refresh: true })
     await context.close()
   }
   await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2) + '\n')

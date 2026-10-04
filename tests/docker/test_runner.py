@@ -32,7 +32,7 @@ exit 0
                    'CHATHERMES_BIND_ADDRESS': '127.0.0.1',
                    'CHATHERMES_DASHBOARD_PORT': '9119',
                    'LITELLM_API_KEY': '', 'LITELLM_BASE_URL': '',
-                   'EXPECTED_HOST': 'tcp://172.25.0.2:2375', **environment}
+                   'EXPECTED_HOST': 'tcp://172.25.0.2:2375', 'CHATHERMES_INSTANCE': 'test', **environment}
             result = subprocess.run(['sh', str(RUNNER), mode], env=env, capture_output=True, text=True)
             return result, (root / 'calls').read_text() if (root / 'calls').exists() else ''
 
@@ -42,7 +42,7 @@ exit 0
         self.assertIn('docker endpoint tcp://172.25.0.2:2375', result.stderr.lower())
         self.assertIn('build -f tests/docker/Dockerfile -t chathermes-test:3632f917 .', calls)
         self.assertIn('-p 127.0.0.1:9119:9119', calls)
-        self.assertIn('-v chathermes-test-hermes-test-data:/opt/data', calls)
+        self.assertIn('-v chathermes-test-hermes-data:/opt/data', calls)
         self.assertIn('--network-alias model', calls)
         self.assertNotIn(':8642', calls)
         self.assertNotIn(':4000', calls)
@@ -56,6 +56,24 @@ exit 0
         self.assertIn('-e LITELLM_API_KEY -e LITELLM_BASE_URL', calls)
         self.assertNotIn('synthetic-secret', calls + result.stdout + result.stderr)
         self.assertNotIn('run -d --name chathermes-test-model', calls)
+
+    def test_fixture_does_not_expose_provider_credentials(self):
+        result, calls = self.run_launcher()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('synthetic-secret', calls + result.stdout + result.stderr)
+
+    def test_instance_name_scopes_containers_network_and_volume(self):
+        result, calls = self.run_launcher(CHATHERMES_INSTANCE='issue30')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('network inspect chathermes-issue30', calls)
+        self.assertIn('--name chathermes-issue30-hermes', calls)
+        self.assertIn('--name chathermes-issue30-model', calls)
+        self.assertIn('-v chathermes-issue30-hermes-data:/opt/data', calls)
+
+    def test_invalid_instance_name_fails_before_docker_mutations(self):
+        result, calls = self.run_launcher(CHATHERMES_INSTANCE='../unsafe')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, 'info\n')
 
     def test_unavailable_daemon_fails_before_mutations(self):
         result, calls = self.run_launcher(INFO_EXIT='1')

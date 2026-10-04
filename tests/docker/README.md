@@ -7,18 +7,24 @@ npm ci
 npm run live
 ```
 
-Open `http://127.0.0.1:9119/chathermes` and sign in through Hermes's login form
+Open the printed dashboard URL (default `http://127.0.0.1:9119/chathermes`) and
+sign in through Hermes's login form
 as `tester` / `chathermes-local-test`. These are synthetic local test credentials.
 This is the actual Hermes dashboard and agent runtime, with ChatHermes installed
-and enabled, not a standalone preview. The default model is a deterministic
-OpenAI-compatible fixture, so no provider key is required.
+and enabled, not a standalone preview. The default `litellm` model is
+`qwen3.8:27b`; deterministic fixture mode provides repeatable model responses
+without a real provider key, while `npm run live:real` uses environment-injected
+LiteLLM credentials and its provider response.
 
-`npm run live` builds plugin assets and the Docker image, recreates only
-`chathermes-test-hermes` and `chathermes-test-model`, then waits for the dashboard's
+`npm run live` builds plugin assets and the Docker image, recreates only its
+revision-scoped Hermes and model containers, then waits for the dashboard's
 `/api/auth/providers` readiness route. Every launch refreshes the baked plugin,
 config and fixture. Docker and curl are required. No host bind mounts or personal
-Hermes home are used. Data stays in `chathermes-test-hermes-test-data`, matching
-Compose's dedicated volume; the runner uses the `chathermes-test` network.
+Hermes home are used. Data stays in a dedicated named volume. Containers, network,
+and volume are scoped to the current commit to keep concurrent checkouts isolated;
+set `CHATHERMES_INSTANCE` to override the instance name. Provide `CHATHERMES_DASHBOARD_PORT` and
+`CHATHERMES_BIND_ADDRESS` together when using remote Docker; the port must be
+available on that daemon host.
 Do not run Compose and the shell launcher simultaneously on the same data volume.
 
 The source remains pinned to `3632f9173d218fd24f3fa595d7affa159b0774cd`, with

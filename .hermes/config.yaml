@@ -1,6 +1,6 @@
 model:
   provider: litellm
-  default: gpt-6-luna
+  default: qwen3.8:27b
   context_length: 128000
   key_env: LITELLM_API_KEY
   base_url: ${LITELLM_BASE_URL}
@@ -11,7 +11,7 @@ providers:
     api_mode: chat_completions
     request_timeout_seconds: 3600
     stale_timeout_seconds: 1800
-    default_model: gpt-6-luna
+    default_model: qwen3.8:27b
     models:
       qwen3.8:27b:
         context_length: 128000
@@ -26,7 +26,7 @@ platforms:
     key: chathermes-isolated-test-key-2026
     model_routes:
       Instant:
-        model: gpt-6-luna
+        model: qwen3.8:27b
         provider: litellm
         base_url: ${LITELLM_BASE_URL}
         api_key: ${LITELLM_API_KEY}

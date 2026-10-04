@@ -18,11 +18,16 @@ if ! docker info >/dev/null 2>&1; then
   echo 'Docker is unavailable. Check DOCKER_HOST; see tests/docker/README.md.' >&2
   exit 1
 fi
-network=chathermes-test
 image=chathermes-test:3632f917
-gateway=chathermes-test-hermes
-model=chathermes-test-model
-volume=chathermes-test-hermes-test-data
+default_instance="$(git rev-parse --short=8 HEAD 2>/dev/null || printf 'local')"
+instance="${CHATHERMES_INSTANCE:-${default_instance}-test}"
+case "$instance" in
+  ''|*[!a-zA-Z0-9_-]*) echo 'CHATHERMES_INSTANCE must contain only letters, numbers, underscores, or hyphens.' >&2; exit 2 ;;
+esac
+gateway="chathermes-$instance-hermes"
+model="chathermes-$instance-model"
+volume="chathermes-$instance-hermes-data"
+network="chathermes-$instance"
 remove_container() {
   if docker container inspect "$1" >/dev/null 2>&1; then
     docker rm -f "$1" >/dev/null
