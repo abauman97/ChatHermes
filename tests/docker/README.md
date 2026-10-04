@@ -110,8 +110,8 @@ Do not echo the key, write it into tracked files, or share raw container logs.
 The runner inherits all three settings through Docker environment names, not
 command arguments. It substitutes the model into a short-lived runtime config
 file outside the repository; the URL and key stay environment-only. Real mode
-keeps credentials out of profile files and removes
-only the synthetic `test-profile` home because the pinned native multiplexer
+keeps credentials out of profile files and removes only the synthetic
+`test-profile` home because the pinned native multiplexer
 requires profile `.env` credentials. Fixture mode recreates that profile.
 A local provider must listen on an address reachable from the container; the
 shell runner does not invent a provider address or add host aliases.
