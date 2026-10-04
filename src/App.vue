@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
+import { nativeOutcome, uncertainNativeOutcome, settleNativeOutcome } from './lib/native-admission'
+import { NativeError } from './lib/native-chat'
 import type { SSEEvent } from './lib/sse'
 import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session, Project, ProjectAction } from './types/hermes'
 import { activeRunFor, idempotencyKeyFor, rememberIdempotencyKey, rememberRun, forgetRun } from './lib/active-runs'
@@ -22,7 +24,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined
 function subscribeProjectEvents() {
   closeProjectEvents?.(); closeProjectEvents = undefined
   if (typeof EventSource === 'undefined') return
-  closeProjectEvents = api.isWorkspace(profile.value, session.value)
+  closeProjectEvents = !api.isNative(profile.value) && api.isWorkspace(profile.value, session.value)
     ? api.projectEvents(profile.value, refreshProjects, session.value)
     : api.projectEvents(profile.value, refreshProjects)
 }
@@ -40,10 +42,12 @@ const profiles = ref<{ name: string }[]>([]), models = ref<ModelOption[]>([]), m
 const providers = ref<ProviderOption[]>([]), provider = ref(''), modelsLoading = ref(false)
 const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
 const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
-const canStream = computed(() => api.isWorkspace(profile.value, session.value) || projectId.value ? capabilities.value.features?.session_chat_streaming === true : capabilities.value.endpoints?.runs?.method === 'POST' && capabilities.value.endpoints.runs.path === '/v1/runs' && capabilities.value.features?.run_events_sse === true)
+const canStream = computed(() => capabilities.value.features?.native_chat === true || api.isWorkspace(profile.value, session.value) || projectId.value ? capabilities.value.features?.session_chat_streaming === true : capabilities.value.endpoints?.runs?.method === 'POST' && capabilities.value.endpoints.runs.path === '/v1/runs' && capabilities.value.features?.run_events_sse === true)
 let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0, streamGeneration = 0, historyGeneration = 0
 let visibilityAbort: AbortController | undefined
 const unavailableRun = ref(false)
+const clarificationAnswers = ref<Record<string, string | string[]>>({}), customClarification = ref<Record<string, string>>({})
+const nativeStatus = ref('')
 const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<string, unknown>>(), actionBusy = ref(false), steerText = ref('')
 const eventStreamExpired = ref(false)
 let lastSeq = -1
@@ -68,7 +72,7 @@ async function discussScheduled(text: string) {
     if (owner === profileGeneration && p === profile.value) scheduledDiscussionError.value = 'Could not open a chat. Please try again.'
   } finally { if (owner === profileGeneration) creating.value = false }
 }
-function cancelChat() { sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; approval.value = undefined; steerText.value = ''; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
+function cancelChat() { api.closeNative(); sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; steerText.value = ''; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadProjects() {
   projectsAbort?.abort(); const controller = new AbortController(); projectsAbort = controller; const p = profile.value
@@ -186,7 +190,7 @@ async function chooseProfile(id: string, fromHistory = false) {
 }
 async function chooseSession(id: string, fromHistory = false) {
   scheduledPage.value = false
-  if (projectId.value) api.workspace(profile.value, id)
+  if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id)
   else if (sessions.value.find(row => row.id === id)?.cwd || sessions.value.find(row => row.id === id)?.source === 'desktop') api.workspace(profile.value, id)
   projectView.value = false; projectsPage.value = false; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
@@ -198,7 +202,19 @@ async function chooseSession(id: string, fromHistory = false) {
   subscribeProjectEvents()
   await loadMessages()
   if (current === generation && p === profile.value) {
-    const run = activeRunFor(p, id)
+    if (api.isNative(p) && nativeOutcome(p, id)) {
+      activeRun.value = 'workspace-' + id; sending.value = true; unavailableRun.value = true
+      chatError.value = 'Submission outcome unknown. Inspect saved history and active native state before choosing to send again.'
+      return
+    }
+    let run = activeRunFor(p, id)
+    if (api.isNative(p) && !run) {
+      try {
+        const state = await api.runStatus(p, 'workspace-' + id)
+        if (current !== generation) return
+        if (state.status !== 'completed') run = 'workspace-' + id
+      } catch { chatError.value = 'Native viewer unavailable. Sending is gated until session state can be inspected.'; return }
+    }
     if (run) { activeRun.value = run; sending.value = true; void followRun(current, p, id, run, true) }
   }
 }
@@ -241,7 +257,7 @@ function updateActivityOutputs(history: Message[]) {
 }
 function finishActivities() { progress.value.forEach(item => { item.complete = true }); thinking.value = false }
 function activity(kind: 'thinking' | 'tool', title: string, id?: string) {
-  const found = [...progress.value].reverse().find(item => !item.complete && item.kind === kind && item.title === title && (!id || item.id === id))
+  const found = [...progress.value].reverse().find(item => !item.complete && item.kind === kind && (id ? item.id === id : item.title === title))
   if (found) return found
   const item: Activity = { id: id || localId(), kind, title, content: '', complete: false }
   progress.value.push(item)
@@ -262,6 +278,9 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   const name = typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'Tool call'
   const callId = typeof data.tool_call_id === 'string' ? data.tool_call_id : undefined
   if (frame.event === 'assistant.delta' || frame.event === 'message.delta') { finishActivities(); draft.value += delta }
+  else if (frame.event === 'assistant.snapshot') { draft.value = typeof data.text === 'string' ? data.text : '' }
+  else if (frame.event === 'status.update') { nativeStatus.value = String(data.text || '') }
+  else if (frame.event === 'native.notice') { chatError.value = String(data.text || 'Native recovery is bounded.') }
   else if (frame.event === 'assistant.completed' && typeof data.content === 'string') { finishActivities(); draft.value = data.content }
   else if (['assistant.commentary', 'message.interim'].includes(frame.event) && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
@@ -293,11 +312,16 @@ function createIdempotencyKey(): string {
   return 'turn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
 }
 async function send(text: string, attachments: Attachment[] = []) {
+  if (session.value && api.isNative(profile.value) && nativeOutcome(profile.value, session.value)) {
+    activeRun.value = 'workspace-' + session.value; sending.value = true; unavailableRun.value = true
+    chatError.value = 'Submission outcome unknown. Inspect history and native state before sending again.'
+    return
+  }
   if (scheduledPage.value || sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
   if ((projectView.value || !session.value) && !await createSession()) return
   if (sending.value || approvalPending.value) return
   historyGeneration++; visibilityAbort?.abort()
-  sending.value = true; thinking.value = true; activeRun.value = ''; lastSeq = -1; runStatus.value = ''; approval.value = undefined; reconnectNotice.value = false; chatError.value = ''; draft.value = ''; progress.value = []
+  sending.value = true; thinking.value = true; activeRun.value = ''; lastSeq = -1; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; reconnectNotice.value = false; chatError.value = ''; draft.value = ''; progress.value = []
   activity('thinking', 'Thinking…')
   priorUserCount.value = messages.value.filter(item => item.role === 'user').length
   optimisticMessage.value = { id: 'pending-' + localId(), role: 'user', content: [
@@ -306,13 +330,22 @@ async function send(text: string, attachments: Attachment[] = []) {
   messages.value.push(optimisticMessage.value)
   streamAbort = new AbortController(); const current = generation, streamCurrent = ++streamGeneration, p = profile.value, s = session.value
   let completed = false
+  let nativeAttempt: string | undefined
   try {
     const parts: unknown[] = [{ type: 'text', text: text || 'Please examine the attached files.' }]
     for (const file of attachments) {
-      if (file.type.startsWith('image/')) parts.push({ type: 'image_url', image_url: { url: file.data } })
+      if (file.type.startsWith('image/')) {
+        if (api.isNative(p)) {
+          const extension = file.type === 'image/jpeg' ? 'jpg' : file.type.slice(6)
+          const uploaded = await api.upload(p, { ...file, name: 'image.' + extension })
+          if (current !== generation) return
+          parts.push({ type: 'text', text: `Attached image ${file.name.replace(/[\r\n]/g, ' ')}: ${uploaded.path}` })
+        }
+        parts.push({ type: 'image_url', image_url: { url: file.data } })
+      }
       else { const uploaded = await api.upload(p, file); if (current !== generation) return; parts.push({ type: 'text', text: `Attached file ${file.name}: ${uploaded.path}` }) }
     }
-    if (!api.isWorkspace(p, s)) {
+    if (!api.isNative(p) && !api.isWorkspace(p, s)) {
       // Admission isn't aborted on navigation: record the accepted run even if
       // its viewer has left. Never repeat POST to repair a dropped event stream.
       const requestKey = idempotencyKeyFor(p, s) || createIdempotencyKey()
@@ -332,7 +365,13 @@ async function send(text: string, attachments: Attachment[] = []) {
       await followRun(current, p, s, made.run_id, false)
       return
     }
+    if (api.isNative(p)) {
+      nativeAttempt = uncertainNativeOutcome(p, s)
+      activeRun.value = 'workspace-' + s
+      rememberRun(p, s, activeRun.value)
+    }
     for await (const frame of api.stream(p, s, attachments.length ? parts : text, streamAbort.signal, model.value || defaultModel.value, provider.value)) {
+      if (api.isNative(p) && frame.event === 'run.started') settleNativeOutcome(p, s, nativeAttempt)
       if (current !== generation || streamCurrent !== streamGeneration) return
       const outcome = reduceFrame(frame)
       if (outcome === 'completed') { completed = true; break }
@@ -346,7 +385,19 @@ async function send(text: string, attachments: Attachment[] = []) {
       if (cause instanceof ApiError && cause.status >= 500) {
         try { await loadMessages() } catch { /* Preserve current history on refresh failure. */ }
       }
+      if (api.isNative(p) && nativeOutcome(p, s)) {
+        if (cause instanceof NativeError && cause.outcome === 'rejected') {
+          settleNativeOutcome(p, s, nativeAttempt); forgetRun(p, s, activeRun.value); activeRun.value = ''
+          if (optimisticMessage.value) messages.value = messages.value.filter(row => row.id !== optimisticMessage.value?.id)
+          optimisticMessage.value = undefined; suggestedPrompt.value = text
+        } else {
+          unavailableRun.value = true
+          chatError.value = 'Submission outcome unknown. Inspect saved history and native state before sending again.'
+          return
+        }
+      }
       chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.'
+      if (api.isNative(p) && activeRun.value) { reconnectNotice.value = true; void followRun(current, p, s, activeRun.value, false) }
     }
   }
   finally { if (current === generation && !activeRun.value) { sending.value = false; finishActivities() } }
@@ -357,6 +408,11 @@ async function finishRun(current: number, p: string, s: string, run: string) {
   finishActivities(); approvalPending.value = false; approval.value = undefined
   if (!await loadMessages()) { reconnectNotice.value = true; throw new Error('Run ended, but history could not be loaded. Retry loading history before starting another turn.') }
   if (current !== generation) return
+  if (api.isNative(p) && nativeOutcome(p, s)) {
+    unavailableRun.value = true
+    chatError.value = 'Native activity ended, but the submission outcome remains unknown. Review saved history before unlocking.'
+    return
+  }
   draft.value = ''; lastSeq = -1; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false; eventStreamExpired.value = false
   void loadSessions()
 }
@@ -498,6 +554,18 @@ async function approveRun(choice: string) {
   catch { if (current === generation) chatError.value = 'Could not resolve approval. Refresh run state and retry.' }
   finally { actionBusy.value = false }
 }
+async function answerClarification() {
+  const request = approval.value?.request_id
+  if (typeof request !== 'string' || actionBusy.value) return
+  actionBusy.value = true
+  try {
+    const answers = Object.fromEntries(Object.entries(clarificationAnswers.value).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : value]))
+    Object.assign(answers, customClarification.value)
+    await api.clarify(profile.value, activeRun.value, request, answers)
+    approvalPending.value = false; approval.value = undefined; clarificationAnswers.value = {}; customClarification.value = {}
+  } catch { chatError.value = 'Clarification could not be settled. Refresh native state before retrying.' }
+  finally { actionBusy.value = false }
+}
 async function steerRun() {
   const p = profile.value, run = activeRun.value, current = generation
   if (!steerText.value.trim() || actionBusy.value || !run) return
@@ -509,6 +577,9 @@ async function steerRun() {
 
 async function visibilityChange() {
   if (document.visibilityState !== 'visible') return
+  // Do not replace the submit coroutine while its admission acknowledgement is
+  // pending (or unknown). Background state can be idle before that RPC admits.
+  if (session.value && api.isNative(profile.value) && nativeOutcome(profile.value, session.value)) return
   refreshProjects()
   if (activeRun.value && !eventStreamExpired.value) { void followRun(generation, profile.value, session.value, activeRun.value, false); return }
   if (!session.value) return
@@ -530,6 +601,13 @@ async function visibilityChange() {
 async function releaseUnavailableRun() {
   const current = generation, p = profile.value, s = session.value, run = activeRun.value
   if (!unavailableRun.value) return
+  if (api.isNative(p)) {
+    try {
+      const state = await api.runStatus(p, run)
+      if (state.status !== 'completed') { unavailableRun.value = false; void followRun(current, p, s, run, true); return }
+    } catch { chatError.value = 'Native state could not be inspected. Sending remains locked.'; return }
+    settleNativeOutcome(p, s)
+  }
   const previousStatus = runStatus.value; runStatus.value = 'stopped'
   if (!await loadMessages() || current !== generation) { if (current === generation) runStatus.value = previousStatus; return }
   lastSeq = -1; forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; eventStreamExpired.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
@@ -574,15 +652,8 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
       <div v-if="!scheduledPage && reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
-      <div v-if="!scheduledPage && activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : 'Working…' }}</div>
-      <div v-if="!scheduledPage && approvalPending" class="notice px-5 py-3 text-sm" role="status">
-        <p>Approval required{{ approval?.command ? ': ' + approval.command : '' }}</p>
-        <template v-if="!scheduledPage && activeRun && !activeRun.startsWith('workspace-')">
-          <button v-for="choice in (Array.isArray(approval?.choices) ? approval.choices : [])" :key="String(choice)" class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55" :disabled="actionBusy" @click="approveRun(String(choice))">{{ choice === 'once' ? 'Allow once' : choice === 'deny' ? 'Deny' : choice === 'session' ? 'Allow for session' : 'Always allow' }}</button>
-        </template>
-        <p v-else>Resolve this workspace approval in Hermes.</p>
-      </div>
-      <form v-if="!scheduledPage && activeRun && !activeRun.startsWith('workspace-') && !approvalPending" class="flex gap-2 px-5 py-2" @submit.prevent="steerRun">
+      <div v-if="!scheduledPage && activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? approval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : nativeStatus || 'Working…' }}</div>
+      <form v-if="!scheduledPage && activeRun && (api.isNative(profile) || !activeRun.startsWith('workspace-')) && !approvalPending" class="flex gap-2 px-5 py-2" @submit.prevent="steerRun">
         <input v-model="steerText" aria-label="Guide this run" placeholder="Guide this run…" class="min-w-0 flex-1 rounded-lg bg-[#303030] px-3 py-2 text-base" />
         <button class="rounded-lg bg-[#303030] px-3 text-base disabled:opacity-55" :disabled="actionBusy || runStatus !== 'running' || !steerText.trim()">Send guidance</button>
       </form>
@@ -605,8 +676,27 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button class="mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base" @click="chooseProject('')">Other chats</button>
         </template>
       </section>
-      <ChatTranscript v-else :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest" />
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="projectId || api.isWorkspace(profile, session) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" @stop="stopRun" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <ChatTranscript v-else :profile="profile" :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest">
+        <template #request>
+      <div v-if="approvalPending" class="notice px-5 py-3 text-sm" role="status">
+        <p v-if="approval?.kind !== 'clarify'">Approval required{{ approval?.command ? ': ' + approval.command : '' }}</p>
+        <template v-if="activeRun && (api.isNative(profile) || !activeRun.startsWith('workspace-')) && approval?.kind !== 'clarify'">
+          <button v-for="choice in (Array.isArray(approval?.choices) ? approval.choices : [])" :key="String(choice)" class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55" :disabled="actionBusy" @click="approveRun(String(choice))">{{ choice === 'once' ? 'Allow once' : choice === 'deny' ? 'Deny' : choice === 'session' ? 'Allow for session' : 'Always allow' }}</button>
+        </template>
+        <form v-if="approval?.kind === 'clarify'" @submit.prevent="answerClarification">
+          <label v-for="question in (approval.questions as { qid: string; question: string; choices?: string[]; multi_select?: boolean }[])" :key="question.qid" class="block my-3">
+            {{ question.question }}
+            <select v-if="question.choices?.length" :multiple="question.multi_select" v-model="clarificationAnswers[question.qid]" class="block rounded-lg bg-[#303030] p-2 text-base"><option value="">Select an answer</option><option v-for="choice in question.choices" :key="choice">{{ choice }}</option></select>
+            <input v-if="!question.choices?.length" v-model="clarificationAnswers[question.qid]" class="block w-full rounded-lg bg-[#303030] p-2 text-base" />
+            <input v-else v-model="customClarification[question.qid]" placeholder="Or enter your own answer" :aria-label="question.question + ' — custom answer'" class="mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base" />
+          </label>
+          <button :disabled="actionBusy" class="rounded-lg bg-[#303030] p-2 text-base">Submit answers</button>
+        </form>
+        <p v-else-if="!api.isNative(profile) && activeRun.startsWith('workspace-')">Resolve this workspace approval in Hermes.</p>
+      </div>
+        </template>
+      </ChatTranscript>
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" @stop="stopRun" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
     </main>
   </div>
 </template>

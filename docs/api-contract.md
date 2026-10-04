@@ -17,7 +17,93 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | Stop | `POST /v1/runs/{run_id}/stop` | None | `{ "run_id":…, "status":"stopping" }` or existing terminal status |
 | Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
 
-## Verified Runs contract and reconnection
+## Native rollout gate (2026-10-04)
+
+New Other and Project turns use the authenticated plugin native socket on the
+unchanged reviewed Hermes pin. Persisted transcripts remain Hermes history;
+existing REST run pointers drain through Runs. Native failures never resubmit
+through another transport. This is bounded native mode, with explicit weaker
+recovery semantics, rather than exactly-once admission or an owner lease.
+
+`GET /api/plugins/chathermes/chat/capabilities` returns
+`protocol: "chathermes.chat.v1"`, `mode: "native-bounded"`, `admission: true`,
+queue-only busy sends, images, approval/clarify support, and the reviewed source
+ID (a contract reference, not runtime attestation). `crash_safe_idempotency`,
+`lossless_snapshot_replay`, and `offline_turn_lease` are explicitly false.
+The normal capability proxy adds `features.native_chat` for controller selection.
+Unsupported native operations remain unavailable; no generic RPC forwarding exists.
+
+The same-origin `/api/plugins/chathermes/chat/ws` requires a host-issued,
+single-use `POST /api/auth/ws-ticket` ticket in
+`["hermes-gateway-v1", "hermes-gateway-ticket.<ticket>"]` subprotocols. Host,
+Origin, identity, plugin enablement and named profile checks fail closed. Query
+credentials and cookie-only upgrades are rejected. Tickets are not persisted.
+Connections expire after 600 seconds and reconnect with a fresh ticket; this
+limits viewer authorization lifetime, not offline turn lifetime. Frames are
+limited to 29 MiB. Correlation/event buffers are bounded and redact credentials.
+
+| JSON-RPC operation | Contract |
+| --- | --- |
+| `chat.attach` | `{session_id: stored_id}`; verifies owning profile before native `session.resume`; returns native snapshot without full messages |
+| `chat.replay` | `{last_seen: applied_seq}`; native event params, epoch, truncation and open requests |
+| `chat.submit` | Validated `{input, model?, provider?}`; session-only model selection then a single native `prompt.submit` with `queued:true` |
+| `chat.stop` | Empty params; native `session.interrupt` |
+| `chat.steer` | `{text}`; explicit native `session.steer`, separate from sending |
+| `chat.answer` | `{request_id,result}`; validated approval/clarify result for an open request in this attached session |
+| `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat |
+
+Notifications are `chat.event`, `chat.request`, `chat.unsupported` and `chat.ready`.
+Requests requiring OS/credential/Desktop bridges are explicitly declined as not
+shown so another native viewer may handle them. Approval choices and clarification
+question IDs are checked against the live request; stale answers fail with 409.
+
+The pinned `queued:true` parameter bypasses busy interrupt/steer/redirect policy
+and queues FIFO. It is not a durable idempotency receipt. Before submitting, the
+browser persists only a profile/session/attempt outcome-unknown marker. An
+acknowledgement in one tab cannot clear another tab’s uncertain attempt. A correlated
+acknowledgement clears it; a known rejection restores the draft. Timeout or loss
+of acknowledgement keeps sending locked across reload. The user must inspect
+saved history and active native state and explicitly end verification before a
+new send. The plugin never automatically retries an uncertain prompt.
+
+The cursor advances from actual event objects, never the separately read
+`latest_seq`. Same-document reconnect preserves that cursor, deduplicates and
+orders replay/live events. A new document restores saved history plus native
+snapshot and open requests; the snapshot has no atomic watermark, so recovery
+warns that partial activity can be missing. Epoch/truncation changes are visible.
+Crash auto-continuation is a new continuation that may repeat external effects.
+No unchanged-turn, process-crash or lossless offline recovery guarantee is made.
+
+Viewer detach follows Hermes's orphan reaper: the default grace is 20 seconds;
+recent active work can defer closure while native activity freshness is within
+600 seconds. This is not an unconditional 600-second guarantee. Another attached
+viewer keeps the native session attached. ChatHermes creates no owner or lease.
+
+Model selection waits for the cold native agent build through read-only
+`approval.pending`, reads current state, applies session-only `config.set` when
+needed and verifies model/provider before prompt admission. A gateway alias is
+allowed only if its endpoint/key matches an existing native provider. Unequal
+routes, deferred switches or unconfirmed choices reject before prompt submission.
+An independent Desktop model mutation is not atomically locked to this prompt.
+
+Images upload originals through authenticated profile routes, retain file-path
+references in the durable user text and submit multipart parts in one prompt.
+Every inline image must byte-match its same-profile original. The pinned runtime
+may preprocess the image through vision and persist only a text projection;
+`GET /images/{uuid.ext}` safely reopens the original with dashboard authentication,
+MIME sniffing, no symlinks and private/no-store headers. No session-global image
+attachment queue is used. Non-image files retain authenticated upload paths.
+Limits remain 29 MiB encoded turn, 1 MiB text, eight images and 20 MiB decoded
+images; the composer applies its smaller attachment limits.
+
+Upstream work still needed for stronger guarantees: transactional durable
+idempotency keyed to the admitted user row (including atomic busy policy), and
+snapshot epoch/sequence captured atomically with replay/truncation boundaries.
+See [integration verification](verification/2026-10-04-persistent-tui-integration.md),
+[historical native verification](verification/2026-10-04-native-gate.md) and the
+[plan](plans/persistent-tui-gateway.md).
+
+## Legacy Runs contract and pending-turn drain
 
 Before implementation, the pinned source archive was downloaded and inspected:
 [`api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/gateway/platforms/api_server_runs.py)
@@ -92,7 +178,7 @@ while sending; its send button becomes a stop button after admission.
 
 ## Plugin-specific routes
 
-`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. `GET /api/model/options` proxies the selected profile's Hermes provider inventory and returns only `provider`, `model`, and provider rows containing `slug`, `name`, `is_current`, and model IDs. Provider transport and authentication metadata are excluded; unconfigured non-current providers are omitted. The UI defaults to the current provider, resets selection on profile changes, and keeps gateway route aliases in a separate **Model routes** choice. A missing inventory falls back to the configured default and route aliases; the virtual gateway alias (`parent: null`) is not a provider model. Explicit model selection adds `model`, `provider` (for inventory models), and `require_model_lock: true` to each turn, so the selection reaches Hermes runtime overrides. See the Runs model-lock distinction above.
+`GET /profiles` returns Hermes profile names only. `GET /v1/models` proxies the configured gateway catalog and adds the selected profile’s `default_model`. Named-profile requests use that profile’s `API_SERVER_KEY` from its secret scope. `GET /api/model/options` proxies the selected profile's Hermes provider inventory and returns only `provider`, `model`, and provider rows containing `slug`, `name`, `is_current`, and model IDs. Provider transport and authentication metadata are excluded; unconfigured non-current providers are omitted. The UI defaults to the current provider, resets selection on profile changes, and keeps gateway route aliases in a separate **Model routes** choice. A missing inventory falls back to the configured default and route aliases; the virtual gateway alias (`parent: null`) is not a provider model. New native turns resolve these selections through the native model path above. Legacy Runs retain their original runtime override contract.
 
 `POST /uploads` accepts a filename and base64 data URL (20 MB decoded maximum), validates the profile and body, and stores a generated filename under that profile's `uploads/chathermes/`. It returns the path for agent file tools. Image attachments use `{type: "image_url", image_url: {url: "data:image/..."}}` alongside text in the user message content array.
 
@@ -100,9 +186,14 @@ Workspace/session-stream `tool.started` carries `tool_name`, `args`, and `previe
 
 ## Test environment
 
-The compose environment pins Hermes revision `3632f9173d218fd24f3fa595d7affa159b0774cd` on a digest-pinned runtime image. Runtime state is isolated in a named volume. See README for commands and model endpoint configuration.
+The Docker launcher pins Hermes revision `3632f9173d218fd24f3fa595d7affa159b0774cd` on a digest-pinned runtime image. Runtime state is isolated in a named volume. See README for commands and model endpoint configuration.
 
-## Project gateway RPC adapter
+## Project metadata and legacy workspace RPC adapter
+
+New chat turns use the socket contract above. The HTTP stream routes described
+here remain compatibility endpoints; the native UI does not fall back to them.
+Selected native sessions are held by their socket, not the metadata SSE watcher.
+
 
 Cookie-authenticated plugin routes use the dashboard's existing
 `tui_gateway.server.dispatch` and `Transport` contract, the same backend as

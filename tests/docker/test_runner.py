@@ -20,6 +20,7 @@ case "$*" in
     if [ -n "${EXPECTED_HOST:-}" ] && [ "${DOCKER_HOST:-}" != "$EXPECTED_HOST" ]; then exit 1; fi
     exit "${INFO_EXIT:-0}" ;;
   'container inspect '*) exit 1 ;;
+  'network inspect --format {{.Internal}} '*) echo "${INTERNAL_NETWORK:-true}"; exit 0 ;;
   'network inspect '*) exit 1 ;;
 esac
 exit 0
@@ -55,8 +56,25 @@ exit 0
         self.assertIn('-p 127.0.0.1:9119:9119', calls)
         self.assertIn('-v chathermes-test-hermes-data:/opt/data', calls)
         self.assertIn('--network-alias model', calls)
+        self.assertIn('network create --internal chathermes-test-internal', calls)
+        self.assertIn('--name chathermes-test-hermes --network chathermes-test-internal --network-alias hermes', calls)
+        self.assertIn('--name chathermes-test-browser --network chathermes-test-browser -p 127.0.0.1:9119:9119', calls)
+        self.assertIn('network connect chathermes-test-internal chathermes-test-browser', calls)
         self.assertNotIn(':8642', calls)
         self.assertNotIn(':4000', calls)
+
+    def test_fixture_rejects_existing_network_with_egress(self):
+        result, calls, _ = self.run_launcher(INTERNAL_NETWORK='false')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Fixture network must be internal', result.stderr)
+        self.assertNotIn('run -d', calls)
+
+    def test_fixture_adds_second_generic_model_only_to_disposable_config(self):
+        before = Path('.hermes/config.yaml').read_bytes()
+        result, _, config = self.run_launcher(inspect_config=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('fixture-model-2:', config)
+        self.assertEqual(Path('.hermes/config.yaml').read_bytes(), before)
 
     def test_remote_scoped_port_and_secret_inheritance(self):
         result, calls, _ = self.run_launcher('real', CHATHERMES_BIND_ADDRESS='172.25.0.2',
@@ -95,6 +113,8 @@ exit 0
                                              LLM_API_MODEL='model\nplugins:')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('LLM_API_MODEL may contain only', result.stderr)
+        self.assertNotIn('build ', calls)
+        self.assertNotIn('volume create ', calls)
 
     def test_fixture_mode_uses_safe_fixed_settings_even_if_host_has_llm_values(self):
         result, calls, _ = self.run_launcher(LLM_API_KEY='host-secret',
@@ -116,6 +136,8 @@ exit 0
         self.assertIn('network inspect chathermes-issue30', calls)
         self.assertIn('--name chathermes-issue30-hermes', calls)
         self.assertIn('--name chathermes-issue30-model', calls)
+        self.assertIn('--name chathermes-issue30-browser', calls)
+        self.assertIn('network create --internal chathermes-issue30-internal', calls)
         self.assertIn('-v chathermes-issue30-hermes-data:/opt/data', calls)
 
     def test_invalid_instance_name_fails_before_docker_mutations(self):
@@ -145,6 +167,7 @@ exit 0
         self.assertEqual(result.returncode, 0)
         self.assertIn('container inspect chathermes-test-hermes', calls)
         self.assertIn('container inspect chathermes-test-model', calls)
+        self.assertIn('container inspect chathermes-test-browser', calls)
         self.assertNotIn('volume ', calls)
         self.assertNotIn('chathermes-gateway', calls)
 
@@ -155,3 +178,50 @@ exit 0
                                       EXPECTED_HOST='unix:///test/docker.sock')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('Using documented Docker endpoint', result.stderr)
+
+
+class NativeRunnerGuards(unittest.TestCase):
+    def run_native(self, image='chathermes-test:3632f917', mount='volume:chathermes-ptuigateway-hermes-data', real='0', instance='ptuigateway'):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docker = root / 'docker'
+            docker.write_text('''#!/bin/sh
+printf '%s\\n' "$*" >> "$CALLS"
+case "$*" in
+  *Config.Image*) printf '%s\\n' "$TEST_IMAGE" ;;
+  *Mounts*) printf '%s\\n' "$TEST_MOUNT" ;;
+  *Config.Env*) printf 'CHATHERMES_TEST_REAL=%s\\n' "$TEST_REAL" ;;
+esac
+''')
+            docker.chmod(0o755)
+            npx = root / 'npx'
+            npx.write_text('#!/bin/sh\nprintf "browser-probe\\n" >> "$CALLS"\n')
+            npx.chmod(0o755)
+            env = {**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}', 'CALLS': str(root / 'calls'),
+                   'TEST_IMAGE': image, 'TEST_MOUNT': mount, 'TEST_REAL': real,
+                   'CHATHERMES_INSTANCE': instance}
+            result = subprocess.run(['sh', str(RUNNER.with_name('native-tests.sh'))], env=env, capture_output=True, text=True)
+            calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
+            return result, calls
+
+    def test_refuses_foreign_image_volume_and_real_provider_before_probes(self):
+        for environment in ({'image': 'production:latest'}, {'mount': 'bind:/personal/hermes'},
+                            {'mount': 'volume:chathermes-other-hermes-data'}, {'real': '1'}):
+            result, calls = self.run_native(**environment)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('exec ', calls)
+            self.assertNotIn('cp ', calls)
+            self.assertNotIn('browser-probe', calls)
+
+    def test_scoped_fixture_is_the_only_probe_target(self):
+        result, calls = self.run_native()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('exec -w /opt/hermes chathermes-ptuigateway-hermes', calls)
+        self.assertIn('exec -u hermes', calls)
+        self.assertIn('browser-probe', calls)
+        self.assertNotIn('chathermes-test-hermes', calls)
+
+    def test_invalid_instance_cannot_reach_docker(self):
+        result, calls = self.run_native(instance='../personal')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, '')
