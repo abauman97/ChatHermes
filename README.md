@@ -79,3 +79,25 @@ from an existing directory. Other RPC errors are never retried. See the
 [source audit](docs/plans/2026-10-01-projects.md),
 [verification report](docs/verification/2026-10-01-projects.md), and
 [test environment instructions](tests/docker/README.md).
+
+### Scheduled
+
+The drawer's Scheduled screen groups persisted cron history by job in the
+selected Hermes profile. Active, Paused and Completed filters lead to dated
+runs (newest first), with older pages available and full output on selection.
+Agent transcripts retain thinking/tool disclosures; script-only saved Markdown
+is also readable. Reloadable job/run links stay within dashboard authentication.
+“Open a chat about this run” creates a separate normal chat and drafts the job,
+date and assistant/saved output for review before sending.
+
+The adapter follows the pinned Hermes dashboard contracts:
+`web_server_cron._cron_profile_home`, `_call_cron_for_profile` and
+`_cron_store_scope`; `SessionDB.list_cron_job_runs` and `get_messages_as_conversation` with resume
+lineage and compacted display history; and the
+native cron output filename/timezone and session reconciliation helpers. The
+profile-scoped execution ledger supplies failed runs without saved output. It
+reads retained history rather than the transient gateway Runs buffer, pages
+beyond the native dashboard's 100-run cap, checks exact job/run ownership, and
+returns a compatibility message when these helpers are unavailable. Deleted
+jobs or pruned output cannot be recovered. Scheduling and job mutation remain
+in Hermes's native dashboard.

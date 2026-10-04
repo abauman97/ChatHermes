@@ -21,3 +21,8 @@ export interface ProjectTree { projects: Project[]; scoped_session_ids: string[]
 
 export type TurnBlock = Activity | { id: string; kind: 'text'; content: string; images?: string[] }
 export interface RunState { run_id?: string; session_id?: string; status?: string; output?: string; approval?: Record<string, unknown>; run?: { status?: string } }
+
+export interface ScheduledJob { id: string; name: string; prompt?: string; schedule_display?: string; state?: string; enabled?: boolean; last_run_at?: string; next_run_at?: string }
+export interface ScheduledRun { id: string; title?: string; started_at: number; ended_at?: number; source: string; preview?: string; end_reason?: string }
+export interface ScheduledRunPage { runs: ScheduledRun[]; offset: number; limit: number; has_more: boolean }
+export interface ScheduledOutput { started_at?: number; output?: string; messages: Message[]; session_id?: string }
