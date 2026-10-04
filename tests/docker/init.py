@@ -2,12 +2,18 @@
 import json
 import os
 import shutil
+import base64
 from pathlib import Path
 
 from hermes_cli import projects_db
 
 home = Path('/opt/data')
 home.mkdir(parents=True, exist_ok=True)
+config_data = os.environ.pop('CHATHERMES_TEST_CONFIG_B64', None)
+if config_data:
+    (home / '.chathermes-config.yaml').write_bytes(base64.b64decode(config_data, validate=True))
+    shutil.copyfile(home / '.chathermes-config.yaml', '/test/config.yaml')
+    (home / '.chathermes-config.yaml').unlink()
 shutil.copyfile('/test/config.yaml', home / 'config.yaml')
 real = os.environ.get('CHATHERMES_TEST_REAL') == '1'
 # Real credentials stay in the process environment. The pin's multiplexer reads

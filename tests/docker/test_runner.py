@@ -38,9 +38,13 @@ exit 0
                    'LLM_API_KEY': '', 'LLM_API_BASE_URL': '', 'LLM_API_MODEL': '',
                    'EXPECTED_HOST': 'tcp://172.25.0.2:2375', 'CHATHERMES_INSTANCE': 'test', **extra_environment}
             result = subprocess.run(['sh', str(RUNNER), mode], env=env, capture_output=True, text=True)
-            config_path = next(root.glob('chathermes-test-config-*.yaml'), None) if inspect_config else None
-            config = config_path.read_text() if config_path else ''
             calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
+            config = ''
+            if inspect_config:
+                import base64
+                import re
+                match = re.search(r'CHATHERMES_TEST_CONFIG_B64=([^\s]+)', calls)
+                config = base64.b64decode(match.group(1)).decode() if match else ''
             return result, calls, config
 
     def test_fixture_builds_current_checkout_and_keeps_services_private(self):

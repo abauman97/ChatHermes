@@ -108,6 +108,9 @@ PY
     exit 2
   fi
 fi
+if [ "$mode" = fixture ]; then
+  config_file="$(pwd)/.hermes/config.yaml"
+fi
 remove_container "$gateway"
 remove_container "$model"
 if [ "$mode" = fixture ]; then
@@ -123,8 +126,11 @@ docker run -d --init --name "$gateway" \
   -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test \
   -e API_SERVER_KEY=chathermes-isolated-test-key-2026 \
   -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
-  -v "$config_file:/test/config.yaml:ro" \
+  -e CHATHERMES_TEST_CONFIG_B64="$(base64 < "$config_file" | tr -d '\n')" \
   "$image" >/dev/null
+if [ "$mode" = real ]; then
+  rm -f "$config_file"
+fi
 attempt=0
 until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do
   attempt=$((attempt + 1))

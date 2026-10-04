@@ -22,21 +22,20 @@ credentials to repository files or logging them.
 revision-scoped Hermes and model containers, then waits for the dashboard's
 `/api/auth/providers` readiness route. Every launch refreshes the baked plugin,
 config and fixture. Docker and curl are required. No host bind mounts or personal
-Hermes home are used. Data stays in a dedicated named volume. Containers, network,
+Hermes home is used. Data stays in a dedicated named volume. Containers, network,
 and volume are scoped to the current commit to keep concurrent checkouts isolated;
 set `CHATHERMES_INSTANCE` to override the instance name. Provide `CHATHERMES_DASHBOARD_PORT` and
 `CHATHERMES_BIND_ADDRESS` together when using remote Docker; the port must be
 available on that daemon host.
-Do not run Compose and the shell launcher simultaneously on the same data volume.
+Each shell launcher instance uses isolated, revision-scoped Docker resources.
 
 The source remains pinned to `3632f9173d218fd24f3fa595d7affa159b0774cd`, with
 its download checksum verified, and the base image digest in `Dockerfile` is
-unchanged. `compose.yml` remains the local fixture specification:
-`npm run build && docker compose up --build -d` is an alternative fixture launcher.
+unchanged. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
 Both expose only the dashboard on loopback by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
 
-Compose fixture settings can be overridden for an ad hoc model label with
+Fixture settings can be overridden for an ad hoc model label with
 `LLM_API_MODEL`; fixture requests remain deterministic and do not call a real
 provider. Use `npm run live:real` with all three variables for live model calls.
 
@@ -63,8 +62,8 @@ npm run live
 
 The runner rejects wildcard binds. `CHATHERMES_DASHBOARD_PORT` defaults to 9119;
 choose a free port if other dashboards are running. No fixture or gateway port
-needs publishing. The remote daemon needs no Compose plugin and cannot access
-this checkout via host bind mounts; all inputs are baked into the image.
+needs publishing. The remote daemon needs no Compose plugin. Plugin assets and scripts are baked
+into the image; only the read-only generated config is mounted from the checkout.
 
 ## Optional Playwright verification
 
@@ -133,9 +132,9 @@ npm run test:docker
 npm run build
 ```
 
-For Compose, `docker compose down` preserves history and `docker compose down -v`
-discards its isolated data. The shell runner never deletes volumes. Its network
-and volume are retained across stops. Never commit generated state or credentials.
+The shell runner never deletes volumes. Its network and volume are retained
+across stops. Remove test data only by explicitly removing the confirmed
+disposable test volume. Never commit generated state or credentials.
 
 Startup uses native `hermes_cli.projects_db` to create the three synthetic
 Projects expected by `projects.spec.ts`. It creates `.hermes.md` and a lower
