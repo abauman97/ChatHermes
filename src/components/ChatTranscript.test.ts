@@ -33,19 +33,53 @@ describe('chat markdown', () => {
 })
 
 describe('ordered activity presentation', () => {
-  it('renders interleaved blocks in one turn and constrains details with the activity class', async () => {
+  it('groups all activity before the response and keeps only active work visible', async () => {
     const blocks = [
       { id: 'r1', kind: 'thinking' as const, title: 'Thought', content: 'First plan', complete: true },
-      { id: 't1', kind: 'tool' as const, title: 'Ran command', content: 'command', output: 'x'.repeat(100_000), complete: true },
-      { id: 'r2', kind: 'thinking' as const, title: 'Thinking…', content: 'Second plan', complete: false },
-      { id: 'text', kind: 'text' as const, content: '**Answer**' },
+      { id: 'commentary', kind: 'text' as const, content: 'Checking files' },
+      { id: 't1', kind: 'tool' as const, title: 'Read package.json', content: 'details', complete: true },
+      { id: 'active', kind: 'thinking' as const, title: 'Thinking…', content: 'streaming', complete: false },
+      { id: 'answer', kind: 'text' as const, content: 'Answer' },
     ]
-    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks, progress: [], draft: 'Answer', loading: false } })
-    expect(wrapper.findAll('.assistant-turn > *').map(row => row.classes().includes('activity') ? row.get('summary').text() : row.text())).toEqual(['✓Thought', '✓Ran command', '◌Thinking…', 'Answer'])
-    expect(wrapper.findAll('.message.assistant')).toHaveLength(1)
-    expect(wrapper.findAll('details[open]')).toHaveLength(1)
-    await wrapper.setProps({ blocks: blocks.map(block => block.kind === 'thinking' ? { ...block, complete: true } : block) })
-    expect(wrapper.findAll('details[open]')).toHaveLength(0)
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks, working: true, progress: [], draft: '', loading: false } })
+    expect(wrapper.findAll('.assistant-turn > *').map(row => row.classes()[0])).toEqual(['turn-work', 'message', 'message'])
+    expect(wrapper.get('.work-summary').text()).toBe('›Working…')
+    expect(wrapper.get('.work-summary').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('.activity').map(row => row.get('summary').isVisible())).toEqual([false, false, true])
+    expect(wrapper.get('.current-activity .activity').attributes('open')).toBeDefined()
+    expect(wrapper.findAll('.working-shimmer')).toHaveLength(2)
+    await wrapper.get('.work-summary').trigger('click')
+    expect(wrapper.findAll('.work-timeline > div').every(row => row.attributes('style') !== 'display: none;')).toBe(true)
+    // Independent native disclosures can be opened without changing siblings.
+    const first = wrapper.findAll('.activity').at(0)!
+    ;(first.element as HTMLDetailsElement).open = true
+    await first.trigger('toggle')
+    expect(wrapper.findAll('.activity[open]')).toHaveLength(2)
+    expect(wrapper.findAll('.activity').at(1)!.attributes('open')).toBeUndefined()
+    await wrapper.setProps({ blocks: blocks.map(block => block.kind !== 'text' ? { ...block, complete: true } : block), working: false })
+    expect(wrapper.get('.work-summary').text()).toBe('›Worked')
+    expect(wrapper.get('.work-summary').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('.work-timeline > div').every(row => row.attributes('style') === 'display: none;')).toBe(true)
+    expect(wrapper.findAll('.working-shimmer')).toHaveLength(0)
+    await wrapper.get('.work-summary').trigger('click')
+    expect(wrapper.findAll('.work-timeline > div').every(row => row.attributes('style') !== 'display: none;')).toBe(true)
+    expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
+  })
+  it('keeps Working visible between activities and exposes approval activity', async () => {
+    const blocks = [{ id: 'tool', kind: 'tool' as const, title: 'Ran command', content: 'approval command', complete: true, state: 'failed' as const }]
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks, working: true, progress: [], draft: '', loading: false }, slots: { request: '<button>Approve</button>' } })
+    expect(wrapper.get('.work-summary').text()).toContain('Working…')
+    expect(wrapper.get('.activity').isVisible()).toBe(false)
+    await wrapper.setProps({ approvalPending: true })
+    expect(wrapper.get('.current-activity').attributes('style')).not.toBe('display: none;')
+    expect(wrapper.get('.activity summary').text()).toContain('Failed')
+    expect(wrapper.get('button:last-child').isVisible()).toBe(true)
+    await wrapper.setProps({ approvalPending: false, working: false })
+    expect(wrapper.get('.activity').isVisible()).toBe(false)
+  })
+  it('shows Working on admission before any activity arrives', () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], working: true, progress: [], draft: '', loading: false } })
+    expect(wrapper.get('.work-summary').text()).toContain('Working…')
   })
   it('restores reasoning and tool details from completed history and retains assistant images', () => {
     const wrapper = mount(ChatTranscript, { props: { messages: [

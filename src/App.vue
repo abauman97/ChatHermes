@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
+import { toolTitle } from './lib/assistant-turn'
 import { useNativeSession } from './lib/native-session'
 import type { SSEEvent } from './lib/sse'
 import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session, Project, ProjectAction } from './types/hermes'
@@ -290,17 +291,26 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   else if (['assistant.commentary', 'message.interim'].includes(frame.event) && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
     progress.value.filter(item => item.kind === 'thinking').forEach(item => { item.complete = true }); thinking.value = false
-    const item = activity('tool', name, callId || localId())
+    const item = activity('tool', toolTitle(name), callId || localId())
+    item.toolName = name; item.state = 'running'
     item.content = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
   } else if (['thinking.delta', 'reasoning.delta', 'reasoning.available', 'tool.progress', 'tool.delta'].includes(frame.event)) {
     const isThinking = frame.event.startsWith('thinking') || frame.event.startsWith('reasoning') || name === '_thinking'
-    const emptyThinking = isThinking ? progress.value.find(item => item.kind === 'thinking' && !item.content) : undefined
-    const item = emptyThinking || activity(isThinking ? 'thinking' : 'tool', isThinking ? 'Thinking…' : name, callId)
+    const emptyThinking = isThinking ? progress.value.find(item => item.kind === 'thinking' && !item.complete && !item.content) : undefined
+    const item = emptyThinking || activity(isThinking ? 'thinking' : 'tool', isThinking ? 'Thinking…' : toolTitle(name), callId)
+    if (!isThinking) { item.toolName = name; item.state = 'running' }
     item.content += delta || (typeof data.preview === 'string' ? data.preview : '')
     thinking.value = isThinking
   } else if (frame.event === 'tool.completed' || frame.event === 'tool.failed') {
-    const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId ? item.id === callId : item.title === name))
-    if (item) { item.complete = true; if (typeof data.output === 'string') item.output = data.output; else if (typeof data.preview === 'string') item.output = data.preview; if (data.error === true) item.title += ' (failed)'; if (frame.event === 'tool.failed') item.title += ' (failed)' }
+    const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId ? item.id === callId : item.toolName === name || item.title === name))
+    if (item) {
+      const failed = frame.event === 'tool.failed' || data.is_error === true || data.error === true || typeof data.error === 'string' && !!data.error
+      item.complete = true; item.state = failed ? 'failed' : 'completed'
+      item.title = toolTitle(item.toolName || name, true)
+      const output = data.output ?? data.result ?? (typeof data.error === 'string' ? data.error : data.preview)
+      if (output !== undefined) item.output = typeof output === 'string' ? output : JSON.stringify(output, null, 2)
+      if (typeof data.duration_s === 'number') item.duration = data.duration_s
+    }
   } else if (frame.event === 'approval.request') { finishActivities(); approvalPending.value = true; approval.value = data; runStatus.value = 'waiting_for_approval' }
   else if (frame.event === 'approval.responded') { approvalPending.value = false; approval.value = undefined; runStatus.value = 'running' }
   else if (frame.event === 'replay.truncated') { chatError.value = 'Some earlier run events expired. Saved history will be restored when the run finishes.' }
@@ -630,7 +640,6 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
       <div v-if="!scheduledPage && viewReconnect" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
-      <div v-if="!scheduledPage && viewActive && !viewReconnect" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? viewApproval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : viewStatus || 'Working…' }}</div>
       <div v-if="!scheduledPage && viewError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ viewError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="viewUnavailable" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
       <ScheduledPage v-if="scheduledPage" :key="`${profile}:${scheduledPageKey}`" :profile="profile" :chat-busy="creating" :offline="offline" :discussion-error="scheduledDiscussionError" @discuss="discussScheduled" />
       <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
@@ -650,7 +659,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button class="mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base" @click="chooseProject('')">Other chats</button>
         </template>
       </section>
-      <ChatTranscript v-else :profile="profile" :messages="viewMessages" :draft="nativeMode ? '' : draft" :loading="viewLoading" :progress="nativeMode ? [] : progress" :thinking="nativeMode ? viewBusy : thinking" :home="!session" @suggest="suggest">
+      <ChatTranscript v-else :profile="profile" :messages="viewMessages" :draft="nativeMode ? '' : draft" :loading="viewLoading" :progress="nativeMode ? [] : progress" :thinking="nativeMode ? viewBusy : thinking" :working="viewBusy || viewApprovalPending" :approval-pending="viewApprovalPending" :status-label="viewApprovalPending ? viewApproval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : viewStatus !== 'Working…' ? viewStatus : ''" :home="!session" @suggest="suggest">
         <template #request>
       <div v-if="viewApprovalPending" class="notice px-5 py-3 text-sm" role="status">
         <p v-if="viewApproval?.kind !== 'clarify'">Approval required{{ viewApproval?.command ? ': ' + viewApproval.command : '' }}</p>
@@ -670,6 +679,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       </div>
         </template>
       </ChatTranscript>
+      <div v-if="!scheduledPage && viewActive && !viewReconnect && (viewApprovalPending || runStatus === 'stopping' || viewStatus && viewStatus !== 'Working…')" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ viewApprovalPending ? viewApproval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : viewStatus }}</div>
       <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || viewLoading || viewApprovalPending || viewUnavailable || viewReconnect || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="viewBusy" :stoppable="viewActive && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : viewApprovalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
     </main>
   </div>
