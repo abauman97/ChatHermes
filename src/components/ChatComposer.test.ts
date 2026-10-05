@@ -21,6 +21,26 @@ describe('composer availability', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
     expect((area.element as HTMLTextAreaElement).value).toBe('draft while loading')
   })
+  it('steers non-empty input during an active stoppable run and stops with empty input', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: true, stoppable: true } })
+    const button = wrapper.get('.send-button')
+    expect(button.attributes('aria-label')).toBe('Stop response')
+    await wrapper.get('textarea').setValue('  follow this direction  ')
+    expect(button.attributes('aria-label')).toBe('Guide this run')
+    await button.trigger('click')
+    expect(wrapper.emitted('steer')).toEqual([['follow this direction']])
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.emitted('stop')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('stop')).toHaveLength(1)
+  })
+  it('retains ordinary send behavior outside a run', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } })
+    await wrapper.get('textarea').setValue('hello')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('send')?.[0]).toEqual(['hello', []])
+    expect(wrapper.emitted('steer')).toBeUndefined()
+  })
 })
 
 describe('provider and model picker', () => {
