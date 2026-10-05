@@ -45,8 +45,8 @@ class Channel:
             from starlette.concurrency import run_in_threadpool
             await run_in_threadpool(register_profile_secrets, self.profile, self.transport)
             await run_in_threadpool(check_profile_session, self.profile, params['session_id'])
-            # No transcript crosses this channel. inline_images is redundant
-            # with omit_messages and older native schemas reject that field.
+            # No transcript crosses this channel. Omit the optional inline image
+            # projection, which older Hermes resume schemas reject.
             snapshot = await self.transport.call('session.resume', {'profile': self.profile,
                 'session_id': params['session_id'], 'source': 'desktop', 'omit_messages': True})
             self.runtime, self.stored = snapshot['session_id'], params['session_id']

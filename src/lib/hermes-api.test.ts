@@ -80,10 +80,10 @@ it('rejects failed native attach before submission but preserves lost submit unc
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ features: { native_chat: true } }))))
   const profile = 'first-send-regression'
   await api.capabilities(profile)
-  const open = vi.spyOn(native, 'nativeViewer').mockRejectedValue(new native.NativeError('Native viewer disconnected'))
+  const open = vi.spyOn(native, 'nativeViewer').mockRejectedValue(new native.NativeError('Native operation unavailable. Message not submitted.', 'rejected'))
   const first = api.stream(profile, 'draft', 'hello')
   try {
-    await expect(first.next()).rejects.toMatchObject({ outcome: 'rejected', message: expect.stringContaining('Message not submitted') })
+    await expect(first.next()).rejects.toMatchObject({ outcome: 'rejected', message: 'Message not submitted. Native viewer unavailable; reconnect and try again.' })
     const submit = vi.fn().mockRejectedValue(new native.NativeError('Lost acknowledgement'))
     open.mockResolvedValue({ rpc: submit } as unknown as native.NativeViewer)
     await expect(api.stream(profile, 'draft', 'hello').next()).rejects.toMatchObject({ outcome: 'unknown' })
