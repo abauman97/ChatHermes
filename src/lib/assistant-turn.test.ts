@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTurn, historyBlocks, mergeHistoryBlocks, normalizeEvent, reduceTurn } from './assistant-turn'
+import { createTurn, historyBlocks, mergeHistoryBlocks, normalizeEvent, reduceTurn, reduceNativeTurn } from './assistant-turn'
 import type { SSEEvent } from './sse'
 const frame = (event: string, data: unknown, id?: string): SSEEvent => ({ event, data: JSON.stringify(data), id })
 function setup() {
@@ -192,5 +192,41 @@ describe('persisted turn recovery', () => {
     ]), true)
     expect(turn.blocks[0]).toMatchObject({ duration: 2 })
     expect(turn.blocks[1]?.content).toBe('Answer in progress')
+  })
+})
+
+
+describe('native Desktop event semantics', () => {
+  it('keeps transient status out of reasoning, replaces reasoning, and upserts completed tools by identity', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'thinking.delta', { text: 'Waiting on provider' })
+    reduceNativeTurn(turn, 'tool.generating', { name: 'terminal' })
+    expect(turn.blocks).toEqual([])
+    reduceNativeTurn(turn, 'reasoning.delta', { text: 'Partial' })
+    reduceNativeTurn(turn, 'reasoning.available', { text: 'Full reasoning' })
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'message.delta', { text: 'Commentary' })
+    expect(turn.blocks[1]).toMatchObject({ id: 'a', complete: false })
+    reduceNativeTurn(turn, 'tool.complete', { tool_id: 'a', name: 'terminal', result_text: 'done' })
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    expect(turn.blocks).toHaveLength(3)
+    expect(turn.blocks[0]?.content).toBe('Full reasoning')
+    expect(turn.blocks[1]).toMatchObject({ complete: true, output: 'done' })
+  })
+  it('separates streamed interim text from final text without repeating interim output', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.delta', { text: 'Checking' })
+    reduceNativeTurn(turn, 'message.interim', { text: 'Checking', already_streamed: true })
+    reduceNativeTurn(turn, 'message.delta', { text: 'Answer' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Answer', status: 'complete' })
+    expect(turn.blocks.map(block => block.content)).toEqual(['Checking', 'Answer'])
+  })
+  it('keeps delegated activity alive after parent interruption and records later child failure', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'subagent.start', { subagent_id: 'child', goal: 'Check files', status: 'running' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Interrupted', status: 'interrupted' })
+    expect(turn.blocks[0]).toMatchObject({ id: 'subagent-child', complete: false, delegated: true })
+    reduceNativeTurn(turn, 'subagent.complete', { subagent_id: 'child', status: 'failed', summary: 'Tool failed' })
+    expect(turn.blocks[0]).toMatchObject({ complete: true, state: 'failed', output: 'Tool failed' })
   })
 })

@@ -4,24 +4,24 @@ import json
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
-SOURCE_PIN = '3632f9173d218fd24f3fa595d7affa159b0774cd'
+SOURCE_PIN = 'ac28abc96ce83f22f6b831f80d9007e2aba81f21'
 MAX_FRAME_BYTES = 29 * 1024 * 1024
 SOCKET_LIFETIME = 600
 
 
 def capabilities():
     return {
-        'protocol': 'chathermes.chat.v1',
+        'protocol': 'chathermes.chat.v2',
         'reviewed_source': SOURCE_PIN,
         'admission': True,
-        'mode': 'native-bounded',
-        'operations': ['chat.capabilities', 'gateway.ping', 'chat.attach', 'chat.submit', 'chat.replay', 'chat.stop', 'chat.steer', 'chat.answer'],
+        'mode': 'native-retained',
+        'operations': ['chat.capabilities', 'gateway.ping', 'chat.attach', 'chat.submit', 'chat.replay', 'chat.stop', 'chat.steer', 'chat.answer', 'chat.reconciled'],
         'limits': {'frame_bytes': MAX_FRAME_BYTES, 'socket_seconds': SOCKET_LIFETIME},
-        'blockers': ['atomic_snapshot', 'durable_idempotent_admission'],
-        'features': {'busy_send': 'queue', 'server_requests': ['approval', 'clarify'],
-                     'images': True, 'reconnect': 'bounded-native-reaper'},
+        'blockers': ['durable_idempotent_admission'],
+        'features': {'busy_send': 'explicit', 'server_requests': ['approval', 'clarify'],
+                     'images': True, 'reconnect': 'retained-owner'},
         'guarantees': {'crash_safe_idempotency': False, 'lossless_snapshot_replay': False,
-                       'offline_turn_lease': False},
+                       'offline_turn_lease': True},
     }
 
 
@@ -93,29 +93,13 @@ async def socket(ws: WebSocket, api):
     transport = api._new_rpc_transport(ws)
     transport.auth_identity = getattr(ws, '_hermes_auth_identity', None)
     channel = api._native_channel.Channel(api, transport, profile)
-    from tui_gateway import server, server_requests
-    server.register_live_transport(transport)
-    server._start_backend_heartbeat_refresher()
-    server._schedule_startup_orphan_sweep()
-    server_requests.advertise(transport, True)
     async def forward():
-        while not transport.closed:
-            frame = await transport.events.get()
+        while True:
+            frame = await channel.queue.get()
             if frame.get('method') == 'transport.closed':
                 await ws.close(code=1013)
                 return
-            params = frame.get('params') or {}
-            if params.get('session_id') != channel.runtime:
-                continue
-            if frame.get('method') in ('approval', 'clarify'):
-                await ws.send_json({'jsonrpc': '2.0', 'method': 'chat.request', 'params': frame})
-            elif 'id' in frame and frame.get('method'):
-                server_requests.resolve_response({'id': frame['id'], 'error': {
-                    'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}}, transport)
-                await ws.send_json({'jsonrpc': '2.0', 'method': 'chat.unsupported',
-                                    'params': {'method': frame['method']}})
-            elif frame.get('method') == 'event':
-                await ws.send_json({'jsonrpc': '2.0', 'method': 'chat.event', 'params': params})
+            await ws.send_json(frame)
     sender = asyncio.create_task(forward())
     try:
         await ws.send_json({'jsonrpc': '2.0', 'method': 'chat.ready', 'params': capabilities()})
@@ -144,5 +128,7 @@ async def socket(ws: WebSocket, api):
         import contextlib
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await sender
-        server_requests.forget(transport)
-        transport.close()
+        if channel.owner:
+            channel.owner.unsubscribe(channel.queue)
+        else:
+            transport.close()

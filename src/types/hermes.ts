@@ -4,7 +4,7 @@ export interface Message { display_kind?: string; id?: string; role: string; con
 export interface Capabilities { features?: Record<string, unknown>; endpoints?: Record<string, { method?: string; path?: string }> }
 
 export interface Attachment { name: string; type: string; data: string; size: number }
-export interface Activity { id: string; title: string; content: string; output?: string; complete: boolean; kind: 'thinking' | 'tool'; state?: 'pending' | 'running' | 'completed' | 'failed'; toolName?: string; startedAt?: number; duration?: number }
+export interface Activity { id: string; title: string; content: string; output?: string; complete: boolean; kind: 'thinking' | 'tool'; state?: 'pending' | 'running' | 'completed' | 'failed'; toolName?: string; startedAt?: number; duration?: number; delegated?: boolean }
 export interface ModelOption { id: string; root?: string; parent?: string | null }
 
 export interface ProviderOption { slug: string; name: string; is_current?: boolean; models: string[] }

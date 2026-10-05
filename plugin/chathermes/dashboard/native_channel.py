@@ -1,4 +1,4 @@
-"""Profile-bound additive native viewer. No background owner or duplicate transcript."""
+"""Profile-bound native RPC facade; execution ownership outlives browser viewers."""
 from fastapi import HTTPException
 
 
@@ -7,6 +7,9 @@ class Channel:
         self.api, self.transport, self.profile = api, transport, profile
         self.runtime = self.stored = None
         self.current_model = self.current_provider = None
+        self.owner = None
+        import asyncio
+        self.queue = asyncio.Queue(maxsize=512)
 
     async def handle(self, frame):
         if not isinstance(frame, dict) or frame.get('jsonrpc') != '2.0':
@@ -23,15 +26,21 @@ class Channel:
         # validation and model preparation cannot admit a user turn.
         self.submit_dispatched = False
         try:
-            result = await self.operation(method, params)
+            if self.owner and method != 'chat.attach':
+                async with self.owner.lock:
+                    result = await self.operation(method, params)
+            else:
+                result = await self.operation(method, params)
             return {'jsonrpc': '2.0', 'id': rid, 'result': result}
         except HTTPException as exc:
             return {'jsonrpc': '2.0', 'id': rid, 'error': {'code': exc.status_code,
-                'message': exc.detail, 'outcome': 'unknown' if method == 'chat.submit' and self.submit_dispatched else 'rejected'}}
+                'message': exc.detail, 'data': {'outcome': 'unknown' if method == 'chat.submit' and self.submit_dispatched else 'rejected'},
+                'outcome': 'unknown' if method == 'chat.submit' and self.submit_dispatched else 'rejected'}}
         except Exception:
             unknown = method == 'chat.submit' and self.submit_dispatched
             return {'jsonrpc': '2.0', 'id': rid, 'error': {'code': 503,
                 'message': 'Native operation outcome unknown. Inspect history before sending again.' if unknown else 'Native operation unavailable. Message not submitted.',
+                'data': {'outcome': 'unknown' if unknown else 'rejected'},
                 'outcome': 'unknown' if unknown else 'rejected'}}
 
     async def operation(self, method, params):
@@ -45,10 +54,12 @@ class Channel:
             from starlette.concurrency import run_in_threadpool
             await run_in_threadpool(register_profile_secrets, self.profile, self.transport)
             await run_in_threadpool(check_profile_session, self.profile, params['session_id'])
-            # No transcript crosses this channel. Omit the optional inline image
-            # projection, which older Hermes resume schemas reject.
-            snapshot = await self.transport.call('session.resume', {'profile': self.profile,
-                'session_id': params['session_id'], 'source': 'desktop', 'omit_messages': True})
+            if self.owner is None:
+                self.owner = await self.api._native_owners.acquire(self.api, self.transport, self.profile, params['session_id'])
+                self.transport = self.owner.transport
+                self.owner.subscribers.add(self.queue)
+            async with self.owner.lock:
+                snapshot = await self.owner.attach()
             self.runtime, self.stored = snapshot['session_id'], params['session_id']
             self.current_model = (snapshot.get('info') or {}).get('model')
             self.current_provider = (snapshot.get('info') or {}).get('provider')
@@ -57,11 +68,29 @@ class Channel:
             raise HTTPException(409, 'Attach a session first')
         scoped = {'profile': self.profile, 'session_id': self.runtime}
         if method == 'chat.replay':
-            if set(params) != {'last_seen'} or type(params['last_seen']) is not int or params['last_seen'] < 0:
-                raise HTTPException(422, 'Invalid replay cursor')
-            return await self.transport.call('session.events.since', {**scoped, **params})
+            if set(params) != {'offset', 'through'}:
+                raise HTTPException(422, 'Invalid recovery cursor')
+            return self.owner.replay(params['offset'], params['through'])
+        if method == 'chat.reconciled':
+            if set(params) != {'through'} or type(params['through']) is not int:
+                raise HTTPException(422, 'Invalid recovery boundary')
+            live = await self.transport.call('session.activate', scoped)
+            if live.get('running') or live.get('queued') or self.owner.children or params['through'] != self.owner.start_offset + len(self.owner.offsets):
+                return {'settled': False}
+            self.owner.retire()
+            return {'settled': True}
         if method == 'chat.submit':
-            text, images = self.api._validated_workspace_turn(params)
+            queued = params.get('queued', False)
+            if type(queued) is not bool:
+                raise HTTPException(422, 'Invalid queue choice')
+            admission_id = params.get('admission_id')
+            if admission_id is not None and (not isinstance(admission_id, str) or not re.fullmatch(r'[a-f0-9]{32}', admission_id)):
+                raise HTTPException(422, 'Invalid admission display identity')
+            text, images = self.api._validated_workspace_turn({k: v for k, v in params.items() if k not in ('queued', 'admission_id')})
+            live = await self.transport.call('session.activate', scoped)
+            initial = live
+            if live.get('running') and not queued:
+                raise HTTPException(409, 'This session is busy. Use guidance or explicitly queue a message.')
             # Multipart input is a pinned JsonValue prompt shape. The browser
             # uploads originals first and retains authenticated durable refs in
             # text; no session-wide image.attach mutation is used.
@@ -89,9 +118,11 @@ class Channel:
                 info = confirmed.get('info') or {}
                 if info.get('model') != model or provider and info.get('provider') != provider:
                     raise HTTPException(409, 'Selected runtime model was not applied; no prompt submitted')
+            if self.owner:
+                self.owner.begin(initial, text, queued=queued and bool(initial.get('running')), admission_id=admission_id)
             self.submit_dispatched = True
             try:
-                submitted = await self.transport.call('prompt.submit', {**scoped, 'text': native_input, 'queued': True})
+                submitted = await self.transport.call('prompt.submit', {**scoped, 'text': native_input, **({'queued': True} if queued else {})})
             except Exception:
                 # The pin has no durable receipt establishing non-admission.
                 # Errors after dispatch cannot authorize safe automatic retry.
@@ -100,7 +131,12 @@ class Channel:
         if method in ('chat.stop', 'chat.steer'):
             if method == 'chat.stop' and params or method == 'chat.steer' and (set(params) != {'text'} or not isinstance(params['text'], str) or not params['text'].strip() or len(params['text']) > 65536):
                 raise HTTPException(422, 'Invalid action')
-            return await self.transport.call('session.interrupt' if method == 'chat.stop' else 'session.steer', {**scoped, **params})
+            result = await self.transport.call('session.interrupt' if method == 'chat.stop' else 'session.steer', {**scoped, **params})
+            if method == 'chat.steer' and result.get('status') != 'rejected' and self.owner:
+                frame = self.transport.sanitize({'jsonrpc': '2.0', 'method': 'chat.correction', 'params': {'text': params['text']}})
+                self.owner.record(frame)
+                self.owner.publish(frame)
+            return result
         if method == 'chat.answer':
             if set(params) != {'request_id', 'result'}:
                 raise HTTPException(422, 'Invalid answer')

@@ -11,7 +11,7 @@ case "$instance" in
   ''|*[!a-zA-Z0-9_-]*) echo 'Invalid CHATHERMES_INSTANCE.' >&2; exit 2 ;;
 esac
 container="chathermes-$instance-hermes"
-if [ "$(docker inspect --format '{{.Config.Image}}' "$container")" != chathermes-test:3632f917 ]; then
+if [ "$(docker inspect --format '{{.Config.Image}}' "$container")" != chathermes-test:ac28abc9 ]; then
   echo 'Start the pinned isolated fixture with npm run live first.' >&2
   exit 1
 fi
