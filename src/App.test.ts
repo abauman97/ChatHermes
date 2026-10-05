@@ -301,6 +301,47 @@ describe('profile navigation', () => {
 })
 
 describe('live turn presentation', () => {
+  it.each(['tool.progress', 'tool.delta'])('merges %s before start without call IDs and closes the same activity on completion', async event => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
+    const encoder = new TextEncoder()
+    const frame = async (event: string, data: unknown) => {
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+      await flushPromises()
+    }
+    mockFetch(vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json(streaming)
+      : input.includes('/messages') ? json([])
+      : input.includes('/v1/runs') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+      : json({ sessions: [], total: 0 })))
+    const wrapper = mount(App)
+    await flushPromises()
+    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Search')
+    await wrapper.get('.composer').trigger('submit')
+    await flushPromises()
+    await frame(event, { tool_name: 'search', delta: 'Early progress' })
+    const tool = wrapper.findAll('.activity')[1]!
+    expect(tool.attributes('open')).toBeDefined()
+    await frame('tool.started', { tool_name: 'search', args: { query: 'example' } })
+    expect(wrapper.findAll('.activity')).toHaveLength(2) // Initial thinking and one tool.
+    expect(wrapper.findAll('.activity')[1]!.element).toBe(tool.element)
+    expect(tool.text()).toContain('Early progress')
+    expect(tool.text()).toContain('example')
+    await frame('tool.progress', { tool_name: 'search', delta: 'Later progress' })
+    expect(tool.text()).toContain('Later progress')
+    await frame('tool.completed', { tool_name: 'search', output: 'Search result' })
+    expect(wrapper.findAll('.activity')).toHaveLength(2)
+    expect(wrapper.find('.current-activity').exists()).toBe(false)
+    expect(tool.attributes('open')).toBeUndefined()
+    await wrapper.get('.work-summary').trigger('click')
+    expect(tool.isVisible()).toBe(true)
+    expect(tool.text()).toContain('Search result')
+    await frame('run.completed', {})
+    await flushPromises()
+    wrapper.unmount()
+  })
+
   it('shows sent/thinking/tool activity without secure-context crypto APIs, then collapses completed activity', async () => {
     vi.stubGlobal('crypto', {}) // LAN HTTP dashboards do not expose randomUUID.
     let controller!: ReadableStreamDefaultController<Uint8Array>

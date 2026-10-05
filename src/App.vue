@@ -291,9 +291,11 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   else if (['assistant.commentary', 'message.interim'].includes(frame.event) && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
     progress.value.filter(item => item.kind === 'thinking').forEach(item => { item.complete = true }); thinking.value = false
-    const item = activity('tool', toolTitle(name), callId || localId())
+    const pending = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && item.state === 'running' && item.toolName === name && (!callId || item.id === callId))
+    const item = pending || activity('tool', toolTitle(name), callId || localId())
     item.toolName = name; item.state = 'running'
-    item.content = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
+    const startContent = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
+    item.content = pending ? [startContent, item.content].filter(Boolean).join('\n\n') : startContent
   } else if (['thinking.delta', 'reasoning.delta', 'reasoning.available', 'tool.progress', 'tool.delta'].includes(frame.event)) {
     const isThinking = frame.event.startsWith('thinking') || frame.event.startsWith('reasoning') || name === '_thinking'
     const emptyThinking = isThinking ? progress.value.find(item => item.kind === 'thinking' && !item.complete && !item.content) : undefined
