@@ -93,7 +93,7 @@ describe('ordered activity presentation', () => {
     expect(wrapper.get('.work-summary [role="status"]').isVisible()).toBe(true)
     await wrapper.setProps({ blocks: [...blocks, { id: 'running', kind: 'tool', title: 'Running command', content: 'new command', complete: false }] })
     expect(wrapper.findAll('.current-activity')).toHaveLength(1)
-    expect(wrapper.get('.current-activity').text()).toContain('Running command')
+    expect(wrapper.get('.current-activity').text()).toBe('Using tool: tool')
     expect(wrapper.get('.activity').isVisible()).toBe(false)
     await wrapper.setProps({ approvalPending: false, working: false })
     expect(wrapper.get('.work-summary').text()).toContain('Worked')
