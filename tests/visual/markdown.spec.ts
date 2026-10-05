@@ -1,3 +1,4 @@
+import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -28,10 +29,7 @@ for (const theme of ['dark', 'light'] as const) {
       return route.fulfill({ json: body })
     })
     await page.emulateMedia({ colorScheme: theme })
-    await page.goto('/login?next=/chathermes')
-    await page.getByLabel('Username').fill('tester')
-    await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
-    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await signIn(page, '/chathermes')
     await expect(page.locator('.chathermes-embedded')).toBeVisible()
     // The host code rule uses --background for its text color. Exercise both
     // palettes without persisting a dashboard theme or adding a plugin theme.

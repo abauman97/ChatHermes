@@ -1,12 +1,10 @@
+import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
 test('plugin composer, sent timeline, attachments, model and stream disclosures', async ({ page }, testInfo) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.goto('/login?next=/chathermes')
-  await page.getByLabel('Username').fill('tester')
-  await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await signIn(page, '/chathermes')
   await expect(page.locator('.chathermes-embedded')).toBeVisible()
   const newChat = page.locator('.chathermes-embedded').getByRole('button', { name: 'New chat', exact: true })
   if (testInfo.project.name === 'mobile') { await page.locator('.chathermes-embedded').getByRole('button', { name: 'Open navigation' }).click(); await newChat.click() } else await newChat.click()
@@ -52,7 +50,7 @@ test('plugin composer, sent timeline, attachments, model and stream disclosures'
   await page.locator('.activity summary').first().click()
   await expect(page.locator('.activity[open]')).toHaveCount(1)
   await page.locator('.activity summary').first().click()
-  const tool = page.locator('.activity').filter({ has: page.locator('summary', { hasText: 'terminal' }) })
+  const tool = page.locator('.activity').filter({ has: page.locator('pre', { hasText: 'terminal' }) })
   await tool.locator('summary').click()
   await expect(tool.locator('pre')).toContainText('"output": "hermes-isolated-tool-ok"')
   await expect(tool.locator('pre')).toContainText('"exit_code": 0')

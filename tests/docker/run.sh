@@ -28,12 +28,16 @@ gateway="chathermes-$instance-hermes"
 model="chathermes-$instance-model"
 volume="chathermes-$instance-hermes-data"
 network="chathermes-$instance"
+relay="chathermes-$instance-browser"
+internal_network="chathermes-$instance-internal"
+browser_network="chathermes-$instance-browser"
 remove_container() {
   if docker container inspect "$1" >/dev/null 2>&1; then
     docker rm -f "$1" >/dev/null
   fi
 }
 if [ "$mode" = stop ]; then
+  remove_container "$relay"
   remove_container "$gateway"
   remove_container "$model"
   echo 'Stopped isolated services; named data volume preserved.'
@@ -81,12 +85,6 @@ case "$mode" in
     export LLM_API_KEY LLM_API_BASE_URL LLM_API_MODEL
     export CHATHERMES_TEST_REAL=1 ;;
 esac
-# Bake the current checkout into both services; never reuse stale fixture code.
-docker build -f tests/docker/Dockerfile -t "$image" .
-if ! docker network inspect "$network" >/dev/null 2>&1; then
-  docker network create "$network" >/dev/null
-fi
-docker volume create "$volume" >/dev/null
 # Resolve environment-controlled YAML scalars without modifying tracked files.
 config_file="$(pwd)/.hermes/config.yaml"
 if [ "$mode" = real ]; then
@@ -109,8 +107,36 @@ PY
   fi
 fi
 if [ "$mode" = fixture ]; then
-  config_file="$(pwd)/.hermes/config.yaml"
+  config_file="${TMPDIR:-/tmp}/chathermes-$instance-config-$$.yaml"
+  python3 - "$config_file" <<'PYCONFIG'
+from pathlib import Path
+import sys
+source = Path('.hermes/config.yaml').read_text().replace('${LLM_API_MODEL:-fixture-model}', 'fixture-model')
+source = source.replace('        context_length: 128000', '        context_length: 128000\n      fixture-model-2:\n        context_length: 128000')
+Path(sys.argv[1]).write_text(source)
+PYCONFIG
 fi
+trap 'rm -f "$config_file"' EXIT HUP INT TERM
+# Bake the current checkout into both services; never reuse stale fixture code.
+docker build -f tests/docker/Dockerfile -t "$image" .
+if ! docker network inspect "$network" >/dev/null 2>&1; then
+  docker network create "$network" >/dev/null
+fi
+if [ "$mode" = fixture ]; then
+  if ! docker network inspect "$internal_network" >/dev/null 2>&1; then
+    docker network create --internal "$internal_network" >/dev/null
+  fi
+  if [ "$(docker network inspect --format '{{.Internal}}' "$internal_network")" != true ]; then
+    echo 'Fixture network must be internal; refusing a network with provider egress.' >&2
+    exit 1
+  fi
+  if ! docker network inspect "$browser_network" >/dev/null 2>&1; then
+    docker network create "$browser_network" >/dev/null
+  fi
+  network=$internal_network
+fi
+docker volume create "$volume" >/dev/null
+remove_container "$relay"
 remove_container "$gateway"
 remove_container "$model"
 if [ "$mode" = fixture ]; then
@@ -118,8 +144,10 @@ if [ "$mode" = fixture ]; then
     --entrypoint /opt/hermes/.venv/bin/python "$image" /test/model_fixture.py >/dev/null
 fi
 # Only the dashboard is published; the gateway and fixture stay on the network.
+set --
+if [ "$mode" = real ]; then set -- -p "$bind:$port:9119"; fi
 docker run -d --init --name "$gateway" \
-  --network "$network" -p "$bind:$port:9119" -v "$volume:/opt/data" \
+  --network "$network" --network-alias hermes "$@" -v "$volume:/opt/data" \
   -e HERMES_UID=1000 -e HERMES_GID=1000 -e HERMES_DASHBOARD=1 \
   -e HERMES_DASHBOARD_TUI=0 -e API_SERVER_ENABLED=true \
   -e HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester \
@@ -128,8 +156,11 @@ docker run -d --init --name "$gateway" \
   -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
   -e CHATHERMES_TEST_CONFIG_B64="$(base64 < "$config_file" | tr -d '\n')" \
   "$image" >/dev/null
-if [ "$mode" = real ]; then
-  rm -f "$config_file"
+rm -f "$config_file"
+if [ "$mode" = fixture ]; then
+  docker run -d --name "$relay" --network "$browser_network" -p "$bind:$port:9119" \
+    --entrypoint /opt/hermes/.venv/bin/python "$image" /test/browser_relay.py >/dev/null
+  docker network connect "$internal_network" "$relay"
 fi
 attempt=0
 until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do

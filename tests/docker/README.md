@@ -19,7 +19,7 @@ a real provider key. The LLM interface is generic: `LLM_API_BASE_URL`,
 credentials to repository files or logging them.
 
 `npm run live` builds plugin assets and the Docker image, recreates only its
-revision-scoped Hermes and model containers, then waits for the dashboard's
+revision-scoped Hermes, model and browser relay containers, then waits for the dashboard's
 `/api/auth/providers` readiness route. Every launch refreshes the baked plugin,
 config and fixture. Docker and curl are required. No host bind mounts or personal
 Hermes home is used. Data stays in a dedicated named volume. Containers, network,
@@ -143,8 +143,29 @@ membership or sets an active Project. Verify restart identity and context
 precedence through Hermes's own prompt builder:
 
 ```sh
-docker exec chathermes-test-hermes /opt/hermes/.venv/bin/python /test/verify_seed.py
+# Use the instance name selected for your launch:
+docker exec chathermes-ptuigateway-hermes /opt/hermes/.venv/bin/python /test/verify_seed.py
 ```
 
 Physical iOS keyboard/camera hardware and a launched Desktop client remain
 outside browser automation.
+
+## Bounded native tests
+
+Fixture mode keeps Hermes and the model on an instance-scoped internal network.
+Only the inbound browser relay publishes the dashboard port; real mode uses
+its normal provider-capable network. Stop removes the selected instance's
+Hermes, model and relay containers while preserving its named volume.
+
+After `CHATHERMES_INSTANCE=ptuigateway npm run live`, run native protocol/runtime
+and browser probes with the same instance, Docker host and browser URL:
+
+```sh
+CHATHERMES_INSTANCE=ptuigateway CHATHERMES_TEST_URL=http://172.25.0.2:9133 \
+  CHATHERMES_CHROMIUM=/path/to/chrome npm run test:native
+```
+
+The native script rejects a different image, volume or real-provider mode.
+Fixture-only `fixture-model-2` tests session model selection without changing
+the tracked provider-agnostic configuration. Both launch modes keep the
+documented `LLM_API_KEY`, `LLM_API_BASE_URL`, and `LLM_API_MODEL` names.

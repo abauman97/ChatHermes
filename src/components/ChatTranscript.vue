@@ -5,7 +5,7 @@ import { historyBlocks } from '../lib/assistant-turn'
 import ActivityRow from './ActivityRow.vue'
 import { renderMarkdown } from '../lib/markdown'
 import { messageText } from '../lib/hermes-api'
-const props = defineProps<{ messages: Message[]; draft: string; loading: boolean; progress: Activity[]; blocks?: TurnBlock[]; turnUserCount?: number; thinking?: boolean; home?: boolean; followInitially?: boolean }>()
+const props = defineProps<{ profile?: string; messages: Message[]; draft: string; loading: boolean; progress: Activity[]; blocks?: TurnBlock[]; turnUserCount?: number; thinking?: boolean; home?: boolean; followInitially?: boolean }>()
 const emit = defineEmits<{ suggest: [text: string] }>()
 const visible = computed(() => props.messages.filter(message => message.role !== 'system'))
 const entries = computed(() => {
@@ -36,12 +36,16 @@ const following = ref(props.followInitially !== false)
 function onScroll() { const element = transcript.value; if (element) following.value = element.scrollHeight - element.scrollTop - element.clientHeight < 120 }
 async function disclosureChanged() { await nextTick(); if (following.value && transcript.value) transcript.value.scrollTop = transcript.value.scrollHeight }
 function images(content: unknown): string[] {
-  if (!Array.isArray(content)) return []
-  return content.flatMap(part => { const url = part?.image_url?.url; return typeof url === 'string' && /^(data:image\/|https?:\/\/)/.test(url) ? [url] : [] })
+  const inline = Array.isArray(content) ? content.flatMap(part => { const url = part?.image_url?.url; return typeof url === 'string' && /^(data:image\/|https?:\/\/)/.test(url) ? [url] : [] }) : []
+  if (inline.length) return inline
+  const text = messageText(content)
+  return [...text.matchAll(/Attached image [^\n]+: [^\n]*\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))/g)]
+    .map(match => '/api/plugins/chathermes/images/' + match[1] + (props.profile ? '?profile=' + encodeURIComponent(props.profile) : ''))
 }
 function displayText(message: Message) {
   const text = messageText(message.content)
   return message.role === 'user' ? text
+    .replace(/Attached image ([^\n]+): [^\n]*\/uploads\/chathermes\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)/g, '📷 $1')
     .replace(/Attached file ([^\n]+): [^\n]*\/uploads\/chathermes\/[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?/g, '📎 $1')
     .replace(/\[screenshot\]/g, '📷 Attached image') : text
 }
@@ -74,6 +78,7 @@ watch(() => [props.messages.length, props.draft, props.blocks || props.progress]
         </template>
       </div>
     </template>
+    <slot name="request" />
     <article v-if="draft && !blocks?.length" class="message assistant w-full self-start"><div class="message-content markdown-content break-words text-base leading-7" v-html="renderMarkdown(draft)" /></article>
   </div>
 </template>

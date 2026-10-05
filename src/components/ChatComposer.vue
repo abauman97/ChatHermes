@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
-const props = defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>()
+const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; imagesSupported?: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>(), { imagesSupported: true })
 const emit = defineEmits<{ stop: []; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
@@ -11,6 +11,7 @@ const routeModels = computed(() => (props.models || []).filter(item => item.pare
 const pickerOpen = ref(false), pickerProvider = ref<string | null>(null)
 const pill = ref<HTMLButtonElement>(), panel = ref<HTMLElement>()
 const panelId = useId()
+const imageGated = computed(() => props.imagesSupported === false && attachments.value.some(file => file.type.startsWith('image/')))
 const pickerDisabled = computed(() => props.sending || props.modelsLoading)
 const selectedProvider = computed(() => props.providers?.find(item => item.slug === pickerProvider.value))
 const pickerTitle = computed(() => selectedProvider.value?.name || 'Model routes')
@@ -64,7 +65,7 @@ watch(() => props.providers, () => closePicker())
 onMounted(() => { document.addEventListener('click', outsideClick); document.addEventListener('keydown', pickerKeydown) })
 onBeforeUnmount(() => { document.removeEventListener('click', outsideClick); document.removeEventListener('keydown', pickerKeydown) })
 function send() {
-  if (props.disabled || props.sending || reading.value) return
+  if (props.disabled || props.sending || reading.value || imageGated.value) return
   const text = value.value.trim()
   if (text || attachments.value.length) { emit('send', text, [...attachments.value]); value.value = ''; attachments.value = []; attachmentsOpen.value = false }
 }
@@ -112,6 +113,7 @@ async function attach(event: Event) {
         <span class="truncate">{{ file.name }}</span><button type="button" :aria-label="`Remove ${file.name}`" @click="attachments.splice(index, 1)">×</button>
       </div>
     </div>
+    <p v-if="imageGated" class="px-2 text-sm text-red-300" role="alert">Image sending is unavailable for this native capability. Remove the image to send text or files.</p>
     <p v-if="attachmentError" class="px-2 text-sm text-red-300" role="alert">{{ attachmentError }}</p>
     <label class="sr-only" for="prompt">Message Hermes</label>
     <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-[#f4f4f4] outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
@@ -124,7 +126,7 @@ async function attach(event: Event) {
         <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Stop response' : 'Send message'" :title="sending ? 'Stop response' : 'Send message'" @click="sending && stoppable && emit('stop')">
+      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || imageGated || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Stop response' : 'Send message'" :title="sending ? 'Stop response' : 'Send message'" @click="sending && stoppable && emit('stop')">
         <svg v-if="sending" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>
