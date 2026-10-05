@@ -33,6 +33,12 @@ describe('chat markdown', () => {
 })
 
 describe('ordered activity presentation', () => {
+  it('keeps only the activity animation in Working and renders runtime status outside the transcript', () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], working: true, progress: [], draft: '', loading: false, statusLabel: 'Thinking…' } })
+    expect(wrapper.findAll('.working-shimmer')).toHaveLength(1)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
   it('groups all activity before the response and keeps only active work visible', async () => {
     const blocks = [
       { id: 'r1', kind: 'thinking' as const, title: 'Thought', content: 'First plan', complete: true },
@@ -65,16 +71,32 @@ describe('ordered activity presentation', () => {
     expect(wrapper.findAll('.work-timeline > div').every(row => row.attributes('style') !== 'display: none;')).toBe(true)
     expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
   })
-  it('keeps Working visible between activities and exposes approval activity', async () => {
+  it('shows approval waiting independently of completed activity and keeps history inspectable', async () => {
     const blocks = [{ id: 'tool', kind: 'tool' as const, title: 'Ran command', content: 'approval command', complete: true, state: 'failed' as const }]
     const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks, working: true, progress: [], draft: '', loading: false }, slots: { request: '<button>Approve</button>' } })
     expect(wrapper.get('.work-summary').text()).toContain('Working…')
     expect(wrapper.get('.activity').isVisible()).toBe(false)
     await wrapper.setProps({ approvalPending: true })
-    expect(wrapper.get('.current-activity').attributes('style')).not.toBe('display: none;')
-    expect(wrapper.get('.activity summary').text()).toContain('Failed')
+    expect(wrapper.get('.work-summary').text()).toContain('Waiting for approval')
+    expect(wrapper.get('.work-summary [role="status"]').text()).toBe('Waiting for approval')
+    expect(wrapper.findAll('.work-summary .working-shimmer')).toHaveLength(0)
+    expect(wrapper.find('.current-activity').exists()).toBe(false)
+    expect(wrapper.findAll('.current-activity').filter(row => row.isVisible())).toHaveLength(0)
+    expect(wrapper.findAll('.work-timeline > div')[0]!.attributes('style')).toContain('display: none')
     expect(wrapper.get('button:last-child').isVisible()).toBe(true)
+    await wrapper.get('.work-summary').trigger('click')
+    expect(wrapper.findAll('.work-timeline > div')[0]!.attributes('style')).not.toContain('display: none')
+    expect(wrapper.get('.activity summary').text()).toContain('Failed')
+    expect(wrapper.get('.activity').attributes('open')).toBeUndefined()
+    expect(wrapper.get('button:last-child').isVisible()).toBe(true)
+    await wrapper.get('.work-summary').trigger('click')
+    expect(wrapper.get('.work-summary [role="status"]').isVisible()).toBe(true)
+    await wrapper.setProps({ blocks: [...blocks, { id: 'running', kind: 'tool', title: 'Running command', content: 'new command', complete: false }] })
+    expect(wrapper.findAll('.current-activity')).toHaveLength(1)
+    expect(wrapper.get('.current-activity').text()).toContain('Running command')
+    expect(wrapper.get('.activity').isVisible()).toBe(false)
     await wrapper.setProps({ approvalPending: false, working: false })
+    expect(wrapper.get('.work-summary').text()).toContain('Worked')
     expect(wrapper.get('.activity').isVisible()).toBe(false)
   })
   it('shows Working on admission before any activity arrives', () => {

@@ -291,18 +291,20 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   else if (['assistant.commentary', 'message.interim'].includes(frame.event) && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
     progress.value.filter(item => item.kind === 'thinking').forEach(item => { item.complete = true }); thinking.value = false
-    const item = activity('tool', toolTitle(name), callId || localId())
+    const pending = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && item.state === 'running' && item.toolName === name && (!callId || item.id === callId))
+    const item = pending || activity('tool', toolTitle(name), callId || localId())
     item.toolName = name; item.state = 'running'
-    item.content = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
+    const startContent = data.args ? JSON.stringify(data.args, null, 2) : typeof data.preview === 'string' ? data.preview : ''
+    item.content = pending ? [startContent, item.content].filter(Boolean).join('\n\n') : startContent
   } else if (['thinking.delta', 'reasoning.delta', 'reasoning.available', 'tool.progress', 'tool.delta'].includes(frame.event)) {
     const isThinking = frame.event.startsWith('thinking') || frame.event.startsWith('reasoning') || name === '_thinking'
     const emptyThinking = isThinking ? progress.value.find(item => item.kind === 'thinking' && !item.complete && !item.content) : undefined
-    const item = emptyThinking || activity(isThinking ? 'thinking' : 'tool', isThinking ? 'Thinking…' : toolTitle(name), callId)
+    const item = emptyThinking || (!isThinking ? [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && item.toolName === name) : undefined) || activity(isThinking ? 'thinking' : 'tool', isThinking ? 'Thinking…' : toolTitle(name), callId)
     if (!isThinking) { item.toolName = name; item.state = 'running' }
     item.content += delta || (typeof data.preview === 'string' ? data.preview : '')
     thinking.value = isThinking
   } else if (frame.event === 'tool.completed' || frame.event === 'tool.failed') {
-    const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId ? item.id === callId : item.toolName === name || item.title === name))
+    const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId && item.id === callId || item.toolName === name || item.title === name))
     if (item) {
       const failed = frame.event === 'tool.failed' || data.is_error === true || data.error === true || typeof data.error === 'string' && !!data.error
       item.complete = true; item.state = failed ? 'failed' : 'completed'
@@ -679,7 +681,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       </div>
         </template>
       </ChatTranscript>
-      <div v-if="!scheduledPage && viewActive && !viewReconnect && (viewApprovalPending || runStatus === 'stopping' || viewStatus && viewStatus !== 'Working…')" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ viewApprovalPending ? viewApproval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : viewStatus }}</div>
+      <div v-if="!scheduledPage && viewActive && !viewReconnect && runStatus === 'stopping'" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Stopping…</div>
       <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || viewLoading || viewApprovalPending || viewUnavailable || viewReconnect || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="viewBusy" :stoppable="viewActive && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : viewApprovalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
     </main>
   </div>

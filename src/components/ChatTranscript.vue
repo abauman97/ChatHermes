@@ -80,7 +80,6 @@ watch(() => [props.messages.length, props.draft, props.blocks || props.progress]
       </div>
     </template>
     <div v-if="working && !entries.some(entry => entry.working)" class="assistant-turn"><TurnWork :activities="progress" :working="true" :approval-pending="approvalPending" /></div>
-    <div v-if="working && statusLabel" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ statusLabel }}</div>
     <slot name="request" />
     <article v-if="draft && !blocks?.length" class="message assistant w-full self-start"><div class="message-content markdown-content break-words text-base leading-7" v-html="renderMarkdown(draft)" /></article>
   </div>
