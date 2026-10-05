@@ -1024,9 +1024,13 @@ async def test_native_submit_timeout_is_unknown_not_rejected(monkeypatch, error_
 
 
 @run_async
-async def test_native_attach_and_first_submit_with_resume_schema_without_inline_images(monkeypatch):
+@pytest.mark.parametrize('profile', ['default', 'alpha'])
+async def test_native_attach_and_first_submit_with_resume_schema_without_inline_images(app, monkeypatch, tmp_path, profile):
     import sys
     import types
+    import threading
+    from contextlib import contextmanager
+    from contextvars import ContextVar
     from pydantic import BaseModel, ConfigDict, ValidationError
 
     # us1's older native contract rejects unknown fields before any resume.
@@ -1037,37 +1041,91 @@ async def test_native_attach_and_first_submit_with_resume_schema_without_inline_
         source: str
         omit_messages: bool = False
 
+    launch_home = tmp_path / 'default'
+    home = tmp_path / profile
+    scoped_home = ContextVar('first_send_home', default=launch_home)
+    sessions = {}
+    lookups = []
+
+    @contextmanager
+    def profile_scope(selected):
+        token = scoped_home.set(tmp_path / selected)
+        try:
+            yield
+        finally:
+            scoped_home.reset(token)
+
+    @contextmanager
+    def profile_db(params):
+        assert params == {'profile': profile}
+        # session.create deliberately leaves an empty draft without a DB row.
+        def get_session(stored):
+            lookups.append(stored)
+            return None
+        yield types.SimpleNamespace(get_session=get_session)
+
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', types.SimpleNamespace(_config_profile_scope=profile_scope))
+    monkeypatch.setitem(sys.modules, 'hermes_constants', types.SimpleNamespace(
+        get_hermes_home=scoped_home.get, get_process_hermes_home=lambda: launch_home))
+
     calls = []
     def dispatch(request, transport):
         calls.append(request)
-        if request['method'] == 'session.resume':
+        if request['method'] == 'session.create':
+            assert request['params'] == {'profile': profile, 'source': 'desktop'}
+            sessions['runtime'] = {'session_key': 'stored',
+                'profile_home': None if profile == 'default' else str(home), 'transport': transport}
+            result = {'session_id': 'runtime', 'stored_session_id': 'stored'}
+        elif request['method'] == 'session.resume':
             try:
                 params = ResumeParams.model_validate(request['params'])
             except ValidationError:
                 return {'id': request['id'], 'error': {'code': 4000,
                     'message': 'invalid params for session.resume: inline_images: Extra inputs are not permitted'}}
-            assert params.profile == 'alpha' and params.session_id == 'stored'
+            assert params.profile == profile and params.session_id == 'stored'
             assert params.source == 'desktop' and params.omit_messages
             result = {'session_id': 'runtime', 'messages': [], 'message_count': 0}
+        elif request['method'] == 'session.events.since':
+            assert request['params'] == {'profile': profile, 'session_id': 'runtime', 'last_seen': 0}
+            result = {'events': [], 'latest_seq': 0, 'epoch': 'first-send', 'truncated': False, 'open_requests': []}
         else:
             assert request['method'] == 'prompt.submit'
             result = {'status': 'streaming', 'user_row_id': 1}
         return {'id': request['id'], 'result': result}
 
+    def detach(transport, **kw):
+        for record in sessions.values():
+            if record['transport'] is transport:
+                record['transport'] = None
+
     server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None,
-        _close_sessions_for_transport=lambda t, **kw: None)
+        _close_sessions_for_transport=detach, _profile_db=profile_db,
+        _sessions=sessions, _sessions_lock=threading.RLock())
     monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server, server_requests=types.SimpleNamespace()))
-    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
     monkeypatch.setattr(plugin._native_channel, 'register_profile_secrets', lambda *args: None)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        created = await client.post('/api/plugins/chathermes/chat/sessions', params={'profile': profile}, json={})
+    assert created.status_code == 200
+    assert created.json()['session']['id'] == 'stored'
+    assert sessions['runtime']['transport'] is None
+
     transport = plugin._RpcTransport()
-    channel = plugin._native_channel.Channel(plugin, transport, 'alpha')
+    channel = plugin._native_channel.Channel(plugin, transport, profile)
     try:
+        # A foreign draft must never reach resume's cold-adoption path.
+        sessions['foreign-runtime'] = {'session_key': 'foreign', 'profile_home': str(tmp_path / 'other'), 'transport': None}
+        foreign = await channel.handle({'jsonrpc': '2.0', 'id': 'foreign', 'method': 'chat.attach', 'params': {'session_id': 'foreign'}})
+        assert foreign['error']['code'] == 404 and foreign['error']['outcome'] == 'rejected'
+        assert [call['method'] for call in calls] == ['session.create']
         attached = await channel.handle({'jsonrpc': '2.0', 'id': 'attach', 'method': 'chat.attach', 'params': {'session_id': 'stored'}})
         assert attached.get('result', {}).get('session_id') == 'runtime', attached
+        replay = await channel.handle({'jsonrpc': '2.0', 'id': 'replay', 'method': 'chat.replay', 'params': {'last_seen': 0}})
+        assert replay['result']['events'] == []
         submitted = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'first message'}})
         assert submitted['result']['outcome'] == 'accepted'
-        assert [call['method'] for call in calls] == ['session.resume', 'prompt.submit']
-        assert calls[1]['params'] == {'profile': 'alpha', 'session_id': 'runtime', 'text': 'first message', 'queued': True}
+        assert lookups == ['foreign', 'stored']
+        assert [call['method'] for call in calls] == ['session.create', 'session.resume', 'session.events.since', 'prompt.submit']
+        assert calls[-1]['params'] == {'profile': profile, 'session_id': 'runtime', 'text': 'first message', 'queued': True}
     finally:
         transport.close()
 
