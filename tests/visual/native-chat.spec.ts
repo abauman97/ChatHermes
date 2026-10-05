@@ -6,6 +6,46 @@ async function login(page: Page) {
   await signIn(page, '/chathermes')
   await expect(page.locator('.chathermes-embedded')).toBeVisible()
 }
+test('first home send attaches natively, completes and persists without a Runs fallback', async ({ page }, info) => {
+  let submits = 0, runs = 0
+  const attachErrors: unknown[] = []
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().includes('/v1/runs')) runs++
+  })
+  page.on('websocket', socket => {
+    if (!socket.url().includes('/chathermes/chat/ws')) return
+    const attaches = new Set<string>()
+    socket.on('framesent', frame => {
+      const value = JSON.parse(String(frame.payload))
+      if (value.method === 'chat.attach') attaches.add(value.id)
+      if (value.method === 'chat.submit') submits++
+    })
+    socket.on('framereceived', frame => {
+      const value = JSON.parse(String(frame.payload))
+      if (attaches.has(value.id) && value.error) attachErrors.push(value.error)
+    })
+  })
+  await login(page)
+  const plugin = page.locator('.chathermes-embedded')
+  const composer = plugin.getByRole('textbox', { name: 'Message Hermes' })
+  await composer.click(); await expect(composer).toBeFocused()
+  await composer.fill('First native home send regression [tool]')
+  await plugin.getByRole('button', { name: 'Send message', exact: true }).click()
+  await expect(plugin.locator('.activity[open]').first()).toBeVisible()
+  await expect(plugin.locator('.message.assistant').last()).toContainText('Isolated Hermes reply', { timeout: 30000 })
+  await expect(plugin.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
+  expect(attachErrors).toEqual([]); expect(submits).toBe(1); expect(runs).toBe(0)
+  await expect(plugin.getByRole('alert')).toHaveCount(0)
+  await expect(plugin.locator('.message.user')).toHaveCount(1)
+  await expect(plugin.locator('.activity[open]')).toHaveCount(0)
+  await composer.click(); await expect(composer).toBeFocused()
+  await page.screenshot({ path: info.outputPath('first-send-native-completed.png') })
+  await page.reload()
+  await expect(plugin.locator('.message.user')).toHaveCount(1)
+  await expect(plugin.locator('.message.assistant').last()).toContainText('Isolated Hermes reply')
+  expect(submits).toBe(1)
+  await page.screenshot({ path: info.outputPath('first-send-native-saved.png') })
+})
 test('native Other turn reload, second viewer, guidance, stop and persisted history', async ({ page, context }, info) => {
   await login(page)
   const caps = await (await page.request.get('/api/plugins/chathermes/chat/capabilities')).json()

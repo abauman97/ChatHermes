@@ -1024,6 +1024,55 @@ async def test_native_submit_timeout_is_unknown_not_rejected(monkeypatch, error_
 
 
 @run_async
+async def test_native_attach_and_first_submit_with_resume_schema_without_inline_images(monkeypatch):
+    import sys
+    import types
+    from pydantic import BaseModel, ConfigDict, ValidationError
+
+    # us1's older native contract rejects unknown fields before any resume.
+    class ResumeParams(BaseModel):
+        model_config = ConfigDict(extra='forbid')
+        profile: str
+        session_id: str
+        source: str
+        omit_messages: bool = False
+
+    calls = []
+    def dispatch(request, transport):
+        calls.append(request)
+        if request['method'] == 'session.resume':
+            try:
+                params = ResumeParams.model_validate(request['params'])
+            except ValidationError:
+                return {'id': request['id'], 'error': {'code': 4000,
+                    'message': 'invalid params for session.resume: inline_images: Extra inputs are not permitted'}}
+            assert params.profile == 'alpha' and params.session_id == 'stored'
+            assert params.source == 'desktop' and params.omit_messages
+            result = {'session_id': 'runtime', 'messages': [], 'message_count': 0}
+        else:
+            assert request['method'] == 'prompt.submit'
+            result = {'status': 'streaming', 'user_row_id': 1}
+        return {'id': request['id'], 'result': result}
+
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None,
+        _close_sessions_for_transport=lambda t, **kw: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server, server_requests=types.SimpleNamespace()))
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    monkeypatch.setattr(plugin._native_channel, 'register_profile_secrets', lambda *args: None)
+    transport = plugin._RpcTransport()
+    channel = plugin._native_channel.Channel(plugin, transport, 'alpha')
+    try:
+        attached = await channel.handle({'jsonrpc': '2.0', 'id': 'attach', 'method': 'chat.attach', 'params': {'session_id': 'stored'}})
+        assert attached.get('result', {}).get('session_id') == 'runtime', attached
+        submitted = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'first message'}})
+        assert submitted['result']['outcome'] == 'accepted'
+        assert [call['method'] for call in calls] == ['session.resume', 'prompt.submit']
+        assert calls[1]['params'] == {'profile': 'alpha', 'session_id': 'runtime', 'text': 'first message', 'queued': True}
+    finally:
+        transport.close()
+
+
+@run_async
 async def test_native_image_route_validates_mime_and_profile_boundary(app, monkeypatch, tmp_path):
     image_id = 'a' * 32 + '.png'
     home = tmp_path / 'default'
