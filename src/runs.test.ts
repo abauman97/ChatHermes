@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
-import { api } from './lib/hermes-api'
-import { nativeOutcome } from './lib/native-admission'
 import { activeRunFor, rememberRun } from './lib/active-runs'
 const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } })
 const caps = { features: { run_events_sse: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' } } }
@@ -204,35 +202,4 @@ describe('durable Runs execution', () => {
     wrapper.unmount()
   })
 
-})
-
-
-describe('native admission foregrounding', () => {
-  it('does not replace a pending submit before its acknowledgement', async () => {
-    fixture()
-    vi.spyOn(api, 'isNative').mockReturnValue(true)
-    vi.spyOn(api, 'capabilities').mockResolvedValue({ features: { native_chat: true, session_chat_streaming: true } })
-    const status = vi.spyOn(api, 'runStatus').mockResolvedValue({ status: 'completed' })
-    let acknowledge!: () => void
-    const admitted = new Promise<void>(resolve => { acknowledge = resolve })
-    vi.spyOn(api, 'stream').mockImplementation(async function* () {
-      await admitted
-      yield { event: 'run.started', data: JSON.stringify({ run_id: 'workspace-one', status: 'streaming' }) }
-      yield { event: 'run.completed', data: '{}' }
-    })
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('#prompt').setValue('Native question')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    expect(nativeOutcome('alpha', 'one')).toBe(true)
-    const before = status.mock.calls.length
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(status.mock.calls.length).toBe(before)
-    acknowledge(); await flushPromises()
-    expect(nativeOutcome('alpha', 'one')).toBe(false)
-    expect(wrapper.find('.send-button').attributes('aria-label')).toBe('Send message')
-    wrapper.unmount()
-  })
 })

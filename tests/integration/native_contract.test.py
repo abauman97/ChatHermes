@@ -1,6 +1,6 @@
 """Run inside the pinned Docker image; never against a personal Hermes home.
 
-These probes record limits and the queue-only alternative used by bounded native mode.
+These probes record native admission limits and explicit queue semantics.
 """
 import pytest
 from pydantic import ValidationError

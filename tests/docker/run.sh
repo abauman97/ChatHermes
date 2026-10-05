@@ -18,7 +18,7 @@ if ! docker info >/dev/null 2>&1; then
   echo 'Docker is unavailable. Check DOCKER_HOST; see tests/docker/README.md.' >&2
   exit 1
 fi
-image=chathermes-test:3632f917
+image=chathermes-test:ac28abc9
 default_instance="$(git rev-parse --short=8 HEAD 2>/dev/null || printf 'local')"
 instance="${CHATHERMES_INSTANCE:-${default_instance}-test}"
 case "$instance" in

@@ -389,6 +389,8 @@ _CwdExplicitUnsupported = _gateway_transport._CwdExplicitUnsupported
 _InlineImagesUnsupported = _gateway_transport._InlineImagesUnsupported
 
 _chat_gateway = _load_sibling('chat_gateway')
+_native_owners = _load_sibling('native_owners')
+router.add_event_handler('shutdown', _native_owners.shutdown)
 _native_channel = _load_sibling('native_channel')
 
 

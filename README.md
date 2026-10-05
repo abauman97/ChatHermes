@@ -8,7 +8,7 @@ A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
-Restart the dashboard and open **ChatHermes**. Enable the Hermes API server with a strong `platforms.api_server.key`; the plugin requires its Runs API (and native gateway RPC for workspace chats) and `httpx` in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
+Restart the dashboard and open **ChatHermes**. Enable the Hermes API server with a strong `platforms.api_server.key`; the plugin uses native gateway RPC for chat, authenticated API history, and `httpx` in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
 
 ## Develop and test
 
@@ -38,7 +38,7 @@ Open the `/chathermes` URL printed by `npm run live` in the isolated dashboard. 
 
 Rebuild with `npm run build` after UI changes. Restart the service after Python route changes by rerunning `npm run live`. Run `npm run live:stop` to remove the launcher's containers; its named test volume and network are preserved. Remove a disposable test volume only after confirming its exact name with `docker volume ls`.
 
-The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with bounded replay, approvals, clarification, guidance and Stop. Existing REST run pointers drain through their original adapter. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
+The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Existing REST run pointers drain through their original adapter. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
 See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
 
@@ -59,10 +59,11 @@ first prompt, following Desktop. An unavailable workspace fails before creation.
 
 Opening another Project changes UI scope while retaining the current chat and
 its workspace. Existing sessions always resume with their own saved cwd. Native
-`prompt.submit` turns, image attachment RPCs, and session-only model selection
-are adapted through authenticated plugin routes into the existing composer,
-transcript, activity and cancellation interfaces. Workspace chats use provider
-inventory models; gateway REST model-route aliases apply to ordinary REST chats.
+`prompt.submit` turns use one Vue session controller with direct native events,
+shared Hermes request correlation/heartbeat, server-retained execution and paged
+recovery frames. Reload restores activity before completion without native status
+polling. Models apply to the native runtime; uploads stay authenticated and profile
+scoped. Existing REST run pointers retain their legacy drainage path.
 Hermes discovers context files normally; the plugin injects no Project prompt.
 
 Project/session change events, reconnect, foregrounding, completion and profile
@@ -70,8 +71,8 @@ changes refresh the tree and selected hierarchy. No separate Project database,
 frontend path classifier, or active Project mutation exists. Project management
 and session moves remain in Desktop/CLI for this initial workflow.
 
-The implementation is verified against the unchanged test source pin
-`3632f9173d218fd24f3fa595d7affa159b0774cd`. Session creation always sends
+The implementation is verified against the reviewed test source pin
+`ac28abc96ce83f22f6b831f80d9007e2aba81f21`. Session creation always sends
 `cwd_explicit: true` for workspace Projects. If an older Hermes gateway rejects
 exactly that field as an extra schema input, ChatHermes retries without it only
 when the resolved workspace exists locally; older handlers infer explicit cwd

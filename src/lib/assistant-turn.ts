@@ -177,3 +177,47 @@ export function mergeHistoryBlocks(turn: AssistantTurn, restored: TurnBlock[], a
     }
   }
 }
+
+/** Native Desktop semantics, without Electron/React presentation side effects.
+ * References: gateway-event/message-stream.ts, tools.ts and chat-messages/tool-parts.ts
+ * in Hermes ac28abc96ce83f22f6b831f80d9007e2aba81f21 (MIT). */
+export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) {
+  const native = turn as AssistantTurn & { sealedText?: string }
+  if (name === 'thinking.delta' || name === 'tool.generating') return
+  if (name === 'message.interim') {
+    if (!data.already_streamed) reduceTurn(turn, { type: 'text', data: { delta: string(data.text) } })
+    native.sealedText = turn.blocks.at(-1)?.id
+  } else if (name === 'message.delta' || name === 'message.complete') {
+    if (native.sealedText && native.sealedText === turn.blocks.at(-1)?.id && string(data.text)) {
+      turn.blocks.push({ id: `block-${++turn.sequence}`, kind: 'text', content: '' })
+    }
+    reduceTurn(turn, { type: name === 'message.delta' ? 'text' : 'text.completed', data: name === 'message.delta' ? { delta: data.text } : { content: data.text } })
+    if (name === 'message.complete') {
+      for (const block of turn.blocks) if (block.kind !== 'text' && !block.delegated) {
+        block.complete = true
+        if (block.state === 'running' || block.state === 'pending') block.state = data.status === 'complete' ? 'completed' : 'failed'
+      }
+      if (data.reasoning && !turn.blocks.some(b => b.kind === 'thinking')) reduceTurn(turn, { type: 'reasoning', data: { text: data.reasoning } })
+      closeReasoning(turn)
+    }
+  } else if (name === 'reasoning.delta' || name === 'reasoning.available') {
+    if (name === 'reasoning.available') {
+      const block = [...turn.blocks].reverse().find(b => b.kind === 'thinking')
+      if (block && block.kind === 'thinking') { block.content = string(data.text); block.complete = false; return }
+    }
+    reduceTurn(turn, { type: 'reasoning', data: { delta: data.text } })
+  } else if (name === 'tool.start' || name === 'tool.complete' || name === 'tool.progress') {
+    const result = data.result as Record<string, unknown> | undefined
+    const failed = data.is_error || data.error || result && typeof result === 'object' && (result.error || result.success === false || typeof result.exit_code === 'number' && result.exit_code !== 0)
+    reduceTurn(turn, { type: name === 'tool.start' ? 'tool.started' : name === 'tool.progress' ? 'tool.updated' : failed ? 'tool.failed' : 'tool.completed',
+      data: { ...data, tool_call_id: data.tool_id, tool_name: data.name, delta: data.text || data.delta || data.preview, output: data.result_text ?? data.result } })
+  } else if (name.startsWith('subagent.')) {
+    const id = string(data.subagent_id) || string(data.child_session_id) || (data.delegation_id ? `${data.delegation_id}:${data.task_index}` : '')
+    if (!id) return
+    const terminal = ['subagent.complete', 'subagent.failed', 'subagent.cancelled'].includes(name)
+    reduceTurn(turn, { type: terminal ? name === 'subagent.complete' && data.status === 'completed' ? 'tool.completed' : 'tool.failed' : 'tool.updated',
+      data: { tool_call_id: 'subagent-' + id, tool_name: string(data.name) || 'Delegated task', delta: string(data.text), output: data.summary ?? data.text ?? data.output_tail } })
+    const block = turn.blocks.find(b => b.id === 'subagent-' + id)
+    if (block && block.kind === 'tool') block.delegated = true
+  }
+}

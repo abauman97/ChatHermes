@@ -29,9 +29,10 @@ set `CHATHERMES_INSTANCE` to override the instance name. Provide `CHATHERMES_DAS
 available on that daemon host.
 Each shell launcher instance uses isolated, revision-scoped Docker resources.
 
-The source remains pinned to `3632f9173d218fd24f3fa595d7affa159b0774cd`, with
+The source is pinned to `ac28abc96ce83f22f6b831f80d9007e2aba81f21`, with
 its download checksum verified, and the base image digest in `Dockerfile` is
-unchanged. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
+unchanged. The fixture adds `snowballstemmer==3.1.1`, required by the upgraded
+source but absent from the older base runtime. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
 Both expose only the dashboard on loopback by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
 
@@ -150,7 +151,7 @@ docker exec chathermes-ptuigateway-hermes /opt/hermes/.venv/bin/python /test/ver
 Physical iOS keyboard/camera hardware and a launched Desktop client remain
 outside browser automation.
 
-## Bounded native tests
+## Native session tests
 
 Fixture mode keeps Hermes and the model on an instance-scoped internal network.
 Only the inbound browser relay publishes the dashboard port; real mode uses

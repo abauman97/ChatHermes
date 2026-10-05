@@ -52,7 +52,7 @@ exit 0
         result, calls, _ = self.run_launcher()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('docker endpoint tcp://172.25.0.2:2375', result.stderr.lower())
-        self.assertIn('build -f tests/docker/Dockerfile -t chathermes-test:3632f917 .', calls)
+        self.assertIn('build -f tests/docker/Dockerfile -t chathermes-test:ac28abc9 .', calls)
         self.assertIn('-p 127.0.0.1:9119:9119', calls)
         self.assertIn('-v chathermes-test-hermes-data:/opt/data', calls)
         self.assertIn('--network-alias model', calls)
@@ -181,7 +181,7 @@ exit 0
 
 
 class NativeRunnerGuards(unittest.TestCase):
-    def run_native(self, image='chathermes-test:3632f917', mount='volume:chathermes-ptuigateway-hermes-data', real='0', instance='ptuigateway'):
+    def run_native(self, image='chathermes-test:ac28abc9', mount='volume:chathermes-ptuigateway-hermes-data', real='0', instance='ptuigateway'):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             docker = root / 'docker'

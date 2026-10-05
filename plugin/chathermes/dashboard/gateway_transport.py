@@ -16,15 +16,14 @@ class _RpcTransport:
         self.timeout = 90
         self.secret = ''
         self.secrets = set()
+        self.on_frame = None
 
     @property
     def _closed(self):
         # Hermes transport liveness and reapers inspect this field.
         return self.closed
 
-    def write(self, frame):
-        if self.closed or self.loop.is_closed():
-            return False
+    def sanitize(self, value):
         def redact(value):
             if isinstance(value, str):
                 for secret in self.secrets | ({self.secret} if self.secret else set()):
@@ -38,7 +37,12 @@ class _RpcTransport:
             if isinstance(value, list):
                 return [redact(item) for item in value]
             return value
-        frame = redact(frame)
+        return redact(value)
+
+    def write(self, frame):
+        if self.closed or self.loop.is_closed():
+            return False
+        frame = self.sanitize(frame)
         def deliver():
             if self.closed:
                 return
@@ -49,6 +53,8 @@ class _RpcTransport:
             elif 'method' not in frame:
                 # Late/timed-out RPC replies are not events or server requests.
                 return
+            elif self.on_frame is not None:
+                self.on_frame(frame)
             elif self.events.full():
                 self.close()
             else:
