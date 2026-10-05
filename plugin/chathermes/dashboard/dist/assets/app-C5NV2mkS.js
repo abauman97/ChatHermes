@@ -8628,9 +8628,10 @@ var sf = {
 			} else if (e.event === "tool.completed" || e.event === "tool.failed") {
 				let n = [...se.value].reverse().find((e) => e.kind === "tool" && !e.complete && (a ? e.id === a : e.toolName === i || e.title === i));
 				if (n) {
-					n.complete = !0, n.state = e.event === "tool.failed" || t.is_error || t.error === !0 ? "failed" : "completed", n.title = Qo(n.toolName || i, !0);
-					let r = t.output ?? t.result ?? (typeof t.error == "string" ? t.error : t.preview);
-					r !== void 0 && (n.output = typeof r == "string" ? r : JSON.stringify(r, null, 2)), typeof t.duration_s == "number" && (n.duration = t.duration_s);
+					let r = e.event === "tool.failed" || t.is_error === !0 || t.error === !0 || typeof t.error == "string" && !!t.error;
+					n.complete = !0, n.state = r ? "failed" : "completed", n.title = Qo(n.toolName || i, !0);
+					let a = t.output ?? t.result ?? (typeof t.error == "string" ? t.error : t.preview);
+					a !== void 0 && (n.output = typeof a == "string" ? a : JSON.stringify(a, null, 2)), typeof t.duration_s == "number" && (n.duration = t.duration_s);
 				}
 			} else if (e.event === "approval.request") bt(), A.value = !0, Ye.value = t, B.value = "waiting_for_approval";
 			else if (e.event === "approval.responded") A.value = !1, Ye.value = void 0, B.value = "running";

@@ -304,7 +304,8 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   } else if (frame.event === 'tool.completed' || frame.event === 'tool.failed') {
     const item = [...progress.value].reverse().find(item => item.kind === 'tool' && !item.complete && (callId ? item.id === callId : item.toolName === name || item.title === name))
     if (item) {
-      item.complete = true; item.state = frame.event === 'tool.failed' || data.is_error || data.error === true ? 'failed' : 'completed'
+      const failed = frame.event === 'tool.failed' || data.is_error === true || data.error === true || typeof data.error === 'string' && !!data.error
+      item.complete = true; item.state = failed ? 'failed' : 'completed'
       item.title = toolTitle(item.toolName || name, true)
       const output = data.output ?? data.result ?? (typeof data.error === 'string' ? data.error : data.preview)
       if (output !== undefined) item.output = typeof output === 'string' ? output : JSON.stringify(output, null, 2)
