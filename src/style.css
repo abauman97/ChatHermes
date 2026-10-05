@@ -22,7 +22,6 @@ body { margin: 0; background: #212121; }
 .activity summary::after { content: '⌄'; margin-left: 4px; }
 .activity[open] summary::after { transform: rotate(180deg); }
 .activity pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 monospace; margin: 8px 0 10px 24px; max-height: 240px; overflow: auto; }
-
 /* Host dashboard themes must not replace the plugin's readable system font. */
 .chathermes-embedded .app-shell { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .chathermes-embedded button, .chathermes-embedded input, .chathermes-embedded textarea, .chathermes-embedded select { font-family: inherit; }
@@ -109,3 +108,15 @@ body { margin: 0; background: #212121; }
 
 .scheduled-heading-content { max-width: 760px; margin: 0 auto; }
 .scheduled-nav:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+
+/* Work stays quiet and compact; only live titles animate. Colors inherit the
+   surface's text color so the shimmer also works on a light host surface. */
+.chathermes-embedded { --work-highlight: #f4f4f4; }
+.turn-work { color: inherit; font-size: 14px; min-width: 0; }
+.work-summary { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; text-align: left; }
+.work-chevron { width: 12px; text-align: center; transform: rotate(0deg); }
+.work-chevron.expanded { transform: rotate(90deg); }
+.work-timeline { padding-left: 20px; min-width: 0; }
+.working-shimmer { background: linear-gradient(100deg, currentColor 35%, var(--work-highlight, #303030) 50%, currentColor 65%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: working-shimmer 2s linear infinite; }
+@keyframes working-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .working-shimmer { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
