@@ -48,7 +48,7 @@ let visibilityAbort: AbortController | undefined
 const unavailableRun = ref(false)
 const clarificationAnswers = ref<Record<string, string | string[]>>({}), customClarification = ref<Record<string, string>>({})
 const nativeStatus = ref('')
-const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<string, unknown>>(), actionBusy = ref(false), steerText = ref('')
+const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<string, unknown>>(), actionBusy = ref(false)
 const eventStreamExpired = ref(false)
 let lastSeq = -1
 function urlState() { const params = new URLSearchParams(location.search); return { profile: params.get('profile') || '', session: params.get('session') || '', project: params.get('project') || '', view: params.get('view') || '', archived: params.get('archived') === '1' } }
@@ -72,7 +72,7 @@ async function discussScheduled(text: string) {
     if (owner === profileGeneration && p === profile.value) scheduledDiscussionError.value = 'Could not open a chat. Please try again.'
   } finally { if (owner === profileGeneration) creating.value = false }
 }
-function cancelChat() { api.closeNative(); sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; steerText.value = ''; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
+function cancelChat() { api.closeNative(); sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadProjects() {
   projectsAbort?.abort(); const controller = new AbortController(); projectsAbort = controller; const p = profile.value
@@ -566,11 +566,11 @@ async function answerClarification() {
   } catch { chatError.value = 'Clarification could not be settled. Refresh native state before retrying.' }
   finally { actionBusy.value = false }
 }
-async function steerRun() {
+async function steerRun(text: string) {
   const p = profile.value, run = activeRun.value, current = generation
-  if (!steerText.value.trim() || actionBusy.value || !run) return
+  if (!text.trim() || actionBusy.value || !run) return
   actionBusy.value = true
-  try { await api.steer(p, run, steerText.value.trim()); if (current === generation) steerText.value = '' }
+  try { await api.steer(p, run, text.trim()) }
   catch { if (current === generation) chatError.value = 'Run did not accept guidance. Refresh run state and retry.' }
   finally { actionBusy.value = false }
 }
@@ -653,10 +653,6 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <div v-if="!scheduledPage && reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
       <div v-if="!scheduledPage && activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? approval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : nativeStatus || 'Working…' }}</div>
-      <form v-if="!scheduledPage && activeRun && (api.isNative(profile) || !activeRun.startsWith('workspace-')) && !approvalPending" class="flex gap-2 px-5 py-2" @submit.prevent="steerRun">
-        <input v-model="steerText" aria-label="Guide this run" placeholder="Guide this run…" class="min-w-0 flex-1 rounded-lg bg-[#303030] px-3 py-2 text-base" />
-        <button class="rounded-lg bg-[#303030] px-3 text-base disabled:opacity-55" :disabled="actionBusy || runStatus !== 'running' || !steerText.trim()">Send guidance</button>
-      </form>
       <div v-if="!scheduledPage && chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="unavailableRun" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
       <ScheduledPage v-if="scheduledPage" :key="`${profile}:${scheduledPageKey}`" :profile="profile" :chat-busy="creating" :offline="offline" :discussion-error="scheduledDiscussionError" @discuss="discussScheduled" />
       <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
@@ -696,7 +692,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       </div>
         </template>
       </ChatTranscript>
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" @stop="stopRun" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
     </main>
   </div>
 </template>

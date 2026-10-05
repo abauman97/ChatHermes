@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
 const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; imagesSupported?: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>(), { imagesSupported: true })
-const emit = defineEmits<{ stop: []; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
+const emit = defineEmits<{ stop: []; steer: [text: string]; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
 watch(() => props.suggestedPrompt, text => { if (text) value.value = text }, { immediate: true })
@@ -65,6 +65,7 @@ watch(() => props.providers, () => closePicker())
 onMounted(() => { document.addEventListener('click', outsideClick); document.addEventListener('keydown', pickerKeydown) })
 onBeforeUnmount(() => { document.removeEventListener('click', outsideClick); document.removeEventListener('keydown', pickerKeydown) })
 function send() {
+  if (props.sending && props.stoppable && value.value.trim()) { emit('steer', value.value.trim()); value.value = ''; return }
   if (props.disabled || props.sending || reading.value || imageGated.value) return
   const text = value.value.trim()
   if (text || attachments.value.length) { emit('send', text, [...attachments.value]); value.value = ''; attachments.value = []; attachmentsOpen.value = false }
@@ -126,8 +127,8 @@ async function attach(event: Event) {
         <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || imageGated || (!value.trim() && !attachments.length)" :aria-label="sending ? 'Stop response' : 'Send message'" :title="sending ? 'Stop response' : 'Send message'" @click="sending && stoppable && emit('stop')">
-        <svg v-if="sending" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || imageGated || (!value.trim() && !attachments.length)" :aria-label="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()">
+        <svg v-if="sending && !value.trim()" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>
     </div>
