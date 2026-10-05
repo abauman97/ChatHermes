@@ -131,7 +131,13 @@ async def _stream(request: Request, route: str):
 @router.get("/capabilities")
 @router.get("/v1/capabilities", include_in_schema=False)
 async def capabilities(request: Request):
-    return await _proxy(request, "/v1/capabilities")
+    result = await _proxy(request, "/v1/capabilities")
+    if result.status_code == 200:
+        import json
+        body = json.loads(result.body)
+        body.setdefault('features', {})['native_chat'] = True
+        return body
+    return result
 
 
 @router.get("/sessions")
@@ -150,6 +156,12 @@ async def sessions(request: Request):
         if any(field in body for field in ('project_id', 'project', 'cwd')):
             raise HTTPException(422, 'Use the Project session route for workspace chats')
     return await _proxy(request, "/api/sessions")
+
+
+@router.post('/chat/sessions')
+async def native_session_create(request: Request):
+    made = await _rpc(request, 'session.create', {'source': 'desktop'})
+    return {'session': {'id': made['stored_session_id'], 'source': 'desktop', 'title': ''}}
 
 
 @router.get("/sessions/{session_id}")
@@ -335,102 +347,65 @@ async def upload(request: Request):
     return {'path': str(path)}
 
 
+@router.get('/images/{file_id}')
+async def native_image(request: Request, file_id: str):
+    # Authenticated profile file references only; no arbitrary paths or HTML.
+    from fastapi.responses import FileResponse
+    if not re.fullmatch(r'[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)', file_id):
+        raise HTTPException(404, 'Image unavailable')
+    home = _upload_home(request).resolve()
+    root = home / 'uploads' / 'chathermes'
+    path = root / file_id
+    if root.resolve() != root or path.is_symlink() or not path.is_file() or path.resolve().parent != root:
+        raise HTTPException(404, 'Image unavailable')
+    with path.open('rb') as stream:
+        head = stream.read(16)
+    mime = ('image/png' if head.startswith(b'\x89PNG\r\n\x1a\n') else
+            'image/jpeg' if head.startswith(b'\xff\xd8\xff') else
+            'image/gif' if head.startswith((b'GIF87a', b'GIF89a')) else
+            'image/webp' if head.startswith(b'RIFF') and head[8:12] == b'WEBP' else None)
+    if mime is None:
+        raise HTTPException(404, 'Image unavailable')
+    return FileResponse(path, media_type=mime, headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
 # Projects and workspace chats use the dashboard's own gateway dispatcher. This
 # is the same RPC admission/profile/runtime path as /api/ws, without a browser
 # connection, credentials, native database writes, or a second session store.
-class _RpcTransport:
-    def __init__(self):
-        import asyncio
-        self.loop = asyncio.get_running_loop()
-        self.events = asyncio.Queue(maxsize=256)
-        self.pending = {}
-        self.closed = False
-        self.sequence = 0
-        self.secret = ''
-
-    @property
-    def _closed(self):
-        # Hermes transport liveness and reapers inspect this field.
-        return self.closed
-
-    def write(self, frame):
-        if self.closed or self.loop.is_closed():
-            return False
-        def redact(value):
-            if isinstance(value, str):
-                return value.replace(self.secret, '[redacted]') if self.secret else value
-            if isinstance(value, dict):
-                return {key: redact(item) for key, item in value.items()}
-            if isinstance(value, list):
-                return [redact(item) for item in value]
-            return value
-        frame = redact(frame)
-        def deliver():
-            if self.closed:
-                return
-            future = self.pending.get(frame.get('id'))
-            if future is not None:
-                if not future.done():
-                    future.set_result(frame)
-            elif self.events.full():
-                self.close()
-            else:
-                self.events.put_nowait(frame)
-        self.loop.call_soon_threadsafe(deliver)
-        return True
-
-    async def call(self, method, params):
-        import asyncio
-        from starlette.concurrency import run_in_threadpool
-        self.sequence += 1
-        rid = str(self.sequence)
-        future = self.loop.create_future()
-        self.pending[rid] = future
-        try:
-            from tui_gateway import server
-            response = await run_in_threadpool(server.dispatch,
-                {'jsonrpc': '2.0', 'id': rid, 'method': method, 'params': params}, self)
-            if response is not None:
-                self.write(response)
-            frame = await asyncio.wait_for(future, timeout=90)
-            if 'error' in frame:
-                error = frame['error']
-                code = error.get('code')
-                message = error.get('message', '')
-                data = error.get('data')
-                if isinstance(message, str) and 'cwd_explicit' in message and isinstance(data, dict):
-                    message += ' ' + str(data)
-                if isinstance(message, str) and 'cwd_explicit' in message and 'Extra inputs are not permitted' in message:
-                    raise _CwdExplicitUnsupported()
-                if method == 'session.resume' and isinstance(message, str) and 'inline_images' in message and 'Extra inputs are not permitted' in message:
-                    raise _InlineImagesUnsupported()
-                raise HTTPException(501 if code == -32601 else 409, 'Hermes RPC could not complete this operation')
-            return frame['result']
-        except (HTTPException, _CwdExplicitUnsupported, _InlineImagesUnsupported):
-            raise
-        except Exception:
-            raise HTTPException(503, 'Hermes gateway RPC is unavailable')
-        finally:
-            self.pending.pop(rid, None)
-
-    def close(self):
-        if self.closed:
-            return
-        self.closed = True
-        try:
-            from tui_gateway import server
-            server.unregister_live_transport(self)
-            server._close_sessions_for_transport(self, end_reason='ws_disconnect')
-        except ImportError:
-            pass
+# Hermes imports this file by spec rather than as a package. Resolve siblings
+# relative to this trusted plugin directory, never through sys.path/CWD.
+def _load_sibling(name):
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location('chathermes_' + name, Path(__file__).with_name(name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-class _CwdExplicitUnsupported(Exception):
-    pass
+_gateway_transport = _load_sibling('gateway_transport')
+_RpcTransport = _gateway_transport._RpcTransport
+_CwdExplicitUnsupported = _gateway_transport._CwdExplicitUnsupported
+_InlineImagesUnsupported = _gateway_transport._InlineImagesUnsupported
+
+_chat_gateway = _load_sibling('chat_gateway')
+_native_channel = _load_sibling('native_channel')
 
 
-class _InlineImagesUnsupported(Exception):
-    pass
+@router.get('/chat/capabilities')
+async def chat_capabilities():
+    return _chat_gateway.capabilities()
+
+
+# Authentication is checked inside this handler before accept: dashboard HTTP
+# middleware does not authorize a WebSocket upgrade.
+from fastapi import WebSocket
+
+
+@router.websocket('/chat/ws')
+async def chat_socket(ws: WebSocket):
+    import sys
+    await _chat_gateway.socket(ws, sys.modules[__name__])
 
 
 def _rpc_profile(request):
@@ -666,17 +641,81 @@ def _workspace_frame(frame, runtime_id, stored_id=None):
     return None
 
 
+def _validated_workspace_turn(body):
+    """Validate the entire turn before config/image/submit native mutations."""
+    import base64
+    import binascii
+    if not isinstance(body, dict) or set(body) - {'input', 'model', 'provider', 'require_model_lock'}:
+        raise HTTPException(422, 'Invalid workspace turn')
+    model, provider = body.get('model'), body.get('provider')
+    if model is not None and (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,255}', model)):
+        raise HTTPException(422, 'Invalid workspace model')
+    if provider is not None and (not model or not isinstance(provider, str) or not _PROFILE.fullmatch(provider)):
+        raise HTTPException(422, 'Invalid workspace provider')
+    if 'require_model_lock' in body and not isinstance(body['require_model_lock'], bool):
+        raise HTTPException(422, 'Invalid workspace turn')
+    parts = body.get('input')
+    if isinstance(parts, str):
+        parts = [{'type': 'text', 'text': parts}]
+    if not isinstance(parts, list) or len(parts) > 32:
+        raise HTTPException(422, 'Invalid workspace content')
+    texts, images, total = [], [], 0
+    for part in parts:
+        if not isinstance(part, dict):
+            raise HTTPException(422, 'Invalid workspace content')
+        if part.get('type') == 'text':
+            text = part.get('text')
+            if not isinstance(text, str) or len(text.encode('utf-8')) > 1024 * 1024:
+                raise HTTPException(422, 'Invalid workspace text')
+            texts.append(text)
+        elif part.get('type') == 'image_url':
+            image = part.get('image_url')
+            data = image.get('url') if isinstance(image, dict) else None
+            if not isinstance(data, str) or len(data) > 28 * 1024 * 1024:
+                raise HTTPException(422, 'Invalid workspace image')
+            header, sep, encoded = data.partition(',')
+            if not sep or header not in ('data:image/png;base64', 'data:image/jpeg;base64', 'data:image/gif;base64', 'data:image/webp;base64'):
+                raise HTTPException(422, 'Invalid workspace image')
+            try:
+                decoded = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                raise HTTPException(422, 'Invalid workspace image')
+            total += len(decoded)
+            if not decoded or total > 20 * 1024 * 1024 or len(images) >= 8:
+                raise HTTPException(413, 'Workspace images exceed the attachment limit')
+            # Native attach_bytes decodes bytes and determines their image type.
+            # Reject a mismatched declaration before any queued-image mutation.
+            mime = header[5:-7]
+            valid = (mime == 'image/png' and decoded.startswith(b'\x89PNG\r\n\x1a\n') or
+                     mime == 'image/jpeg' and decoded.startswith(b'\xff\xd8\xff') or
+                     mime == 'image/gif' and decoded.startswith((b'GIF87a', b'GIF89a')) or
+                     mime == 'image/webp' and decoded.startswith(b'RIFF') and decoded[8:12] == b'WEBP')
+            if not valid:
+                raise HTTPException(422, 'Invalid workspace image')
+            images.append(encoded)
+        else:
+            raise HTTPException(422, 'Unsupported workspace content')
+    text = '\n'.join(texts)
+    if len(text.encode('utf-8')) > 1024 * 1024 or not text.strip() and not images:
+        raise HTTPException(422, 'Invalid workspace text')
+    return text, images
+
+
 @router.post('/workspace/sessions/{session_id}/chat/stream')
 async def workspace_stream(request: Request, session_id: str):
     import asyncio
     import json
     profile = _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 29 * 1024 * 1024:
+            raise HTTPException(413, 'Workspace turn exceeds the content limit')
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except ValueError:
         raise HTTPException(422, 'Invalid workspace turn')
-    if not isinstance(body, dict) or not isinstance(body.get('input'), (str, list)):
-        raise HTTPException(422, 'Invalid workspace turn')
+    text, images = _validated_workspace_turn(body)
     transport = _new_rpc_transport(request)
     try:
         resumed = await _workspace_resume(transport, profile, session_id)
@@ -699,25 +738,9 @@ async def workspace_stream(request: Request, session_id: str):
             switched = await transport.call('config.set', {**params, 'key': 'model', 'value': selection, 'scope': 'session'})
             if switched.get('confirm_required') or switched.get('warning') or switched.get('deferred'):
                 raise HTTPException(409, 'Hermes could not apply the selected model')
-        parts = body['input']
-        if isinstance(parts, list):
-            texts = []
-            for part in parts:
-                if not isinstance(part, dict):
-                    raise HTTPException(422, 'Invalid workspace content')
-                if part.get('type') == 'text':
-                    if not isinstance(part.get('text'), str):
-                        raise HTTPException(422, 'Invalid workspace text')
-                    texts.append(part.get('text', ''))
-                elif part.get('type') == 'image_url':
-                    data = (part.get('image_url') or {}).get('url', '')
-                    if not data.startswith('data:image/') or ';base64,' not in data or len(data) > 28 * 1024 * 1024:
-                        raise HTTPException(422, 'Invalid workspace image')
-                    await transport.call('image.attach_bytes', {**params, 'content_base64': data.split(',', 1)[1]})
-                else:
-                    raise HTTPException(422, 'Unsupported workspace content')
-            parts = '\n'.join(texts)
-        submitted = await transport.call('prompt.submit', {**params, 'text': parts})
+        for encoded in images:
+            await transport.call('image.attach_bytes', {**params, 'content_base64': encoded})
+        submitted = await transport.call('prompt.submit', {**params, 'text': text})
         if submitted.get('status') != 'streaming':
             raise HTTPException(409, 'Hermes did not start the turn')
     except BaseException:
@@ -786,3 +809,201 @@ async def workspace_stop(request: Request, stored_id: str):
         return await transport.call('session.interrupt', {'profile': profile, 'session_id': result['session_id']})
     finally:
         transport.close()
+
+
+# Scheduled history uses the pinned dashboard's local cron/SessionDB contracts,
+# not the gateway Runs buffer (which expires and is unrelated to cron history).
+def _scheduled_context(request):
+    from hermes_cli.web_server_cron import _cron_profile_home
+    profile = request.query_params.get('profile', '')
+    if profile and not _PROFILE.fullmatch(profile):
+        raise HTTPException(422, 'Invalid profile name')
+    return _cron_profile_home(profile or None)
+
+
+def _scheduled_job(profile, job_id):
+    from hermes_cli.web_server_cron import _call_cron_for_profile
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,159}', job_id):
+        raise HTTPException(422, 'Invalid scheduled job')
+    # Exact ID lookup in one profile. Never use the native route's cross-profile
+    # ownership fallback, or resolve a user-supplied name as a different job.
+    jobs = _call_cron_for_profile(profile, 'list_jobs', True)
+    job = next((row for row in jobs if row.get('id') == job_id), None)
+    if job is None:
+        raise HTTPException(404, 'Scheduled job not found')
+    return job
+
+
+def _scheduled_jobs_sync(profile, home):
+    from hermes_cli.web_server_cron import _call_cron_for_profile
+    jobs = _call_cron_for_profile(profile, 'list_jobs', True)
+    return {'jobs': [{key: row.get(key) for key in
+        ('id', 'name', 'prompt', 'schedule_display', 'state', 'enabled', 'last_run_at', 'next_run_at')}
+        for row in jobs]}
+
+
+def _scheduled_docs(home, job_id):
+    from hermes_cli.web_routers.cron import _cron_output_run_timestamp
+    root = home / 'cron' / 'output'
+    directory = root / job_id
+    # Do not read symlinked directories/files or return filesystem paths.
+    if (home / 'cron').is_symlink() or root.is_symlink() or directory.is_symlink():
+        return []
+    return [{'id': 'output:' + path.stem, 'started_at': _cron_output_run_timestamp(path),
+             'title': 'Saved output', 'source': 'cron_output'}
+            for path in directory.glob('*.md')
+            if not path.is_symlink() and path.is_file()
+            and re.fullmatch(r'\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}', path.stem)]
+
+
+def _scheduled_attempts(home, job_id):
+    # Native ledger also retains failed script fires that never wrote a document.
+    from cron.executions import list_executions
+    from hermes_cli.web_server_cron import _cron_store_scope
+    from hermes_cli.web_routers.cron import _iso_to_epoch
+    attempts = []
+    cursor = None
+    with _cron_store_scope(home):
+        while True:
+            page = list_executions(job_id=job_id, limit=500, before_claimed_at=cursor)
+            attempts.extend(page)
+            if len(page) < 500:
+                break
+            next_cursor = page[-1]['claimed_at']
+            if next_cursor == cursor:
+                break
+            cursor = next_cursor
+    return [{'id': 'execution:' + row['id'], 'source': 'cron_execution',
+             'started_at': _iso_to_epoch(row.get('started_at') or row.get('claimed_at')) or 0,
+             'ended_at': _iso_to_epoch(row.get('finished_at')), '_claimed_at': _iso_to_epoch(row.get('claimed_at')) or 0,
+             'title': row['status'].capitalize(),
+             'end_reason': row['status']}
+            for row in attempts if row['status'] in ('completed', 'failed', 'unknown')]
+
+
+def _scheduled_runs_sync(profile, home, job_id, offset, limit):
+    from hermes_cli.web_server_sessions import _open_session_db_for_profile
+    from hermes_cli.web_server_cron import _cron_store_scope
+    from hermes_cli.web_routers.cron import _doc_matches_session, _execution_contains
+    _scheduled_job(profile, job_id)
+    db = _open_session_db_for_profile(profile, read_only=True)
+    sessions = []
+    try:
+        # Native dashboard caps history at 100. Page the actual DB contract so
+        # older retained runs remain reachable, including mixed agent/script jobs.
+        while True:
+            page = db.list_cron_job_runs(job_id, limit=500, offset=len(sessions))
+            sessions.extend(page)
+            if len(page) < 500:
+                break
+    finally:
+        db.close()
+    with _cron_store_scope(home):
+        docs = _scheduled_docs(home, job_id)
+    sessions = [row for row in sessions if re.fullmatch(r'cron_' + re.escape(job_id) + r'_\d{8}_\d{6}', row['id'])]
+    rows = sessions + [doc for doc in docs if doc['started_at'] is not None
+        and not any(_doc_matches_session(doc['started_at'], session, 300) for session in sessions)]
+    attempts = _scheduled_attempts(home, job_id)
+    representations = list(rows)
+    for attempt in attempts:
+        # Match persisted output against execution windows; never deduplicate
+        # two independent ledger records based on nearby timestamps.
+        window = {'claimed_at': attempt.get('_claimed_at', attempt['started_at']),
+                  'finished_at': attempt.get('ended_at')}
+        matched = any(_execution_contains(window, float(row.get('started_at') or 0), 300)
+                      for row in representations)
+        if not matched:
+            rows.append(attempt)
+    rows.sort(key=lambda row: (float(row.get('started_at') or 0), row['id']), reverse=True)
+    fields = ('id', 'title', 'started_at', 'ended_at', 'source', 'preview', 'end_reason')
+    return {'runs': [{key: row.get(key) for key in fields} for row in rows[offset:offset + limit]],
+            'offset': offset, 'limit': limit, 'has_more': offset + limit < len(rows)}
+
+
+def _scheduled_output_sync(profile, home, job_id, run_id):
+    from hermes_cli.web_server_sessions import _open_session_db_for_profile
+    _scheduled_job(profile, job_id)
+    if run_id.startswith('execution:'):
+        from cron.executions import get_execution
+        from hermes_cli.web_server_cron import _cron_store_scope
+        from hermes_cli.web_routers.cron import _iso_to_epoch
+        identifier = run_id.removeprefix('execution:')
+        if not re.fullmatch(r'[a-f0-9]{32}', identifier):
+            raise HTTPException(422, 'Invalid scheduled run')
+        with _cron_store_scope(home):
+            attempt = get_execution(identifier)
+        if not attempt or attempt.get('job_id') != job_id:
+            raise HTTPException(404, 'Scheduled run not found')
+        return {'messages': [], 'started_at': _iso_to_epoch(attempt.get('started_at') or attempt.get('claimed_at'))}
+    if run_id.startswith('output:'):
+        stamp = run_id.removeprefix('output:')
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}', stamp):
+            raise HTTPException(422, 'Invalid scheduled run')
+        root = home / 'cron' / 'output'
+        directory = root / job_id
+        path = directory / (stamp + '.md')
+        if (home / 'cron').is_symlink() or root.is_symlink() or directory.is_symlink() or path.is_symlink() or not path.is_file():
+            raise HTTPException(404, 'Saved output is no longer available')
+        from hermes_cli.web_server_cron import _cron_store_scope
+        from hermes_cli.web_routers.cron import _cron_output_run_timestamp
+        with _cron_store_scope(home):
+            started_at = _cron_output_run_timestamp(path)
+        return {'output': path.read_text(encoding='utf-8-sig', errors='replace'), 'messages': [], 'started_at': started_at}
+    if not re.fullmatch(r'cron_' + re.escape(job_id) + r'_\d{8}_\d{6}', run_id):
+        raise HTTPException(404, 'Scheduled run not found')
+    db = _open_session_db_for_profile(profile, read_only=True)
+    try:
+        session = db.get_session(run_id)
+        if not session or session.get('source') != 'cron':
+            raise HTTPException(404, 'Scheduled run not found')
+        # A compressed cron run may continue under a child session ID; resolve
+        # the persisted continuation lineage instead of losing its final turns.
+        resolve = getattr(db, 'resolve_resume_session_id', None)
+        transcript_id = resolve(run_id) if resolve else run_id
+        transcript_session = db.get_session(transcript_id)
+        if not transcript_session or transcript_session.get('source') != 'cron':
+            transcript_id = run_id
+            transcript_session = session
+        messages = db.get_messages_as_conversation(transcript_id, include_ancestors=True, include_compacted=True)
+        return {'session_id': run_id, 'started_at': session.get('started_at'), 'messages': [{key: row.get(key) for key in
+            ('role', 'content', 'tool_name', 'tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content')}
+            for row in messages if row.get('role') != 'system']}
+    finally:
+        db.close()
+
+
+async def _scheduled_read(request, worker, *args):
+    import json
+    from starlette.concurrency import run_in_threadpool
+    try:
+        profile, home = _scheduled_context(request)
+        result = await run_in_threadpool(worker, profile, home, *args)
+        key = (_gateway_settings()[1] if not request.query_params.get('profile') or profile == 'default'
+               else _profile_gateway_key(profile)) or ''
+        return Response(_safe_body(json.dumps(result).encode(), key) if key else json.dumps(result).encode(),
+                        media_type='application/json')
+    except HTTPException as error:
+        if error.status_code in (404, 422):
+            raise HTTPException(error.status_code, 'Scheduled history is unavailable for this selection')
+        raise HTTPException(503, 'Scheduled history is unavailable in this Hermes version')
+    except (ImportError, AttributeError):
+        raise HTTPException(503, 'Scheduled history is unavailable in this Hermes version')
+    except Exception:
+        raise HTTPException(502, 'Could not read scheduled history')
+
+
+@router.get('/scheduled')
+async def scheduled_jobs(request: Request):
+    return await _scheduled_read(request, _scheduled_jobs_sync)
+
+
+@router.get('/scheduled/runs')
+async def scheduled_runs(request: Request, job_id: str, offset: int = 0, limit: int = 30):
+    if offset < 0 or not 1 <= limit <= 100:
+        raise HTTPException(422, 'Invalid history page')
+    return await _scheduled_read(request, _scheduled_runs_sync, job_id, offset, limit)
+
+
+@router.get('/scheduled/output')
+async def scheduled_output(request: Request, job_id: str, run_id: str):
+    return await _scheduled_read(request, _scheduled_output_sync, job_id, run_id)

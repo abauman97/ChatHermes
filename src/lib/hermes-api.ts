@@ -1,12 +1,15 @@
-import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState } from '../types/hermes'
+import { NativeError, nativeViewer, closeNativeViewer } from './native-chat'
+import { probeChatGateway } from './chat-gateway'
+import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState, ScheduledJob, ScheduledRunPage, ScheduledOutput } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
 export class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status } }
+const nativeProfiles = new Set<string>()
 const workspaceSessions = new Set<string>()
 const workspaceKey = (profile: string, id: string) => JSON.stringify([profile, id])
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -40,11 +43,18 @@ function messagePage(value: unknown): { messages: Message[]; pagination?: { retu
   const entries = Array.isArray(value) ? value : row?.data ?? row?.messages
   if (!Array.isArray(entries) || entries.some(item => !record(item) || typeof item.role !== 'string')) throw new Error('Invalid Hermes messages response')
   const pagination = record(row?.pagination)
-  return { messages: entries as Message[], pagination: typeof pagination?.returned === 'number' && typeof pagination.limit === 'number'
+  return { messages: (entries as Message[]).map(row => row.role === 'user' && ['model_switch', 'personality_switch'].includes(row.display_kind || '') ? { ...row, role: 'system' } : row), pagination: typeof pagination?.returned === 'number' && typeof pagination.limit === 'number'
     ? { returned: pagination.returned, limit: pagination.limit } : undefined }
 }
 export const api = {
+  // Explicit inspection only. No silent switch or mutation retry after admission.
+  nativeChatCapabilities: probeChatGateway,
+  isNative: (profile: string) => nativeProfiles.has(profile),
+  closeNative: closeNativeViewer,
   profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
+  scheduled: (profile: string, signal?: AbortSignal) => request<{ jobs: ScheduledJob[] }>(profile, '/scheduled', { signal }),
+  scheduledRuns: (profile: string, job: string, offset = 0, signal?: AbortSignal) => request<ScheduledRunPage>(profile, `/scheduled/runs?job_id=${encodeURIComponent(job)}&offset=${offset}`, { signal }),
+  scheduledOutput: (profile: string, job: string, run: string, signal?: AbortSignal) => request<ScheduledOutput>(profile, `/scheduled/output?job_id=${encodeURIComponent(job)}&run_id=${encodeURIComponent(run)}`, { signal }),
   projects: (profile: string, signal?: AbortSignal) => request<ProjectTree>(profile, '/projects', { signal }),
   project: async (profile: string, id: string, signal?: AbortSignal) => {
     const result = await request<{ project: Project }>(profile, `/projects/detail?project_id=${encodeURIComponent(id)}`, { signal })
@@ -70,9 +80,17 @@ export const api = {
     if (!response.ok) throw new ApiError(response.status, `Upload failed (${response.status})`)
     return response.json()
   },
-  capabilities: (profile: string, signal?: AbortSignal) => request<Capabilities>(profile, `/v1/capabilities`, { signal }),
+  capabilities: async (profile: string, signal?: AbortSignal) => {
+    const result = await request<Capabilities>(profile, '/v1/capabilities', { signal })
+    if (result.features?.native_chat === true) nativeProfiles.add(profile); else nativeProfiles.delete(profile)
+    return result
+  },
   sessions: async (profile: string, offset = 0, signal?: AbortSignal) => sessionsPage(await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal })),
-  create: async (profile: string, signal?: AbortSignal) => unwrapSession(await request<unknown>(profile, `/api/sessions`, { method: 'POST', body: '{}', signal })),
+  create: async (profile: string, signal?: AbortSignal) => {
+    const made = unwrapSession(await request<unknown>(profile, nativeProfiles.has(profile) ? '/chat/sessions' : '/api/sessions', { method: 'POST', body: '{}', signal }))
+    if (nativeProfiles.has(profile)) workspaceSessions.add(workspaceKey(profile, made.id))
+    return made
+  },
   session: async (profile: string, id: string, signal?: AbortSignal) => {
     const row = unwrapSession(await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, { signal }))
     if (row.cwd || row.source === 'desktop') workspaceSessions.add(workspaceKey(profile, id))
@@ -97,6 +115,15 @@ export const api = {
     }
   },
   async *stream(profile: string, session: string, input: unknown, signal?: AbortSignal, model?: string, provider?: string): AsyncGenerator<SSEEvent> {
+    if (nativeProfiles.has(profile)) {
+      let viewer
+      try { viewer = await nativeViewer(profile, session) }
+      catch { throw new NativeError('Message not submitted. Native viewer unavailable; reconnect and try again.', 'rejected') }
+      const result = await viewer.rpc('chat.submit', { input, ...(model ? { model, ...(provider ? { provider } : {}) } : {}) })
+      yield { event: 'run.started', data: JSON.stringify({ run_id: 'workspace-' + session, status: result.status }) }
+      if (result.status === 'queued') yield { event: 'native.notice', data: JSON.stringify({ text: 'Hermes queued this message behind another viewer’s turn.' }) }
+      yield* viewer.events(signal); return
+    }
     const response = await directFetch(profile, `/${workspaceSessions.has(workspaceKey(profile, session)) ? 'workspace' : 'api'}/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input, ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
@@ -110,10 +137,21 @@ export const api = {
     if (!/^[A-Za-z0-9_-]+$/.test(result.run_id || '')) throw new Error('Invalid Hermes run response')
     return result
   },
-  approve: (profile: string, run: string, choice: string, requestId?: string) => request(profile, `/v1/runs/${encodeURIComponent(run)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }) }),
-  steer: (profile: string, run: string, input: string) => request(profile, `/v1/runs/${encodeURIComponent(run)}/steer`, { method: 'POST', body: JSON.stringify({ input }) }),
-  runStatus: (profile: string, run: string, signal?: AbortSignal) => request<RunState>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal }),
+  approve: async (profile: string, run: string, choice: string, requestId?: string) => {
+    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.answer', { request_id: requestId, result: { choice } })
+    return request(profile, `/v1/runs/${encodeURIComponent(run)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }) })
+  },
+  clarify: async (profile: string, run: string, requestId: string, answers: Record<string, string>) => (await nativeViewer(profile, run.slice(10))).rpc('chat.answer', { request_id: requestId, result: { answers } }),
+  steer: async (profile: string, run: string, input: string) => {
+    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.steer', { text: input })
+    return request(profile, `/v1/runs/${encodeURIComponent(run)}/steer`, { method: 'POST', body: JSON.stringify({ input }) })
+  },
+  runStatus: async (profile: string, run: string, signal?: AbortSignal): Promise<RunState> => {
+    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).status()
+    return request<RunState>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal })
+  },
   async *runEvents(profile: string, run: string, signal?: AbortSignal, lastSeq = -1): AsyncGenerator<SSEEvent> {
+    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) { yield* (await nativeViewer(profile, run.slice(10))).events(signal); return }
     const response = await directFetch(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events` : `/v1/runs/${encodeURIComponent(run)}/events?last_seq=${lastSeq}`, { signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
@@ -123,7 +161,10 @@ export const api = {
       yield { ...frame, event: typeof payload.event === 'string' ? payload.event : frame.event }
     }
   },
-  stop: (profile: string, run: string) => request<{ status: string }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop` : `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' }),
+  stop: async (profile: string, run: string) => {
+    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.stop')
+    return request<{ status: string }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop` : `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' })
+  },
 }
 export function messageText(content: unknown): string {
   if (typeof content === 'string') return content

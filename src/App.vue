@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
+import { nativeOutcome, uncertainNativeOutcome, settleNativeOutcome } from './lib/native-admission'
+import { NativeError } from './lib/native-chat'
 import type { SSEEvent } from './lib/sse'
 import type { Activity, Attachment, Capabilities, Message, ModelOption, ProviderOption, Session, Project, ProjectAction } from './types/hermes'
 import { activeRunFor, idempotencyKeyFor, rememberIdempotencyKey, rememberRun, forgetRun } from './lib/active-runs'
 import { projectRoot, projectSessions } from './lib/projects'
+import ScheduledPage from './components/ScheduledPage.vue'
 import ProjectsPage from './components/ProjectsPage.vue'
 import ProjectSettings from './components/ProjectSettings.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
+const scheduledPage = ref(false), scheduledPageKey = ref(0), scheduledDiscussionError = ref('')
 const projectView = ref(false), projectsPage = ref(false), archivedProjects = ref(false), projectBusy = ref(false), manageError = ref('')
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
 const scopedSessionIds = ref<string[]>([])
@@ -20,7 +24,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined
 function subscribeProjectEvents() {
   closeProjectEvents?.(); closeProjectEvents = undefined
   if (typeof EventSource === 'undefined') return
-  closeProjectEvents = api.isWorkspace(profile.value, session.value)
+  closeProjectEvents = !api.isNative(profile.value) && api.isWorkspace(profile.value, session.value)
     ? api.projectEvents(profile.value, refreshProjects, session.value)
     : api.projectEvents(profile.value, refreshProjects)
 }
@@ -38,16 +42,37 @@ const profiles = ref<{ name: string }[]>([]), models = ref<ModelOption[]>([]), m
 const providers = ref<ProviderOption[]>([]), provider = ref(''), modelsLoading = ref(false)
 const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
 const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
-const canStream = computed(() => api.isWorkspace(profile.value, session.value) || projectId.value ? capabilities.value.features?.session_chat_streaming === true : capabilities.value.endpoints?.runs?.method === 'POST' && capabilities.value.endpoints.runs.path === '/v1/runs' && capabilities.value.features?.run_events_sse === true)
+const canStream = computed(() => capabilities.value.features?.native_chat === true || api.isWorkspace(profile.value, session.value) || projectId.value ? capabilities.value.features?.session_chat_streaming === true : capabilities.value.endpoints?.runs?.method === 'POST' && capabilities.value.endpoints.runs.path === '/v1/runs' && capabilities.value.features?.run_events_sse === true)
 let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0, streamGeneration = 0, historyGeneration = 0
 let visibilityAbort: AbortController | undefined
 const unavailableRun = ref(false)
+const clarificationAnswers = ref<Record<string, string | string[]>>({}), customClarification = ref<Record<string, string>>({})
+const nativeStatus = ref('')
 const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<string, unknown>>(), actionBusy = ref(false)
 const eventStreamExpired = ref(false)
 let lastSeq = -1
 function urlState() { const params = new URLSearchParams(location.search); return { profile: params.get('profile') || '', session: params.get('session') || '', project: params.get('project') || '', view: params.get('view') || '', archived: params.get('archived') === '1' } }
-function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); url.searchParams.delete('project'); url.searchParams.delete('view'); url.searchParams.delete('archived'); if (projectsPage.value) { url.searchParams.set('view', 'projects'); if (archivedProjects.value) url.searchParams.set('archived', '1') } else if (projectView.value) url.searchParams.set('view', 'project'); if (projectId.value) url.searchParams.set('project', projectId.value); if (profile.value) url.searchParams.set('profile', profile.value); if (session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
-function cancelChat() { sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; approval.value = undefined; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
+function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); url.searchParams.delete('project'); url.searchParams.delete('view'); url.searchParams.delete('archived'); url.searchParams.delete('job'); url.searchParams.delete('scheduled_run'); if (scheduledPage.value) url.searchParams.set('view', 'scheduled'); else if (projectsPage.value) { url.searchParams.set('view', 'projects'); if (archivedProjects.value) url.searchParams.set('archived', '1') } else if (projectView.value) url.searchParams.set('view', 'project'); if (!scheduledPage.value && projectId.value) url.searchParams.set('project', projectId.value); if (profile.value) url.searchParams.set('profile', profile.value); if (!scheduledPage.value && session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
+function showScheduled(fromHistory = false) {
+  scheduledDiscussionError.value = ''; scheduledPage.value = true; scheduledPageKey.value++; projectsPage.value = false; projectView.value = false; drawer.value = false
+  if (!fromHistory) setUrl()
+}
+async function discussScheduled(text: string) {
+  if (offline.value || creating.value) return
+  const p = profile.value, owner = profileGeneration
+  creating.value = true; scheduledDiscussionError.value = ''
+  try {
+    const made = await api.create(p)
+    if (owner !== profileGeneration || p !== profile.value || !scheduledPage.value) return
+    projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined
+    sessions.value = [made, ...sessions.value.filter(row => row.id !== made.id)]
+    await chooseSession(made.id)
+    if (owner === profileGeneration && p === profile.value && session.value === made.id) suggestedPrompt.value = text
+  } catch {
+    if (owner === profileGeneration && p === profile.value) scheduledDiscussionError.value = 'Could not open a chat. Please try again.'
+  } finally { if (owner === profileGeneration) creating.value = false }
+}
+function cancelChat() { api.closeNative(); sentContent.clear(); optimisticMessage.value = undefined; generation++; streamGeneration++; historyGeneration++; visibilityAbort?.abort(); activeRun.value = ''; reconnectNotice.value = false; eventStreamExpired.value = false; unavailableRun.value = false; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; lastSeq = -1; thinking.value = false; chatAbort?.abort(); streamAbort?.abort(); chatLoading.value = false; sending.value = false; approvalPending.value = false }
 function cancel() { cancelChat(); listAbort?.abort(); loading.value = false }
 async function loadProjects() {
   projectsAbort?.abort(); const controller = new AbortController(); projectsAbort = controller; const p = profile.value
@@ -72,12 +97,14 @@ async function loadProject() {
   finally { if (controller === projectAbort) projectLoading.value = false }
 }
 async function chooseProject(id: string, fromHistory = false) {
+  scheduledPage.value = false
   // Scope changes never touch the live/stored session or its working directory.
   projectAbort?.abort(); projectsPage.value = false; manageError.value = ''; projectId.value = id; projectView.value = !!id; selectedProject.value = undefined; projectError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
   await loadProject()
 }
 function showProjects(archived = archivedProjects.value, fromHistory = false) {
+  scheduledPage.value = false
   projectAbort?.abort(); projectLoading.value = false; projectsPage.value = true; projectView.value = false; archivedProjects.value = archived; drawer.value = false; manageError.value = ''
   if (!fromHistory) setUrl()
   void loadProjects()
@@ -87,8 +114,9 @@ async function recentSession(id: string) {
   await chooseSession(id)
 }
 async function newChat() {
+  scheduledPage.value = false
   projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined; projectView.value = false; projectsPage.value = false
-  await createSession()
+  return await createSession()
 }
 async function manageProject(action: ProjectAction, fields: Record<string, string | boolean>) {
   if (projectBusy.value || offline.value) return
@@ -140,6 +168,7 @@ async function loadMessages() {
 }
 async function chooseProfile(id: string, fromHistory = false) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) { error.value = 'Invalid profile name'; return }
+  scheduledPage.value = false; suggestedPrompt.value = ''; creating.value = false
   projectsLoaded.value = false
   closeProjectEvents?.(); closeProjectEvents = undefined; clearTimeout(refreshTimer); scopedSessionIds.value = []; cancel(); projectsAbort?.abort(); projectAbort?.abort(); projectId.value = ''; projectView.value = false; projectsPage.value = false; archivedProjects.value = false; projectBusy.value = false; manageError.value = ''; selectedProject.value = undefined; projects.value = []; projectError.value = ''; projectsError.value = ''; projectLoading.value = false; profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
   if (!fromHistory) setUrl()
@@ -160,7 +189,8 @@ async function chooseProfile(id: string, fromHistory = false) {
   try { const result = await api.capabilities(id); if (current === profileGeneration && profile.value === id) capabilities.value = result } catch { if (current === profileGeneration && profile.value === id) capabilities.value = {} }
 }
 async function chooseSession(id: string, fromHistory = false) {
-  if (projectId.value) api.workspace(profile.value, id)
+  scheduledPage.value = false
+  if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id)
   else if (sessions.value.find(row => row.id === id)?.cwd || sessions.value.find(row => row.id === id)?.source === 'desktop') api.workspace(profile.value, id)
   projectView.value = false; projectsPage.value = false; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
@@ -172,7 +202,19 @@ async function chooseSession(id: string, fromHistory = false) {
   subscribeProjectEvents()
   await loadMessages()
   if (current === generation && p === profile.value) {
-    const run = activeRunFor(p, id)
+    if (api.isNative(p) && nativeOutcome(p, id)) {
+      activeRun.value = 'workspace-' + id; sending.value = true; unavailableRun.value = true
+      chatError.value = 'Submission outcome unknown. Inspect saved history and active native state before choosing to send again.'
+      return
+    }
+    let run = activeRunFor(p, id)
+    if (api.isNative(p) && !run) {
+      try {
+        const state = await api.runStatus(p, 'workspace-' + id)
+        if (current !== generation) return
+        if (state.status !== 'completed') run = 'workspace-' + id
+      } catch { chatError.value = 'Native viewer unavailable. Sending is gated until session state can be inspected.'; return }
+    }
     if (run) { activeRun.value = run; sending.value = true; void followRun(current, p, id, run, true) }
   }
 }
@@ -215,7 +257,7 @@ function updateActivityOutputs(history: Message[]) {
 }
 function finishActivities() { progress.value.forEach(item => { item.complete = true }); thinking.value = false }
 function activity(kind: 'thinking' | 'tool', title: string, id?: string) {
-  const found = [...progress.value].reverse().find(item => !item.complete && item.kind === kind && item.title === title && (!id || item.id === id))
+  const found = [...progress.value].reverse().find(item => !item.complete && item.kind === kind && (id ? item.id === id : item.title === title))
   if (found) return found
   const item: Activity = { id: id || localId(), kind, title, content: '', complete: false }
   progress.value.push(item)
@@ -236,6 +278,9 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   const name = typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'Tool call'
   const callId = typeof data.tool_call_id === 'string' ? data.tool_call_id : undefined
   if (frame.event === 'assistant.delta' || frame.event === 'message.delta') { finishActivities(); draft.value += delta }
+  else if (frame.event === 'assistant.snapshot') { draft.value = typeof data.text === 'string' ? data.text : '' }
+  else if (frame.event === 'status.update') { nativeStatus.value = String(data.text || '') }
+  else if (frame.event === 'native.notice') { chatError.value = String(data.text || 'Native recovery is bounded.') }
   else if (frame.event === 'assistant.completed' && typeof data.content === 'string') { finishActivities(); draft.value = data.content }
   else if (['assistant.commentary', 'message.interim'].includes(frame.event) && !data.already_streamed && typeof data.text === 'string') draft.value += data.text + '\n\n'
   else if (frame.event === 'tool.started') {
@@ -267,11 +312,16 @@ function createIdempotencyKey(): string {
   return 'turn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
 }
 async function send(text: string, attachments: Attachment[] = []) {
-  if (sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
+  if (session.value && api.isNative(profile.value) && nativeOutcome(profile.value, session.value)) {
+    activeRun.value = 'workspace-' + session.value; sending.value = true; unavailableRun.value = true
+    chatError.value = 'Submission outcome unknown. Inspect history and native state before sending again.'
+    return
+  }
+  if (scheduledPage.value || sending.value || creating.value || approvalPending.value || offline.value || !canStream.value || modelsLoading.value) return
   if ((projectView.value || !session.value) && !await createSession()) return
   if (sending.value || approvalPending.value) return
   historyGeneration++; visibilityAbort?.abort()
-  sending.value = true; thinking.value = true; activeRun.value = ''; lastSeq = -1; runStatus.value = ''; approval.value = undefined; reconnectNotice.value = false; chatError.value = ''; draft.value = ''; progress.value = []
+  sending.value = true; thinking.value = true; activeRun.value = ''; lastSeq = -1; runStatus.value = ''; nativeStatus.value = ''; approval.value = undefined; reconnectNotice.value = false; chatError.value = ''; draft.value = ''; progress.value = []
   activity('thinking', 'Thinking…')
   priorUserCount.value = messages.value.filter(item => item.role === 'user').length
   optimisticMessage.value = { id: 'pending-' + localId(), role: 'user', content: [
@@ -280,13 +330,22 @@ async function send(text: string, attachments: Attachment[] = []) {
   messages.value.push(optimisticMessage.value)
   streamAbort = new AbortController(); const current = generation, streamCurrent = ++streamGeneration, p = profile.value, s = session.value
   let completed = false
+  let nativeAttempt: string | undefined
   try {
     const parts: unknown[] = [{ type: 'text', text: text || 'Please examine the attached files.' }]
     for (const file of attachments) {
-      if (file.type.startsWith('image/')) parts.push({ type: 'image_url', image_url: { url: file.data } })
+      if (file.type.startsWith('image/')) {
+        if (api.isNative(p)) {
+          const extension = file.type === 'image/jpeg' ? 'jpg' : file.type.slice(6)
+          const uploaded = await api.upload(p, { ...file, name: 'image.' + extension })
+          if (current !== generation) return
+          parts.push({ type: 'text', text: `Attached image ${file.name.replace(/[\r\n]/g, ' ')}: ${uploaded.path}` })
+        }
+        parts.push({ type: 'image_url', image_url: { url: file.data } })
+      }
       else { const uploaded = await api.upload(p, file); if (current !== generation) return; parts.push({ type: 'text', text: `Attached file ${file.name}: ${uploaded.path}` }) }
     }
-    if (!api.isWorkspace(p, s)) {
+    if (!api.isNative(p) && !api.isWorkspace(p, s)) {
       // Admission isn't aborted on navigation: record the accepted run even if
       // its viewer has left. Never repeat POST to repair a dropped event stream.
       const requestKey = idempotencyKeyFor(p, s) || createIdempotencyKey()
@@ -306,7 +365,13 @@ async function send(text: string, attachments: Attachment[] = []) {
       await followRun(current, p, s, made.run_id, false)
       return
     }
+    if (api.isNative(p)) {
+      nativeAttempt = uncertainNativeOutcome(p, s)
+      activeRun.value = 'workspace-' + s
+      rememberRun(p, s, activeRun.value)
+    }
     for await (const frame of api.stream(p, s, attachments.length ? parts : text, streamAbort.signal, model.value || defaultModel.value, provider.value)) {
+      if (api.isNative(p) && frame.event === 'run.started') settleNativeOutcome(p, s, nativeAttempt)
       if (current !== generation || streamCurrent !== streamGeneration) return
       const outcome = reduceFrame(frame)
       if (outcome === 'completed') { completed = true; break }
@@ -320,7 +385,19 @@ async function send(text: string, attachments: Attachment[] = []) {
       if (cause instanceof ApiError && cause.status >= 500) {
         try { await loadMessages() } catch { /* Preserve current history on refresh failure. */ }
       }
+      if (api.isNative(p) && nativeOutcome(p, s)) {
+        if (cause instanceof NativeError && cause.outcome === 'rejected') {
+          settleNativeOutcome(p, s, nativeAttempt); forgetRun(p, s, activeRun.value); activeRun.value = ''
+          if (optimisticMessage.value) messages.value = messages.value.filter(row => row.id !== optimisticMessage.value?.id)
+          optimisticMessage.value = undefined; suggestedPrompt.value = text
+        } else {
+          unavailableRun.value = true
+          chatError.value = 'Submission outcome unknown. Inspect saved history and native state before sending again.'
+          return
+        }
+      }
       chatError.value = cause instanceof Error ? cause.message : 'Send failed. Check session history before retrying.'
+      if (api.isNative(p) && activeRun.value) { reconnectNotice.value = true; void followRun(current, p, s, activeRun.value, false) }
     }
   }
   finally { if (current === generation && !activeRun.value) { sending.value = false; finishActivities() } }
@@ -331,6 +408,11 @@ async function finishRun(current: number, p: string, s: string, run: string) {
   finishActivities(); approvalPending.value = false; approval.value = undefined
   if (!await loadMessages()) { reconnectNotice.value = true; throw new Error('Run ended, but history could not be loaded. Retry loading history before starting another turn.') }
   if (current !== generation) return
+  if (api.isNative(p) && nativeOutcome(p, s)) {
+    unavailableRun.value = true
+    chatError.value = 'Native activity ended, but the submission outcome remains unknown. Review saved history before unlocking.'
+    return
+  }
   draft.value = ''; lastSeq = -1; forgetRun(p, s, run); activeRun.value = ''; sending.value = false; reconnectNotice.value = false; eventStreamExpired.value = false
   void loadSessions()
 }
@@ -472,6 +554,18 @@ async function approveRun(choice: string) {
   catch { if (current === generation) chatError.value = 'Could not resolve approval. Refresh run state and retry.' }
   finally { actionBusy.value = false }
 }
+async function answerClarification() {
+  const request = approval.value?.request_id
+  if (typeof request !== 'string' || actionBusy.value) return
+  actionBusy.value = true
+  try {
+    const answers = Object.fromEntries(Object.entries(clarificationAnswers.value).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : value]))
+    Object.assign(answers, customClarification.value)
+    await api.clarify(profile.value, activeRun.value, request, answers)
+    approvalPending.value = false; approval.value = undefined; clarificationAnswers.value = {}; customClarification.value = {}
+  } catch { chatError.value = 'Clarification could not be settled. Refresh native state before retrying.' }
+  finally { actionBusy.value = false }
+}
 async function steerRun(text: string) {
   const p = profile.value, run = activeRun.value, current = generation
   if (!text.trim() || actionBusy.value || !run) return
@@ -483,6 +577,9 @@ async function steerRun(text: string) {
 
 async function visibilityChange() {
   if (document.visibilityState !== 'visible') return
+  // Do not replace the submit coroutine while its admission acknowledgement is
+  // pending (or unknown). Background state can be idle before that RPC admits.
+  if (session.value && api.isNative(profile.value) && nativeOutcome(profile.value, session.value)) return
   refreshProjects()
   if (activeRun.value && !eventStreamExpired.value) { void followRun(generation, profile.value, session.value, activeRun.value, false); return }
   if (!session.value) return
@@ -504,6 +601,13 @@ async function visibilityChange() {
 async function releaseUnavailableRun() {
   const current = generation, p = profile.value, s = session.value, run = activeRun.value
   if (!unavailableRun.value) return
+  if (api.isNative(p)) {
+    try {
+      const state = await api.runStatus(p, run)
+      if (state.status !== 'completed') { unavailableRun.value = false; void followRun(current, p, s, run, true); return }
+    } catch { chatError.value = 'Native state could not be inspected. Sending remains locked.'; return }
+    settleNativeOutcome(p, s)
+  }
   const previousStatus = runStatus.value; runStatus.value = 'stopped'
   if (!await loadMessages() || current !== generation) { if (current === generation) runStatus.value = previousStatus; return }
   lastSeq = -1; forgetRun(p, s, run); streamAbort?.abort(); activeRun.value = ''; sending.value = false; unavailableRun.value = false; reconnectNotice.value = false; eventStreamExpired.value = false; approvalPending.value = false; draft.value = ''; progress.value = []
@@ -513,12 +617,12 @@ function onlineChange() { offline.value = !navigator.onLine; if (!offline.value)
 function pop() {
   const state = urlState()
   const pending = chooseProfile(state.profile, true), current = generation
-  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 }
 function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
 function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
 </script>
 <template>
@@ -526,6 +630,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
     <aside class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-5 bg-[#171717] px-[18px] py-6 text-[#f4f4f4] shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-[#171717] dark:text-[#f4f4f4]" :class="drawer ? 'translate-x-0' : '-translate-x-full'" aria-label="Navigation">
       <div class="brand flex items-center gap-2.5 px-2 text-2xl font-semibold"><span class="brand-mark grid size-9 shrink-0 place-items-center text-white">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" aria-label="Close navigation" @click="closeDrawer">×</button></div>
       <button class="projects-nav flex min-h-[48px] items-center gap-3 rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" :aria-current="projectsPage || projectView ? 'page' : undefined" @click="showProjects()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" /></svg>Projects</button>
+      <button class="scheduled-nav flex min-h-[48px] items-center gap-3 rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" :aria-current="scheduledPage ? 'page' : undefined" @click="showScheduled()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>Scheduled</button>
       <SessionSidebar heading="Recents" :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline || creating" @select="recentSession" @create="newChat" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
       <div class="sidebar-foot mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile</label>
@@ -539,25 +644,18 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
-        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ projectsPage ? 'Projects' : (projectView ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
+        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : (projectView ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
         <span class="topbar-profile max-w-[30%] truncate rounded-full bg-[#303030] px-3 py-1.5 text-xs text-[#b4b4b4]">{{ profile || 'Current profile' }}</span>
         <span class="grid size-8 shrink-0 place-items-center text-2xl" aria-label="ChatHermes logo">✳</span>
         <button v-if="embedded" class="shrink-0 rounded-lg px-2 py-2 text-sm hover:bg-[#303030]" aria-label="Back to dashboard" @click="exitPlugin">←<span class="hidden min-[701px]:inline"> Back to dashboard</span></button>
       </header>
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
-      <div v-if="reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
-      <div v-if="!activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
-      <div v-if="activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : 'Working…' }}</div>
-      <div v-if="approvalPending" class="notice px-5 py-3 text-sm" role="status">
-        <p>Approval required{{ approval?.command ? ': ' + approval.command : '' }}</p>
-        <template v-if="activeRun && !activeRun.startsWith('workspace-')">
-          <button v-for="choice in (Array.isArray(approval?.choices) ? approval.choices : [])" :key="String(choice)" class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55" :disabled="actionBusy" @click="approveRun(String(choice))">{{ choice === 'once' ? 'Allow once' : choice === 'deny' ? 'Deny' : choice === 'session' ? 'Allow for session' : 'Always allow' }}</button>
-        </template>
-        <p v-else>Resolve this workspace approval in Hermes.</p>
-      </div>
-
-      <div v-if="chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="unavailableRun" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
-      <ProjectsPage v-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
+      <div v-if="!scheduledPage && reconnectNotice" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
+      <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
+      <div v-if="!scheduledPage && activeRun && !reconnectNotice" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">{{ runStatus === 'waiting_for_approval' ? approval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : nativeStatus || 'Working…' }}</div>
+      <div v-if="!scheduledPage && chatError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ chatError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="unavailableRun" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
+      <ScheduledPage v-if="scheduledPage" :key="`${profile}:${scheduledPageKey}`" :profile="profile" :chat-busy="creating" :offline="offline" :discussion-error="scheduledDiscussionError" @discuss="discussScheduled" />
+      <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
       <section v-else-if="projectView" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
         <button class="project-back" @click="showProjects(!!selectedProject?.archived)">← Projects</button>
         <p v-if="projectLoading" role="status">Loading Project…</p>
@@ -574,8 +672,27 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button class="mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base" @click="chooseProject('')">Other chats</button>
         </template>
       </section>
-      <ChatTranscript v-else :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest" />
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="projectId || api.isWorkspace(profile, session) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" @stop="stopRun" @steer="steerRun" :suggested-prompt="suggestedPrompt" :reason="projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @send="send" />
+      <ChatTranscript v-else :profile="profile" :messages="messages" :draft="draft" :loading="chatLoading" :progress="progress" :thinking="thinking" :home="!session" @suggest="suggest">
+        <template #request>
+      <div v-if="approvalPending" class="notice px-5 py-3 text-sm" role="status">
+        <p v-if="approval?.kind !== 'clarify'">Approval required{{ approval?.command ? ': ' + approval.command : '' }}</p>
+        <template v-if="activeRun && (api.isNative(profile) || !activeRun.startsWith('workspace-')) && approval?.kind !== 'clarify'">
+          <button v-for="choice in (Array.isArray(approval?.choices) ? approval.choices : [])" :key="String(choice)" class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55" :disabled="actionBusy" @click="approveRun(String(choice))">{{ choice === 'once' ? 'Allow once' : choice === 'deny' ? 'Deny' : choice === 'session' ? 'Allow for session' : 'Always allow' }}</button>
+        </template>
+        <form v-if="approval?.kind === 'clarify'" @submit.prevent="answerClarification">
+          <label v-for="question in (approval.questions as { qid: string; question: string; choices?: string[]; multi_select?: boolean }[])" :key="question.qid" class="block my-3">
+            {{ question.question }}
+            <select v-if="question.choices?.length" :multiple="question.multi_select" v-model="clarificationAnswers[question.qid]" class="block rounded-lg bg-[#303030] p-2 text-base"><option value="">Select an answer</option><option v-for="choice in question.choices" :key="choice">{{ choice }}</option></select>
+            <input v-if="!question.choices?.length" v-model="clarificationAnswers[question.qid]" class="block w-full rounded-lg bg-[#303030] p-2 text-base" />
+            <input v-else v-model="customClarification[question.qid]" placeholder="Or enter your own answer" :aria-label="question.question + ' — custom answer'" class="mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base" />
+          </label>
+          <button :disabled="actionBusy" class="rounded-lg bg-[#303030] p-2 text-base">Submit answers</button>
+        </form>
+        <p v-else-if="!api.isNative(profile) && activeRun.startsWith('workspace-')">Resolve this workspace approval in Hermes.</p>
+      </div>
+        </template>
+      </ChatTranscript>
+      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || chatLoading || approvalPending || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="sending" :stoppable="!!activeRun && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : approvalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
     </main>
   </div>
 </template>

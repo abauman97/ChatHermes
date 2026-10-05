@@ -1,12 +1,10 @@
+import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
 test('loaded Projects do not shift during background refreshes', async ({ page }, testInfo) => {
   await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
-  await page.goto('/login?next=%2Fchathermes%3Fview%3Dprojects')
-  await page.getByLabel('Username').fill('tester')
-  await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await page.waitForURL(/\/sessions$/)
+  await signIn(page, '/chathermes?view=projects')
+  await page.waitForURL(url => url.pathname !== '/login')
   const plugin = page.locator('.chathermes-embedded')
   await page.goto('/chathermes?view=projects')
   await expect(plugin.locator('.projects-page')).toBeVisible()

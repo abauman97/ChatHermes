@@ -1,3 +1,4 @@
+import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
 // Only plugin data is mocked. The host dashboard, authentication, React SDK
@@ -13,36 +14,34 @@ test('ordered streamed turn, reload, scroll and disclosures in dashboard plugin'
   ]
   await page.route(`**${api}/**`, async route => {
     const path = new URL(route.request().url()).pathname.slice(api.length)
-    if (path.endsWith('/chat/stream')) return route.fallback()
+    if (path.endsWith('/run_stream/events')) return route.fallback()
     let body: unknown = {}
     if (path === '/profiles') body = { profiles: [{ name: 'test-profile' }] }
     else if (path === '/projects') body = { projects: [], scoped_session_ids: [] }
     else if (path === '/api/sessions' && route.request().method() === 'POST') body = { id: 'stream-test' }
     else if (path === '/api/sessions') body = { sessions: [{ id: 'stream-test', title: 'Streaming test' }] }
     else if (path.endsWith('/messages')) body = completed ? history : []
-    else if (path === '/v1/capabilities') body = { features: { session_chat_streaming: true }, endpoints: { session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
+    else if (path === '/v1/capabilities') body = { features: { run_events_sse: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' } } }
+    else if (path === '/v1/runs') body = { run_id: 'run_stream', status: 'started' }
+    else if (path === '/v1/runs/run_stream') body = { status: completed ? 'completed' : 'running' }
     else if (path === '/v1/models') body = { data: [{ id: 'Instant' }], default_model: 'Instant' }
     else if (path === '/api/model/options') body = { providers: [], model: 'Instant', provider: '' }
     return route.fulfill({ json: body })
   })
   await page.addInitScript(() => {
     const original = window.fetch.bind(window)
-    const state = window as unknown as { emitFrame: (event: string, data: unknown) => void; finishFrames: () => void }
+    const state = window as unknown as { emitFrame: (event: string, data: unknown) => void }
     window.fetch = (input, init) => {
-      if (String(input).includes('/api/plugins/chathermes/') && String(input).endsWith('/chat/stream')) {
+      if (String(input).includes('/api/plugins/chathermes/') && String(input).includes('/run_stream/events')) {
         const encoder = new TextEncoder()
         return Promise.resolve(new Response(new ReadableStream({ start(controller) {
           state.emitFrame = (event, data) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
-          state.finishFrames = () => controller.close()
         } }), { headers: { 'content-type': 'text/event-stream' } }))
       }
       return original(input, init)
     }
   })
-  await page.goto('/login?next=/chathermes')
-  await page.getByLabel('Username').fill('tester')
-  await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await signIn(page, '/chathermes')
   await expect(page.locator('.chathermes-embedded')).toBeVisible()
   const textarea = page.getByRole('textbox', { name: 'Message Hermes' })
   await textarea.fill('Inspect this project')
@@ -52,6 +51,7 @@ test('ordered streamed turn, reload, scroll and disclosures in dashboard plugin'
   }, { event, data })
   await expect(page.locator('.message.user').last()).toContainText('Inspect this project')
   await textarea.click(); await expect(textarea).toBeFocused()
+  await page.waitForFunction(() => typeof (window as unknown as { emitFrame?: unknown }).emitFrame === 'function')
   await emit('reasoning.delta', { delta: 'Inspecting files' })
   await emit('tool.started', { tool_call_id: 'call', tool_name: 'terminal', args: { command: 'test' } })
   await expect(page.locator('.activity[open]')).toHaveCount(1)
@@ -63,7 +63,7 @@ test('ordered streamed turn, reload, scroll and disclosures in dashboard plugin'
   await emit('tool.completed', { tool_call_id: 'call', output: 'test output', duration_s: 1.8 })
   await emit('reasoning.delta', { delta: 'Explain findings\n'.repeat(200) })
   const transcript = page.getByRole('log', { name: 'Conversation' })
-  await expect(page.locator('.activity[open]')).toHaveCount(2)
+  await expect(page.locator('.activity[open]')).toHaveCount(1)
   await transcript.evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
   const before = await transcript.evaluate(element => element.scrollTop)
   await emit('assistant.delta', { delta: '**Finished**\n\n' + 'More detail\n\n'.repeat(80) })
@@ -77,9 +77,8 @@ test('ordered streamed turn, reload, scroll and disclosures in dashboard plugin'
   await page.screenshot({ path: testInfo.outputPath('reasoning-expanded.png') })
   completed = true
   await emit('assistant.completed', { content: '**Finished**' }); await emit('run.completed', {})
-  await page.evaluate(() => (window as unknown as { finishFrames: () => void }).finishFrames())
   await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible()
-  await expect(page.locator('.activity')).toHaveCount(4)
+  await expect(page.locator('.activity')).toHaveCount(3)
   await page.screenshot({ path: testInfo.outputPath('completed.png') })
   await page.reload()
   await expect(page.locator('.message.assistant').last()).toContainText('Finished')

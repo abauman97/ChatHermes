@@ -399,7 +399,7 @@ async def test_workspace_stream_resumes_stored_cwd_and_adapts_events_model_and_i
     calls, _, _ = rpc
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
         response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream?profile=alpha', json={
-            'input': [{'type': 'text', 'text': 'Actual user text'}, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,aGVsbG8='}}],
+            'input': [{'type': 'text', 'text': 'Actual user text'}, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,iVBORw0KGgo='}}],
             'model': 'native-model', 'provider': 'native-provider'})
         assert response.status_code == 200
         assert 'event: assistant.delta' in response.text
@@ -407,7 +407,7 @@ async def test_workspace_stream_resumes_stored_cwd_and_adapts_events_model_and_i
         assert 'workspace-stored' in response.text
         assert calls[0] == ('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})
         assert ('config.set', {'profile': 'alpha', 'session_id': 'runtime', 'key': 'model', 'value': 'native-model --session --provider native-provider', 'scope': 'session'}) in calls
-        assert ('image.attach_bytes', {'profile': 'alpha', 'session_id': 'runtime', 'content_base64': 'aGVsbG8='}) in calls
+        assert ('image.attach_bytes', {'profile': 'alpha', 'session_id': 'runtime', 'content_base64': 'iVBORw0KGgo='}) in calls
         assert calls[-1] == ('prompt.submit', {'profile': 'alpha', 'session_id': 'runtime', 'text': 'Actual user text'})
         response = await client.get('/api/plugins/chathermes/workspace/sessions/stored/messages?profile=alpha')
         assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
@@ -586,3 +586,565 @@ async def test_runs_admission_actions_and_replay_cursor(app, monkeypatch):
     assert [json.loads(request.content) for request in seen[:3]] == bodies[:3]
     assert all(request.url.path.startswith('/p/alpha/v1/runs') for request in seen)
     assert seen[-1].url.query == b'last_seq=42'
+
+
+@pytest.fixture
+def scheduled(monkeypatch, tmp_path):
+    import sys
+    import types
+    from contextlib import nullcontext
+    from datetime import datetime
+    homes = {name: tmp_path / name for name in ('default', 'beta')}
+    jobs = {name: [{'id': 'audit', 'name': 'Security Audit', 'enabled': True,
+                    'prompt': KEY, 'base_url': 'private', 'hermes_home': '/secret'}] for name in homes}
+    history = {name: [] for name in homes}
+    messages = {}
+    conversations = {}
+    tips = {}
+    opened = []
+    class DB:
+        def __init__(self, profile): self.profile = profile
+        def list_cron_job_runs(self, job, limit, offset): return history[self.profile][offset:offset + limit]
+        def get_session(self, run): return next((row for row in history[self.profile] if row['id'] == run), None)
+        def get_messages(self, run): return messages.get((self.profile, run), [])
+        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
+            return conversations.get((self.profile, run), self.get_messages(run))
+        def resolve_resume_session_id(self, run): return tips.get((self.profile, run), run)
+        def close(self): pass
+    def open_db(profile, read_only):
+        assert read_only
+        opened.append(profile)
+        return DB(profile)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace(
+        _cron_profile_home=lambda profile: (profile or 'default', homes[profile or 'default']),
+        _call_cron_for_profile=lambda profile, method, *args: jobs[profile],
+        _cron_store_scope=lambda home: nullcontext()))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=open_db))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.cron', types.SimpleNamespace(
+        _iso_to_epoch=lambda value: datetime.fromisoformat(value).timestamp() if value else None,
+        _execution_contains=lambda attempt, stamp, grace: stamp >= attempt['claimed_at'] and (attempt['finished_at'] is None or stamp <= attempt['finished_at'] + grace),
+        _cron_output_run_timestamp=lambda path: datetime.strptime(path.stem, '%Y-%m-%d_%H-%M-%S').timestamp(),
+        _doc_matches_session=lambda stamp, row, grace: row['started_at'] - grace <= stamp <= (row.get('ended_at') or row['started_at']) + grace))
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: [])
+    return homes, jobs, history, messages, opened
+
+
+@run_async
+async def test_scheduled_profile_history_pagination_output_and_redaction(app, scheduled):
+    homes, jobs, history, messages, opened = scheduled
+    history['beta'] = [{'id': f'cron_audit_20260101_{i:06d}', 'source': 'cron', 'started_at': i,
+                        'ended_at': i + 1, 'system_prompt': 'private'} for i in range(530)]
+    run = history['beta'][0]['id']
+    messages['beta', run] = [{'role': 'system', 'content': 'hidden'}, {'role': 'assistant', 'content': KEY},
+                            {'role': 'tool', 'content': 'full tool output', 'tool_name': 'terminal'}]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        listed = await client.get('/api/plugins/chathermes/scheduled?profile=beta')
+        assert listed.status_code == 200
+        assert KEY not in listed.text and '/secret' not in listed.text and 'base_url' not in listed.text
+        page = await client.get('/api/plugins/chathermes/scheduled/runs?profile=beta&job_id=audit&offset=500')
+        assert page.status_code == 200
+        assert len(page.json()['runs']) == 30 and not page.json()['has_more']
+        assert page.json()['runs'][0]['started_at'] == 29
+        assert 'system_prompt' not in page.text
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'profile': 'beta', 'job_id': 'audit', 'run_id': run})
+        assert output.status_code == 200 and KEY not in output.text
+        assert [row['role'] for row in output.json()['messages']] == ['assistant', 'tool']
+        assert output.json()['session_id'] == run
+        denied = await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})
+        assert denied.status_code == 404
+    assert set(opened) == {'default', 'beta'}
+
+
+@run_async
+async def test_scheduled_saved_outputs_mixed_history_and_invalid_selections(app, scheduled):
+    from datetime import datetime
+    homes, jobs, history, messages, _ = scheduled
+    root = homes['default'] / 'cron' / 'output' / 'audit'
+    root.mkdir(parents=True)
+    (root / '2026-01-01_00-00-00.md').write_text('# Old audit\nAll clear')
+    (root / '2026-01-02_00-00-00.md').write_text('Duplicate agent output')
+    (root / '2026-01-03_00-00-00.md').symlink_to(root / '2026-01-01_00-00-00.md')
+    history['default'] = [{'id': 'cron_audit_20260102_000000', 'source': 'cron', 'started_at': datetime(2026, 1, 2).timestamp()}]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        result = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+        assert [row['id'] for row in result.json()['runs']] == ['cron_audit_20260102_000000', 'output:2026-01-01_00-00-00']
+        output = await client.get('/api/plugins/chathermes/scheduled/output?job_id=audit&run_id=output:2026-01-01_00-00-00')
+        assert output.json()['output'] == '# Old audit\nAll clear'
+        for params in ({'job_id': '../audit'}, {'job_id': 'missing'}, {'job_id': 'audit', 'offset': -1}, {'job_id': 'audit', 'limit': 101}):
+            assert (await client.get('/api/plugins/chathermes/scheduled/runs', params=params)).status_code in (404, 422)
+        for run in ('output:../../secret', 'output:2026-01-03_00-00-00', 'cron_other_20260102_000000'):
+            assert (await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})).status_code in (404, 422)
+
+
+@run_async
+async def test_scheduled_internal_failure_does_not_expose_details(app, monkeypatch):
+    def fail(request): raise RuntimeError(KEY + '/private/home')
+    monkeypatch.setattr(plugin, '_scheduled_context', fail)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled')
+    assert response.status_code == 502 and KEY not in response.text and '/private' not in response.text
+
+
+@run_async
+async def test_scheduled_failed_execution_without_output_is_inspectable(app, scheduled, monkeypatch):
+    import sys
+    import types
+    homes, *_ = scheduled
+    run = 'execution:' + 'a' * 32
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: [
+        {'id': run, 'started_at': 100, 'source': 'cron_execution', 'title': 'Failed', 'end_reason': 'failed'}])
+    monkeypatch.setitem(sys.modules, 'cron.executions', types.SimpleNamespace(get_execution=lambda identifier: {
+        'job_id': 'audit', 'claimed_at': '2026-01-01T00:00:00', 'error': KEY}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        page = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+        assert page.json()['runs'][0]['id'] == run
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'job_id': 'audit', 'run_id': run})
+        assert output.status_code == 200 and output.json()['messages'] == [] and KEY not in output.text
+
+
+def test_scheduled_execution_ledger_reads_older_pages_in_profile_scope(monkeypatch, tmp_path):
+    import sys
+    import types
+    from contextlib import contextmanager
+    from datetime import datetime, timedelta
+    scoped = []
+    @contextmanager
+    def scope(home):
+        scoped.append(home)
+        yield
+        scoped.pop()
+    rows = [{'id': f'{i:032x}', 'claimed_at': (datetime(2026, 1, 1) + timedelta(seconds=i)).isoformat(), 'status': 'failed'} for i in range(520)]
+    rows.reverse()
+    calls = []
+    def page(*, job_id, limit, before_claimed_at):
+        assert scoped == [tmp_path]
+        assert job_id == 'audit'
+        calls.append(before_claimed_at)
+        return [row for row in rows if not before_claimed_at or row['claimed_at'] < before_claimed_at][:limit]
+    monkeypatch.setitem(sys.modules, 'cron.executions', types.SimpleNamespace(list_executions=page))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace(_cron_store_scope=scope))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.cron', types.SimpleNamespace(_iso_to_epoch=lambda value: datetime.fromisoformat(value).timestamp() if value else None))
+    result = plugin._scheduled_attempts(tmp_path, 'audit')
+    assert len(result) == 520 and len(calls) == 2
+    assert result[-1]['id'] == 'execution:' + '0' * 32
+    assert not scoped
+
+
+@run_async
+async def test_scheduled_older_hermes_returns_compatibility_error(app, monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_cron', types.SimpleNamespace())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled')
+    assert response.status_code == 503
+    assert response.json()['detail'] == 'Scheduled history is unavailable in this Hermes version'
+
+
+@run_async
+async def test_scheduled_distinct_failed_attempts_are_never_deduplicated(app, scheduled, monkeypatch):
+    import sys
+    import types
+    attempts = [
+        {'id': 'execution:' + '1' * 32, 'source': 'cron_execution', 'started_at': 101, 'ended_at': 102, 'title': 'Failed'},
+        {'id': 'execution:' + '2' * 32, 'source': 'cron_execution', 'started_at': 102, 'ended_at': 103, 'title': 'Failed'},
+    ]
+    monkeypatch.setattr(plugin, '_scheduled_attempts', lambda home, job: attempts)
+    monkeypatch.setattr(plugin, '_scheduled_docs', lambda home, job: [])
+    monkeypatch.setattr(plugin, '_scheduled_job', lambda profile, job: {'id': job})
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=lambda profile, read_only: type('DB', (), {'list_cron_job_runs': lambda self, job, limit, offset: [], 'close': lambda self: None})()))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        response = await client.get('/api/plugins/chathermes/scheduled/runs?job_id=audit')
+    assert response.status_code == 200, response.text
+    assert len(response.json()['runs']) == 2
+
+
+@run_async
+async def test_scheduled_reads_complete_compressed_run_lineage(app, scheduled, monkeypatch):
+    import sys
+    import types
+    root = 'cron_audit_20260101_000000'
+    child = root + '_child'
+    class DB:
+        def get_session(self, run):
+            return {'id': run, 'source': 'cron', 'started_at': 100} if run in (root, child) else None
+        def resolve_resume_session_id(self, run):
+            assert run == root
+            return child
+        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
+            assert run == child and include_ancestors and include_compacted
+            return [{'role': 'system', 'content': 'hidden'},
+                    {'role': 'tool', 'tool_name': 'terminal', 'content': 'Earlier audit checks'},
+                    {'role': 'assistant', 'content': 'Final answer from compressed child', 'reasoning_content': 'Audited dependencies'}]
+        def close(self): pass
+    def open_db(profile, read_only):
+        assert profile == 'beta' and read_only
+        return DB()
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', types.SimpleNamespace(_open_session_db_for_profile=open_db))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        output = await client.get('/api/plugins/chathermes/scheduled/output', params={'profile': 'beta', 'job_id': 'audit', 'run_id': root})
+    assert output.status_code == 200
+    assert output.json()['session_id'] == root
+    assert [row['content'] for row in output.json()['messages']] == ['Earlier audit checks', 'Final answer from compressed child']
+    assert output.json()['messages'][-1]['reasoning_content'] == 'Audited dependencies'
+
+@run_async
+async def test_native_rollout_gate_is_explicit_and_cannot_dispatch(app, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Capability gate must not dispatch/admit native work')
+    monkeypatch.setattr(plugin._RpcTransport, 'call', forbidden)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        result = await client.get('/api/plugins/chathermes/chat/capabilities')
+    assert result.status_code == 200
+    body = result.json()
+    assert body['admission'] is True and body['mode'] == 'native-bounded'
+    assert not any(body['guarantees'].values())
+    for method in ('prompt.submit', 'session.resume', 'session.events.since', 'config.set', 'image.attach_bytes', 'chat.submit'):
+        assert plugin._chat_gateway.response({'jsonrpc': '2.0', 'id': 1, 'method': method})['error']['code'] == -32601
+    assert KEY not in result.text
+
+
+@pytest.mark.parametrize('frame', [[], None, {'jsonrpc': '2.0', 'id': True},
+    {'jsonrpc': '2.0', 'id': {}}, {'jsonrpc': '2.0', 'id': 'x' * 129}])
+def test_native_probe_rejects_invalid_frames(frame):
+    assert plugin._chat_gateway.response(frame)['error']['code'] == -32600
+
+
+def test_native_probe_preserves_numeric_string_ids_and_rejects_hidden_params():
+    for rid in (0, 7, '7'):
+        assert plugin._chat_gateway.response({'jsonrpc': '2.0', 'id': rid, 'method': 'gateway.ping'}) == {
+            'jsonrpc': '2.0', 'id': rid, 'result': {'ok': True}}
+    for params in ({'profile': 'other'}, {'session_id': 'foreign'}, [], None):
+        assert plugin._chat_gateway.response({'jsonrpc': '2.0', 'id': 1, 'method': 'chat.capabilities', 'params': params})['error']['code'] == -32602
+    assert plugin._chat_gateway.response({'jsonrpc': '2.0', 'id': 1, 'result': {'choice': 'allow'}})['error']['code'] == -32602
+
+
+@run_async
+async def test_transport_async_response_request_distinction_and_recursive_redaction(monkeypatch):
+    import sys
+    import types
+    def dispatch(req, transport):
+        # A native server request is not an RPC reply even if its ID collides.
+        transport.write({'jsonrpc': '2.0', 'id': req['id'], 'method': 'approval', 'params': {'ticket': 'private'}})
+        transport.write({'id': req['id'], 'result': {'value': KEY, 'nested': {'authorization': 'private'}}})
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None,
+                                   _close_sessions_for_transport=lambda t, **kw: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
+    transport = plugin._RpcTransport()
+    transport.secret = KEY
+    try:
+        assert await transport.call('session.resume', {}) == {'value': '[redacted]', 'nested': {'authorization': '[redacted]'}}
+        request = await transport.events.get()
+        assert request['method'] == 'approval' and request['params']['ticket'] == '[redacted]'
+        transport.write({'id': 'late', 'result': {}})
+        await asyncio.sleep(0)
+        assert transport.events.empty()
+        assert not transport.pending
+    finally:
+        transport.close()
+
+
+@run_async
+async def test_transport_overflow_wakes_waiters_and_event_consumer(monkeypatch):
+    import sys
+    import types
+    attached = []
+    def dispatch(req, transport):
+        attached.append(transport)
+        for index in range(257):
+            transport.write({'method': 'event', 'params': {'type': 'message.delta', 'seq': index}})
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None,
+                                   _close_sessions_for_transport=lambda t, **kw: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
+    transport = plugin._RpcTransport()
+    with pytest.raises(plugin.HTTPException) as exc:
+        await asyncio.wait_for(transport.call('session.resume', {}), 2)
+    assert exc.value.status_code == 503
+    assert transport.closed and not transport.pending
+    frames = []
+    while not transport.events.empty():
+        frames.append(transport.events.get_nowait())
+    assert frames[-1]['method'] == 'transport.closed'
+    with pytest.raises(plugin.HTTPException):
+        await transport.call('session.resume', {})
+
+
+@run_async
+async def test_all_workspace_content_is_validated_before_native_mutation(app, rpc):
+    calls, _, _ = rpc
+    valid_image = {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,iVBORw0KGgo='}}
+    bodies = [
+        {'input': [valid_image, {'type': 'text', 'text': None}], 'model': 'valid-model'},
+        {'input': [valid_image, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,%%%'}}]},
+        {'input': [{'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,iVBORw0KGgo='}}]},
+        {'input': [valid_image] * 9}, {'input': 'hello', 'provider': 'litellm'},
+        {'input': 'hello', 'profile': 'foreign'}, {'input': ''},
+    ]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for body in bodies:
+            response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream', json=body)
+            assert response.status_code in (422, 413)
+    assert calls == []
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('valid', None), ('no-ticket', 4401), ('query-secret', 4401), ('no-auth', 4401),
+    ('no-identity', 4401), ('bad-origin', 4403), ('missing-origin', 4403),
+    ('disabled', 4404), ('missing-profile', 4403), ('oversize', 1009), ('disable-after-accept', 4404),
+])
+@run_async
+async def test_native_socket_auth_gates_before_accept_and_runtime_disable(monkeypatch, case, expected):
+    import sys
+    import types
+    from fastapi import WebSocketDisconnect
+    gate = plugin._chat_gateway
+    enabled = [True]
+    monkeypatch.setattr(gate, '_enabled', lambda: case != 'disabled' and enabled[0])
+    def profile(ws):
+        if case == 'missing-profile':
+            raise plugin.HTTPException(404, 'private profile detail')
+    monkeypatch.setattr(gate, '_profile', profile)
+    def auth(ws):
+        if case != 'no-identity':
+            ws._hermes_auth_identity = {'user_id': 'fixture-user', 'provider': 'basic'}
+        return ('invalid' if case == 'no-auth' else None, 'ticket-subprotocol')
+    auth_module = types.SimpleNamespace(
+        _gateway_ws_ticket_from_subprotocol=lambda ws: ('' if case == 'no-ticket' else 'ephemeral', 'ok'),
+        _ws_auth_reason=auth, _ws_request_is_allowed=lambda ws: case != 'bad-origin')
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_chat', auth_module)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server', types.SimpleNamespace(app=types.SimpleNamespace(state=types.SimpleNamespace(auth_required=True))))
+    class WS:
+        headers = {'origin': '' if case == 'missing-origin' else 'https://dashboard.test'}
+        query_params = {'ticket': 'must-not-be-accepted'} if case == 'query-secret' else {}
+        accepted = False
+        closes = []
+        frames = []
+        received = False
+        async def accept(self, subprotocol):
+            assert subprotocol == 'hermes-gateway-v1'
+            self.accepted = True
+        async def close(self, code):
+            self.closes.append(code)
+        async def send_json(self, frame):
+            self.frames.append(frame)
+        async def receive_text(self):
+            if self.received:
+                raise WebSocketDisconnect()
+            self.received = True
+            if case == 'disable-after-accept':
+                enabled[0] = False
+            if case == 'oversize':
+                return 'x' * (gate.MAX_FRAME_BYTES + 1)
+            return '{"jsonrpc":"2.0","id":1,"method":"prompt.submit"}'
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None,
+        unregister_live_transport=lambda t: None, _close_sessions_for_transport=lambda *a, **kw: None)
+    requests = types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server, server_requests=requests))
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda ws: plugin._RpcTransport())
+    ws = WS()
+    await gate.socket(ws, plugin)
+    if expected:
+        assert ws.closes == [expected]
+        assert ws.accepted == (case in ('oversize', 'disable-after-accept'))
+    else:
+        assert ws.accepted and ws.frames[0]['method'] == 'chat.ready'
+        assert ws.frames[-1]['error']['code'] == 409
+    assert 'ephemeral' not in str(ws.frames) and KEY not in str(ws.frames)
+
+
+@run_async
+async def test_rpc_timeout_cleans_correlation_and_late_response_is_discarded(monkeypatch):
+    import sys
+    import types
+    requests = []
+    server = types.SimpleNamespace(dispatch=lambda request, transport: requests.append(request),
+                                   unregister_live_transport=lambda t: None, _close_sessions_for_transport=lambda t, **kw: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server))
+    transport = plugin._RpcTransport()
+    transport.timeout = 0.01
+    try:
+        with pytest.raises(plugin.HTTPException) as exc:
+            await transport.call('session.resume', {})
+        assert exc.value.status_code == 503 and not transport.pending
+        transport.write({'id': requests[0]['id'], 'result': {'session_id': 'late'}})
+        await asyncio.sleep(0)
+        assert transport.events.empty()
+    finally:
+        transport.close()
+
+
+@run_async
+async def test_native_facade_profile_binding_queue_only_and_image_gate(monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            if method == 'session.resume':
+                assert params['profile'] == 'test-profile' and params['session_id'] == 'stored'
+                assert params['omit_messages'] is True
+                return {'session_id': 'runtime', 'running': True}
+            return {'status': 'queued', 'user_row_id': 4}
+    async def resume(transport, profile, stored):
+        assert profile == 'test-profile' and stored == 'stored'
+        return {'session_id': 'runtime', 'running': True}
+    monkeypatch.setattr(plugin, '_workspace_resume', resume)
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    monkeypatch.setattr(plugin._native_channel, 'register_profile_secrets', lambda *args: None)
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'test-profile')
+    assert (await channel.operation('chat.attach', {'session_id': 'stored'}))['running']
+    result = await channel.operation('chat.submit', {'input': 'hello'})
+    assert result['status'] == 'queued' and result['crash_safe_idempotency'] is False
+    assert calls[-1:] == [('prompt.submit', {'profile': 'test-profile', 'session_id': 'runtime', 'text': 'hello', 'queued': True})]
+    with pytest.raises(plugin.HTTPException):
+        await channel.operation('chat.attach', {'session_id': 'foreign'})
+    with pytest.raises(plugin.HTTPException):
+        await channel.operation('chat.replay', {'last_seen': True})
+    with pytest.raises(plugin.HTTPException):
+        await channel.operation('prompt.submit', {'profile': 'default'})
+    assert len(calls) == 2
+
+
+@run_async
+@pytest.mark.parametrize('error_code', [409, 503])
+async def test_native_submit_timeout_is_unknown_not_rejected(monkeypatch, error_code):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    class Transport:
+        async def call(self, *args):
+            raise plugin.HTTPException(error_code, 'Hermes gateway RPC unavailable')
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'default')
+    channel.runtime = 'runtime'
+    result = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'hello'}})
+    assert result['error']['outcome'] == 'unknown'
+
+
+@run_async
+async def test_native_attach_and_first_submit_with_resume_schema_without_inline_images(monkeypatch):
+    import sys
+    import types
+    from pydantic import BaseModel, ConfigDict, ValidationError
+
+    # us1's older native contract rejects unknown fields before any resume.
+    class ResumeParams(BaseModel):
+        model_config = ConfigDict(extra='forbid')
+        profile: str
+        session_id: str
+        source: str
+        omit_messages: bool = False
+
+    calls = []
+    def dispatch(request, transport):
+        calls.append(request)
+        if request['method'] == 'session.resume':
+            try:
+                params = ResumeParams.model_validate(request['params'])
+            except ValidationError:
+                return {'id': request['id'], 'error': {'code': 4000,
+                    'message': 'invalid params for session.resume: inline_images: Extra inputs are not permitted'}}
+            assert params.profile == 'alpha' and params.session_id == 'stored'
+            assert params.source == 'desktop' and params.omit_messages
+            result = {'session_id': 'runtime', 'messages': [], 'message_count': 0}
+        else:
+            assert request['method'] == 'prompt.submit'
+            result = {'status': 'streaming', 'user_row_id': 1}
+        return {'id': request['id'], 'result': result}
+
+    server = types.SimpleNamespace(dispatch=dispatch, unregister_live_transport=lambda t: None,
+        _close_sessions_for_transport=lambda t, **kw: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server, server_requests=types.SimpleNamespace()))
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    monkeypatch.setattr(plugin._native_channel, 'register_profile_secrets', lambda *args: None)
+    transport = plugin._RpcTransport()
+    channel = plugin._native_channel.Channel(plugin, transport, 'alpha')
+    try:
+        attached = await channel.handle({'jsonrpc': '2.0', 'id': 'attach', 'method': 'chat.attach', 'params': {'session_id': 'stored'}})
+        assert attached.get('result', {}).get('session_id') == 'runtime', attached
+        submitted = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'first message'}})
+        assert submitted['result']['outcome'] == 'accepted'
+        assert [call['method'] for call in calls] == ['session.resume', 'prompt.submit']
+        assert calls[1]['params'] == {'profile': 'alpha', 'session_id': 'runtime', 'text': 'first message', 'queued': True}
+    finally:
+        transport.close()
+
+
+@run_async
+async def test_native_image_route_validates_mime_and_profile_boundary(app, monkeypatch, tmp_path):
+    image_id = 'a' * 32 + '.png'
+    home = tmp_path / 'default'
+    root = home / 'uploads' / 'chathermes'
+    root.mkdir(parents=True)
+    (root / image_id).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: home if not request.query_params.get('profile') else tmp_path / 'other')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/images/' + image_id)
+        assert response.status_code == 200 and response.headers['content-type'] == 'image/png'
+        assert response.headers['cache-control'] == 'private, no-store'
+        assert (await client.get('/api/plugins/chathermes/images/' + image_id + '?profile=other')).status_code == 404
+        (root / image_id).write_text('<script>fixture</script>')
+        assert (await client.get('/api/plugins/chathermes/images/' + image_id)).status_code == 404
+        (root / image_id).unlink()
+        (root / image_id).symlink_to(tmp_path / 'missing')
+        assert (await client.get('/api/plugins/chathermes/images/' + image_id)).status_code == 404
+
+
+@run_async
+async def test_native_selected_model_must_be_confirmed_before_admission(monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    monkeypatch.setattr(plugin._native_channel, 'model_selection', lambda *args: ('selected-model', 'litellm'))
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append(method)
+            if method == 'session.activate':
+                return {'info': {'model': 'old-model', 'provider': 'litellm'}}
+            return {}
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'default')
+    channel.runtime = 'runtime'
+    result = await channel.handle({'jsonrpc': '2.0', 'id': 'select', 'method': 'chat.submit', 'params': {'input': 'hello', 'model': 'selected-model'}})
+    assert result['error']['code'] == 409 and result['error']['outcome'] == 'rejected'
+    assert calls == ['approval.pending', 'session.activate', 'config.set', 'session.activate']
+    assert 'prompt.submit' not in calls
+
+
+@run_async
+async def test_native_image_directory_symlink_is_rejected(app, monkeypatch, tmp_path):
+    home = tmp_path / 'home'
+    home.mkdir()
+    foreign = tmp_path / 'foreign'
+    root = foreign / 'chathermes'
+    root.mkdir(parents=True)
+    image_id = 'b' * 32 + '.png'
+    (root / image_id).write_bytes(b'\x89PNG\r\n\x1a\nfixture')
+    (home / 'uploads').symlink_to(foreign, target_is_directory=True)
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: home)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        assert (await client.get('/api/plugins/chathermes/images/' + image_id)).status_code == 404
+
+
+@run_async
+@pytest.mark.parametrize('failure', ['http', 'exception'])
+async def test_native_model_preflight_failure_rejects_without_prompt_dispatch(monkeypatch, failure):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    monkeypatch.setattr(plugin._native_channel, 'model_selection', lambda *args: ('selected-model', 'litellm'))
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append(method)
+            if failure == 'http':
+                raise plugin.HTTPException(503, 'Hermes gateway RPC unavailable')
+            raise RuntimeError('private provider detail')
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'default')
+    channel.runtime = 'runtime'
+    result = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'hello', 'model': 'selected-model'}})
+    assert result['error']['outcome'] == 'rejected'
+    assert calls == ['approval.pending']
+    assert 'private provider detail' not in str(result)
