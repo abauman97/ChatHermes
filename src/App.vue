@@ -281,8 +281,9 @@ function reduceFrame(frame: SSEEvent): 'completed' | undefined {
   if (!activeRun.value && typeof data.run_id === 'string') { activeRun.value = data.run_id; rememberRun(profile.value, session.value, data.run_id) }
   if (['message.delta', 'message.interim', 'assistant.delta', 'tool.started', 'reasoning.available', 'run.steered'].includes(frame.event) && !approvalPending.value) runStatus.value = 'running'
   const delta = typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text : ''
-  const name = typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool : 'Tool call'
   const callId = typeof data.tool_call_id === 'string' ? data.tool_call_id : undefined
+  const name = typeof data.tool_name === 'string' ? data.tool_name : typeof data.tool === 'string' ? data.tool
+    : progress.value.find(item => item.kind === 'tool' && callId && item.id === callId)?.toolName || 'Tool call'
   if (frame.event === 'assistant.delta' || frame.event === 'message.delta') { finishActivities(); draft.value += delta }
   else if (frame.event === 'assistant.snapshot') { draft.value = typeof data.text === 'string' ? data.text : '' }
   else if (frame.event === 'status.update') { nativeStatus.value = String(data.text || '') }
