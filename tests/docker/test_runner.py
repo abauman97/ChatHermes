@@ -26,18 +26,20 @@ esac
 exit 0
 ''')
             curl = root / 'curl'
-            curl.write_text('#!/bin/sh\nexit 0\n')
+            curl.write_text('#!/bin/sh\nprintf "curl %s\\n" "$*" >> "$CALLS"\nexit 0\n')
             docker.chmod(0o755)
             curl.chmod(0o755)
             extra_environment = {key: value for key, value in environment.items() if key != 'inspect_config'}
             inspect_config = environment.get('inspect_config', False)
+            expected_host = environment.get('EXPECTED_HOST', 'tcp://172.25.0.2:2375')
             env = {**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
                    'CALLS': str(root / 'calls'), 'DOCKER_HOST': 'tcp://docker:2375',
                    'TMPDIR': str(root),
-                   'CHATHERMES_BIND_ADDRESS': '127.0.0.1',
+                   'CHATHERMES_BIND_ADDRESS': '0.0.0.0',
+                   'CHATHERMES_DAEMON_ADDRESS': '172.25.0.2',
                    'CHATHERMES_DASHBOARD_PORT': '9119',
                    'LLM_API_KEY': '', 'LLM_API_BASE_URL': '', 'LLM_API_MODEL': '',
-                   'EXPECTED_HOST': 'tcp://172.25.0.2:2375', 'CHATHERMES_INSTANCE': 'test', **extra_environment}
+                   'EXPECTED_HOST': expected_host, 'CHATHERMES_INSTANCE': 'test', **extra_environment}
             result = subprocess.run(['sh', str(RUNNER), mode], env=env, capture_output=True, text=True)
             calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
             config = ''
@@ -53,12 +55,12 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('docker endpoint tcp://172.25.0.2:2375', result.stderr.lower())
         self.assertIn('build -f tests/docker/Dockerfile -t chathermes-test:ac28abc9 .', calls)
-        self.assertIn('-p 127.0.0.1:9119:9119', calls)
+        self.assertIn('-p 0.0.0.0:9119:9119', calls)
         self.assertIn('-v chathermes-test-hermes-data:/opt/data', calls)
         self.assertIn('--network-alias model', calls)
         self.assertIn('network create --internal chathermes-test-internal', calls)
         self.assertIn('--name chathermes-test-hermes --network chathermes-test-internal --network-alias hermes', calls)
-        self.assertIn('--name chathermes-test-browser --network chathermes-test-browser -p 127.0.0.1:9119:9119', calls)
+        self.assertIn('--name chathermes-test-browser --network chathermes-test-browser -p 0.0.0.0:9119:9119', calls)
         self.assertIn('network connect chathermes-test-internal chathermes-test-browser', calls)
         self.assertNotIn(':8642', calls)
         self.assertNotIn(':4000', calls)
@@ -151,8 +153,7 @@ exit 0
         self.assertEqual(calls, 'info\n')
 
     def test_invalid_scope_and_missing_real_credentials_fail_before_build(self):
-        for environment in ({'CHATHERMES_BIND_ADDRESS': '0.0.0.0'},
-                            {'CHATHERMES_BIND_ADDRESS': '999.2.3.4'},
+        for environment in ({'CHATHERMES_BIND_ADDRESS': '999.2.3.4'},
                             {'CHATHERMES_BIND_ADDRESS': '1.2.3'},
                             {'CHATHERMES_DASHBOARD_PORT': '65536'}, {},
                             {'LLM_API_KEY': 'key', 'LLM_API_BASE_URL': 'http://provider/v1'},
@@ -161,6 +162,29 @@ exit 0
             result, calls, _ = self.run_launcher('real', **environment)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn('build ', calls)
+
+    def test_wildcard_publish_uses_docker_host_for_browser_and_readiness(self):
+        result, calls, _ = self.run_launcher(CHATHERMES_BIND_ADDRESS='0.0.0.0',
+                                             CHATHERMES_DAEMON_ADDRESS='172.25.0.2',
+                                             CHATHERMES_DASHBOARD_PORT='9123')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-p 0.0.0.0:9123:9119', calls)
+        self.assertIn('curl --noproxy * --connect-timeout 2 --max-time 5 -fsS http://172.25.0.2:9123/api/auth/providers', calls)
+        self.assertIn('http://172.25.0.2:9123/chathermes', result.stdout)
+
+    def test_local_daemon_can_select_loopback_url_and_publish_scope(self):
+        result, calls, _ = self.run_launcher(CHATHERMES_BIND_ADDRESS='127.0.0.1',
+                                             CHATHERMES_DASHBOARD_URL_HOST='127.0.0.1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('-p 127.0.0.1:9119:9119', calls)
+        self.assertIn('curl --noproxy * --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:9119/api/auth/providers', calls)
+
+    def test_wildcard_bind_requires_reachable_daemon_url_address(self):
+        result, calls, _ = self.run_launcher(CHATHERMES_BIND_ADDRESS='0.0.0.0',
+                                             CHATHERMES_DAEMON_ADDRESS='docker')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Set CHATHERMES_DAEMON_ADDRESS', result.stderr)
+        self.assertNotIn('build ', calls)
 
     def test_stop_preserves_volume_and_other_containers(self):
         result, calls, _ = self.run_launcher('stop')

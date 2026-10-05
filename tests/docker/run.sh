@@ -43,9 +43,9 @@ if [ "$mode" = stop ]; then
   echo 'Stopped isolated services; named data volume preserved.'
   exit 0
 fi
-# Local defaults stay loopback-only. Remote daemons require an explicit,
-# reachable interface on the daemon host, never an implicit wildcard bind.
-bind="${CHATHERMES_BIND_ADDRESS:-127.0.0.1}"
+# Bind on every interface of the Docker daemon host so remote Docker clients
+# can reach the published dashboard. The synthetic credentials are test-only.
+bind="${CHATHERMES_BIND_ADDRESS:-0.0.0.0}"
 port="${CHATHERMES_DASHBOARD_PORT:-9119}"
 case "$port" in
   ''|*[!0-9]*) echo 'CHATHERMES_DASHBOARD_PORT must be an integer from 1 to 65535.' >&2; exit 2 ;;
@@ -53,25 +53,34 @@ esac
 if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
   echo 'CHATHERMES_DASHBOARD_PORT must be an integer from 1 to 65535.' >&2; exit 2
 fi
-case "$bind" in
-  ''|0.0.0.0|::|'[::]'|*[!0-9.]*)
-    echo 'CHATHERMES_BIND_ADDRESS must be a specific IPv4 interface (default 127.0.0.1).' >&2; exit 2 ;;
-esac
-case "$bind" in
-  *[!0-9.]*|.*|*..*|*.)
-    echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2 ;;
-esac
-old_ifs=$IFS; IFS=.; set -- $bind; IFS=$old_ifs
-if [ "$#" -ne 4 ]; then
-  echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2
+valid_ipv4() {
+  case "$1" in ''|*[!0-9.]*|.*|*..*|*.) return 1 ;; esac
+  old_ifs=$IFS; IFS=.; set -- $1; IFS=$old_ifs
+  [ "$#" -eq 4 ] || return 1
+  for octet do
+    case "$octet" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$octet" -le 255 ] || return 1
+  done
+}
+if ! valid_ipv4 "$bind"; then
+  echo 'CHATHERMES_BIND_ADDRESS must be an IPv4 address (default 0.0.0.0).' >&2; exit 2
 fi
-for octet do
-  case "$octet" in ''|*[!0-9]*) echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2 ;; esac
-  if [ "$octet" -gt 255 ]; then
-    echo 'CHATHERMES_BIND_ADDRESS must be a dotted-quad IPv4 address.' >&2; exit 2
+# The host-side publish address (0.0.0.0) is distinct from the daemon host's
+# routable address used by the readiness probe and printed browser URL.
+url_host="${CHATHERMES_DASHBOARD_URL_HOST:-$bind}"
+if [ "$url_host" = 0.0.0.0 ]; then
+  url_host="${CHATHERMES_DAEMON_ADDRESS:-}"
+  if [ -z "$url_host" ]; then
+    case "${DOCKER_HOST:-}" in
+      tcp://*) url_host="${DOCKER_HOST#tcp://}" ;;
+      *) url_host=127.0.0.1 ;;
+    esac
   fi
-done
-url="http://$bind:$port"
+fi
+if ! valid_ipv4 "$url_host"; then
+  echo 'Set CHATHERMES_DAEMON_ADDRESS to the Docker host IPv4 address (or CHATHERMES_DASHBOARD_URL_HOST).' >&2; exit 2
+fi
+url="http://$url_host:$port"
 case "$mode" in
   fixture)
     export LLM_API_KEY=chathermes-model-fixture
@@ -116,7 +125,16 @@ source = source.replace('        context_length: 128000', '        context_lengt
 Path(sys.argv[1]).write_text(source)
 PYCONFIG
 fi
-trap 'rm -f "$config_file"' EXIT HUP INT TERM
+startup_complete=0
+cleanup() {
+  rm -f "$config_file"
+  if [ "$startup_complete" -ne 1 ]; then
+    remove_container "$relay"
+    remove_container "$gateway"
+    remove_container "$model"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
 # Bake the current checkout into both services; never reuse stale fixture code.
 docker build -f tests/docker/Dockerfile -t "$image" .
 if ! docker network inspect "$network" >/dev/null 2>&1; then
@@ -172,3 +190,4 @@ until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/pr
   sleep 1
 done
 printf 'Dashboard ready: %s/chathermes\nSign in: tester / chathermes-local-test (isolated test only)\n' "$url"
+startup_complete=1
