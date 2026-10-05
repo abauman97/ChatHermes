@@ -14,7 +14,8 @@ watch(() => props.working, working => { if (!working) expanded.value = false })
   <section class="turn-work" aria-label="Turn work">
     <button type="button" class="work-summary" :aria-expanded="expanded" :aria-controls="timelineId" @click="expanded = !expanded">
       <span class="work-chevron" :class="{ expanded }" aria-hidden="true">›</span>
-      <span :role="approvalPending ? 'status' : undefined" :class="{ 'working-shimmer': working }">{{ approvalPending ? 'Waiting for approval' : working ? 'Working…' : 'Worked' }}</span>
+      <span :class="{ 'working-shimmer': working && !approvalPending }">{{ approvalPending ? 'Waiting for approval' : working ? 'Working…' : 'Worked' }}</span>
+      <span v-if="approvalPending" class="sr-only" role="status">Waiting for approval</span>
     </button>
     <div :id="timelineId" class="work-timeline">
       <div v-for="activity in rows" :key="activity.id" v-show="expanded || visibleActive(activity)" :class="{ 'current-activity': visibleActive(activity) }">
