@@ -15,11 +15,22 @@ describe('active tool presentation', () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } })
     for (const state of ['pending', 'running'] as const) {
       await wrapper.setProps({ activity: { ...tool, state, output: 'More output\n'.repeat(100) } })
-      expect(wrapper.text()).toBe('Using tool: session search')
-      expect(wrapper.get('[role="status"] .working-shimmer').text()).toBe('Using tool: session search')
+      expect(wrapper.text()).toBe('Using tool: Session search')
+      expect(wrapper.get('[role="status"]').text()).toBe('Using tool: Session search')
+      expect(wrapper.find('.working-shimmer, strong, b').exists()).toBe(false)
       expect(wrapper.find('details, summary, pre').exists()).toBe(false)
-      expect(wrapper.findAll('p')).toHaveLength(1)
+      expect(wrapper.findAll('p')).toHaveLength(0)
     }
+  })
+
+  it.each([
+    ['  session__search  ', 'Session search'],
+    ['web\tsearch', 'Web search'],
+    ['', 'Tool'],
+    ['___', 'Tool'],
+  ])('normalizes tool name %j', (toolName, label) => {
+    const wrapper = mount(ActivityRow, { props: { activity: { ...tool, toolName } } })
+    expect(wrapper.get('[role="status"]').text()).toBe(`Using tool: ${label}`)
   })
 
   it.each(['completed', 'failed'] as const)('restores collapsed, inspectable details when %s', async state => {

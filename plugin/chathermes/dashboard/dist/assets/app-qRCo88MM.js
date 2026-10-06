@@ -4182,23 +4182,26 @@ function Fs(e) {
 //#region src/components/ActivityRow.vue?vue&type=script&setup=true&lang.ts
 var Is = {
 	key: 0,
-	class: "activity activity-active active-tool",
+	class: "active-tool",
 	role: "status"
-}, Ls = { class: "working-shimmer" }, Rs = ["open"], zs = {
+}, Ls = ["open"], Rs = {
 	key: 0,
 	"aria-hidden": "true"
-}, Bs = { key: 1 }, Vs = { key: 2 }, Hs = { key: 0 }, Us = {
+}, zs = { key: 1 }, Bs = { key: 2 }, Vs = { key: 0 }, Hs = {
 	key: 1,
 	class: "ml-6 py-1 text-sm",
 	role: "status"
-}, Ws = /* @__PURE__ */ Hn({
+}, Us = /* @__PURE__ */ Hn({
 	__name: "ActivityRow",
 	props: {
 		activity: {},
 		turnComplete: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = X(() => t.activity.kind === "tool" && !t.activity.complete && !t.turnComplete), r = X(() => (t.activity.toolName || "tool").replace(/[_\s]+/g, " ").trim()), i = /* @__PURE__ */ U(!t.activity.complete);
+		let t = e, n = X(() => t.activity.kind === "tool" && !t.activity.complete && !t.turnComplete), r = X(() => {
+			let e = (t.activity.toolName || "tool").replace(/[_\s]+/g, " ").trim() || "tool";
+			return e.charAt(0).toUpperCase() + e.slice(1);
+		}), i = /* @__PURE__ */ U(!t.activity.complete);
 		Mn(() => [t.activity.complete, t.turnComplete], ([e, t]) => {
 			i.value = !e && !t;
 		}), Mn(() => t.turnComplete, (e) => {
@@ -4207,7 +4210,7 @@ var Is = {
 		function a(e) {
 			i.value = e.target.open;
 		}
-		return (t, o) => n.value ? (G(), K("p", Is, [q("span", Ls, "Using tool: " + P(r.value), 1)])) : (G(), K("details", {
+		return (t, o) => n.value ? (G(), K("span", Is, "Using tool: " + P(r.value), 1)) : (G(), K("details", {
 			key: 1,
 			class: fe(["activity", {
 				"activity-failed": e.activity.state === "failed",
@@ -4216,20 +4219,23 @@ var Is = {
 			open: i.value,
 			onToggle: a
 		}, [q("summary", null, [
-			e.activity.state === "failed" ? (G(), K("span", zs, "!")) : Y("v-if", !0),
+			e.activity.state === "failed" ? (G(), K("span", Rs, "!")) : Y("v-if", !0),
 			q("span", { class: fe({ "working-shimmer": !e.activity.complete && !e.turnComplete }) }, P(e.activity.title), 3),
-			e.activity.state === "failed" ? (G(), K("span", Bs, " · Failed")) : Y("v-if", !0),
-			e.activity.duration === void 0 ? Y("v-if", !0) : (G(), K("span", Vs, " · " + P(e.activity.duration.toFixed(1)) + "s", 1))
-		]), e.activity.content || e.activity.output || e.activity.toolName ? (G(), K("pre", Hs, P([
+			e.activity.state === "failed" ? (G(), K("span", zs, " · Failed")) : Y("v-if", !0),
+			e.activity.duration === void 0 ? Y("v-if", !0) : (G(), K("span", Bs, " · " + P(e.activity.duration.toFixed(1)) + "s", 1))
+		]), e.activity.content || e.activity.output || e.activity.toolName ? (G(), K("pre", Vs, P([
 			e.activity.toolName,
 			e.activity.content,
 			e.activity.output
-		].filter(Boolean).join("\n\n")), 1)) : e.activity.complete ? Y("v-if", !0) : (G(), K("p", Us, P(e.activity.kind === "thinking" ? "Working…" : e.activity.state === "pending" ? "Waiting…" : "Running…"), 1))], 42, Rs));
+		].filter(Boolean).join("\n\n")), 1)) : e.activity.complete ? Y("v-if", !0) : (G(), K("p", Hs, P(e.activity.kind === "thinking" ? "Working…" : e.activity.state === "pending" ? "Waiting…" : "Running…"), 1))], 42, Ls));
 	}
-}), Gs = {
+}), Ws = {
 	class: "turn-work",
 	"aria-label": "Turn work"
-}, Ks = ["aria-expanded", "aria-controls"], qs = {
+}, Gs = ["aria-expanded", "aria-controls"], Ks = {
+	key: 0,
+	class: "working-shimmer-tool"
+}, qs = {
 	key: 0,
 	class: "sr-only",
 	role: "status"
@@ -4244,32 +4250,37 @@ var Is = {
 		let t = e, n = /* @__PURE__ */ U(!1), r = Un(), i = X(() => t.activities.map((e) => t.working ? e : {
 			...e,
 			complete: !0
-		})), a = (e) => t.working && !e.complete;
+		})), a = X(() => {
+			if (t.working) for (let e = i.value.length - 1; e >= 0; e--) {
+				let t = i.value[e];
+				if (t.kind === "tool" && !t.complete) return t;
+			}
+		}), o = X(() => i.value.filter((e) => e.kind !== "tool" || e.complete)), s = (e) => t.working && !e.complete;
 		return Mn(() => t.working, (e) => {
 			e || (n.value = !1);
-		}), (t, o) => (G(), K("section", Gs, [q("button", {
+		}), (t, i) => (G(), K("section", Ws, [q("button", {
 			type: "button",
 			class: "work-summary",
 			"aria-expanded": n.value,
 			"aria-controls": Wt(r),
-			onClick: o[0] ||= (e) => n.value = !n.value
+			onClick: i[0] ||= (e) => n.value = !n.value
 		}, [
 			q("span", {
 				class: fe(["work-chevron", { expanded: n.value }]),
 				"aria-hidden": "true"
 			}, "›", 2),
-			q("span", { class: fe({ "working-shimmer": e.working && !e.approvalPending }) }, P(e.approvalPending ? "Waiting for approval" : e.working ? "Working…" : "Worked"), 3),
+			q("span", { class: fe({ "working-shimmer": e.working && !e.approvalPending }) }, [J(P(e.approvalPending ? "Waiting for approval" : e.working ? "Working…" : "Worked"), 1), e.working && !e.approvalPending && a.value ? (G(), K("span", Ks, " Using tool: " + P(a.value.toolName), 1)) : Y("v-if", !0)], 2),
 			e.approvalPending ? (G(), K("span", qs, "Waiting for approval")) : Y("v-if", !0)
-		], 8, Ks), q("div", {
+		], 8, Gs), q("div", {
 			id: Wt(r),
 			class: "work-timeline"
-		}, [(G(!0), K(W, null, mr(i.value, (t) => En((G(), K("div", {
+		}, [(G(!0), K(W, null, mr(o.value, (t) => En((G(), K("div", {
 			key: t.id,
-			class: fe({ "current-activity": a(t) })
-		}, [Wi(Ws, {
+			class: fe({ "current-activity": s(t) })
+		}, [Wi(Us, {
 			activity: t,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2)), [[ja, n.value || a(t)]])), 128))], 8, Js)]));
+		}, null, 8, ["activity", "turn-complete"])], 2)), [[ja, n.value || s(t)]])), 128))], 8, Js)]));
 	}
 }), Xs = {};
 function Zs(e) {

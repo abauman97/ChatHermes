@@ -113,9 +113,11 @@ body { margin: 0; background: #212121; }
    surface's text color so the shimmer also works on a light host surface. */
 .chathermes-embedded { --work-highlight: #f4f4f4; }
 .turn-work { color: inherit; font-size: 14px; min-width: 0; }
-.work-summary { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; text-align: left; }
+.work-summary { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; text-align: left; max-width: 100%; min-width: 0; }
+.work-summary > :not(.active-tool) { flex-shrink: 0; }
 .work-summary .working-shimmer { color: #b4b4b4; font-weight: 700; }
-.active-tool { margin: 0; padding: 6px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.working-shimmer-tool { font-weight: 400; }
+.active-tool { min-width: 0; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .work-chevron { width: 12px; text-align: center; transform: rotate(0deg); }
 .work-chevron.expanded { transform: rotate(90deg); }
 .work-timeline { padding-left: 20px; min-width: 0; }
