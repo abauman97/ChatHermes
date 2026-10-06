@@ -536,16 +536,17 @@ def _project_instructions_file(root, update=None):
     temporary = None
     try:
         directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        # Update the highest-precedence instruction file that already exists.
+        # Reads must never leave a workspace artifact behind.
+        candidates = ('.hermes.md', 'HERMES.md', 'AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.cursorrules')
         filename = '.hermes.md'
-        # Preserve the runtime's alternate filename when it already exists.
-        try:
-            os.stat(filename, dir_fd=directory, follow_symlinks=False)
-        except FileNotFoundError:
+        for candidate in candidates:
             try:
-                os.stat('HERMES.md', dir_fd=directory, follow_symlinks=False)
-                filename = 'HERMES.md'
+                os.stat(candidate, dir_fd=directory, follow_symlinks=False)
+                filename = candidate
+                break
             except FileNotFoundError:
-                pass
+                continue
         content = ''
         mode = 0o600
         try:

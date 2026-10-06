@@ -1444,6 +1444,22 @@ async def test_project_instructions_create_edit_conflict_and_profile_scope(app, 
         assert (await client.get(url.replace('project_id=a', 'project_id=empty'))).status_code == 409
         assert (await client.get(url.replace('project_id=a', 'project_id=missing'))).status_code == 404
         assert (await client.get(url.replace('profile=alpha', 'profile=../bad'))).status_code == 422
+        for filename in (
+            'HERMES.md', 'AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.cursorrules',
+        ):
+            (root / '.hermes.md').unlink(missing_ok=True)
+            candidate = root / filename
+            candidate.write_text(f'{filename} instructions')
+            loaded = await client.get(url)
+            assert loaded.json() == {'content': f'{filename} instructions', 'filename': filename}
+            saved = await client.put(url, json={
+                'content': f'updated {filename}',
+                'expected': f'{filename} instructions',
+            })
+            assert saved.status_code == 200
+            assert saved.json()['filename'] == filename
+            assert candidate.read_text() == f'updated {filename}'
+            candidate.unlink()
     assert all(params['profile'] == 'alpha' for _, params in calls)
 
 
