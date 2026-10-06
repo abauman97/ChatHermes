@@ -42,7 +42,7 @@ function localId() { return `chathermes-ui-${++localSequence}` }
 const profiles = ref<{ name: string }[]>([]), models = ref<ModelOption[]>([]), model = ref(''), defaultModel = ref(''), creating = ref(false)
 const providers = ref<ProviderOption[]>([]), provider = ref(''), modelsLoading = ref(false)
 const thinking = ref(false), activeRun = ref(''), embedded = ref(false), suggestedPrompt = ref('')
-const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null)
+const menuButton = ref<HTMLButtonElement | null>(null), closeButton = ref<HTMLButtonElement | null>(null), screenMenuButton = ref<HTMLButtonElement | null>(null), screenMenu = ref(false)
 const canStream = computed(() => capabilities.value.features?.native_chat === true || api.isWorkspace(profile.value, session.value) || projectId.value ? capabilities.value.features?.session_chat_streaming === true : capabilities.value.endpoints?.runs?.method === 'POST' && capabilities.value.endpoints.runs.path === '/v1/runs' && capabilities.value.features?.run_events_sse === true)
 let listAbort: AbortController | undefined, chatAbort: AbortController | undefined, streamAbort: AbortController | undefined, generation = 0, profileGeneration = 0, streamGeneration = 0, historyGeneration = 0
 let visibilityAbort: AbortController | undefined
@@ -627,10 +627,12 @@ async function toggleSettings() {
 function settingsOutside(event: PointerEvent) {
   if (settingsOpen.value && event.target instanceof Node && !settingsPanel.value?.contains(event.target) && !settingsButton.value?.contains(event.target)) closeSettings()
 }
+function closeScreenMenu() { if (screenMenu.value) { screenMenu.value = false; screenMenuButton.value?.focus() } }
 function drawerKey(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   if (settingsOpen.value) { event.preventDefault(); closeSettings(true) }
   else if (drawer.value) closeDrawer()
+  else closeScreenMenu()
 }
 async function reloadPushState() { pushState.value = await push.state() }
 async function togglePush() {
@@ -682,9 +684,15 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
         <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : (projectView ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
-        <span class="topbar-profile max-w-[30%] truncate rounded-full bg-[#303030] px-3 py-1.5 text-xs text-[#b4b4b4]">{{ profile || 'Current profile' }}</span>
-        <span class="grid size-8 shrink-0 place-items-center text-2xl" aria-label="ChatHermes logo">✳</span>
-        <button v-if="embedded" class="shrink-0 rounded-lg px-2 py-2 text-sm hover:bg-[#303030]" aria-label="Back to dashboard" @click="exitPlugin">←<span class="hidden min-[701px]:inline"> Back to dashboard</span></button>
+        <span class="topbar-profile sr-only">{{ profile || 'Current profile' }}</span>
+        <div class="screen-menu-wrap relative" @keydown.esc.stop.prevent="closeScreenMenu">
+          <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
+          <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu">
+            <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
+            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="newChat(); closeScreenMenu()">New chat</button>
+            <button v-if="embedded" class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="exitPlugin(); closeScreenMenu()">Back to dashboard</button>
+          </div>
+        </div>
       </header>
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-[#e5e5e5] dark:bg-[#303030] dark:text-[#e5e5e5]" role="status">You are offline. Messages cannot be loaded or sent.</div>
       <div v-if="!scheduledPage && viewReconnect" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
