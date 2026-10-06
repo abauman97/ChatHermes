@@ -98,8 +98,7 @@ class Owner:
             self.notified.clear()
             self.notified.add(key)
         try:
-            import sys
-            sender = sys.modules.get('chathermes_push_sender')
+            sender = self.api._push_sender_module
             if sender:
                 sender.notify(self.profile, self.push_session, kind, str(identity))
         except Exception:
