@@ -117,13 +117,13 @@ async function attach(event: Event) {
     <p v-if="imageGated" class="px-2 text-sm text-red-300" role="alert">Image sending is unavailable for this native capability. Remove the image to send text or files.</p>
     <p v-if="attachmentError" class="px-2 text-sm text-red-300" role="alert">{{ attachmentError }}</p>
     <label class="sr-only" for="prompt">Message Hermes</label>
-    <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-[#f4f4f4] outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
+    <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-white outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
     <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
     <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
     <div class="flex items-center gap-3">
       <button class="grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="closePicker(); attachmentsOpen = !attachmentsOpen">+</button>
       <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
-      <button ref="pill" type="button" class="model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-[#e5e5e5] disabled:opacity-55" aria-label="Choose model" aria-haspopup="dialog" :aria-expanded="pickerOpen" :aria-controls="panelId" :disabled="pickerDisabled" @click="togglePicker">
+      <button ref="pill" type="button" class="model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-white disabled:opacity-55" aria-label="Choose model" aria-haspopup="dialog" :aria-expanded="pickerOpen" :aria-controls="panelId" :disabled="pickerDisabled" @click="togglePicker">
         <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
@@ -132,7 +132,7 @@ async function attach(event: Event) {
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
       </button>
     </div>
-    <div v-if="pickerOpen" :id="panelId" ref="panel" role="dialog" aria-modal="true" :aria-label="pickerProvider === null ? 'Choose provider' : pickerTitle" class="model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-[#e5e5e5] shadow-xl">
+    <div v-if="pickerOpen" :id="panelId" ref="panel" role="dialog" aria-modal="true" :aria-label="pickerProvider === null ? 'Choose provider' : pickerTitle" class="model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl">
       <div class="flex shrink-0 items-center gap-2 border-b border-[#424242] p-2">
         <button v-if="pickerProvider !== null" type="button" aria-label="Back to providers" class="picker-back rounded-full p-2 hover:bg-[#424242]" @click="showProviders">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-5" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>

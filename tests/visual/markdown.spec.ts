@@ -45,7 +45,7 @@ for (const theme of ['dark', 'light'] as const) {
       expect(await container.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     }
     for (const code of await page.locator('.markdown-content code').all()) {
-      await expect(code).toHaveCSS('color', 'rgb(244, 244, 244)')
+      await expect(code).toHaveCSS('color', 'rgb(255, 255, 255)')
     }
     for (const pre of await page.locator('.markdown-content pre').all()) {
       await expect(pre).toHaveCSS('background-color', 'rgb(23, 23, 23)')
