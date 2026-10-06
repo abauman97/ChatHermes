@@ -71,6 +71,32 @@ describe('ordered activity presentation', () => {
     expect(wrapper.findAll('.work-timeline > div').every(row => row.attributes('style') !== 'display: none;')).toBe(true)
     expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
   })
+  it('puts only the normalized active tool inline with Working and preserves completed disclosures', async () => {
+    const tool = { id: 'tool', kind: 'tool' as const, toolName: 'session_search', title: 'Search sessions', content: '{"query":"old chat"}', output: 'partial result', complete: false }
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks: [tool], working: true, progress: [], draft: '', loading: false } })
+    for (const state of ['pending', 'running'] as const) {
+      await wrapper.setProps({ blocks: [{ ...tool, state, output: 'More results' }] })
+      expect(wrapper.get('.work-summary').text()).toBe('›Working…Using tool: Session search')
+      expect(wrapper.get('.work-summary .working-shimmer').text()).toBe('Working…')
+      expect(wrapper.findAll('.working-shimmer')).toHaveLength(1)
+      expect(wrapper.get('.active-tool').classes()).not.toContain('working-shimmer')
+      expect(wrapper.find('.current-activity, pre').exists()).toBe(false)
+      await wrapper.get('.work-summary').trigger('click')
+      expect(wrapper.find('pre').exists()).toBe(false)
+    }
+    await wrapper.setProps({ blocks: [{ ...tool, complete: true }], working: false })
+    expect(wrapper.find('.active-tool').exists()).toBe(false)
+    expect(wrapper.get('.work-summary').text()).toBe('›Worked')
+    await wrapper.get('.work-summary').trigger('click')
+    const details = wrapper.get('details')
+    expect(details.isVisible()).toBe(true)
+    expect(details.attributes('open')).toBeUndefined()
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    expect(wrapper.get('pre').text()).toContain('old chat')
+    expect(wrapper.get('pre').text()).toContain('partial result')
+  })
+
   it('shows approval waiting independently of completed activity and keeps history inspectable', async () => {
     const blocks = [{ id: 'tool', kind: 'tool' as const, title: 'Ran command', content: 'approval command', complete: true, state: 'failed' as const }]
     const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Question' }], blocks, working: true, progress: [], draft: '', loading: false }, slots: { request: '<button>Approve</button>' } })
@@ -92,8 +118,8 @@ describe('ordered activity presentation', () => {
     await wrapper.get('.work-summary').trigger('click')
     expect(wrapper.get('.work-summary [role="status"]').isVisible()).toBe(true)
     await wrapper.setProps({ blocks: [...blocks, { id: 'running', kind: 'tool', title: 'Running command', content: 'new command', complete: false }] })
-    expect(wrapper.findAll('.current-activity')).toHaveLength(1)
-    expect(wrapper.get('.current-activity').text()).toBe('Using tool: tool')
+    expect(wrapper.findAll('.current-activity')).toHaveLength(0)
+    expect(wrapper.get('.work-summary .active-tool').text()).toBe('Using tool: Tool')
     expect(wrapper.get('.activity').isVisible()).toBe(false)
     await wrapper.setProps({ approvalPending: false, working: false })
     expect(wrapper.get('.work-summary').text()).toContain('Worked')
