@@ -2,15 +2,15 @@
 
 html { -webkit-text-size-adjust: 100%; }
 html, body { touch-action: manipulation; overscroll-behavior: none; }
-body { margin: 0; background: #212121; }
+body { margin: 0; background: #000; }
 #app, .app-shell, .transcript { touch-action: pan-x pan-y; }
 .composer, .sidebar, .scrim, .topbar, .chathermes-embedded { touch-action: manipulation; }
 /* Allow code blocks to pan horizontally while excluding pinch gestures. */
-.chathermes-embedded { position: fixed; inset: 0; z-index: 10000; background: #212121; }
+.chathermes-embedded { position: fixed; inset: 0; z-index: 10000; background: #000; }
 .chathermes-embedded .app-shell { height: 100dvh; min-height: 0; }
 .chathermes-embedded .main-panel { height: 100dvh; }
 .topbar { padding-top: env(safe-area-inset-top); height: calc(68px + env(safe-area-inset-top)); }
-.sidebar { padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.sidebar { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .composer { margin-bottom: max(12px, env(safe-area-inset-bottom)); }
 @media (prefers-reduced-motion: reduce) { .thinking-dot { animation: none; } .sidebar { transition: none; } }
 /* iOS focuses controls without viewport zoom only at 16px or larger. */
@@ -43,8 +43,8 @@ body { margin: 0; background: #212121; }
 .markdown-content li > p { margin-bottom: .4em; }
 .markdown-content blockquote { border-left: 3px solid #525252; padding-left: 1em; color: #b4b4b4; }
 .markdown-content a { color: #93c5fd; text-decoration: underline; }
-.markdown-content code { color: #f4f4f4; background: #171717; padding: .15em .3em; border-radius: 4px; font: .875em/1.6 monospace; }
-.markdown-content pre { min-width: 0; max-width: 100%; overflow-x: auto; padding: 1em; border-radius: 12px; color: #f4f4f4; background: #171717; white-space: pre; overflow-wrap: normal; }
+.markdown-content code { color: #fff; background: #171717; padding: .15em .3em; border-radius: 4px; font: .875em/1.6 monospace; }
+.markdown-content pre { min-width: 0; max-width: 100%; overflow-x: auto; padding: 1em; border-radius: 12px; color: #fff; background: #171717; white-space: pre; overflow-wrap: normal; }
 .markdown-content pre code { padding: 0; color: inherit; background: transparent; white-space: inherit; overflow-wrap: normal; }
 .markdown-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .markdown-content th, .markdown-content td { border: 1px solid #525252; padding: .4em .75em; }
@@ -63,7 +63,7 @@ body { margin: 0; background: #212121; }
 .project-button:disabled { opacity: .55; cursor: not-allowed; }
 .project-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
 .project-tabs button { color: #b4b4b4; }
-.project-tabs button[aria-pressed=true] { color: #f4f4f4; background: #303030; }
+.project-tabs button[aria-pressed=true] { color: #fff; background: #303030; }
 .project-list { display: grid; gap: 4px; }
 .project-list > button { display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 16px 12px; border-bottom: 1px solid #303030; text-align: left; border-radius: 10px; }
 .project-list > button:hover { background: #303030; }
@@ -78,7 +78,7 @@ body { margin: 0; background: #212121; }
 .project-form { margin: 16px 0; display: grid; gap: 16px; }
 .project-form fieldset { display: grid; gap: 16px; min-width: 0; }
 .project-form label { display: grid; gap: 8px; font-size: 14px; color: #b4b4b4; }
-.project-form input, .project-form textarea { min-width: 0; width: 100%; border: 1px solid #424242; border-radius: 10px; padding: 10px 12px; background: #171717; color: #f4f4f4; font-size: 16px; }
+.project-form input, .project-form textarea { min-width: 0; width: 100%; border: 1px solid #424242; border-radius: 10px; padding: 10px 12px; background: #171717; color: #fff; font-size: 16px; }
 .project-form .project-checkbox { display: flex; align-items: center; }
 .project-checkbox input { width: 20px; height: 20px; }
 .project-actions, .project-field-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -96,7 +96,7 @@ body { margin: 0; background: #212121; }
 .scheduled-heading .project-back { width: auto; margin-left: 0; }
 .scheduled-heading .project-button { width: auto; }
 .scheduled-filter { display: flex; align-items: center; gap: 12px; color: #b4b4b4; }
-.scheduled-filter select { font-size: 16px; color: #f4f4f4; background: #171717; border: 1px solid #424242; border-radius: 14px; padding: 10px 14px; }
+.scheduled-filter select { font-size: 16px; color: #fff; background: #171717; border: 1px solid #424242; border-radius: 14px; padding: 10px 14px; }
 .scheduled-content { min-height: 0; flex: 1; overflow-y: auto; padding: 16px 24px 28px; }
 .scheduled-list { display: grid; gap: 14px; margin-bottom: 20px; }
 .scheduled-list > button { display: flex; align-items: center; gap: 16px; border: 1px dashed #424242; border-radius: 24px; padding: 20px; text-align: left; }
@@ -111,7 +111,7 @@ body { margin: 0; background: #212121; }
 
 /* Work stays quiet and compact; only live titles animate. Colors inherit the
    surface's text color so the shimmer also works on a light host surface. */
-.chathermes-embedded { --work-highlight: #f4f4f4; }
+.chathermes-embedded { --work-highlight: #fff; }
 .turn-work { color: inherit; font-size: 14px; min-width: 0; }
 .work-summary { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; text-align: left; max-width: 100%; min-width: 0; }
 .work-summary > :not(.active-tool) { flex-shrink: 0; }

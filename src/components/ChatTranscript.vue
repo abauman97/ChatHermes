@@ -58,7 +58,7 @@ watch(() => [props.messages.length, props.draft, props.blocks || props.progress]
 }, { deep: true })
 </script>
 <template>
-  <div ref="transcript" class="transcript flex min-h-0 w-full flex-1 flex-col gap-7 overflow-y-auto px-4 py-6 text-[#f4f4f4] min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9" role="log" aria-label="Conversation" aria-live="polite" @scroll="onScroll" @toggle.capture="disclosureChanged">
+  <div ref="transcript" class="transcript flex min-h-0 w-full flex-1 flex-col gap-7 overflow-y-auto px-4 py-6 text-white min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9" role="log" aria-label="Conversation" aria-live="polite" @scroll="onScroll" @toggle.capture="disclosureChanged">
     <div v-if="loading" class="muted text-sm text-[#a3a3a3]">Loading conversation…</div>
     <div v-else-if="!visible.length && !draft && !thinking" class="empty-state mx-auto flex w-full max-w-[760px] flex-1 flex-col">
       <div class="m-auto text-center"><h2 class="text-2xl font-medium">What can I help with?</h2><p class="mt-3 text-sm text-[#a3a3a3]">Ask Hermes a question or continue a conversation.</p></div>
