@@ -1,7 +1,29 @@
 import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
-test('drawer settings, notifications and New chat placement', async ({ page }, testInfo) => {
+test('drawer has exactly one New chat immediately above Projects', async ({ page }, testInfo) => {
+  await signIn(page)
+  const plugin = page.locator('.chathermes-embedded')
+  const mobile = testInfo.project.name === 'mobile'
+  if (mobile) await plugin.getByRole('button', { name: 'Open navigation' }).click()
+  const navigation = plugin.getByRole('complementary', { name: 'Navigation' })
+  const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
+  const projects = navigation.getByRole('button', { name: 'Projects', exact: true })
+  await expect(newChat).toHaveCount(1)
+  await expect(newChat).toBeVisible()
+  await expect(navigation.locator('.drawer-chat + .projects-nav')).toHaveCount(1)
+  await expect(navigation.locator('.sidebar-foot .drawer-chat')).toHaveCount(0)
+  const newChatBox = (await newChat.boundingBox())!
+  expect(newChatBox.y + newChatBox.height).toBeLessThanOrEqual((await projects.boundingBox())!.y)
+  await page.screenshot({ path: testInfo.outputPath('drawer-navigation.png') })
+  await newChat.click()
+  if (mobile) await expect(navigation).toHaveClass(/-translate-x-full/)
+  const textarea = plugin.getByRole('textbox', { name: 'Message Hermes' })
+  await textarea.click()
+  await expect(textarea).toBeFocused()
+})
+
+test('drawer settings and notifications', async ({ page }, testInfo) => {
   const unauthorized = await page.request.get('/api/plugins/chathermes/push/config')
   expect(unauthorized.status()).toBe(401)
   await signIn(page)
@@ -30,7 +52,6 @@ test('drawer settings, notifications and New chat placement', async ({ page }, t
   const navigation = plugin.getByRole('complementary', { name: 'Navigation' })
   const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
   const projects = navigation.getByRole('button', { name: 'Projects', exact: true })
-  expect((await projects.boundingBox())!.y).toBeLessThan((await newChat.boundingBox())!.y)
   await expect(navigation.locator('.push-setting')).toHaveCount(0)
   await expect(navigation.getByRole('combobox', { name: 'Profile', exact: true })).toHaveCSS('font-size', '16px')
   const settings = navigation.getByRole('button', { name: 'Settings', exact: true })
