@@ -35,6 +35,8 @@ class Owner:
         self.reconciled = False
         self.children = set()
         self.queued_inputs = []
+        self.notified = set()
+        self.push_session = stored
         transport.on_frame = self.capture
         from tui_gateway import server, server_requests
         server.register_live_transport(transport)
@@ -70,6 +72,13 @@ class Owner:
             elif kind == 'message.complete':
                 self.finished_at = time.time()
                 self.schedule_cleanup()
+                if payload.get('status', 'complete') == 'complete':
+                    self.notify('turn.complete', p.get('seq'))
+                elif payload.get('status') in ('error', 'failed', 'stopped', 'interrupted'):
+                    self.notify('attention', p.get('seq'))
+            if kind in ('approval', 'clarify'):
+                request_id = frame.get('id')
+                self.notify(kind, request_id if isinstance(request_id, (str, int)) else p.get('seq'))
             self.record(frame)
         elif frame.get('method') not in ('approval', 'clarify') and 'id' in frame:
             from tui_gateway import server_requests
@@ -77,6 +86,24 @@ class Owner:
                 'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}}, self.transport)
             frame = {'jsonrpc': '2.0', 'method': 'chat.unsupported', 'params': {'method': frame['method']}}
         self.publish(frame)
+
+    def notify(self, kind, identity):
+        if identity is None:
+            return
+        key = (kind, str(identity))
+        if key in self.notified:
+            return
+        self.notified.add(key)
+        if len(self.notified) > 2048:
+            self.notified.clear()
+            self.notified.add(key)
+        try:
+            import sys
+            sender = sys.modules.get('chathermes_push_sender')
+            if sender:
+                sender.notify(self.profile, self.push_session, kind, str(identity))
+        except Exception:
+            pass
 
     def record(self, frame):
         if self.degraded:
@@ -121,6 +148,7 @@ class Owner:
         if self.runtime and runtime != self.runtime:
             self.reset()
         self.runtime = runtime
+        self.push_session = runtime
         self.snapshot = result
         if not self.epoch:
             replay = await self.transport.call('session.events.since', {

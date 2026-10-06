@@ -10,6 +10,7 @@ import { projectRoot, projectSessions } from './lib/projects'
 import ScheduledPage from './components/ScheduledPage.vue'
 import ProjectsPage from './components/ProjectsPage.vue'
 import ProjectSettings from './components/ProjectSettings.vue'
+import * as push from './lib/push'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
@@ -48,6 +49,8 @@ let visibilityAbort: AbortController | undefined
 const unavailableRun = ref(false)
 const clarificationAnswers = ref<Record<string, string | string[]>>({}), customClarification = ref<Record<string, string>>({})
 const nativeStatus = ref('')
+const pushState = ref<push.PushState>({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
+const pushBusy = ref(false), pushMessage = ref('')
 const native = useNativeSession(() => { refreshProjects(); void loadSessions() })
 const nativeMode = computed(() => capabilities.value.features?.native_chat === true && (!activeRun.value || activeRun.value.startsWith('workspace-')))
 const viewMessages = computed(() => nativeMode.value ? native.messages.value : messages.value)
@@ -613,8 +616,23 @@ function pop() {
 function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
 function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
-onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
+async function reloadPushState() { pushState.value = await push.state() }
+async function togglePush() {
+  if (pushBusy.value) return
+  pushBusy.value = true; pushMessage.value = ''
+  try { if (pushState.value.subscribed) await push.unsubscribe(profile.value); else await push.subscribe(profile.value); await reloadPushState() }
+  catch (cause) { pushMessage.value = cause instanceof Error ? cause.message : 'Could not update notifications.'; await reloadPushState() }
+  finally { pushBusy.value = false }
+}
+function serviceWorkerMessage(event: MessageEvent) {
+  if (event.data?.type !== 'chathermes.navigate' || typeof event.data.url !== 'string') return
+  const url = new URL(event.data.url, location.origin)
+  if (url.origin !== location.origin || url.pathname !== '/chathermes') return
+  history.pushState({}, '', url.pathname + url.search)
+  pop()
+}
+onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
 </script>
 <template>
   <div class="app-shell flex min-h-dvh bg-[#212121] font-sans text-[#f4f4f4] dark:bg-[#212121] dark:text-[#f4f4f4]">
@@ -629,6 +647,14 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <option value="">Current profile</option><option v-if="profile && !profiles.some(item => item.name === profile)" :value="profile">{{ profile }}</option><option v-for="item in profiles" :key="item.name" :value="item.name">{{ item.name }}</option>
         </select><button class="drawer-chat flex min-h-[44px] shrink-0 items-center gap-2 rounded-lg px-2 text-base text-white hover:bg-[#303030] disabled:opacity-55" :disabled="offline || creating" aria-label="New chat" @click="newChat"><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg>chat</button></div>
         <span><span class="status-dot mr-2 inline-block size-2 rounded-full" :class="offline ? 'disconnected bg-[#dcae6e]' : 'bg-[#94c9a5]'" />{{ offline ? 'Offline · read only' : 'Connected through dashboard' }}</span>
+        <section class="push-setting mt-2 border-t border-[#303030] pt-3" aria-label="Notifications">
+          <p class="text-sm font-medium text-[#f4f4f4]">Notifications</p>
+          <button class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.supported || (!pushState.subscribed && !pushState.available)" @click="togglePush">{{ pushBusy ? 'Updating…' : pushState.subscribed ? 'Disable notifications' : 'Enable notifications' }}</button>
+          <p v-if="pushState.error || pushMessage" class="mt-1 text-xs text-[#dcae6e]" role="status">{{ pushMessage || pushState.error }}</p>
+          <p v-else-if="pushState.subscribed" class="mt-1 text-xs">Notifications enabled on this device.</p>
+          <p v-else-if="!pushState.supported" class="mt-1 text-xs">Install ChatHermes on a secure HTTPS origin to enable notifications.</p>
+          <p v-else-if="pushState.permission === 'denied'" class="mt-1 text-xs">Allow notifications in browser settings to enable them.</p>
+        </section>
       </div>
     </aside>
     <div v-if="drawer" class="scrim fixed inset-0 z-10 bg-black/55 min-[701px]:hidden" @click="closeDrawer" />

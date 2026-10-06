@@ -68,6 +68,44 @@ async def test_profile_validation(app, monkeypatch):
 
 
 @run_async
+async def test_push_subscription_routes_validate_scope_and_never_echo_key_material(app, monkeypatch):
+    import types
+    from pathlib import Path
+    worker = Path(plugin.__file__ or __file__).parent / 'dist' / 'push-service-worker.js'
+    existed = worker.exists()
+    if not existed:
+        worker.parent.mkdir(parents=True, exist_ok=True)
+        worker.write_bytes(b"self.addEventListener('push', () => {})")
+    def upsert(profile, value):
+        if not value.get('endpoint', '').startswith('https://'):
+            raise ValueError('Invalid push endpoint')
+        return {'id': 'sub_123', 'profile': profile, 'enabled': True}
+    store = types.SimpleNamespace(
+        config=lambda: {'available': True, 'vapid_public_key': 'public-only'},
+        upsert=upsert,
+        remove=lambda profile, identity: profile == 'alpha' and identity == 'sub_123')
+    monkeypatch.setattr(plugin, '_push_store_module', store)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/push/config')
+        assert response.json() == {'available': True, 'vapid_public_key': 'public-only'}
+        service_worker = await client.get('/api/plugins/chathermes/push-service-worker.js')
+        assert service_worker.status_code == 200
+        assert service_worker.headers['service-worker-allowed'] == '/chathermes'
+        assert "addEventListener('push'" in service_worker.text
+        body = {'endpoint': 'https://push.test/private-endpoint', 'keys': {'p256dh': 'secret-key', 'auth': 'secret-auth'}}
+        response = await client.post('/api/plugins/chathermes/push/subscriptions?profile=alpha', json=body)
+        assert response.status_code == 200
+        assert response.json() == {'id': 'sub_123', 'profile': 'alpha', 'enabled': True}
+        assert all(secret not in response.text for secret in ('private-endpoint', 'secret-key', 'secret-auth'))
+        assert (await client.delete('/api/plugins/chathermes/push/subscriptions/sub_123?profile=alpha')).json() == {'removed': True}
+        assert (await client.post('/api/plugins/chathermes/push/subscriptions', json={'endpoint': 'http://bad'})).status_code == 422
+        too_large = await client.post('/api/plugins/chathermes/push/subscriptions', content=b' ' * 8193)
+        assert too_large.status_code == 413
+    if not existed:
+        worker.unlink()
+
+
+@run_async
 async def test_sse_frames_pass_through(app, monkeypatch):
     frames = b'event: assistant.delta\ndata: {"delta":"hello"}\n\nevent: run.completed\ndata: {}\n\n'
     def gateway(request):
