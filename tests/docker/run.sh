@@ -29,8 +29,9 @@ model="chathermes-$instance-model"
 volume="chathermes-$instance-hermes-data"
 network="chathermes-$instance"
 relay="chathermes-$instance-browser"
-internal_network="chathermes-$instance-internal"
 browser_network="chathermes-$instance-browser"
+shared_network="${CHATHERMES_INTERNAL_DOCKER_NETWORK:-}"
+internal_network="chathermes-$instance-internal"
 remove_container() {
   if docker container inspect "$1" >/dev/null 2>&1; then
     docker rm -f "$1" >/dev/null
@@ -72,7 +73,7 @@ if [ "$url_host" = 0.0.0.0 ]; then
   url_host="${CHATHERMES_DAEMON_ADDRESS:-}"
   if [ -z "$url_host" ]; then
     case "${DOCKER_HOST:-}" in
-      tcp://*) url_host="${DOCKER_HOST#tcp://}" ;;
+      tcp://*) url_host="${DOCKER_HOST#tcp://}"; url_host="${url_host%%:*}" ;;
       *) url_host=127.0.0.1 ;;
     esac
   fi
@@ -116,18 +117,20 @@ PY
   fi
 fi
 if [ "$mode" = fixture ]; then
-  config_file="${TMPDIR:-/tmp}/chathermes-$instance-config-$$.yaml"
-  python3 - "$config_file" <<'PYCONFIG'
+  export CHATHERMES_TEST_CONFIG_B64="$(python3 - <<'PYCONFIG'
 from pathlib import Path
-import sys
+import base64
 source = Path('.hermes/config.yaml').read_text().replace('${LLM_API_MODEL:-fixture-model}', 'fixture-model')
 source = source.replace('        context_length: 128000', '        context_length: 128000\n      fixture-model-2:\n        context_length: 128000')
-Path(sys.argv[1]).write_text(source)
+print(base64.b64encode(source.encode()).decode())
 PYCONFIG
+  )"
+elif [ "$mode" = real ]; then
+  export CHATHERMES_TEST_CONFIG_B64="$(base64 < "$config_file" | tr -d '\n')"
 fi
 startup_complete=0
 cleanup() {
-  rm -f "$config_file"
+  if [ "$mode" = real ]; then rm -f "$config_file"; fi
   if [ "$startup_complete" -ne 1 ]; then
     remove_container "$relay"
     remove_container "$gateway"
@@ -137,13 +140,11 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 # Bake the current checkout into both services; never reuse stale fixture code.
 docker build -f tests/docker/Dockerfile -t "$image" .
-if ! docker network inspect "$network" >/dev/null 2>&1; then
-  docker network create "$network" >/dev/null
-fi
 if [ "$mode" = fixture ]; then
-  if ! docker network inspect "$internal_network" >/dev/null 2>&1; then
-    docker network create --internal "$internal_network" >/dev/null
-  fi
+  # The selected shared network must be explicitly internal: never put a
+  # provider-free fixture on a network with external egress.
+  if [ -n "$shared_network" ]; then internal_network=$shared_network; fi
+  if ! docker network inspect "$internal_network" >/dev/null 2>&1; then docker network create --internal "$internal_network" >/dev/null; fi
   if [ "$(docker network inspect --format '{{.Internal}}' "$internal_network")" != true ]; then
     echo 'Fixture network must be internal; refusing a network with provider egress.' >&2
     exit 1
@@ -152,6 +153,8 @@ if [ "$mode" = fixture ]; then
     docker network create "$browser_network" >/dev/null
   fi
   network=$internal_network
+elif ! docker network inspect "$network" >/dev/null 2>&1; then
+  docker network create "$network" >/dev/null
 fi
 docker volume create "$volume" >/dev/null
 remove_container "$relay"
@@ -161,7 +164,7 @@ if [ "$mode" = fixture ]; then
   docker run -d --name "$model" --network "$network" --network-alias model \
     --entrypoint /opt/hermes/.venv/bin/python "$image" /test/model_fixture.py >/dev/null
 fi
-# Only the dashboard is published; the gateway and fixture stay on the network.
+# Fixture mode publishes through a relay; real mode publishes the dashboard.
 set --
 if [ "$mode" = real ]; then set -- -p "$bind:$port:9119"; fi
 docker run -d --init --name "$gateway" \
@@ -172,13 +175,13 @@ docker run -d --init --name "$gateway" \
   -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test \
   -e API_SERVER_KEY=chathermes-isolated-test-key-2026 \
   -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
-  -e CHATHERMES_TEST_CONFIG_B64="$(base64 < "$config_file" | tr -d '\n')" \
+  -e CHATHERMES_TEST_CONFIG_B64 \
   "$image" >/dev/null
-rm -f "$config_file"
 if [ "$mode" = fixture ]; then
   docker run -d --name "$relay" --network "$browser_network" -p "$bind:$port:9119" \
+    -e CHATHERMES_RELAY_UPSTREAM=http://hermes:9119 \
     --entrypoint /opt/hermes/.venv/bin/python "$image" /test/browser_relay.py >/dev/null
-  docker network connect "$internal_network" "$relay"
+  if [ "$network" != "$browser_network" ]; then docker network connect "$network" "$relay"; fi
 fi
 attempt=0
 until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do

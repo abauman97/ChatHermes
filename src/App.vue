@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { api, ApiError, eventPayload, messageText } from './lib/hermes-api'
 import { toolTitle } from './lib/assistant-turn'
 import { useNativeSession } from './lib/native-session'
@@ -51,6 +51,8 @@ const clarificationAnswers = ref<Record<string, string | string[]>>({}), customC
 const nativeStatus = ref('')
 const pushState = ref<push.PushState>({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
 const pushBusy = ref(false), pushMessage = ref('')
+const settingsOpen = ref(false), settingsButton = ref<HTMLButtonElement | null>(null), settingsPanel = ref<HTMLElement | null>(null)
+watch([drawer, profile, session, projectId, projectsPage, projectView, scheduledPage], () => { settingsOpen.value = false })
 const native = useNativeSession(() => { refreshProjects(); void loadSessions() })
 const nativeMode = computed(() => capabilities.value.features?.native_chat === true && (!activeRun.value || activeRun.value.startsWith('workspace-')))
 const viewMessages = computed(() => nativeMode.value ? native.messages.value : messages.value)
@@ -613,9 +615,23 @@ function pop() {
   const pending = chooseProfile(state.profile, true), current = generation
   void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 }
-function closeDrawer() { drawer.value = false; menuButton.value?.focus() }
+function closeDrawer() { settingsOpen.value = false; drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
-function drawerKey(event: KeyboardEvent) { if (event.key === 'Escape' && drawer.value) closeDrawer() }
+function closeSettings(restoreFocus = false) { settingsOpen.value = false; if (restoreFocus) settingsButton.value?.focus() }
+async function toggleSettings() {
+  if (settingsOpen.value) { closeSettings(true); return }
+  settingsOpen.value = true
+  await nextTick()
+  settingsPanel.value?.focus()
+}
+function settingsOutside(event: PointerEvent) {
+  if (settingsOpen.value && event.target instanceof Node && !settingsPanel.value?.contains(event.target) && !settingsButton.value?.contains(event.target)) closeSettings()
+}
+function drawerKey(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  if (settingsOpen.value) { event.preventDefault(); closeSettings(true) }
+  else if (drawer.value) closeDrawer()
+}
 async function reloadPushState() { pushState.value = await push.state() }
 async function togglePush() {
   if (pushBusy.value) return
@@ -631,29 +647,33 @@ function serviceWorkerMessage(event: MessageEvent) {
   history.pushState({}, '', url.pathname + url.search)
   pop()
 }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
-onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey) })
+onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); document.addEventListener('pointerdown', settingsOutside); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey); document.removeEventListener('pointerdown', settingsOutside) })
 </script>
 <template>
   <div class="app-shell flex min-h-dvh bg-[#212121] font-sans text-[#f4f4f4] dark:bg-[#212121] dark:text-[#f4f4f4]">
     <aside class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-5 bg-[#171717] px-[18px] py-6 text-[#f4f4f4] shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-[#171717] dark:text-[#f4f4f4]" :class="drawer ? 'translate-x-0' : '-translate-x-full'" aria-label="Navigation">
       <div class="brand flex items-center gap-2.5 px-2 text-2xl font-semibold"><span class="brand-mark grid size-9 shrink-0 place-items-center text-white">✳</span><span>ChatHermes</span><button ref="closeButton" class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]" aria-label="Close navigation" @click="closeDrawer">×</button></div>
+      <button class="drawer-chat flex min-h-[48px] shrink-0 items-center gap-3 rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030] disabled:opacity-55" :disabled="offline || creating" @click="newChat"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg>New chat</button>
       <button class="projects-nav flex min-h-[48px] items-center gap-3 rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" :aria-current="projectsPage || projectView ? 'page' : undefined" @click="showProjects()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" /></svg>Projects</button>
       <button class="scheduled-nav flex min-h-[48px] items-center gap-3 rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" :aria-current="scheduledPage ? 'page' : undefined" @click="showScheduled()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>Scheduled</button>
       <SessionSidebar heading="Recents" :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline || creating" @select="recentSession" @create="newChat" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
-      <div class="sidebar-foot mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
+      <div class="sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile</label>
         <div class="drawer-account flex min-w-0 items-center gap-2"><select id="profile-field" class="profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white" :value="profile" @change="chooseProfile(($event.target as HTMLSelectElement).value)">
           <option value="">Current profile</option><option v-if="profile && !profiles.some(item => item.name === profile)" :value="profile">{{ profile }}</option><option v-for="item in profiles" :key="item.name" :value="item.name">{{ item.name }}</option>
-        </select><button class="drawer-chat flex min-h-[44px] shrink-0 items-center gap-2 rounded-lg px-2 text-base text-white hover:bg-[#303030] disabled:opacity-55" :disabled="offline || creating" aria-label="New chat" @click="newChat"><svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg>chat</button></div>
+        </select><button ref="settingsButton" class="drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]" aria-label="Settings" aria-haspopup="dialog" aria-controls="drawer-settings" :aria-expanded="settingsOpen" @click="toggleSettings"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 3-.6 2.5-2 .9L4 5.7l-2 3.5 1.8 1.8v2L2 14.8l2 3.5 2.4-.7 2 .9L9 21h6l.6-2.5 2-.9 2.4.7 2-3.5-1.8-1.8v-2L22 9.2l-2-3.5-2.4.7-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
         <span><span class="status-dot mr-2 inline-block size-2 rounded-full" :class="offline ? 'disconnected bg-[#dcae6e]' : 'bg-[#94c9a5]'" />{{ offline ? 'Offline · read only' : 'Connected through dashboard' }}</span>
-        <section class="push-setting mt-2 border-t border-[#303030] pt-3" aria-label="Notifications">
-          <p class="text-sm font-medium text-[#f4f4f4]">Notifications</p>
+        <section v-if="settingsOpen" id="drawer-settings" ref="settingsPanel" class="settings-panel absolute bottom-full left-0 right-0 mb-3 max-h-[60dvh] overflow-y-auto rounded-2xl border border-[#424242] bg-[#212121] p-3 shadow-xl" role="dialog" aria-label="Settings" tabindex="-1">
+          <div class="flex items-center justify-between gap-2"><h2 class="text-base font-medium text-white">Settings</h2><button class="size-11 rounded-lg text-xl text-white hover:bg-[#303030]" aria-label="Close settings" @click="closeSettings(true)">×</button></div>
+          <div class="push-setting" aria-labelledby="notifications-heading">
+          <h3 id="notifications-heading" class="text-sm font-medium text-[#f4f4f4]">Notifications</h3>
           <button class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.supported || (!pushState.subscribed && !pushState.available)" @click="togglePush">{{ pushBusy ? 'Updating…' : pushState.subscribed ? 'Disable notifications' : 'Enable notifications' }}</button>
           <p v-if="pushState.error || pushMessage" class="mt-1 text-xs text-[#dcae6e]" role="status">{{ pushMessage || pushState.error }}</p>
           <p v-else-if="pushState.subscribed" class="mt-1 text-xs">Notifications enabled on this device.</p>
           <p v-else-if="!pushState.supported" class="mt-1 text-xs">Install ChatHermes on a secure HTTPS origin to enable notifications.</p>
           <p v-else-if="pushState.permission === 'denied'" class="mt-1 text-xs">Allow notifications in browser settings to enable them.</p>
+          </div>
         </section>
       </div>
     </aside>

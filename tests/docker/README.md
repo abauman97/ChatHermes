@@ -36,13 +36,14 @@ Each shell launcher instance uses isolated, revision-scoped Docker resources.
 The source is pinned to `ac28abc96ce83f22f6b831f80d9007e2aba81f21`, with
 its download checksum verified, and the base image digest in `Dockerfile` is
 unchanged. The fixture adds `snowballstemmer==3.1.1`, required by the upgraded
-source but absent from the older base runtime. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
-Both expose only the dashboard port by default. The model fixture and
+source but absent from the older base runtime. It also installs the shipped
+`plugin/chathermes/pyproject.toml` dependency package, so missing production Web
+Push dependencies cannot be masked by a separate test-only package list. Use `npm run live` to build and start the fixture dashboard; Docker Compose is not required.
+Both modes expose only the dashboard port by default. The model fixture and
 gateway API are accessible only within the isolated Docker network.
 
-Fixture settings can be overridden for an ad hoc model label with
-`LLM_API_MODEL`; fixture requests remain deterministic and do not call a real
-provider. Use `npm run live:real` with all three variables for live model calls.
+Fixture mode fixes the model to `fixture-model` and ignores host provider
+settings; it never calls a real provider. Use `npm run live:real` with all three variables for live model calls.
 
 The shell runner derives its readiness probe from the daemon URL address and dashboard port.
 
@@ -70,12 +71,18 @@ For local Docker, the runner can derive the URL directly from the bind address.
 If you publish on `0.0.0.0`, use `CHATHERMES_DASHBOARD_URL_HOST` to select a
 specific address for the readiness probe and browser URL. `CHATHERMES_BIND_ADDRESS`
 controls only the published host-side listener; it is not the URL used to reach
-the daemon.
+the daemon. Fixture UI traffic is relayed over the dedicated browser network to
+the Hermes dashboard on the internal network, keeping model/gateway traffic private.
+The relay publishes only dashboard port 9119; its upstream is `hermes:9119`.
+`CHATHERMES_INTERNAL_DOCKER_NETWORK` may select an existing internal network
+when the daemon has exhausted its bridge address pools. The launcher checks its
+internal flag and keeps the browser relay on a separate network.
 
 `CHATHERMES_DASHBOARD_PORT` defaults to 9119; choose a free port if other
 dashboards are running. No fixture or gateway port needs publishing. The remote
 daemon needs no Compose plugin. Plugin assets and scripts are baked
-into the image; only the read-only generated config is mounted from the checkout.
+into the image; the generated config is passed through container environment and written into the
+disposable volume at startup.
 
 ## Optional Playwright verification
 
@@ -145,7 +152,10 @@ npm run build
 ```
 
 The shell runner never deletes volumes. Its network and volume are retained
-across stops. Remove test data only by explicitly removing the confirmed
+across stops. When running multiple long browser suites in succession,
+restart the isolated fixture with `npm run live` between suites: retained native
+viewers can otherwise fill the plugin’s bounded viewer capacity. Restarting
+clears process-local viewers while preserving the named data volume. Remove test data only by explicitly removing the confirmed
 disposable test volume. Never commit generated state or credentials.
 
 Startup uses native `hermes_cli.projects_db` to create the three synthetic

@@ -40,4 +40,6 @@ __pycache__/
 .pytest_cache/
 
 .venv/
+*.egg-info/
+plugin/chathermes/build/
 compose.override.yml

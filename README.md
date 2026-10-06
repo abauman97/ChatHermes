@@ -8,7 +8,12 @@ A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
-Restart the dashboard and open **ChatHermes**. Enable the Hermes API server with a strong `platforms.api_server.key`; the plugin uses native gateway RPC for chat, authenticated API history, and `httpx` in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
+Hermes installs the dependencies declared by the shipped
+`plugin/chathermes/pyproject.toml` in its managed runtime; use the dependency
+consent prompt during install. Restart the dashboard and open **ChatHermes**.
+Enable the Hermes API server with a strong `platforms.api_server.key`; the
+plugin uses native gateway RPC for chat, authenticated API history, and `httpx`
+in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
 
 ## Develop and test
 

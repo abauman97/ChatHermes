@@ -16,12 +16,15 @@ class RunnerTests(unittest.TestCase):
             docker.write_text('''#!/bin/sh
 printf '%s\\n' "$*" >> "$CALLS"
 case "$*" in
+  'run -d --init '*) printf '%s' "$CHATHERMES_TEST_CONFIG_B64" > "$CONFIG_CAPTURE" ;;
   info)
     if [ -n "${EXPECTED_HOST:-}" ] && [ "${DOCKER_HOST:-}" != "$EXPECTED_HOST" ]; then exit 1; fi
     exit "${INFO_EXIT:-0}" ;;
   'container inspect '*) exit 1 ;;
   'network inspect --format {{.Internal}} '*) echo "${INTERNAL_NETWORK:-true}"; exit 0 ;;
-  'network inspect '*) exit 1 ;;
+  'network inspect '*)
+    if { [ -n "${EXISTING_NETWORK:-}" ] && [ "$*" = "network inspect $EXISTING_NETWORK" ]; } || [ "$*" = 'network inspect chathermes-test-internal' ] || [ "$*" = 'network inspect chathermes-issue30-internal' ]; then exit 0; fi
+    exit 1 ;;
 esac
 exit 0
 ''')
@@ -34,7 +37,7 @@ exit 0
             expected_host = environment.get('EXPECTED_HOST', 'tcp://172.25.0.2:2375')
             env = {**os.environ, 'PATH': f'{root}:{os.environ["PATH"]}',
                    'CALLS': str(root / 'calls'), 'DOCKER_HOST': 'tcp://docker:2375',
-                   'TMPDIR': str(root),
+                   'TMPDIR': str(root), 'CONFIG_CAPTURE': str(root / 'config.b64'),
                    'CHATHERMES_BIND_ADDRESS': '0.0.0.0',
                    'CHATHERMES_DAEMON_ADDRESS': '172.25.0.2',
                    'CHATHERMES_DASHBOARD_PORT': '9119',
@@ -45,9 +48,8 @@ exit 0
             config = ''
             if inspect_config:
                 import base64
-                import re
-                match = re.search(r'CHATHERMES_TEST_CONFIG_B64=([^\s]+)', calls)
-                config = base64.b64decode(match.group(1)).decode() if match else ''
+                captured = root / 'config.b64'
+                config = base64.b64decode(captured.read_text()).decode() if captured.exists() else ''
             return result, calls, config
 
     def test_fixture_builds_current_checkout_and_keeps_services_private(self):
@@ -55,15 +57,29 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('docker endpoint tcp://172.25.0.2:2375', result.stderr.lower())
         self.assertIn('build -f tests/docker/Dockerfile -t chathermes-test:ac28abc9 .', calls)
-        self.assertIn('-p 0.0.0.0:9119:9119', calls)
+        self.assertIn('CHATHERMES_RELAY_UPSTREAM=http://hermes:9119', calls)
         self.assertIn('-v chathermes-test-hermes-data:/opt/data', calls)
         self.assertIn('--network-alias model', calls)
-        self.assertIn('network create --internal chathermes-test-internal', calls)
+        self.assertIn('network inspect --format {{.Internal}} chathermes-test-internal', calls)
         self.assertIn('--name chathermes-test-hermes --network chathermes-test-internal --network-alias hermes', calls)
         self.assertIn('--name chathermes-test-browser --network chathermes-test-browser -p 0.0.0.0:9119:9119', calls)
         self.assertIn('network connect chathermes-test-internal chathermes-test-browser', calls)
         self.assertNotIn(':8642', calls)
         self.assertNotIn(':4000', calls)
+
+    def test_fixture_can_use_only_an_explicitly_internal_shared_network(self):
+        result, calls, _ = self.run_launcher(CHATHERMES_INTERNAL_DOCKER_NETWORK='isolated-shared',
+                                             EXISTING_NETWORK='isolated-shared')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('network inspect isolated-shared', calls)
+        self.assertIn('--name chathermes-test-hermes --network isolated-shared', calls)
+
+    def test_fixture_rejects_untrusted_shared_network(self):
+        result, calls, _ = self.run_launcher(CHATHERMES_INTERNAL_DOCKER_NETWORK='isolated-shared',
+                                             INTERNAL_NETWORK='false', EXISTING_NETWORK='isolated-shared')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Fixture network must be internal', result.stderr)
+        self.assertNotIn('run -d', calls)
 
     def test_basic_auth_provider_is_explicitly_enabled_for_dashboard_scope(self):
         result, calls, _ = self.run_launcher()
@@ -145,7 +161,7 @@ exit 0
         self.assertIn('--name chathermes-issue30-hermes', calls)
         self.assertIn('--name chathermes-issue30-model', calls)
         self.assertIn('--name chathermes-issue30-browser', calls)
-        self.assertIn('network create --internal chathermes-issue30-internal', calls)
+        self.assertIn('network inspect --format {{.Internal}} chathermes-issue30-internal', calls)
         self.assertIn('-v chathermes-issue30-hermes-data:/opt/data', calls)
 
     def test_invalid_instance_name_fails_before_docker_mutations(self):
