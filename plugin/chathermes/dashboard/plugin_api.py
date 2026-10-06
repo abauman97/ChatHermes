@@ -2,6 +2,8 @@
 
 import os
 import re
+import sys
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,6 +17,67 @@ except ImportError:  # The dashboard can still start and show an actionable erro
 router = APIRouter()
 _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _AUTH_ERROR = "Hermes gateway authentication failed; check platforms.api_server.key"
+_push_store_module = None
+_push_sender_module = None
+
+
+def _load_sibling(name):
+    import importlib.util
+    path = Path(__file__).with_name(name + '.py')
+    spec = importlib.util.spec_from_file_location('chathermes_' + name, path, submodule_search_locations=[str(path.parent)])
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _push_store():
+    if _push_store_module is None:
+        raise HTTPException(503, 'Push storage unavailable')
+    return _push_store_module
+
+
+@router.get('/push/config')
+async def push_config():
+    return _push_store().config()
+
+
+@router.get('/push-service-worker.js')
+async def push_service_worker():
+    from fastapi.responses import FileResponse
+    path = Path(__file__).with_name('dist') / 'push-service-worker.js'
+    return FileResponse(path, media_type='application/javascript', headers={
+        'Service-Worker-Allowed': '/chathermes', 'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff'})
+
+
+@router.post('/push/subscriptions')
+async def push_subscribe(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 8192:
+            raise HTTPException(413, 'Push subscription is too large')
+    try:
+        import json
+        body = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, 'Invalid push subscription')
+    try:
+        result = await run_in_threadpool(_push_store().upsert, _rpc_profile(request), body)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(422, str(error))
+    return result
+
+
+@router.delete('/push/subscriptions/{identity}')
+async def push_unsubscribe(request: Request, identity: str):
+    from starlette.concurrency import run_in_threadpool
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', identity):
+        raise HTTPException(422, 'Invalid subscription identity')
+    removed = await run_in_threadpool(_push_store().remove, _rpc_profile(request), identity)
+    return {'removed': removed}
 
 
 def _gateway_settings():
@@ -376,7 +439,6 @@ async def native_image(request: Request, file_id: str):
 # relative to this trusted plugin directory, never through sys.path/CWD.
 def _load_sibling(name):
     import importlib.util
-    from pathlib import Path
     spec = importlib.util.spec_from_file_location('chathermes_' + name, Path(__file__).with_name(name + '.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -390,8 +452,10 @@ _InlineImagesUnsupported = _gateway_transport._InlineImagesUnsupported
 
 _chat_gateway = _load_sibling('chat_gateway')
 _native_owners = _load_sibling('native_owners')
-router.add_event_handler('shutdown', _native_owners.shutdown)
+_push_store_module = _load_sibling('push_store')
+_push_sender_module = _load_sibling('push_sender')
 _native_channel = _load_sibling('native_channel')
+router.add_event_handler('shutdown', _native_owners.shutdown)
 
 
 @router.get('/chat/capabilities')

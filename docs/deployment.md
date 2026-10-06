@@ -8,7 +8,9 @@ Use HTTPS when accessing the dashboard remotely. Set the host dashboard's authen
 
 File uploads are bounded, receive generated filenames, and are written under the selected Hermes profile. The agent must have access to that filesystem to read non-image files. Images use native multipart input with durable authenticated original-file references. Native camera capture is offered on supported devices.
 
-Standalone SPA and PWA builds are no longer supported.
+See [PWA and Web Push setup](push-notifications.md) for HTTPS/iOS requirements,
+the explicit enable flow, dependency installation, persistent VAPID state,
+notification privacy, and troubleshooting.
 
 ## Native rollout gate
 

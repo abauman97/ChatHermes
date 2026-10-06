@@ -1,9 +1,14 @@
 import { build } from 'vite'
-import { readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
 const outDir = 'plugin/chathermes/dashboard/dist'
+await mkdir(`${outDir}/icons`, { recursive: true })
+await cp('public/manifest.webmanifest', `${outDir}/manifest.webmanifest`)
+await cp('public/push-service-worker.js', `${outDir}/push-service-worker.js`)
+await cp('public/icons', `${outDir}/icons`, { recursive: true })
+await cp('public/apple-touch-icon.png', `${outDir}/apple-touch-icon.png`)
 const appBuild = await build({
   configFile: false,
   base: './',

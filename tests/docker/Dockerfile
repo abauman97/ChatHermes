@@ -7,6 +7,8 @@ RUN tar -xzf /tmp/hermes.tar.gz --strip-components=1 -C /opt/hermes && rm /tmp/h
 # The digest-pinned runtime predates native tool-search stemming. Match the
 # upgraded source dependency without changing the runtime image or Hermes core.
 RUN uv pip install --python /opt/hermes/.venv/bin/python snowballstemmer==3.1.1
+# Web Push is optional at runtime, but bundled in isolated/live installations.
+RUN uv pip install --python /opt/hermes/.venv/bin/python pywebpush==2.5.0
 ENV PYTHONPATH=/opt/hermes
 COPY plugin/chathermes /opt/plugins-src/chathermes
 COPY tests/docker/ /test/

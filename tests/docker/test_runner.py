@@ -65,6 +65,12 @@ exit 0
         self.assertNotIn(':8642', calls)
         self.assertNotIn(':4000', calls)
 
+    def test_basic_auth_provider_is_explicitly_enabled_for_dashboard_scope(self):
+        result, calls, _ = self.run_launcher()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester', calls)
+        self.assertIn('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test', calls)
+
     def test_fixture_rejects_existing_network_with_egress(self):
         result, calls, _ = self.run_launcher(INTERNAL_NETWORK='false')
         self.assertNotEqual(result.returncode, 0)
