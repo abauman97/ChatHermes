@@ -1,10 +1,8 @@
+import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
 test('Scheduled native history, saved output, pagination and discussion draft', async ({ page }, testInfo) => {
-  await page.goto('/login?next=/chathermes')
-  await page.getByLabel('Username').fill('tester')
-  await page.getByLabel('Password', { exact: true }).fill('chathermes-local-test')
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await signIn(page)
   const plugin = page.locator('.chathermes-embedded')
   await expect(plugin).toBeVisible()
   if (testInfo.project.name === 'mobile') await plugin.getByRole('button', { name: 'Open navigation' }).click()
@@ -31,6 +29,7 @@ test('Scheduled native history, saved output, pagination and discussion draft', 
   await expect(plugin.locator('.message.assistant')).toContainText('Synthetic persisted agent output')
   await expect(plugin.locator('.activity[open]')).toHaveCount(0)
   expect(await plugin.locator('.transcript').evaluate(element => element.scrollTop)).toBe(0)
+  await plugin.locator('.work-summary').click()
   await plugin.locator('.activity summary').click()
   await expect(plugin.locator('.activity pre')).toContainText('Synthetic audit checks passed.')
   await page.screenshot({ animations: 'disabled', path: testInfo.outputPath('scheduled-agent-output.png') })

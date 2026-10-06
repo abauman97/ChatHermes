@@ -3,6 +3,13 @@ import { expect, test } from '@playwright/test'
 
 test('loaded Projects do not shift during background refreshes', async ({ page }, testInfo) => {
   await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
+  // This test holds legacy visibility refreshes; native event refreshes have
+  // separate runtime coverage. Keep project responses authenticated and real.
+  await page.route('**/api/plugins/chathermes/v1/capabilities**', async route => {
+    const response = await route.fetch()
+    const body = await response.json()
+    await route.fulfill({ json: { ...body, features: { ...body.features, native_chat: false } } })
+  })
   await signIn(page, '/chathermes?view=projects')
   await page.waitForURL(url => url.pathname !== '/login')
   const plugin = page.locator('.chathermes-embedded')

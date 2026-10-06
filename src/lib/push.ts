@@ -47,7 +47,7 @@ export async function state(): Promise<PushState> {
   if (!supported()) return { supported: false, permission: 'unsupported', subscribed: false, available: false, error: 'Notifications require HTTPS and a supported browser.' }
   try {
     const [subscription, settings] = await Promise.all([current(), config()])
-    return { supported: true, permission: Notification.permission, subscribed: !!subscription, available: settings.available, error: '' }
+    return { supported: true, permission: Notification.permission, subscribed: !!subscription, available: settings.available, error: settings.available ? '' : 'Push notifications are unavailable on this server.' }
   } catch {
     return { supported: true, permission: Notification.permission, subscribed: false, available: false, error: 'Push notifications are unavailable on this server.' }
   }

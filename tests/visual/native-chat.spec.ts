@@ -77,7 +77,7 @@ test('browser absence recovers more than 512 native events while a tool is still
   await expect(thinking.locator('pre')).toContainText('checkpoint-599')
   expect((await thinking.locator('pre').textContent())!.match(/checkpoint-000/g)).toHaveLength(1)
   await expect(plugin.locator('.message.user')).toHaveCount(1)
-  await expect(plugin.locator('.active-tool')).toHaveText('Using tool: Terminal')
+  await expect(plugin.locator('.work-summary')).toContainText('Working… Using tool: terminal')
   await page.screenshot({ path: info.outputPath('native-burst-recovered.png') })
   await thinking.locator('summary').click()
   await expect(plugin.locator('.message.assistant').last()).toContainText('Tool completed successfully', { timeout: 45000 })

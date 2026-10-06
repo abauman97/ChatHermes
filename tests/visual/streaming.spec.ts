@@ -69,7 +69,7 @@ test('ordered streamed turn, reload, scroll and disclosures in dashboard plugin'
   await expect(page.locator('.activity[open]')).toHaveCount(0)
   await expect(summary).toHaveAttribute('aria-expanded', 'false')
   await expect(page.locator('.working-shimmer')).toHaveCount(1)
-  await expect(page.getByRole('status')).toHaveText('Working… Using tool: session_search')
+  await expect(summary.locator('.working-shimmer')).toHaveText('Working… Using tool: session_search')
   await textarea.click(); await expect(textarea).toBeFocused()
   await summary.click()
   await expect(page.locator('.work-timeline')).not.toContainText('Early tool output')

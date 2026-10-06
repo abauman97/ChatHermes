@@ -49,22 +49,28 @@ def _write(value):
 
 def config():
     try:
+        from pywebpush import webpush  # noqa: F401 - availability includes delivery transport.
         from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
         from py_vapid import Vapid
         with _LOCK:
             data = _read()
             vapid = data.get('vapid')
             if not isinstance(vapid, dict) or not isinstance(vapid.get('private_key'), str) or not isinstance(vapid.get('public_key'), str):
-                key = Vapid.from_raw(os.urandom(32))
+                key = Vapid()
+                key.generate_keys()
                 vapid = {'private_key': key.private_pem().decode('ascii'), 'public_key': _b64url(key.public_key.public_bytes(encoding=Encoding.X962, format=PublicFormat.UncompressedPoint))}
                 data['vapid'] = vapid
                 _write(data)
             else:
                 key = Vapid.from_pem(vapid['private_key'].encode())
                 if _b64url(key.public_key.public_bytes(encoding=Encoding.X962, format=PublicFormat.UncompressedPoint)) != vapid['public_key']:
+                    _LOG.warning('ChatHermes Web Push is unavailable: persisted VAPID keys do not match')
                     return {'available': False, 'vapid_public_key': None}
             return {'available': True, 'vapid_public_key': vapid['public_key']}
-    except Exception:
+    except Exception as error:
+        # Third-party exception text can contain private key material. Log only
+        # the exception class and actionable, static guidance.
+        _LOG.warning('ChatHermes Web Push is unavailable (%s); check Hermes plugin dependencies and push state permissions', type(error).__name__)
         return {'available': False, 'vapid_public_key': None}
 
 

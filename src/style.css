@@ -124,3 +124,5 @@ body { margin: 0; background: #212121; }
 .working-shimmer { background: linear-gradient(100deg, currentColor 35%, var(--work-highlight, #303030) 50%, currentColor 65%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: working-shimmer 2s linear infinite; }
 @keyframes working-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .working-shimmer { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
+
+.drawer-settings:focus-visible, .settings-panel:focus-visible, .settings-panel button:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }

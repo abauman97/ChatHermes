@@ -1,6 +1,30 @@
 # Dashboard plugin deployment
 
-Install `plugin/chathermes` using Hermes plugins or `npm run install:plugin` from a clone. Enable the plugin and restart the dashboard. `npm run build` rebuilds the committed assets.
+Install `plugin/chathermes` using Hermes plugins or `npm run install:plugin` from
+a clone. Hermes reads the shipped plugin-root `pyproject.toml` when installing
+through its CLI; the dashboard JSON manifest does not install Python packages.
+`npm run build` rebuilds the committed assets.
+
+`npm run install:plugin` only copies files, including the dependency declaration.
+The copy-only script prints the concrete install command for its target path.
+For older Hermes installers without dependency support, or existing installs
+missing Web Push, install the shipped dependency package explicitly into
+the **same Python runtime that starts the dashboard**, before restarting:
+
+```sh
+uv pip install --python /absolute/path/to/hermes/.venv/bin/python ./plugin/chathermes
+# If that runtime has pip, this is equivalent:
+/absolute/path/to/hermes/.venv/bin/python -m pip install ./plugin/chathermes
+/absolute/path/to/hermes/.venv/bin/python -c 'from pywebpush import webpush; from py_vapid import Vapid'
+```
+
+Run from the cloned repository; after copy-only installation, the installed
+`~/.hermes/plugins/chathermes` directory can replace `./plugin/chathermes`.
+Installing into an unrelated shell Python does not repair the dashboard.
+No packages are installed on import or through an HTTP request. After restart,
+check the authenticated `/api/plugins/chathermes/push/config` route: it must
+return `available: true` and a public key. An unavailable result also covers
+unwritable or invalid persistent VAPID state; never print the private state file.
 
 The plugin is served entirely by the Hermes dashboard. It relies on dashboard authentication for `/api/plugins/chathermes/` and proxies only explicit gateway routes. Set `platforms.api_server.enabled`, `host`, `port`, and a strong `key` in Hermes configuration. The gateway key stays server-side. Install `httpx` in the dashboard Python environment. Use the reviewed native gateway contract and session history API. The browser requires dashboard authentication and host WebSocket tickets; native admission fails closed when these are unavailable.
 

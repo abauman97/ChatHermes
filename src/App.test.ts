@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
+import * as push from './lib/push'
 beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -25,6 +26,63 @@ function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response
 }
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
+describe('drawer settings', () => {
+  it('puts New chat above Projects and restores focus when dismissing settings before the drawer', async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
+    const wrapper = mount(App, { attachTo: document.body })
+    await flushPromises()
+    const sidebar = wrapper.get('.sidebar')
+    expect(sidebar.findAll('button').map(button => button.text()).slice(1, 3)).toEqual(['New chat', 'Projects'])
+    expect(wrapper.find('.push-setting').exists()).toBe(false)
+    expect(wrapper.find('.drawer-account .drawer-chat').exists()).toBe(false)
+    await wrapper.get('[aria-label="Open navigation"]').trigger('click')
+    await wrapper.get('[aria-label="Settings"]').trigger('click')
+    const panel = wrapper.get('[role="dialog"][aria-label="Settings"]')
+    expect(panel.element).toBe(document.activeElement)
+    expect(wrapper.get('.drawer-settings').attributes('aria-expanded')).toBe('true')
+    expect(panel.text()).toContain('Enable notifications')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('.settings-panel').exists()).toBe(false)
+    expect(wrapper.get('.drawer-settings').element).toBe(document.activeElement)
+    expect(wrapper.get('[aria-label="Open navigation"]').attributes('aria-expanded')).toBe('true')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement)
+    wrapper.unmount()
+  })
+  it('retains the notification toggle, busy state, status and profile scope inside settings', async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
+    const subscription = deferred<void>()
+    vi.spyOn(push, 'state').mockResolvedValue({ supported: true, permission: 'granted', subscribed: false, available: true, error: '' })
+    const subscribe = vi.spyOn(push, 'subscribe').mockReturnValue(subscription.promise)
+    const unsubscribe = vi.spyOn(push, 'unsubscribe').mockResolvedValue()
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.get('.drawer-settings').trigger('click')
+    const toggle = wrapper.get('.push-setting button')
+    await toggle.trigger('click')
+    expect(subscribe).toHaveBeenCalledWith('alpha')
+    expect(toggle.text()).toBe('Updating…')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    vi.mocked(push.state).mockResolvedValue({ supported: true, permission: 'granted', subscribed: true, available: true, error: '' })
+    subscription.resolve()
+    await flushPromises()
+    expect(toggle.text()).toBe('Disable notifications')
+    expect(wrapper.get('.push-setting').text()).toContain('Notifications enabled on this device.')
+    await toggle.trigger('click')
+    await flushPromises()
+    expect(unsubscribe).toHaveBeenCalledWith('alpha')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('.settings-panel').exists()).toBe(false)
+    await wrapper.get('.drawer-settings').trigger('click')
+    await wrapper.get('.projects-nav').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.settings-panel').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
 describe('profile navigation', () => {
   it('rejects invalid profile names without requesting or storing credentials', async () => {
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
