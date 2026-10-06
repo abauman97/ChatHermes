@@ -68,6 +68,44 @@ async def test_profile_validation(app, monkeypatch):
 
 
 @run_async
+@pytest.mark.parametrize('missing', [None, 'pywebpush', 'py_vapid'])
+async def test_push_config_checks_dashboard_runtime_dependencies(app, monkeypatch, tmp_path, missing):
+    import sys
+    store = plugin._push_store_module
+    state = tmp_path / 'push.json'
+    monkeypatch.setattr(store, '_path', lambda: state)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        # Restore only the simulated missing dependency. Snapshotting all of
+        # sys.modules unloads new cryptography imports and breaks native class
+        # identity when a later test imports them again.
+        with monkeypatch.context() as dependencies:
+            if missing:
+                dependencies.setitem(sys.modules, missing, None)
+            response = await client.get('/api/plugins/chathermes/push/config')
+        assert response.status_code == 200
+        result = response.json()
+        if missing:
+            assert result == {'available': False, 'vapid_public_key': None}
+            assert not state.exists()
+        else:
+            assert result['available'] is True
+            assert len(result['vapid_public_key']) == 87
+            assert set(result) == {'available', 'vapid_public_key'}
+            assert (await client.get('/api/plugins/chathermes/push/config')).json() == result
+            import json
+            assert json.loads(state.read_text())['vapid']['private_key'] not in response.text
+            # Dependency probes must leave native cryptography imports usable
+            # when a later profile needs a fresh keypair in the same process.
+            fresh_state = tmp_path / 'fresh-push.json'
+            monkeypatch.setattr(store, '_path', lambda: fresh_state)
+            fresh = await client.get('/api/plugins/chathermes/push/config')
+            assert fresh.json()['available'] is True
+            assert fresh_state.exists()
+        # Missing optional libraries do not take unrelated plugin routes down.
+        assert (await client.get('/api/plugins/chathermes/push-service-worker.js')).status_code == 200
+
+
+@run_async
 async def test_push_subscription_routes_validate_scope_and_never_echo_key_material(app, monkeypatch):
     import types
     from pathlib import Path

@@ -1,7 +1,29 @@
 import { signIn } from './login'
 import { expect, test } from '@playwright/test'
 
-test('drawer settings, notifications and New chat placement', async ({ page }, testInfo) => {
+test('drawer has exactly one New chat immediately above Projects', async ({ page }, testInfo) => {
+  await signIn(page)
+  const plugin = page.locator('.chathermes-embedded')
+  const mobile = testInfo.project.name === 'mobile'
+  if (mobile) await plugin.getByRole('button', { name: 'Open navigation' }).click()
+  const navigation = plugin.getByRole('complementary', { name: 'Navigation' })
+  const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
+  const projects = navigation.getByRole('button', { name: 'Projects', exact: true })
+  await expect(newChat).toHaveCount(1)
+  await expect(newChat).toBeVisible()
+  await expect(navigation.locator('.drawer-chat + .projects-nav')).toHaveCount(1)
+  await expect(navigation.locator('.sidebar-foot .drawer-chat')).toHaveCount(0)
+  const newChatBox = (await newChat.boundingBox())!
+  expect(newChatBox.y + newChatBox.height).toBeLessThanOrEqual((await projects.boundingBox())!.y)
+  await page.screenshot({ path: testInfo.outputPath('drawer-navigation.png') })
+  await newChat.click()
+  if (mobile) await expect(navigation).toHaveClass(/-translate-x-full/)
+  const textarea = plugin.getByRole('textbox', { name: 'Message Hermes' })
+  await textarea.click()
+  await expect(textarea).toBeFocused()
+})
+
+test('drawer settings and notifications', async ({ page }, testInfo) => {
   const unauthorized = await page.request.get('/api/plugins/chathermes/push/config')
   expect(unauthorized.status()).toBe(401)
   await signIn(page)
@@ -12,13 +34,24 @@ test('drawer settings, notifications and New chat placement', async ({ page }, t
   expect(pushConfig.vapid_public_key).toHaveLength(87)
   expect(Object.keys(pushConfig).sort()).toEqual(['available', 'vapid_public_key'])
   expect(await (await page.request.get('/api/plugins/chathermes/push/config')).json()).toEqual(pushConfig)
+  const worker = await page.request.get('/api/plugins/chathermes/push-service-worker.js')
+  expect(worker.status()).toBe(200)
+  expect(worker.headers()['service-worker-allowed']).toBe('/chathermes')
+  expect(await worker.text()).toContain("addEventListener('push'")
+  const manifest = await page.request.get('/api/plugins/chathermes/assets/dist/manifest.webmanifest')
+  expect(manifest.status()).toBe(200)
+  expect((await manifest.json()).scope).toBe('/chathermes')
+  for (const asset of ['apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png']) {
+    const response = await page.request.get('/api/plugins/chathermes/assets/dist/' + asset)
+    expect(response.status()).toBe(200)
+    expect(response.headers()['content-type']).toContain('image/png')
+  }
   const plugin = page.locator('.chathermes-embedded')
   const mobile = testInfo.project.name === 'mobile'
   if (mobile) await plugin.getByRole('button', { name: 'Open navigation' }).click()
   const navigation = plugin.getByRole('complementary', { name: 'Navigation' })
   const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
   const projects = navigation.getByRole('button', { name: 'Projects', exact: true })
-  expect((await newChat.boundingBox())!.y).toBeLessThan((await projects.boundingBox())!.y)
   await expect(navigation.locator('.push-setting')).toHaveCount(0)
   await expect(navigation.getByRole('combobox', { name: 'Profile', exact: true })).toHaveCSS('font-size', '16px')
   const settings = navigation.getByRole('button', { name: 'Settings', exact: true })

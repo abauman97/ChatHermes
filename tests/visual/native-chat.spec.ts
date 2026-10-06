@@ -102,7 +102,7 @@ test('native Other turn reload, second viewer, guidance, stop and persisted hist
   const caps = await (await page.request.get('/api/plugins/chathermes/chat/capabilities')).json()
   expect(caps).toMatchObject({ mode: 'native-retained', admission: true, features: { busy_send: 'explicit', images: true } })
   if (info.project.name === 'mobile') await plugin.getByRole('button', { name: 'Open navigation' }).click()
-  await plugin.getByRole('button', { name: 'New chat', exact: true }).click()
+  await plugin.getByRole('complementary', { name: 'Navigation' }).getByRole('button', { name: 'New chat', exact: true }).click()
   await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBeTruthy()
   await expect(plugin.getByText('Loading conversation…', { exact: true })).toHaveCount(0)
   const composer = plugin.getByRole('textbox', { name: 'Message Hermes' })
