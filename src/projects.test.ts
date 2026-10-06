@@ -93,7 +93,7 @@ describe('authoritative gateway Projects', () => {
   it('moves Projects out of the drawer and navigates to selected project sessions', async () => {
     const fetch = setup(); const wrapper = mount(App); await flushPromises()
     expect(wrapper.find('.sidebar [aria-label="Project A"]').exists()).toBe(false)
-    expect(wrapper.get('.drawer-chat').text()).toBe('chat')
+    expect(wrapper.get('.new-chat-nav').text()).toBe('New chat')
     expect(wrapper.find('.drawer-account #profile-field').exists()).toBe(true)
     await wrapper.get('.projects-nav').trigger('click'); await flushPromises()
     expect(wrapper.get('[aria-label="Project list"]').text()).toContain('Automatic repo')

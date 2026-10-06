@@ -26,6 +26,24 @@ function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('profile navigation', () => {
+  it('keeps global navigation in the drawer and exposes screen actions from the top-right menu', async () => {
+    mockFetch(vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [], total: 0 })))
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(wrapper.find('.new-chat-nav').exists()).toBe(true)
+    expect(wrapper.find('.projects-nav').exists()).toBe(true)
+    expect(wrapper.find('.scheduled-nav').exists()).toBe(true)
+    expect(wrapper.find('.topbar .topbar-profile').classes()).toContain('sr-only')
+    expect(wrapper.find('.screen-menu .topbar-profile').exists()).toBe(false)
+    expect(wrapper.find('.drawer-chat').exists()).toBe(false)
+    expect(wrapper.find('.new-chat-nav').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    expect(wrapper.get('[role="menu"]').get('[role="menuitem"]').text()).toBe('New chat')
+    expect(wrapper.get('[aria-label="Screen options"]').attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[role="menuitem"]').trigger('click')
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('rejects invalid profile names without requesting or storing credentials', async () => {
     const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
     mockFetch( fake)
