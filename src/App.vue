@@ -692,8 +692,9 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
           <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu()">
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
-            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="newChat(); closeScreenMenu()">New chat</button>
-            <button v-if="embedded" class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="exitPlugin(); closeScreenMenu()">Back to dashboard</button>
+            <button class="screen-menu-item" role="menuitem" @click="newChat(); closeScreenMenu()">New chat</button>
+            <button v-if="projectId && !projectsPage && !scheduledPage" class="screen-menu-item" role="menuitem" :disabled="offline || creating || !selectedProject || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))" @click="createSession(); closeScreenMenu()">New project chat</button>
+            <button v-if="embedded" class="screen-menu-item" role="menuitem" @click="exitPlugin(); closeScreenMenu()">Back to dashboard</button>
           </div>
         </div>
       </header>

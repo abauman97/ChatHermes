@@ -26,6 +26,12 @@ body { margin: 0; background: #000; }
 .chathermes-embedded .app-shell { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .chathermes-embedded button, .chathermes-embedded input, .chathermes-embedded textarea, .chathermes-embedded select { font-family: inherit; }
 
+/* Keep every screen action consistent even under the dashboard's button theme. */
+.screen-menu .screen-menu-item { min-height: 44px; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: inherit; font-size: 14px; font-weight: 400; line-height: 20px; text-align: left; }
+.screen-menu .screen-menu-item:hover { background: #424242; }
+.screen-menu .screen-menu-item:disabled { opacity: .55; cursor: not-allowed; }
+.screen-menu .screen-menu-item:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+
 .transcript, .message, .markdown-content { min-width: 0; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }

@@ -31,6 +31,59 @@ function setup(detail: (id: string) => Promise<Response> = async id => json({ pr
   return fetch
 }
 describe('authoritative gateway Projects', () => {
+  it.each(['', '&session=project_s1'])('offers a scoped screen action from a project or its chat (%s)', async suffix => {
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a' + suffix)
+    const fetch = setup(); const wrapper = mount(App, { attachTo: document.body }); await flushPromises()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    const menu = wrapper.get('[role="menu"]')
+    expect(menu.findAll('[role="menuitem"]').map(item => item.text())).toEqual(['New chat', 'New project chat'])
+    expect(menu.findAll('[role="menuitem"]').every(item => item.classes().includes('screen-menu-item'))).toBe(true)
+    await menu.findAll('[role="menuitem"]')[1]!.trigger('click'); await flushPromises()
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="Screen options"]').element)
+    expect(location.search).toContain('project=p_a')
+    expect(location.search).toContain('profile=alpha')
+    expect(location.search).toContain('session=project_created')
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toEqual([
+      ['/api/plugins/chathermes/projects/session?project_id=p_a&profile=alpha', expect.objectContaining({ body: '{}' })],
+    ])
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    await wrapper.get('[role="menuitem"]').trigger('click'); await flushPromises()
+    expect(location.search).not.toContain('project=')
+    expect(location.search).toContain('session=other_created')
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    expect(wrapper.get('[role="menu"]').text()).not.toContain('New project chat')
+    wrapper.unmount()
+  })
+  it.each([
+    { label: 'archived', project: { ...a, archived: true } },
+    { label: 'without a workspace', project: b },
+    { label: 'missing', project: undefined },
+  ])('disables the scoped menu action for a project that is $label', async ({ project }) => {
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=' + (project?.id || 'deleted'))
+    const fetch = setup(async () => project ? json({ project }) : json({}, 404))
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    const action = wrapper.get('[role="menu"]').findAll('[role="menuitem"]')[1]!
+    expect(action.text()).toBe('New project chat')
+    expect(action.attributes('disabled')).toBeDefined()
+    await action.trigger('click'); await flushPromises()
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    wrapper.unmount()
+  })
+  it('does not offer a stale project action after switching profiles or on the Projects list', async () => {
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a&session=project_s1')
+    setup(); const wrapper = mount(App); await flushPromises()
+    await wrapper.get('.projects-nav').trigger('click'); await flushPromises()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    expect(wrapper.get('[role="menu"]').text()).not.toContain('New project chat')
+    await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    expect(wrapper.get('[role="menu"]').text()).not.toContain('New project chat')
+    wrapper.unmount()
+  })
   it.each([{ label: 'populated', rows: [a, b] }, { label: 'empty', rows: [] }])('keeps $label Projects stable during event refreshes', async ({ rows }) => {
     setup(); vi.stubGlobal('EventSource', class {})
     let refresh!: () => void, finish!: (value: ProjectTree) => void
@@ -148,7 +201,8 @@ describe('authoritative gateway Projects', () => {
     const create = vi.spyOn(api, 'projectCreate').mockImplementation(() => new Promise(resolve => { finish = resolve }))
     history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a')
     const wrapper = mount(App); await flushPromises()
-    await wrapper.findAll('[aria-label="Selected Project"] button').find(button => button.text() === 'New chat')!.trigger('click'); await flushPromises()
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    await wrapper.get('[role="menu"]').findAll('[role="menuitem"]')[1]!.trigger('click'); await flushPromises()
     await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
     finish({ id: 'late_project_session' }); await flushPromises()
     expect(create).toHaveBeenCalledWith('alpha', 'p_a')

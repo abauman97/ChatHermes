@@ -8405,48 +8405,48 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 }, Gm = { class: "main-panel flex h-dvh min-w-0 flex-1 flex-col" }, Km = { class: "topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8" }, qm = ["aria-expanded"], Jm = { class: "min-w-0 flex-1 truncate text-base font-medium" }, Ym = { class: "topbar-profile sr-only" }, Xm = ["aria-expanded"], Zm = {
 	class: "truncate px-3 py-2 text-xs text-[#a3a3a3]",
 	role: "presentation"
-}, Qm = {
+}, Qm = ["disabled"], $m = {
 	key: 0,
 	class: "notice bg-[#303030] px-5 py-3 text-sm text-white dark:bg-[#303030] dark:text-white",
 	role: "status"
-}, $m = {
+}, eh = {
 	key: 1,
 	class: "notice px-5 py-3 text-sm text-[#b4b4b4]",
 	role: "status"
-}, eh = {
+}, th = {
 	key: 2,
 	class: "px-5 py-2 text-sm text-[#b4b4b4]",
 	role: "status"
-}, th = {
+}, nh = {
 	key: 3,
 	class: "notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]",
 	role: "alert"
-}, nh = {
+}, rh = {
 	key: 6,
 	class: "min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10",
 	"aria-label": "Selected Project"
-}, rh = {
+}, ih = {
 	key: 0,
 	role: "status"
-}, ih = {
+}, ah = {
 	key: 1,
 	class: "mb-4 text-[#fecaca]",
 	role: "alert"
-}, ah = {
+}, oh = {
 	key: 0,
 	class: "project-muted"
-}, oh = { class: "mb-3 text-2xl font-semibold" }, sh = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, ch = ["disabled"], lh = {
+}, sh = { class: "mb-3 text-2xl font-semibold" }, ch = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, lh = ["disabled"], uh = {
 	key: 1,
 	class: "text-sm text-[#b4b4b4]"
-}, uh = ["onClick"], dh = {
+}, dh = ["onClick"], fh = {
 	key: 0,
 	class: "notice px-5 py-3 text-sm",
 	role: "status"
-}, fh = { key: 0 }, ph = ["disabled", "onClick"], mh = ["multiple", "onUpdate:modelValue"], hh = ["onUpdate:modelValue"], gh = ["onUpdate:modelValue", "aria-label"], _h = ["disabled"], vh = { key: 3 }, yh = {
+}, ph = { key: 0 }, mh = ["disabled", "onClick"], hh = ["multiple", "onUpdate:modelValue"], gh = ["onUpdate:modelValue"], _h = ["onUpdate:modelValue", "aria-label"], vh = ["disabled"], yh = { key: 3 }, bh = {
 	key: 8,
 	class: "px-5 py-2 text-sm text-[#b4b4b4]",
 	role: "status"
-}, bh = /* @__PURE__ */ Hn({
+}, xh = /* @__PURE__ */ Hn({
 	__name: "App",
 	setup(e) {
 		let t = /* @__PURE__ */ U(!1), n = /* @__PURE__ */ U(0), r = /* @__PURE__ */ U(""), i = /* @__PURE__ */ U(!1), a = /* @__PURE__ */ U(!1), o = /* @__PURE__ */ U(!1), s = /* @__PURE__ */ U(!1), c = /* @__PURE__ */ U(""), l = /* @__PURE__ */ U(""), u = /* @__PURE__ */ U([]), d = /* @__PURE__ */ U(), f = /* @__PURE__ */ U(!1), p = /* @__PURE__ */ U(!1), m = /* @__PURE__ */ U(""), h = /* @__PURE__ */ U(""), g = /* @__PURE__ */ U([]), _ = /* @__PURE__ */ U(!1), v = X(() => l.value ? d.value ? Fs(d.value) : [] : D.value.filter((e) => !g.value.includes(e.id))), y, b;
@@ -9217,8 +9217,8 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				"aria-label": "Navigation"
 			}, [
 				q("div", Om, [
-					g[16] ||= q("span", { class: "brand-mark grid size-9 shrink-0 place-items-center text-white" }, "✳", -1),
-					g[17] ||= q("span", null, "ChatHermes", -1),
+					g[17] ||= q("span", { class: "brand-mark grid size-9 shrink-0 place-items-center text-white" }, "✳", -1),
+					g[18] ||= q("span", null, "ChatHermes", -1),
 					q("button", {
 						ref_key: "closeButton",
 						ref: Te,
@@ -9231,7 +9231,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					class: "drawer-chat flex min-h-[44px] shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030] disabled:opacity-55",
 					disabled: j.value || ve.value,
 					onClick: vt
-				}, [...g[18] ||= [q("svg", {
+				}, [...g[19] ||= [q("svg", {
 					class: "size-6",
 					viewBox: "0 0 24 24",
 					fill: "none",
@@ -9243,7 +9243,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					class: "projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": a.value || i.value ? "page" : void 0,
 					onClick: g[0] ||= (e) => gt()
-				}, [...g[19] ||= [q("svg", {
+				}, [...g[20] ||= [q("svg", {
 					class: "size-6",
 					viewBox: "0 0 24 24",
 					fill: "none",
@@ -9255,7 +9255,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					class: "scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": t.value ? "page" : void 0,
 					onClick: g[1] ||= (e) => lt()
-				}, [...g[20] ||= [q("svg", {
+				}, [...g[21] ||= [q("svg", {
 					class: "size-6",
 					viewBox: "0 0 24 24",
 					fill: "none",
@@ -9291,14 +9291,14 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					"busy"
 				]),
 				q("div", Mm, [
-					g[25] ||= q("label", { for: "profile-field" }, "Profile", -1),
+					g[26] ||= q("label", { for: "profile-field" }, "Profile", -1),
 					q("div", Nm, [q("select", {
 						id: "profile-field",
 						class: "profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white",
 						value: T.value,
 						onChange: g[4] ||= (e) => Ct(e.target.value)
 					}, [
-						g[21] ||= q("option", { value: "" }, "Current profile", -1),
+						g[22] ||= q("option", { value: "" }, "Current profile", -1),
 						T.value && !me.value.some((e) => e.name === T.value) ? (G(), K("option", {
 							key: 0,
 							value: T.value
@@ -9316,7 +9316,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						"aria-controls": "drawer-settings",
 						"aria-expanded": Ue.value,
 						onClick: Zt
-					}, [...g[22] ||= [q("svg", {
+					}, [...g[23] ||= [q("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -9338,12 +9338,12 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						role: "dialog",
 						"aria-label": "Settings",
 						tabindex: "-1"
-					}, [q("div", Rm, [g[23] ||= q("h2", { class: "text-base font-medium text-white" }, "Settings", -1), q("button", {
+					}, [q("div", Rm, [g[24] ||= q("h2", { class: "text-base font-medium text-white" }, "Settings", -1), q("button", {
 						class: "size-11 rounded-lg text-xl text-white hover:bg-[#303030]",
 						"aria-label": "Close settings",
 						onClick: g[5] ||= (e) => Xt(!0)
 					}, "×")]), q("div", zm, [
-						g[24] ||= q("h3", {
+						g[25] ||= q("h3", {
 							id: "notifications-heading",
 							class: "text-sm font-medium text-white"
 						}, "Notifications", -1),
@@ -9370,7 +9370,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						"aria-label": "Open navigation",
 						"aria-expanded": se.value,
 						onClick: Yt
-					}, [...g[26] ||= [q("svg", {
+					}, [...g[27] ||= [q("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -9384,7 +9384,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						ref_key: "screenMenuWrap",
 						ref: De,
 						class: "screen-menu-wrap relative",
-						onKeydown: g[10] ||= To(Co((e) => $t(), ["stop", "prevent"]), ["esc"])
+						onKeydown: g[11] ||= To(Co((e) => $t(), ["stop", "prevent"]), ["esc"])
 					}, [q("button", {
 						ref_key: "screenMenuButton",
 						ref: L,
@@ -9400,37 +9400,46 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						class: "screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl",
 						role: "menu",
 						"aria-label": "Screen options",
-						onClick: g[9] ||= (e) => $t()
+						onClick: g[10] ||= (e) => $t()
 					}, [
 						q("span", Zm, P(T.value || "Current profile"), 1),
 						q("button", {
-							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
+							class: "screen-menu-item",
 							role: "menuitem",
 							onClick: g[7] ||= (e) => {
 								vt(), $t();
 							}
 						}, "New chat"),
-						Ce.value ? (G(), K("button", {
+						l.value && !a.value && !t.value ? (G(), K("button", {
 							key: 0,
-							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
+							class: "screen-menu-item",
 							role: "menuitem",
+							disabled: j.value || ve.value || !d.value || d.value.archived || !d.value.isNoProject && !Wt(Ps)(d.value),
 							onClick: g[8] ||= (e) => {
+								Tt(), $t();
+							}
+						}, "New project chat", 8, Qm)) : Y("v-if", !0),
+						Ce.value ? (G(), K("button", {
+							key: 1,
+							class: "screen-menu-item",
+							role: "menuitem",
+							onClick: g[9] ||= (e) => {
 								Gt(), $t();
 							}
 						}, "Back to dashboard")) : Y("v-if", !0)
 					])) : Y("v-if", !0)], 544)
 				]),
-				j.value ? (G(), K("div", Qm, "You are offline. Messages cannot be loaded or sent.")) : Y("v-if", !0),
-				!t.value && Ze.value ? (G(), K("div", $m, P(at.value ? "Live progress is unavailable; checking run status…" : "Reconnecting to the live response…"), 1)) : Y("v-if", !0),
-				!t.value && !F.value && Ft.includes(nt.value) ? (G(), K("div", eh, "Run " + P(nt.value) + ".", 1)) : Y("v-if", !0),
-				!t.value && Ye.value ? (G(), K("div", th, [
+				j.value ? (G(), K("div", $m, "You are offline. Messages cannot be loaded or sent.")) : Y("v-if", !0),
+				!t.value && Ze.value ? (G(), K("div", eh, P(at.value ? "Live progress is unavailable; checking run status…" : "Reconnecting to the live response…"), 1)) : Y("v-if", !0),
+				!t.value && !F.value && Ft.includes(nt.value) ? (G(), K("div", th, "Run " + P(nt.value) + ".", 1)) : Y("v-if", !0),
+				!t.value && Ye.value ? (G(), K("div", nh, [
 					J(P(Ye.value) + " ", 1),
 					E.value ? (G(), K("button", {
 						key: 0,
 						class: "underline",
-						onClick: g[11] ||= (e) => at.value && F.value ? Ht() : St()
+						onClick: g[12] ||= (e) => at.value && F.value ? Ht() : St()
 					}, P(at.value && F.value ? "Refresh session history" : "Refresh history"), 1)) : Y("v-if", !0),
-					g[27] ||= J(),
+					g[28] ||= J(),
 					Qe.value ? (G(), K("button", {
 						key: 1,
 						class: "ml-3 underline",
@@ -9468,25 +9477,25 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					"error",
 					"busy",
 					"offline"
-				])) : i.value ? (G(), K("section", nh, [
+				])) : i.value ? (G(), K("section", rh, [
 					q("button", {
 						class: "project-back",
-						onClick: g[12] ||= (e) => gt(!!d.value?.archived)
+						onClick: g[13] ||= (e) => gt(!!d.value?.archived)
 					}, "← Projects"),
-					p.value ? (G(), K("p", rh, "Loading Project…")) : Y("v-if", !0),
-					h.value ? (G(), K("p", ih, [J(P(h.value) + " ", 1), q("button", {
+					p.value ? (G(), K("p", ih, "Loading Project…")) : Y("v-if", !0),
+					h.value ? (G(), K("p", ah, [J(P(h.value) + " ", 1), q("button", {
 						class: "underline",
 						onClick: mt
 					}, "Retry Project")])) : Y("v-if", !0),
 					d.value ? (G(), K(W, { key: 2 }, [
-						d.value.archived ? (G(), K("p", ah, "Archived project")) : Y("v-if", !0),
-						q("h2", oh, P(d.value.label), 1),
-						q("p", sh, P(Wt(Ps)(d.value) ? "Workspace: " + Wt(Ps)(d.value) : d.value.isNoProject ? "No project workspace" : "No workspace configured"), 1),
+						d.value.archived ? (G(), K("p", oh, "Archived project")) : Y("v-if", !0),
+						q("h2", sh, P(d.value.label), 1),
+						q("p", ch, P(Wt(Ps)(d.value) ? "Workspace: " + Wt(Ps)(d.value) : d.value.isNoProject ? "No project workspace" : "No workspace configured"), 1),
 						q("button", {
 							class: "mb-4 rounded-xl bg-[#303030] px-4 py-3 text-base disabled:opacity-55",
 							disabled: j.value || ve.value || d.value.archived || !d.value.isNoProject && !Wt(Ps)(d.value),
 							onClick: Tt
-						}, "New chat", 8, ch),
+						}, "New chat", 8, lh),
 						(G(), zi(Mp, {
 							key: d.value.id,
 							project: d.value,
@@ -9500,16 +9509,16 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 							"offline",
 							"error"
 						])),
-						g[28] ||= q("h3", { class: "mb-3 text-sm text-[#a3a3a3]" }, "Recent chats", -1),
-						v.value.length ? Y("v-if", !0) : (G(), K("p", lh, "No conversations yet.")),
+						g[29] ||= q("h3", { class: "mb-3 text-sm text-[#a3a3a3]" }, "Recent chats", -1),
+						v.value.length ? Y("v-if", !0) : (G(), K("p", uh, "No conversations yet.")),
 						(G(!0), K(W, null, mr(v.value, (e) => (G(), K("button", {
 							key: e.id,
 							class: "block w-full rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]",
 							onClick: (t) => wt(e.id)
-						}, P(e.title || "Untitled session"), 9, uh))), 128)),
+						}, P(e.title || "Untitled session"), 9, dh))), 128)),
 						q("button", {
 							class: "mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base",
-							onClick: g[13] ||= (e) => ht("")
+							onClick: g[14] ||= (e) => ht("")
 						}, "Other chats")
 					], 64)) : Y("v-if", !0)
 				])) : (G(), zi(Cf, {
@@ -9526,14 +9535,14 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					home: !E.value,
 					onSuggest: Et
 				}, {
-					request: Tn(() => [Xe.value ? (G(), K("div", dh, [
-						V.value?.kind === "clarify" ? Y("v-if", !0) : (G(), K("p", fh, "Approval required" + P(V.value?.command ? ": " + V.value.command : ""), 1)),
+					request: Tn(() => [Xe.value ? (G(), K("div", fh, [
+						V.value?.kind === "clarify" ? Y("v-if", !0) : (G(), K("p", ph, "Approval required" + P(V.value?.command ? ": " + V.value.command : ""), 1)),
 						et.value && (Wt(Z).isNative(T.value) || !F.value.startsWith("workspace-")) && V.value?.kind !== "clarify" ? (G(!0), K(W, { key: 1 }, mr(Array.isArray(V.value?.choices) ? V.value.choices : [], (e) => (G(), K("button", {
 							key: String(e),
 							class: "mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55",
 							disabled: it.value,
 							onClick: (t) => zt(String(e))
-						}, P(e === "once" ? "Allow once" : e === "deny" ? "Deny" : e === "session" ? "Allow for session" : "Always allow"), 9, ph))), 128)) : Y("v-if", !0),
+						}, P(e === "once" ? "Allow once" : e === "deny" ? "Deny" : e === "session" ? "Allow for session" : "Always allow"), 9, mh))), 128)) : Y("v-if", !0),
 						V.value?.kind === "clarify" ? (G(), K("form", {
 							key: 2,
 							onSubmit: Co(Bt, ["prevent"])
@@ -9547,22 +9556,22 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 								multiple: e.multi_select,
 								"onUpdate:modelValue": (t) => Le.value[e.qid] = t,
 								class: "block rounded-lg bg-[#303030] p-2 text-base"
-							}, [g[29] ||= q("option", { value: "" }, "Select an answer", -1), (G(!0), K(W, null, mr(e.choices, (e) => (G(), K("option", { key: e }, P(e), 1))), 128))], 8, mh)), [[go, Le.value[e.qid]]]) : Y("v-if", !0),
+							}, [g[30] ||= q("option", { value: "" }, "Select an answer", -1), (G(!0), K(W, null, mr(e.choices, (e) => (G(), K("option", { key: e }, P(e), 1))), 128))], 8, hh)), [[go, Le.value[e.qid]]]) : Y("v-if", !0),
 							e.choices?.length ? En((G(), K("input", {
 								key: 2,
 								"onUpdate:modelValue": (t) => Re.value[e.qid] = t,
 								placeholder: "Or enter your own answer",
 								"aria-label": e.question + " — custom answer",
 								class: "mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base"
-							}, null, 8, gh)), [[po, Re.value[e.qid]]]) : En((G(), K("input", {
+							}, null, 8, _h)), [[po, Re.value[e.qid]]]) : En((G(), K("input", {
 								key: 1,
 								"onUpdate:modelValue": (t) => Le.value[e.qid] = t,
 								class: "block w-full rounded-lg bg-[#303030] p-2 text-base"
-							}, null, 8, hh)), [[po, Le.value[e.qid]]])
+							}, null, 8, gh)), [[po, Le.value[e.qid]]])
 						]))), 128)), q("button", {
 							disabled: it.value,
 							class: "rounded-lg bg-[#303030] p-2 text-base"
-						}, "Submit answers", 8, _h)], 32)) : !Wt(Z).isNative(T.value) && F.value.startsWith("workspace-") ? (G(), K("p", vh, "Resolve this workspace approval in Hermes.")) : Y("v-if", !0)
+						}, "Submit answers", 8, vh)], 32)) : !Wt(Z).isNative(T.value) && F.value.startsWith("workspace-") ? (G(), K("p", yh, "Resolve this workspace approval in Hermes.")) : Y("v-if", !0)
 					])) : Y("v-if", !0)]),
 					_: 1
 				}, 8, [
@@ -9577,7 +9586,7 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					"status-label",
 					"home"
 				])),
-				!t.value && et.value && !Ze.value && nt.value === "stopping" ? (G(), K("div", yh, "Stopping…")) : Y("v-if", !0),
+				!t.value && et.value && !Ze.value && nt.value === "stopping" ? (G(), K("div", bh, "Stopping…")) : Y("v-if", !0),
 				(G(), zi(Em, {
 					key: JSON.stringify([T.value, E.value]),
 					disabled: t.value || a.value || i.value && d.value?.archived || i.value && (!d.value || !d.value.isNoProject && !Wt(Ps)(d.value)) || j.value || ve.value || xe.value || Je.value || Xe.value || Qe.value || Ze.value || !Oe.value,
@@ -9585,10 +9594,10 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					providers: ye.value,
 					"models-loading": xe.value,
 					provider: be.value,
-					"onUpdate:provider": g[14] ||= (e) => be.value = e,
+					"onUpdate:provider": g[15] ||= (e) => be.value = e,
 					"default-model": _e.value,
 					model: ge.value,
-					"onUpdate:model": g[15] ||= (e) => ge.value = e,
+					"onUpdate:model": g[16] ||= (e) => ge.value = e,
 					sending: qe.value,
 					stoppable: et.value && !it.value,
 					"suggested-prompt": I.value,
@@ -9615,8 +9624,8 @@ var Up = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 });
 //#endregion
 //#region src/main.ts
-function xh() {
-	return ko(bh);
+function Sh() {
+	return ko(xh);
 }
 //#endregion
-export { bh as App, xh as createChatHermesApp };
+export { xh as App, Sh as createChatHermesApp };
