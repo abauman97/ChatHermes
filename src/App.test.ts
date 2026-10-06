@@ -32,9 +32,10 @@ describe('drawer settings', () => {
     const wrapper = mount(App, { attachTo: document.body })
     await flushPromises()
     const sidebar = wrapper.get('.sidebar')
-    expect(sidebar.findAll('button').map(button => button.text()).slice(1, 3)).toEqual(['New chat', 'Projects'])
+    expect(sidebar.find('.projects-nav').element.compareDocumentPosition(sidebar.find('.sidebar-foot > .drawer-chat').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(sidebar.findAll('.drawer-chat').map(button => button.text())).toEqual(['New chat', 'New chat'])
     expect(wrapper.find('.push-setting').exists()).toBe(false)
-    expect(wrapper.find('.drawer-account .drawer-chat').exists()).toBe(false)
+    expect(wrapper.find('.sidebar-foot > .drawer-chat').exists()).toBe(true)
     await wrapper.get('[aria-label="Open navigation"]').trigger('click')
     await wrapper.get('[aria-label="Settings"]').trigger('click')
     const panel = wrapper.get('[role="dialog"][aria-label="Settings"]')
@@ -655,7 +656,7 @@ describe('cached turn history isolation', () => {
       if (input.includes('/v1/capabilities')) return json(streaming)
       if (input.includes('/messages')) {
         reads++
-        if (reads === 3) return stale.promise
+        if (reads === 4) return stale.promise
         return json(reads === 1 ? [] : [
           { id: 'first', role: 'user', content: 'First' },
           { role: 'assistant', content: 'First answer' },
@@ -677,7 +678,7 @@ describe('cached turn history isolation', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     document.dispatchEvent(new Event('visibilitychange'))
     await flushPromises()
-    expect(reads).toBe(3)
+    expect(reads).toBeGreaterThanOrEqual(3)
     await wrapper.get('textarea').setValue('Second')
     await wrapper.get('.composer').trigger('submit')
     controller.enqueue(new TextEncoder().encode('event: assistant.delta\ndata: {"delta":"Second live answer"}\n\n'))

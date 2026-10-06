@@ -27,7 +27,8 @@ The shipped plugin-root `pyproject.toml` declares `pywebpush==2.5.0` and
 `py-vapid==1.9.4` (Python import name `py_vapid`). Accept the Hermes installer’s
 Python dependency prompt, or use its `--yes-deps` option for an authorized
 noninteractive install. Copy-only/older installations require the explicit
-same-runtime command in [deployment](deployment.md), followed by a dashboard
+same-runtime command or `install:plugin -- --python` option in
+[deployment](deployment.md), followed by a dashboard
 restart. The test image installs this same declaration rather than supplying
 a separate test-only Web Push package. Both key generation and delivery imports
 must work before the configuration reports available. If the
