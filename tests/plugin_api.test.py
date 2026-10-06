@@ -1385,3 +1385,37 @@ async def test_retained_queued_input_starts_after_previous_terminal_frame(monkey
         assert not owner.queued_inputs
     finally:
         owner.close()
+
+
+@run_async
+@pytest.mark.parametrize('status, expected', [('complete', 'turn.complete'), ('failed', 'attention'), ('stopped', 'attention')])
+async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, status, expected):
+    import sys, types
+    from unittest.mock import Mock
+    # The plugin loads siblings by spec without registering them in sys.modules.
+    monkeypatch.delitem(sys.modules, 'chathermes_push_sender', raising=False)
+    sender = Mock()
+    monkeypatch.setattr(plugin._push_sender_module, 'notify', sender)
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server,
+        server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
+    transport = types.SimpleNamespace(close=lambda: None)
+    owner = plugin._native_owners.Owner(plugin, transport, 'alpha', 'stored')
+    owner.runtime = owner.push_session = 'runtime'
+    frame = {'jsonrpc': '2.0', 'method': 'event', 'params': {
+        'session_id': 'runtime', 'seq': 1, 'type': 'message.complete', 'payload': {'status': status}}}
+    try:
+        owner.capture({**frame, 'params': {**frame['params'], 'session_id': 'other'}})
+        sender.assert_not_called()
+        owner.capture(frame)
+        owner.capture(frame)
+        owner.notify(expected, 1)
+        sender.assert_called_once_with('alpha', 'runtime', expected, '1')
+        assert len(owner.offsets) == 1
+        # A delivery scheduling failure must still retain/publish the next frame.
+        sender.side_effect = RuntimeError('delivery unavailable')
+        owner.capture({**frame, 'params': {**frame['params'], 'seq': 2}})
+        assert len(owner.offsets) == 2
+    finally:
+        owner.close()
