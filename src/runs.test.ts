@@ -45,7 +45,7 @@ describe('durable Runs execution', () => {
     const f = fixture(); const wrapper = mount(App); await start(wrapper); await f.ready()
     f.frame('tool.started', 0, { tool_name: 'terminal', tool_call_id: 'call', args: { command: 'pwd' } }); await flushPromises()
     f.frame('tool.progress', 1, { tool_call_id: 'call', delta: 'arriving result' }); await flushPromises()
-    expect(wrapper.findAll('.active-tool').map(row => row.text())).toEqual(['Using tool: Terminal'])
+    expect(wrapper.findAll('.working-shimmer-tool').map(row => row.text())).toEqual(['Using tool: terminal'])
     expect(wrapper.text()).not.toContain('arriving result')
     expect(wrapper.findAll('.activity')).toHaveLength(1) // Active tool stays inline with Working.
     f.frame('tool.completed', 2, { tool_call_id: 'call', output: 'full result' }); await flushPromises()
@@ -97,7 +97,7 @@ describe('durable Runs execution', () => {
     const f = fixture(); const wrapper = mount(App); await start(wrapper)
     await f.ready(); f.frame('reasoning.available', 0, { text: 'Consider the evidence' })
     f.frame('tool.started', 1, { tool: 'terminal', preview: 'echo hello' }); await flushPromises()
-    expect(wrapper.text()).toContain('Consider the evidence'); expect(wrapper.get('.active-tool').text()).toBe('Using tool: Terminal')
+    expect(wrapper.text()).toContain('Consider the evidence'); expect(wrapper.get('.working-shimmer-tool').text()).toBe('Using tool: terminal')
     expect(wrapper.text()).not.toContain('echo hello')
     f.frame('tool.completed', 2, { tool: 'terminal', preview: 'hello', error: false }); await flushPromises()
     expect(wrapper.findAll('.activity[open]')).toHaveLength(0)

@@ -23,8 +23,8 @@ watch(() => props.working, working => { if (!working) expanded.value = false })
   <section class="turn-work" aria-label="Turn work">
     <button type="button" class="work-summary" :aria-expanded="expanded" :aria-controls="timelineId" @click="expanded = !expanded">
       <span class="work-chevron" :class="{ expanded }" aria-hidden="true">›</span>
-      <span :class="{ 'working-shimmer': working && !approvalPending }">{{ approvalPending ? 'Waiting for approval' : working ? 'Working…' : 'Worked' }}</span>
-      <ActivityRow v-if="activeTool" :activity="activeTool" />
+      <span :class="{ 'working-shimmer': working && !approvalPending }">{{ approvalPending ? 'Waiting for approval' : working ? 'Working…' : 'Worked' }}<template v-if="working && !approvalPending && activeTool"> <span class="working-shimmer-tool"> Using tool: {{ activeTool.toolName }}</span></template></span>
+
       <span v-if="approvalPending" class="sr-only" role="status">Waiting for approval</span>
     </button>
     <div :id="timelineId" class="work-timeline">
