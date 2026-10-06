@@ -1419,3 +1419,62 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
         assert len(owner.offsets) == 2
     finally:
         owner.close()
+
+
+@run_async
+async def test_project_instructions_create_edit_conflict_and_profile_scope(app, rpc, tmp_path):
+    calls, nodes, _ = rpc
+    root = tmp_path / 'workspace'
+    root.mkdir()
+    nodes['a']['path'] = str(root)
+    url = '/api/plugins/chathermes/projects/instructions?project_id=a&profile=alpha'
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get(url)
+        assert response.json() == {'content': '', 'filename': '.hermes.md'}
+        response = await client.put(url, json={'content': 'Use concise answers.\n', 'expected': ''})
+        assert response.status_code == 200
+        assert (root / '.hermes.md').read_text() == 'Use concise answers.\n'
+        assert (await client.get(url)).json()['content'] == 'Use concise answers.\n'
+        assert (await client.put(url, json={'content': 'stale', 'expected': ''})).status_code == 409
+        response = await client.put(url, json={'content': '', 'expected': 'Use concise answers.\n'})
+        assert response.status_code == 200
+        assert (root / '.hermes.md').read_text() == ''
+        for body in [{'content': 'x'}, {'content': 7, 'expected': ''}, {'content': 'x', 'expected': '', 'path': '/etc/passwd'}, {'content': 'x' * 65537, 'expected': ''}]:
+            assert (await client.put(url, json=body)).status_code == 422
+        assert (await client.get(url.replace('project_id=a', 'project_id=empty'))).status_code == 409
+        assert (await client.get(url.replace('project_id=a', 'project_id=missing'))).status_code == 404
+        assert (await client.get(url.replace('profile=alpha', 'profile=../bad'))).status_code == 422
+    assert all(params['profile'] == 'alpha' for _, params in calls)
+
+
+@run_async
+async def test_project_instructions_preserve_alternate_file_and_reject_unsafe_files(app, rpc, tmp_path):
+    _, nodes, _ = rpc
+    root = tmp_path / 'workspace'
+    root.mkdir()
+    nodes['a']['path'] = str(root)
+    alternate = root / 'HERMES.md'
+    alternate.write_text('Existing instructions')
+    url = '/api/plugins/chathermes/projects/instructions?project_id=a'
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        assert (await client.get(url)).json()['filename'] == 'HERMES.md'
+        assert (await client.put(url, json={'content': 'Updated', 'expected': 'Existing instructions'})).status_code == 200
+        assert alternate.read_text() == 'Updated'
+        assert not (root / '.hermes.md').exists()
+        outside = tmp_path / 'secret'
+        outside.write_text(KEY)
+        instructions = root / '.hermes.md'
+        instructions.symlink_to(outside)
+        for method in ('GET', 'PUT'):
+            response = await client.request(method, url, json={'content': 'overwrite', 'expected': KEY} if method == 'PUT' else None)
+            assert response.status_code == 409
+            assert KEY not in response.text
+        assert outside.read_text() == KEY
+        instructions.unlink()
+        instructions.mkdir()
+        assert (await client.get(url)).status_code == 409
+        instructions.rmdir()
+        instructions.write_bytes(b'\xff')
+        assert (await client.get(url)).status_code == 409
+        instructions.write_text('x' * 262145)
+        assert (await client.get(url)).status_code == 413

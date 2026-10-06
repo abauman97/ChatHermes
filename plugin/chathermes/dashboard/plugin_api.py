@@ -520,6 +520,99 @@ async def projects(request: Request):
             + [node for node in tree['projects'] if node['id'] not in ids]}
 
 
+async def _instructions_root(request, project_id):
+    # Resolve only the authenticated profile's authoritative project workspace.
+    node = (await project(request, project_id))['project']
+    root = node.get('path') or next((repo.get('path') for repo in node.get('repos', []) if repo.get('path')), None)
+    if node.get('isNoProject') or not root or not Path(root).is_absolute():
+        raise HTTPException(409, 'This Project has no workspace')
+    return root
+
+
+def _project_instructions_file(root, update=None):
+    import stat
+    import uuid
+    directory = None
+    temporary = None
+    try:
+        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        filename = '.hermes.md'
+        # Preserve the runtime's alternate filename when it already exists.
+        try:
+            os.stat(filename, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            try:
+                os.stat('HERMES.md', dir_fd=directory, follow_symlinks=False)
+                filename = 'HERMES.md'
+            except FileNotFoundError:
+                pass
+        content = ''
+        mode = 0o600
+        try:
+            descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        except FileNotFoundError:
+            descriptor = None
+        if descriptor is not None:
+            with os.fdopen(descriptor, 'rb') as file:
+                info = os.fstat(file.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise HTTPException(409, 'Instructions must be a regular workspace file')
+                mode = stat.S_IMODE(info.st_mode)
+                data = file.read(262145)
+                if len(data) > 262144:
+                    raise HTTPException(413, 'Project instructions are too large')
+                content = data.decode('utf-8')
+        if update is not None:
+            if update['expected'] != content:
+                raise HTTPException(409, 'Project instructions changed; reload before saving')
+            temporary = '.chathermes-instructions-' + uuid.uuid4().hex
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode, dir_fd=directory)
+            with os.fdopen(descriptor, 'wb') as file:
+                file.write(update['content'].encode('utf-8'))
+            os.replace(temporary, filename, src_dir_fd=directory, dst_dir_fd=directory)
+            temporary = None
+            content = update['content']
+        return {'content': content, 'filename': filename}
+    except (OSError, UnicodeError):
+        raise HTTPException(409, 'Could not access project instructions') from None
+    finally:
+        if directory is not None:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary, dir_fd=directory)
+                except OSError:
+                    pass
+            os.close(directory)
+
+
+@router.get('/projects/instructions')
+async def project_instructions(request: Request, project_id: str):
+    from starlette.concurrency import run_in_threadpool
+    root = await _instructions_root(request, project_id)
+    return await run_in_threadpool(_project_instructions_file, root)
+
+
+@router.put('/projects/instructions')
+async def save_project_instructions(request: Request, project_id: str):
+    import json
+    from starlette.concurrency import run_in_threadpool
+    _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 1048576:
+            raise HTTPException(413, 'Project instructions are too large')
+    try:
+        body = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, 'Invalid project instructions')
+    if (not isinstance(body, dict) or set(body) != {'content', 'expected'}
+            or any(not isinstance(body[key], str) or len(body[key]) > 65536 for key in body)):
+        raise HTTPException(422, 'Invalid project instructions')
+    root = await _instructions_root(request, project_id)
+    return await run_in_threadpool(_project_instructions_file, root, body)
+
+
 @router.get('/projects/{project_id}')
 @router.get('/projects/detail')
 async def project(request: Request, project_id: str):

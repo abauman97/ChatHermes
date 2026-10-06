@@ -52,6 +52,16 @@ describe('drawer settings', () => {
     expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement)
     wrapper.unmount()
   })
+  it('moves the Hermes Desktop return action into the embedded drawer', async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
+    const host = document.createElement('div'); host.className = 'chathermes-embedded'; document.body.append(host)
+    const wrapper = mount(App, { attachTo: host }); await flushPromises()
+    expect(wrapper.get('.sidebar .drawer-return').text()).toBe('← Hermes Desktop')
+    await wrapper.get('[aria-label="Screen options"]').trigger('click')
+    expect(wrapper.get('.topbar').text()).not.toContain('Hermes Desktop')
+    expect(wrapper.get('.topbar').text()).not.toContain('Back to dashboard')
+    wrapper.unmount(); host.remove()
+  })
   it('offers screen actions in the top bar while retaining profile settings', async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
     const wrapper = mount(App)

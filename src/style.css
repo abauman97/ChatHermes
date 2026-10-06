@@ -126,3 +126,14 @@ body { margin: 0; background: #000; }
 @media (prefers-reduced-motion: reduce) { .working-shimmer { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
 
 .drawer-settings:focus-visible, .settings-panel:focus-visible, .settings-panel button:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+
+.header-title { position: absolute; left: 68px; right: 68px; pointer-events: none; }
+.screen-option { border-radius: 8px; padding: 10px 12px; text-align: left; font-size: 16px; }
+.screen-option:hover { background: #424242; }
+.screen-option:disabled { opacity: .55; }
+.projects-page > *, .project-detail > * { width: 100%; max-width: 760px; margin-left: auto; margin-right: auto; }
+.project-detail .project-back { display: block; text-align: left; }
+.project-detail h2 { margin-top: 20px; }
+.project-list { gap: 12px; }
+.project-list > button { border: 1px solid #303030; border-radius: 20px; padding: 20px; }
+.project-detail :focus-visible, .screen-option:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
