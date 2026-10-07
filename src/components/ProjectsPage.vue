@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Project, ProjectAction } from '../types/hermes'
 const props = defineProps<{ projects: Project[]; archived: boolean; loading: boolean; error: string; busy: boolean; offline: boolean }>()
-const emit = defineEmits<{ select: [id: string]; archive: [value: boolean]; retry: []; manage: [action: ProjectAction, fields: Record<string, string | boolean>] }>()
+const emit = defineEmits<{ select: [id: string]; retry: []; manage: [action: ProjectAction, fields: Record<string, string | boolean>] }>()
 const rows = computed(() => props.projects.filter(p => !p.isNoProject && !!p.archived === props.archived))
 const adding = ref(false), name = ref(''), path = ref('')
 function create() { if (name.value.trim()) emit('manage', 'create', { name: name.value.trim(), ...(path.value.trim() ? { primary_path: path.value.trim() } : {}) }) }
@@ -10,7 +10,7 @@ function create() { if (name.value.trim()) emit('manage', 'create', { name: name
 <template>
   <section class="projects-page page-content" aria-label="Projects">
     <div class="page-heading"><h2>Projects</h2><button v-if="!archived" class="project-button" :disabled="busy || offline" @click="adding = !adding">New project</button></div>
-    <div class="project-tabs" aria-label="Project status"><button :aria-pressed="!archived" @click="emit('archive', false)">Active</button><button :aria-pressed="archived" @click="emit('archive', true)">Archived</button></div>
+    <p v-if="archived" class="project-muted">Archived projects</p>
     <form v-if="adding && !archived" class="project-form" @submit.prevent="create">
       <label>Project name<input v-model="name" required maxlength="160" autofocus /></label>
       <label>Folder (optional)<input v-model="path" placeholder="/path/on/hermes/server" /></label>

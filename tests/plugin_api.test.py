@@ -1419,3 +1419,107 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
         assert len(owner.offsets) == 2
     finally:
         owner.close()
+
+
+@run_async
+@pytest.mark.parametrize('filename', plugin._INSTRUCTION_NAMES)
+async def test_project_instructions_load_and_save_precedence(app, rpc, tmp_path, filename):
+    calls, nodes, _ = rpc
+    nodes['a']['path'] = str(tmp_path)
+    index = plugin._INSTRUCTION_NAMES.index(filename)
+    for name in plugin._INSTRUCTION_NAMES[index:]:
+        (tmp_path / name).write_text('Original ' + name)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        url = '/api/plugins/chathermes/project-instructions?project_id=a&profile=alpha'
+        result = await client.get(url)
+        assert result.status_code == 200
+        body = result.json()
+        assert body['filename'] == filename and body['content'] == 'Original ' + filename
+        assert KEY not in result.text and str(tmp_path) not in result.text
+        body['content'] = 'Updated instructions\n'
+        result = await client.put(url, json=body)
+        assert result.status_code == 200
+        assert (tmp_path / filename).read_text() == body['content']
+        for name in plugin._INSTRUCTION_NAMES[index + 1:]:
+            assert (tmp_path / name).read_text() == 'Original ' + name
+    assert all(params['profile'] == 'alpha' for _, params in calls)
+    if filename != '.hermes.md':
+        assert not (tmp_path / '.hermes.md').exists()
+
+
+@run_async
+async def test_project_instructions_create_only_on_save_and_reject_stale_changes(app, rpc, tmp_path):
+    _, nodes, _ = rpc
+    nodes['a']['path'] = str(tmp_path)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        url = '/api/plugins/chathermes/project-instructions?project_id=a'
+        body = (await client.get(url)).json()
+        assert body == {'filename': '.hermes.md', 'content': '', 'revision': None}
+        assert list(tmp_path.iterdir()) == []
+        body['content'] = 'New instructions'
+        response = await client.put(url, json=body)
+        assert response.status_code == 200
+        assert (tmp_path / '.hermes.md').read_text() == body['content']
+        assert (await client.put(url, json=body)).status_code == 409
+        stale = response.json()
+        (tmp_path / '.hermes.md').write_text('External change')
+        assert (await client.put(url, json={**stale, 'content': 'Overwrite'})).status_code == 409
+        assert (tmp_path / '.hermes.md').read_text() == 'External change'
+        # A new higher-priority file also invalidates an open editor.
+        (tmp_path / '.hermes.md').unlink()
+        (tmp_path / 'AGENTS.md').write_text('Agents')
+        stale = (await client.get(url)).json()
+        (tmp_path / '.hermes.md').write_text('Higher priority')
+        assert (await client.put(url, json={**stale, 'content': 'Overwrite'})).status_code == 409
+        assert (tmp_path / 'AGENTS.md').read_text() == 'Agents'
+
+
+@run_async
+async def test_project_instructions_reject_paths_links_oversize_and_bad_scope(app, rpc, tmp_path):
+    _, nodes, _ = rpc
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    nodes['a']['path'] = str(workspace)
+    secret = tmp_path / 'secret'; secret.write_text(KEY)
+    instructions = workspace / '.hermes.md'
+    instructions.symlink_to(secret)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        url = '/api/plugins/chathermes/project-instructions?project_id=a'
+        response = await client.get(url)
+        assert response.status_code == 409 and KEY not in response.text
+        assert (await client.put(url, json={'filename': '.hermes.md', 'content': 'bad', 'revision': None})).status_code == 409
+        assert secret.read_text() == KEY
+        instructions.unlink(); instructions.mkdir()
+        assert (await client.get(url)).status_code == 409
+        instructions.rmdir(); instructions.write_text('x' * (plugin._INSTRUCTION_LIMIT + 1))
+        assert (await client.get(url)).status_code == 413
+        instructions.unlink(); instructions.write_bytes(b'\xff')
+        assert (await client.get(url)).status_code == 409
+        for body in ({'filename': '../secret', 'content': 'bad', 'revision': None},
+                     {'filename': '.hermes.md', 'content': None, 'revision': None},
+                     {'filename': '.hermes.md', 'content': 'bad', 'revision': None, 'cwd': str(tmp_path)},
+                     {'filename': '.hermes.md', 'content': 'bad', 'revision': 'invalid'}):
+            assert (await client.put(url, json=body)).status_code == 422
+        assert (await client.put(url, json={'filename': '.hermes.md', 'content': 'x' * (plugin._INSTRUCTION_LIMIT + 1), 'revision': None})).status_code == 413
+        for project_id, status in [('empty', 409), ('home', 409), ('missing', 404)]:
+            assert (await client.get('/api/plugins/chathermes/project-instructions', params={'project_id': project_id})).status_code == status
+        assert (await client.get(url + '&profile=../bad')).status_code == 422
+        nodes['a']['path'] = str(tmp_path / 'unavailable')
+        assert (await client.get(url)).status_code == 409
+
+
+@run_async
+async def test_project_instructions_use_existing_empty_file_and_refuse_hardlinks(app, rpc, tmp_path):
+    import os
+    _, nodes, _ = rpc
+    nodes['a']['path'] = str(tmp_path)
+    (tmp_path / 'AGENTS.override.md').write_text('')
+    (tmp_path / 'AGENTS.md').write_text('Lower priority')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        url = '/api/plugins/chathermes/project-instructions?project_id=a'
+        body = (await client.get(url)).json()
+        assert body['filename'] == 'AGENTS.override.md' and body['content'] == ''
+        body['content'] = 'Updated override'
+        assert (await client.put(url, json=body)).status_code == 200
+        assert (tmp_path / 'AGENTS.md').read_text() == 'Lower priority'
+        os.link(tmp_path / 'AGENTS.md', tmp_path / '.hermes.md')
+        assert (await client.get(url)).status_code == 409

@@ -274,3 +274,20 @@ RPC display projection omits terminal and most other tool results; using REST fo
 history preserves completed disclosure output and attachments. Only a 404 for a
 known workspace draft falls back to the native resume transcript. No non-404
 history error or different profile silently switches transport.
+
+The project instructions editor uses authenticated `GET` and `PUT
+/project-instructions?project_id=…` routes. The selected profile's native Project
+lookup supplies the workspace; the browser cannot supply a directory. Within that
+directory, the first existing file wins in this order: `.hermes.md`, `HERMES.md`,
+`AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`. When none exists,
+GET returns an empty draft and PUT creates `.hermes.md`. This editor targets the
+project directory; it does not edit inherited instructions in parent directories.
+
+GET returns `{filename, content, revision}`; PUT accepts exactly those fields.
+`revision` is a SHA-256 digest of the loaded bytes, or null for a new file. A file
+change or a newly discovered higher-priority file returns 409 and retains the
+browser draft. Content must be UTF-8 and at most 128 KiB. Symlinks, hard links,
+non-regular files and unavailable local workspaces are rejected. Filesystem
+errors are generic. Editing instructions does not move or resume any session;
+Hermes's existing context loader consumes the saved file on subsequent context
+loads. Project details and instructions pages retain profile/project URL scope.

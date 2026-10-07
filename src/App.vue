@@ -10,11 +10,13 @@ import { projectRoot, projectSessions } from './lib/projects'
 import ScheduledPage from './components/ScheduledPage.vue'
 import ProjectsPage from './components/ProjectsPage.vue'
 import ProjectSettings from './components/ProjectSettings.vue'
+import ProjectInstructions from './components/ProjectInstructions.vue'
 import * as push from './lib/push'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
 const scheduledPage = ref(false), scheduledPageKey = ref(0), scheduledDiscussionError = ref('')
+const projectPage = ref<'' | 'edit' | 'instructions'>(''), projectConfirmation = ref<'delete' | 'archive'>(), projectConfirmCancel = ref<HTMLButtonElement>()
 const projectView = ref(false), projectsPage = ref(false), archivedProjects = ref(false), projectBusy = ref(false), manageError = ref('')
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
 const scopedSessionIds = ref<string[]>([])
@@ -69,8 +71,9 @@ const reconnectNotice = ref(false), runStatus = ref(''), approval = ref<Record<s
 const eventStreamExpired = ref(false)
 let lastSeq = -1
 function urlState() { const params = new URLSearchParams(location.search); return { profile: params.get('profile') || '', session: params.get('session') || '', project: params.get('project') || '', view: params.get('view') || '', archived: params.get('archived') === '1' } }
-function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); url.searchParams.delete('project'); url.searchParams.delete('view'); url.searchParams.delete('archived'); url.searchParams.delete('job'); url.searchParams.delete('scheduled_run'); if (scheduledPage.value) url.searchParams.set('view', 'scheduled'); else if (projectsPage.value) { url.searchParams.set('view', 'projects'); if (archivedProjects.value) url.searchParams.set('archived', '1') } else if (projectView.value) url.searchParams.set('view', 'project'); if (!scheduledPage.value && projectId.value) url.searchParams.set('project', projectId.value); if (profile.value) url.searchParams.set('profile', profile.value); if (!scheduledPage.value && session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
+function setUrl(replace = false) { const url = new URL(location.href); url.searchParams.delete('profile'); url.searchParams.delete('session'); url.searchParams.delete('project'); url.searchParams.delete('view'); url.searchParams.delete('archived'); url.searchParams.delete('job'); url.searchParams.delete('scheduled_run'); if (scheduledPage.value) url.searchParams.set('view', 'scheduled'); else if (projectsPage.value) { url.searchParams.set('view', 'projects'); if (archivedProjects.value) url.searchParams.set('archived', '1') } else if (projectPage.value) url.searchParams.set('view', 'project-' + projectPage.value); else if (projectView.value) url.searchParams.set('view', 'project'); if (!scheduledPage.value && projectId.value) url.searchParams.set('project', projectId.value); if (profile.value) url.searchParams.set('profile', profile.value); if (!scheduledPage.value && session.value) url.searchParams.set('session', session.value); history[replace ? 'replaceState' : 'pushState']({}, '', url.pathname + url.search + url.hash) }
 function showScheduled(fromHistory = false) {
+  projectPage.value = ''; projectConfirmation.value = undefined
   scheduledDiscussionError.value = ''; scheduledPage.value = true; scheduledPageKey.value++; projectsPage.value = false; projectView.value = false; drawer.value = false
   if (!fromHistory) setUrl()
 }
@@ -114,13 +117,15 @@ async function loadProject() {
   finally { if (controller === projectAbort) projectLoading.value = false }
 }
 async function chooseProject(id: string, fromHistory = false) {
+  projectPage.value = ''; projectConfirmation.value = undefined
   scheduledPage.value = false
   // Scope changes never touch the live/stored session or its working directory.
   projectAbort?.abort(); projectsPage.value = false; manageError.value = ''; projectId.value = id; projectView.value = !!id; selectedProject.value = undefined; projectError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
   await loadProject()
 }
-function showProjects(archived = archivedProjects.value, fromHistory = false) {
+function showProjects(archived = false, fromHistory = false) {
+  projectPage.value = ''; projectConfirmation.value = undefined
   scheduledPage.value = false
   projectAbort?.abort(); projectLoading.value = false; projectsPage.value = true; projectView.value = false; archivedProjects.value = archived; drawer.value = false; manageError.value = ''
   if (!fromHistory) setUrl()
@@ -131,9 +136,25 @@ async function recentSession(id: string) {
   await chooseSession(id)
 }
 async function newChat() {
+  projectPage.value = ''; projectConfirmation.value = undefined
   scheduledPage.value = false
   projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined; projectView.value = false; projectsPage.value = false
   return await createSession()
+}
+function openProjectPage(page: 'edit' | 'instructions', fromHistory = false) {
+  if (!selectedProject.value || selectedProject.value.isNoProject) return
+  projectPage.value = page; projectView.value = true; manageError.value = ''; closeScreenMenu(false)
+  if (!fromHistory) setUrl()
+}
+async function confirmProject(action: 'delete' | 'archive') {
+  projectConfirmation.value = action; closeScreenMenu(false); await nextTick(); projectConfirmCancel.value?.focus()
+}
+function dismissProjectConfirmation() { projectConfirmation.value = undefined; screenMenuButton.value?.focus() }
+async function submitProjectConfirmation() {
+  const action = projectConfirmation.value
+  if (!action) return
+  await manageProject(action, { id: projectId.value })
+  if (!manageError.value) projectConfirmation.value = undefined
 }
 async function manageProject(action: ProjectAction, fields: Record<string, string | boolean>) {
   if (projectBusy.value || offline.value) return
@@ -187,6 +208,7 @@ async function loadMessages() {
 async function chooseProfile(id: string, fromHistory = false) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) { error.value = 'Invalid profile name'; return }
   scheduledPage.value = false; suggestedPrompt.value = ''; creating.value = false
+  projectPage.value = ''; projectConfirmation.value = undefined
   projectsLoaded.value = false
   closeProjectEvents?.(); closeProjectEvents = undefined; clearTimeout(refreshTimer); scopedSessionIds.value = []; cancel(); projectsAbort?.abort(); projectAbort?.abort(); projectId.value = ''; projectView.value = false; projectsPage.value = false; archivedProjects.value = false; projectBusy.value = false; manageError.value = ''; selectedProject.value = undefined; projects.value = []; projectError.value = ''; projectsError.value = ''; projectLoading.value = false; profile.value = id; session.value = ''; sessions.value = []; messages.value = []; capabilities.value = {}; models.value = []; providers.value = []; provider.value = ''; model.value = ''; defaultModel.value = ''; modelsLoading.value = true; draft.value = ''; progress.value = []; error.value = ''; chatError.value = ''; offset.value = 0; hasMore.value = false; drawer.value = false
   if (!fromHistory) setUrl()
@@ -210,7 +232,7 @@ async function chooseSession(id: string, fromHistory = false) {
   scheduledPage.value = false
   if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id)
   else if (sessions.value.find(row => row.id === id)?.cwd || sessions.value.find(row => row.id === id)?.source === 'desktop') api.workspace(profile.value, id)
-  projectView.value = false; projectsPage.value = false; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
+  projectPage.value = ''; projectConfirmation.value = undefined; projectView.value = false; projectsPage.value = false; suggestedPrompt.value = ''; cancelChat(); session.value = id; messages.value = []; draft.value = ''; progress.value = []; chatError.value = ''; drawer.value = false
   if (!fromHistory) setUrl()
   const current = generation, p = profile.value
   if (!projectId.value && !api.isWorkspace(p, id)) {
@@ -613,7 +635,7 @@ function onlineChange() { offline.value = !navigator.onLine; if (!offline.value)
 function pop() {
   const state = urlState()
   const pending = chooseProfile(state.profile, true), current = generation
-  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+  void pending.then(() => { if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current !== generation) return; if (state.view === 'project-edit' || state.view === 'project-instructions') openProjectPage(state.view === 'project-edit' ? 'edit' : 'instructions', true); else if (state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 }
 function closeDrawer() { settingsOpen.value = false; drawer.value = false; menuButton.value?.focus() }
 async function openDrawer() { drawer.value = true; await nextTick(); closeButton.value?.focus() }
@@ -652,7 +674,7 @@ function serviceWorkerMessage(event: MessageEvent) {
   history.pushState({}, '', url.pathname + url.search)
   pop()
 }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); document.addEventListener('pointerdown', settingsOutside); document.addEventListener('click', screenMenuOutside); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current === generation && state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); document.addEventListener('pointerdown', settingsOutside); document.addEventListener('click', screenMenuOutside); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current !== generation) return; if (state.view === 'project-edit' || state.view === 'project-instructions') openProjectPage(state.view === 'project-edit' ? 'edit' : 'instructions', true); else if (state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
 onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey); document.removeEventListener('pointerdown', settingsOutside); document.removeEventListener('click', screenMenuOutside) })
 </script>
 <template>
@@ -662,6 +684,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <button class="drawer-chat flex min-h-[44px] shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030] disabled:opacity-55" :disabled="offline || creating" @click="newChat"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg>New chat</button>
       <button class="projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]" :aria-current="projectsPage || projectView ? 'page' : undefined" @click="showProjects()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" /></svg>Projects</button>
       <button class="scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]" :aria-current="scheduledPage ? 'page' : undefined" @click="showScheduled()"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6"/></svg>Scheduled</button>
+      <button v-if="embedded" class="drawer-dashboard min-h-[44px] rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]" @click="exitPlugin">← Hermes Desktop</button>
       <SessionSidebar heading="Recents" :sessions="sessions" :selected="session" :loading="loading" :error="error" :has-more="hasMore" :busy="offline || creating" @select="recentSession" @create="newChat" @more="loadSessions(true)" @retry="loadSessions()" @rename="rename" />
       <div class="sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile</label>
@@ -686,38 +709,64 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
-        <h1 class="min-w-0 flex-1 truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : (projectView ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
+        <h1 class="header-title min-w-0 flex-1 truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : (projectId ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
         <span class="topbar-profile sr-only">{{ profile || 'Current profile' }}</span>
         <div ref="screenMenuWrap" class="screen-menu-wrap relative" @keydown.esc.stop.prevent="closeScreenMenu()">
           <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
           <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu()">
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
-            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="newChat(); closeScreenMenu()">New chat</button>
-            <button v-if="embedded" class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="exitPlugin(); closeScreenMenu()">Back to dashboard</button>
+            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" :disabled="offline || creating || (projectView && (!selectedProject || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))))" @click="projectView ? createSession() : newChat(); closeScreenMenu()">New chat</button>
+            <template v-if="projectsPage">
+              <button role="menuitemradio" :aria-checked="!archivedProjects" @click="showProjects(false)">Active projects</button>
+              <button role="menuitemradio" :aria-checked="archivedProjects" @click="showProjects(true)">Archived projects</button>
+            </template>
+            <template v-else-if="!scheduledPage && selectedProject && !selectedProject.isNoProject">
+              <button role="menuitem" @click="openProjectPage('edit')">Edit project</button>
+              <button role="menuitem" :disabled="offline || !projectRoot(selectedProject)" @click="openProjectPage('instructions')">Edit Instructions</button>
+              <template v-if="!selectedProject.isAuto">
+                <button v-if="selectedProject.archived" role="menuitem" :disabled="projectBusy || offline" @click="manageProject('archive', { id: projectId, restore: true })">Restore project</button>
+                <button v-else role="menuitem" :disabled="projectBusy || offline" @click="confirmProject('archive')">Archive project</button>
+                <button class="project-danger" role="menuitem" :disabled="projectBusy || offline" @click="confirmProject('delete')">Delete project</button>
+              </template>
+            </template>
           </div>
         </div>
       </header>
+      <div v-if="projectConfirmation && selectedProject" class="project-confirmation mx-6" role="alertdialog" aria-labelledby="project-confirmation-text" @keydown.esc.stop.prevent="!projectBusy && dismissProjectConfirmation()">
+        <p id="project-confirmation-text">{{ projectConfirmation === 'delete' ? `Delete ${selectedProject.label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${selectedProject.label}? You can restore it from Archived projects.` }}</p>
+        <p v-if="manageError" role="alert" class="project-error">{{ manageError }}</p>
+        <div class="project-actions"><button ref="projectConfirmCancel" class="project-button" :disabled="projectBusy" @click="dismissProjectConfirmation">Cancel</button><button class="project-button project-danger" :disabled="projectBusy || offline" @click="submitProjectConfirmation">{{ projectConfirmation === 'delete' ? 'Delete project permanently' : 'Confirm archive' }}</button></div>
+      </div>
       <div v-if="offline" class="notice bg-[#303030] px-5 py-3 text-sm text-white dark:bg-[#303030] dark:text-white" role="status">You are offline. Messages cannot be loaded or sent.</div>
       <div v-if="!scheduledPage && viewReconnect" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
       <div v-if="!scheduledPage && viewError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ viewError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="viewUnavailable" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
       <ScheduledPage v-if="scheduledPage" :key="`${profile}:${scheduledPageKey}`" :profile="profile" :chat-busy="creating" :offline="offline" :discussion-error="scheduledDiscussionError" @discuss="discussScheduled" />
-      <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
-      <section v-else-if="projectView" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
+      <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @retry="loadProjects" @manage="manageProject" />
+      <section v-else-if="projectPage && selectedProject" class="page-content project-editor" :aria-label="projectPage === 'edit' ? 'Edit project' : 'Edit Instructions'">
+        <button class="project-back" @click="chooseProject(projectId)">← {{ selectedProject.label }}</button>
+        <h2 class="text-2xl font-semibold">{{ projectPage === 'edit' ? 'Edit project' : 'Edit Instructions' }}</h2>
+        <ProjectSettings v-if="projectPage === 'edit'" :key="`${profile}:${selectedProject.id}`" :project="selectedProject" :busy="projectBusy" :offline="offline" :error="manageError" @manage="manageProject" />
+        <ProjectInstructions v-else :key="`${profile}:${selectedProject.id}`" :profile="profile" :project-id="selectedProject.id" :offline="offline" />
+      </section>
+      <section v-else-if="projectView" class="project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10" aria-label="Selected Project">
+        <div class="project-home-content">
         <button class="project-back" @click="showProjects(!!selectedProject?.archived)">← Projects</button>
         <p v-if="projectLoading" role="status">Loading Project…</p>
         <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">{{ projectError }} <button class="underline" @click="loadProject">Retry Project</button></p>
         <template v-if="selectedProject">
           <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
-          <h2 class="mb-3 text-2xl font-semibold">{{ selectedProject.label }}</h2>
           <p class="mb-4 break-all text-sm text-[#a3a3a3]">{{ projectRoot(selectedProject) ? 'Workspace: ' + projectRoot(selectedProject) : selectedProject.isNoProject ? 'No project workspace' : 'No workspace configured' }}</p>
-          <button class="mb-4 rounded-xl bg-[#303030] px-4 py-3 text-base disabled:opacity-55" :disabled="offline || creating || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))" @click="createSession">New chat</button>
-          <ProjectSettings :key="selectedProject.id" :project="selectedProject" :busy="projectBusy" :offline="offline" :error="manageError" @manage="manageProject" />
-          <h3 class="mb-3 text-sm text-[#a3a3a3]">Recent chats</h3>
           <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">No conversations yet.</p>
-          <button v-for="row in visibleSessions" :key="row.id" class="block w-full rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" @click="chooseSession(row.id)">{{ row.title || 'Untitled session' }}</button>
-          <button class="mt-5 rounded-xl bg-[#303030] px-4 py-3 text-base" @click="chooseProject('')">Other chats</button>
+          <nav class="project-chat-list" aria-label="Project chats">
+            <button v-for="row in visibleSessions" :key="row.id" class="project-chat-row" :aria-label="row.title || 'Untitled session'" @click="chooseSession(row.id)">
+              <span class="project-chat-title">{{ row.title || 'Untitled session' }}</span>
+              <span v-if="row.preview?.trim()" class="project-chat-preview">{{ row.preview }}</span>
+            </button>
+          </nav>
+          <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
         </template>
+        </div>
       </section>
       <ChatTranscript v-else :profile="profile" :messages="viewMessages" :draft="nativeMode ? '' : draft" :loading="viewLoading" :progress="nativeMode ? [] : progress" :thinking="nativeMode ? viewBusy : thinking" :working="viewBusy || viewApprovalPending" :approval-pending="viewApprovalPending" :status-label="viewApprovalPending ? viewApproval?.kind === 'clarify' ? 'Waiting for your answers' : 'Waiting for approval' : runStatus === 'stopping' ? 'Stopping…' : viewStatus !== 'Working…' ? viewStatus : ''" :home="!session" @suggest="suggest">
         <template #request>
@@ -740,7 +789,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
         </template>
       </ChatTranscript>
       <div v-if="!scheduledPage && viewActive && !viewReconnect && runStatus === 'stopping'" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Stopping…</div>
-      <ChatComposer :key="JSON.stringify([profile, session])" :disabled="scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || viewLoading || viewApprovalPending || viewUnavailable || viewReconnect || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="viewBusy" :stoppable="viewActive && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : viewApprovalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
+      <ChatComposer :project-name="!scheduledPage && !projectsPage && !selectedProject?.isNoProject ? selectedProject?.label : undefined" :key="JSON.stringify([profile, session])" :disabled="!!projectPage || scheduledPage || projectsPage || (projectView && selectedProject?.archived) || (projectView && (!selectedProject || (!selectedProject.isNoProject && !projectRoot(selectedProject)))) || offline || creating || modelsLoading || viewLoading || viewApprovalPending || viewUnavailable || viewReconnect || !canStream" :models="!api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models" :providers="providers" :models-loading="modelsLoading" v-model:provider="provider" :default-model="defaultModel" v-model:model="model" :sending="viewBusy" :stoppable="viewActive && !actionBusy" :suggested-prompt="suggestedPrompt" :reason="scheduledPage ? 'Open a chat to discuss a run.' : projectsPage ? 'Select a project or start a new chat.' : projectView && selectedProject?.archived ? 'Restore this project to start a new chat.' : projectView && selectedProject && !selectedProject.isNoProject && !projectRoot(selectedProject) ? 'This Project has no workspace.' : offline ? 'Offline · sending is unavailable.' : viewApprovalPending ? 'Approval is pending in Hermes.' : !canStream ? 'Streaming turns are unavailable for this profile.' : undefined" @stop="stopRun" @steer="steerRun" @send="send" />
     </main>
   </div>
 </template>

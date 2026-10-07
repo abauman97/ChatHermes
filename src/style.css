@@ -64,12 +64,12 @@ body { margin: 0; background: #000; }
 .project-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
 .project-tabs button { color: #b4b4b4; }
 .project-tabs button[aria-pressed=true] { color: #fff; background: #303030; }
-.project-list { display: grid; gap: 4px; }
-.project-list > button { display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 16px 12px; border-bottom: 1px solid #303030; text-align: left; border-radius: 10px; }
+.project-list { display: grid; gap: 0; }
+.project-list > button { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; text-align: left; border-radius: 10px; }
 .project-list > button:hover { background: #303030; }
 .project-list > button > span:first-of-type { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.project-list strong { font-weight: 500; font-size: 16px; }
-.project-list small, .folder-path small { display: block; color: #a3a3a3; font-size: 13px; margin-top: 4px; }
+.project-list strong { font-weight: 400; font-size: 16px; line-height: 22px; }
+.folder-path small { display: block; color: #a3a3a3; font-size: 13px; margin-top: 4px; }
 .project-muted { color: #a3a3a3; font-size: 14px; margin: 12px 0; }
 .project-error { color: #fecaca; margin: 12px 0; }
 .project-settings { margin: 12px 0 28px; }
@@ -126,3 +126,25 @@ body { margin: 0; background: #000; }
 @media (prefers-reduced-motion: reduce) { .working-shimmer { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
 
 .drawer-settings:focus-visible, .settings-panel:focus-visible, .settings-panel button:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+
+.topbar { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; }
+.header-title { grid-column: 2; text-align: center; }
+.screen-menu-wrap { grid-column: 3; }
+.screen-menu > button { min-height: 44px; padding: 10px 12px; border-radius: 10px; text-align: left; font-size: 16px; }
+.screen-menu > button:hover { background: #424242; }
+.screen-menu > button:disabled { opacity: .55; }
+.screen-menu > [aria-checked=true]::after { content: ' ✓'; }
+.project-editor > *, .project-home-content { max-width: 760px; margin-left: auto; margin-right: auto; }
+.project-editor .project-back { display: block; margin-left: 0; }
+.projects-page { padding-top: 20px; }
+.projects-page .page-heading { margin-bottom: 12px; }
+.projects-page .page-heading h2 { font-size: 22px; }
+.project-list small { display: block; color: #a3a3a3; font-size: 13px; line-height: 18px; margin-top: 0; }
+.project-chat-list { display: grid; gap: 8px; }
+.project-chat-row { display: grid; align-content: center; gap: 2px; width: 100%; min-height: 48px; padding: 8px 0; text-align: left; background: transparent; border: 0; border-radius: 0; }
+.project-chat-title { color: #fff; font-size: 16px; line-height: 22px; overflow-wrap: anywhere; }
+.project-chat-preview { color: #a3a3a3; font-size: 14px; line-height: 20px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.project-chat-row:hover .project-chat-title { text-decoration: underline; }
+.project-chat-row:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+.instructions-form textarea { min-height: 240px; resize: vertical; line-height: 1.6; }
+.instructions-form .project-muted { margin: 0; }
