@@ -76,7 +76,7 @@ def _deliver(profile, session_id, kind, dedupe_id):
             report('pywebpush.attempt', subscription=row.get('id'), attempted=True)
             try:
                 endpoint = urlparse(row['endpoint'])
-                response = webpush({'endpoint': row['endpoint'], 'keys': {'p256dh': row['p256dh'], 'auth': row['auth']}}, payload, vapid_private_key=key, vapid_claims={'sub': 'mailto:notifications@chathermes.local', 'aud': f'{endpoint.scheme}://{endpoint.netloc}'}, timeout=5)
+                response = webpush({'endpoint': row['endpoint'], 'keys': {'p256dh': row['p256dh'], 'auth': row['auth']}}, payload, vapid_private_key=key, vapid_claims={'sub': 'mailto:notifications@localhost', 'aud': f'{endpoint.scheme}://{endpoint.netloc}'}, timeout=5)
                 status = getattr(response, 'status_code', None)
                 report('pywebpush.result', subscription=row.get('id'), attempted=True, success=True, http_status=status if type(status) is int else None)
             except Exception as error:

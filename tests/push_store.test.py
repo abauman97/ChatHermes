@@ -81,7 +81,7 @@ def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, 
     assert subscription['endpoint'] == 'https://push.test/a'
     assert payload['body'] == 'Hermes finished responding.'
     assert payload['session_id'] == 'session_123'
-    assert options['vapid_claims']['aud'] == 'https://push.test'
+    assert options['vapid_claims']['sub'] == 'mailto:notifications@localhost'
     assert options['timeout'] == 5
     assert options['vapid_private_key'] not in json.dumps(payload)
     assert store.config() == configuration
