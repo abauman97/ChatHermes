@@ -59,6 +59,8 @@ export const api = {
     if (result.project?.id !== id || typeof result.project.label !== 'string') throw new Error('Invalid Hermes Project response')
     return result.project
   },
+  projectInstructions: (profile: string, id: string, signal?: AbortSignal) => request<{ content: string; filename: string }>(profile, `/projects/instructions?project_id=${encodeURIComponent(id)}`, { signal }),
+  saveProjectInstructions: (profile: string, id: string, content: string, expected: string) => request<{ content: string }>(profile, `/projects/instructions?project_id=${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify({ content, expected }) }),
   projectManage: (profile: string, action: ProjectAction, fields: Record<string, string | boolean>) => request<{ project?: { id: string } }>(profile, '/projects/manage', { method: 'POST', body: JSON.stringify({ action, ...fields }) }),
   isWorkspace(profile: string, id: string) { return workspaceSessions.has(workspaceKey(profile, id)) },
   workspace(profile: string, id: string) { workspaceSessions.add(workspaceKey(profile, id)) },

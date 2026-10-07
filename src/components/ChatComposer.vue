@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { Attachment, ModelOption, ProviderOption } from '../types/hermes'
-const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; imagesSupported?: boolean; reason?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>(), { imagesSupported: true })
+const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; stoppable?: boolean; imagesSupported?: boolean; reason?: string; projectName?: string; suggestedPrompt?: string; models?: ModelOption[]; model?: string; defaultModel?: string; providers?: ProviderOption[]; provider?: string; modelsLoading?: boolean }>(), { imagesSupported: true })
 const emit = defineEmits<{ stop: []; steer: [text: string]; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
@@ -117,7 +117,7 @@ async function attach(event: Event) {
     <p v-if="imageGated" class="px-2 text-sm text-red-300" role="alert">Image sending is unavailable for this native capability. Remove the image to send text or files.</p>
     <p v-if="attachmentError" class="px-2 text-sm text-red-300" role="alert">{{ attachmentError }}</p>
     <label class="sr-only" for="prompt">Message Hermes</label>
-    <textarea id="prompt" v-model="value" rows="2" maxlength="65536" placeholder="Message Hermes…" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-white outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
+    <textarea id="prompt" v-model="value" rows="2" maxlength="65536" :placeholder="projectName ? `Message ${projectName}` : 'Message Hermes…'" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-white outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
     <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
     <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
     <div class="flex items-center gap-3">

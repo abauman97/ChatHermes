@@ -1,4 +1,4 @@
-export interface Session { id: string; title?: string | null; source?: string | null; created_at?: string; updated_at?: string; cwd?: string | null; workspace_rpc?: boolean; profile?: string | null; last_active?: number }
+export interface Session { id: string; title?: string | null; preview?: string | null; source?: string | null; created_at?: string; updated_at?: string; cwd?: string | null; workspace_rpc?: boolean; profile?: string | null; last_active?: number }
 export interface SessionPage { sessions: Session[]; total?: number; limit?: number; offset?: number; has_more?: boolean }
 export interface Message { display_kind?: string; id?: string; role: string; content: unknown; created_at?: string; tool_name?: string; tool_call_id?: string; reasoning?: string; reasoning_content?: string; tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[]; blocks?: TurnBlock[] }
 export interface Capabilities { features?: Record<string, unknown>; endpoints?: Record<string, { method?: string; path?: string }> }
