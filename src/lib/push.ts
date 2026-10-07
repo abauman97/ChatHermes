@@ -72,3 +72,8 @@ export async function unsubscribe(profile: string): Promise<void> {
   if (!response.ok) throw new Error('Could not disable notifications on this device.')
   await subscription.unsubscribe()
 }
+
+export async function sendTest(profile: string): Promise<void> {
+  const response = await fetch(root + '/push/test' + (profile ? '?profile=' + encodeURIComponent(profile) : ''), { method: 'POST', credentials: 'same-origin' })
+  if (!response.ok) throw new Error('Could not send a test notification.')
+}

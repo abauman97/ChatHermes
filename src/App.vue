@@ -667,7 +667,19 @@ async function togglePush() {
   catch (cause) { pushMessage.value = cause instanceof Error ? cause.message : 'Could not update notifications.'; await reloadPushState() }
   finally { pushBusy.value = false }
 }
+async function testPush() {
+  if (pushBusy.value) return
+  pushBusy.value = true; pushMessage.value = ''
+  try { await push.sendTest(profile.value); pushMessage.value = 'Test notification scheduled.' }
+  catch { pushMessage.value = 'Could not send a test notification.' }
+  finally { pushBusy.value = false }
+}
 function serviceWorkerMessage(event: MessageEvent) {
+  if (event.data?.type === 'chathermes.route.query') {
+    // Reply only while this plugin is mounted and the originating window is active.
+    event.ports[0]?.postMessage({ type: 'chathermes.route', url: document.visibilityState === 'visible' && document.hasFocus() ? location.href : '' })
+    return
+  }
   if (event.data?.type !== 'chathermes.navigate' || typeof event.data.url !== 'string') return
   const url = new URL(event.data.url, location.origin)
   if (url.origin !== location.origin || url.pathname !== '/chathermes') return
@@ -697,6 +709,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <div class="push-setting" aria-labelledby="notifications-heading">
           <h3 id="notifications-heading" class="text-sm font-medium text-white">Notifications</h3>
           <button class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.supported || (!pushState.subscribed && !pushState.available)" @click="togglePush">{{ pushBusy ? 'Updating…' : pushState.subscribed ? 'Disable notifications' : 'Enable notifications' }}</button>
+          <button v-if="pushState.subscribed" class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.available" @click="testPush">Send test</button>
           <p v-if="pushState.error || pushMessage" class="mt-1 text-xs text-[#dcae6e]" role="status">{{ pushMessage || pushState.error }}</p>
           <p v-else-if="pushState.subscribed" class="mt-1 text-xs">Notifications enabled on this device.</p>
           <p v-else-if="!pushState.supported" class="mt-1 text-xs">Install ChatHermes on a secure HTTPS origin to enable notifications.</p>

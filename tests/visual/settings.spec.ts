@@ -26,6 +26,7 @@ test('drawer has exactly one New chat immediately above Projects', async ({ page
 test('drawer settings and notifications', async ({ page }, testInfo) => {
   const unauthorized = await page.request.get('/api/plugins/chathermes/push/config')
   expect(unauthorized.status()).toBe(401)
+  expect((await page.request.post('/api/plugins/chathermes/push/test')).status()).toBe(401)
   await signIn(page)
   const config = await page.request.get('/api/plugins/chathermes/push/config')
   expect(config.status()).toBe(200)
@@ -170,4 +171,33 @@ test('composer attachments, camera and model controls stay usable on black surfa
   await composer.getByRole('button', { name: 'Remove camera.png' }).click()
   await textarea.click()
   await expect(textarea).toBeFocused()
+})
+
+
+test('subscribed settings sends explicit test using authenticated host route', async ({ page }, testInfo) => {
+  // Simulate only browser subscription state; config and test requests hit Hermes.
+  // No real browser push endpoint or key material is created for this UI check.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+    Object.defineProperty(window, 'PushManager', { value: class {}, configurable: true })
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
+      register: async () => ({ pushManager: { getSubscription: async () => ({}) } }),
+      addEventListener() {}, removeEventListener() {},
+    } })
+  })
+  await signIn(page)
+  const plugin = page.locator('.chathermes-embedded')
+  if (testInfo.project.name === 'mobile') await plugin.getByRole('button', { name: 'Open navigation' }).click()
+  await plugin.getByRole('button', { name: 'Settings', exact: true }).click()
+  const panel = plugin.getByRole('dialog', { name: 'Settings', exact: true })
+  const send = panel.getByRole('button', { name: 'Send test', exact: true })
+  await expect(send).toBeVisible()
+  const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/plugins/chathermes/push/test')
+  await send.click()
+  const result = await response
+  expect(result.request().method()).toBe('POST')
+  expect(result.status()).toBe(200)
+  expect(await result.json()).toEqual({ scheduled: true })
+  await expect(panel).toContainText('Test notification scheduled.')
+  await page.screenshot({ path: testInfo.outputPath('subscribed-send-test.png') })
 })

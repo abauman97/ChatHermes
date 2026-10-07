@@ -1388,7 +1388,7 @@ async def test_retained_queued_input_starts_after_previous_terminal_frame(monkey
 
 
 @run_async
-@pytest.mark.parametrize('status, expected', [('complete', 'turn.complete'), ('failed', 'attention'), ('stopped', 'attention')])
+@pytest.mark.parametrize('status, expected', [('complete', 'turn.complete'), ('failed', 'attention'), ('stopped', 'attention'), ('error', 'attention'), ('interrupted', 'attention')])
 async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, status, expected):
     import sys, types
     from unittest.mock import Mock
@@ -1402,7 +1402,7 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
         server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
     transport = types.SimpleNamespace(close=lambda: None)
     owner = plugin._native_owners.Owner(plugin, transport, 'alpha', 'stored')
-    owner.runtime = owner.push_session = 'runtime'
+    owner.runtime = 'runtime'
     frame = {'jsonrpc': '2.0', 'method': 'event', 'params': {
         'session_id': 'runtime', 'seq': 1, 'type': 'message.complete', 'payload': {'status': status}}}
     try:
@@ -1411,12 +1411,16 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
         owner.capture(frame)
         owner.capture(frame)
         owner.notify(expected, 1)
-        sender.assert_called_once_with('alpha', 'runtime', expected, '1')
-        assert len(owner.offsets) == 1
+        # Native message.complete is the only completion trigger, even if an
+        # adapter also emits a derived turn.complete/attention event.
+        owner.capture({'method': 'event', 'params': {'session_id': 'runtime',
+            'seq': 2, 'type': expected}})
+        sender.assert_called_once_with('alpha', 'stored', expected, '1')
+        assert len(owner.offsets) == 2
         # A delivery scheduling failure must still retain/publish the next frame.
         sender.side_effect = RuntimeError('delivery unavailable')
-        owner.capture({**frame, 'params': {**frame['params'], 'seq': 2}})
-        assert len(owner.offsets) == 2
+        owner.capture({**frame, 'params': {**frame['params'], 'seq': 3}})
+        assert len(owner.offsets) == 3
     finally:
         owner.close()
 
@@ -1523,3 +1527,108 @@ async def test_project_instructions_use_existing_empty_file_and_refuse_hardlinks
         assert (tmp_path / 'AGENTS.md').read_text() == 'Lower priority'
         os.link(tmp_path / 'AGENTS.md', tmp_path / '.hermes.md')
         assert (await client.get(url)).status_code == 409
+
+
+@run_async
+@pytest.mark.parametrize('kind', ['approval', 'clarify'])
+async def test_push_owner_request_and_event_triggers(monkeypatch, caplog, kind):
+    import sys, types, logging
+    from unittest.mock import Mock
+    sender = Mock(return_value=True)
+    monkeypatch.setattr(plugin._push_sender_module, 'notify', sender)
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server,
+        server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
+    owner = plugin._native_owners.Owner(plugin, types.SimpleNamespace(close=lambda: None), 'alpha', 'stored')
+    owner.runtime = 'runtime'
+    frame = {'method': kind, 'id': 'request_1',
+        'params': {'session_id': 'runtime', 'seq': 1, 'type': kind, 'payload': {'content': 'private-content'}}}
+    try:
+        with caplog.at_level(logging.INFO):
+            owner.capture({**frame, 'params': {**frame['params'], 'session_id': 'foreign'}})
+            sender.assert_not_called()
+            owner.capture(frame)
+            owner.capture(frame)
+        owner.capture({'method': 'event', 'id': 'request_1', 'params': {
+            'session_id': 'runtime', 'seq': 1, 'type': kind}})
+        sender.assert_called_once_with('alpha', 'stored', kind, 'request_1')
+        assert 'event.detected' in caplog.text and 'owner.notify' in caplog.text
+        assert 'private-content' not in caplog.text
+        # Scheduling failure cannot stop the native frame reaching viewers.
+        queue = asyncio.Queue()
+        owner.subscribers.add(queue)
+        sender.side_effect = RuntimeError('private-content')
+        owner.capture({**frame, 'id': 'request_2', 'params': {**frame['params'], 'seq': 2}})
+        assert queue.get_nowait()['params']['session_id'] == 'runtime'
+    finally:
+        owner.close()
+
+
+@run_async
+async def test_push_test_endpoint_scopes_normal_transport_and_is_content_free(app, monkeypatch):
+    from unittest.mock import Mock
+    sender = Mock(return_value=True)
+    monkeypatch.setattr(plugin._push_sender_module, 'notify', sender)
+    monkeypatch.setattr(plugin._push_store_module, 'config', lambda: {'available': True})
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('alpha', 'beta', ''):
+            response = await client.post('/api/plugins/chathermes/push/test' + ('?profile=' + profile if profile else ''), json={'content': KEY})
+            assert response.json() == {'scheduled': True}
+            args = sender.call_args.args
+            assert args[:3] == (profile or 'default', '', 'test')
+            assert KEY not in str(args) and KEY not in response.text
+        assert (await client.post('/api/plugins/chathermes/push/test?profile=../bad')).status_code == 422
+        monkeypatch.setattr(plugin._push_store_module, 'config', lambda: {'available': False})
+        assert (await client.post('/api/plugins/chathermes/push/test')).status_code == 503
+        monkeypatch.setattr(plugin._push_store_module, 'config', lambda: {'available': True})
+        for result in (False, None):
+            sender.return_value = result
+            assert (await client.post('/api/plugins/chathermes/push/test')).status_code == 503
+        sender.side_effect = RuntimeError(KEY)
+        response = await client.post('/api/plugins/chathermes/push/test')
+        assert response.status_code == 503 and KEY not in response.text
+        monkeypatch.setattr(plugin._push_sender_module, 'notify', None)
+        response = await client.post('/api/plugins/chathermes/push/test')
+        assert response.status_code == 503
+
+
+@run_async
+async def test_push_test_config_failure_is_content_free(app, monkeypatch):
+    def fail():
+        raise OSError(KEY)
+    monkeypatch.setattr(plugin._push_store_module, 'config', fail)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/push/test')
+        assert response.status_code == 503 and KEY not in response.text
+
+
+@run_async
+async def test_push_stored_session_survives_native_attach_alias(monkeypatch):
+    import sys, types
+    from unittest.mock import Mock
+    sender = Mock(return_value=True)
+    monkeypatch.setattr(plugin._push_sender_module, 'notify', sender)
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server,
+        server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
+    class Transport:
+        def close(self): pass
+        async def call(self, method, params):
+            if method == 'session.resume':
+                assert params['session_id'] == 'stored'
+                return {'session_id': 'runtime_alias'}
+            assert method == 'session.events.since' and params['session_id'] == 'runtime_alias'
+            return {'epoch': 'epoch', 'events': []}
+    owner = plugin._native_owners.Owner(plugin, Transport(), 'alpha', 'stored')
+    try:
+        # Sessionless requests arriving before resume must never trigger push.
+        owner.capture({'method': 'approval', 'id': 'unscoped', 'params': {}})
+        sender.assert_not_called()
+        await owner.attach()
+        owner.capture({'method': 'event', 'params': {'session_id': 'runtime_alias',
+            'seq': 1, 'type': 'message.complete', 'payload': {'status': 'complete'}}})
+        sender.assert_called_once_with('alpha', 'stored', 'turn.complete', '1')
+    finally:
+        owner.close()

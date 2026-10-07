@@ -6,9 +6,26 @@ private anonymous temporary files and never contain credentials or request answe
 """
 import asyncio
 import json
+import logging
 import tempfile
 import time
 from fastapi import HTTPException
+
+log = logging.getLogger(__name__)
+
+
+def push_log(stage, profile, session, kind, **fields):
+    # IDs only; never serialize frames, exception messages, or transport data.
+    import re
+    def safe(value):
+        return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value) else None
+    write = log.warning if fields.get('exception') else log.info
+    write('ChatHermes push %s', json.dumps(dict(stage=stage, profile=safe(profile),
+        session=safe(session), kind=kind if kind in ('message.complete', 'turn.complete', 'approval', 'clarify', 'attention') else None,
+        **{key: value for key, value in fields.items() if
+            (key in ('session_matched', 'duplicate') and type(value) is bool) or
+            (key == 'exception' and isinstance(value, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', value))}), separators=(',', ':')))
+
 
 OWNERS = {}
 TERMINAL_TTL = 24 * 60 * 60
@@ -36,7 +53,6 @@ class Owner:
         self.children = set()
         self.queued_inputs = []
         self.notified = set()
-        self.push_session = stored
         transport.on_frame = self.capture
         from tui_gateway import server, server_requests
         server.register_live_transport(transport)
@@ -46,11 +62,18 @@ class Owner:
 
     def capture(self, frame):
         p = frame.get('params') or {}
+        method = frame.get('method')
+        detected = p.get('type') if method == 'event' else method
+        if detected in ('message.complete', 'turn.complete', 'approval', 'clarify', 'attention'):
+            push_log('event.detected', self.profile, p.get('session_id'), detected,
+                session_matched=p.get('session_id') == self.runtime)
         # The transport is profile-bound. During first resume the runtime is not
         # known yet; adopt only after that RPC, then seed native replay below.
-        if p.get('session_id') != self.runtime:
+        if self.runtime is None or p.get('session_id') != self.runtime:
             return
-        if frame.get('method') == 'event':
+        if method in ('approval', 'clarify'):
+            self.notify(method, frame.get('id'))
+        if method == 'event':
             seq = p.get('seq')
             if type(seq) is int:
                 if seq <= self.last_seq:
@@ -88,6 +111,7 @@ class Owner:
         self.publish(frame)
 
     def notify(self, kind, identity):
+        push_log('owner.notify', self.profile, self.stored, kind, duplicate=(kind, str(identity)) in self.notified)
         if identity is None:
             return
         key = (kind, str(identity))
@@ -100,9 +124,14 @@ class Owner:
         try:
             sender = self.api._push_sender_module
             if sender:
-                sender.notify(self.profile, self.push_session, kind, str(identity))
-        except Exception:
-            pass
+                # Browser routes use the stored session ID, not the resumed runtime alias.
+                scheduled = sender.notify(self.profile, self.stored, kind, str(identity))
+                if scheduled is not True:
+                    push_log('owner.unscheduled', self.profile, self.stored, kind)
+            else:
+                push_log('owner.unavailable', self.profile, self.stored, kind)
+        except Exception as error:
+            push_log('owner.failure', self.profile, self.stored, kind, exception=type(error).__name__)
 
     def record(self, frame):
         if self.degraded:
@@ -147,7 +176,6 @@ class Owner:
         if self.runtime and runtime != self.runtime:
             self.reset()
         self.runtime = runtime
-        self.push_session = runtime
         self.snapshot = result
         if not self.epoch:
             replay = await self.transport.call('session.events.since', {
