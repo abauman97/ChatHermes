@@ -91,7 +91,9 @@ if sys.argv[1:] == ['-c', 'from pywebpush import webpush; from py_vapid import V
             self.assertIn('pywebpush==2.5.0', declaration['project']['dependencies'])
             self.assertIn('py-vapid==1.9.4', declaration['project']['dependencies'])
             self.assertTrue((installed / 'dashboard' / 'push_sender.py').is_file())
-            for asset in ('push-service-worker.js', 'manifest.webmanifest', 'apple-touch-icon.png',
+            self.assertEqual((installed / 'dashboard' / 'dist' / 'apple-touch-icon.png').read_bytes(),
+                             (ROOT / 'public' / 'icons' / 'icon-192.png').read_bytes())
+            for asset in ('push-service-worker.js', 'manifest.webmanifest',
                           'icons/icon-192.png', 'icons/icon-512.png'):
                 self.assertEqual((installed / 'dashboard' / 'dist' / asset).read_bytes(),
                                  (ROOT / 'public' / asset).read_bytes())
