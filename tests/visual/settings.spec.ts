@@ -55,6 +55,10 @@ test('drawer settings and notifications', async ({ page }, testInfo) => {
     const response = await page.request.get('/api/plugins/chathermes/assets/dist/' + asset)
     expect(response.status()).toBe(200)
     expect(response.headers()['content-type']).toContain('image/png')
+    if (asset === 'apple-touch-icon.png') {
+      const logo = await page.request.get('/api/plugins/chathermes/assets/dist/icons/icon-192.png')
+      expect(await response.body()).toEqual(await logo.body())
+    }
   }
   const headLinks = await page.evaluate(() => Object.fromEntries(
     [...document.head.querySelectorAll('link[rel="manifest"], link[rel="apple-touch-icon"]')]

@@ -44,7 +44,11 @@ async def test_pwa_assets_are_served_with_safe_types_and_path_containment(app):
         icon = await client.get('/api/plugins/chathermes/assets/dist/icons/icon-192.png')
         assert icon.status_code == 200
         assert icon.headers['content-type'].startswith('image/png')
-        assert icon.content.startswith(bytes.fromhex('89504e470d0a1a0a'))
+        touch_icon = await client.get('/api/plugins/chathermes/assets/dist/apple-touch-icon.png')
+        assert touch_icon.status_code == 200
+        assert touch_icon.headers['content-type'].startswith('image/png')
+        assert touch_icon.content.startswith(bytes.fromhex('89504e470d0a1a0a'))
+        assert touch_icon.content == icon.content
 
         for path in ('../../plugin_api.py', 'push-service-worker.js', 'unknown.txt'):
             response = await client.get('/api/plugins/chathermes/assets/dist/' + path)
