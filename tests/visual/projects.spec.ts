@@ -62,9 +62,9 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   // Enter B without moving the existing A session; another turn still runs in A.
   await showProjects(); await list.getByRole('button', { name: 'AcumaticaMCP', exact: true }).click()
   expect(new URL(page.url()).searchParams.get('session')).toBe(session.id)
-  await expect(view).toContainText('AcumaticaMCP')
+  await expect(plugin.locator('.topbar h1')).toHaveText('AcumaticaMCP')
   await page.reload()
-  await expect(view).toContainText('AcumaticaMCP')
+  await expect(plugin.locator('.topbar h1')).toHaveText('AcumaticaMCP')
   const selectedScope = new URL(page.url()).searchParams.get('project')!
   await page.goto(`/chathermes?project=${encodeURIComponent(selectedScope)}&session=${encodeURIComponent(session.id)}`)
   await expect(plugin.locator('.message.assistant').last()).toContainText('Project context discovered.')
@@ -75,7 +75,7 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   await expect(plugin.locator('.message.assistant').last()).toContainText('Project context discovered.')
   // A fresh pathless Project cannot create a workspace chat.
   await page.goto('/chathermes?project=' + encodeURIComponent(project.id))
-  await expect(view).toContainText('Hermes Mobile')
+  await expect(plugin.locator('.topbar h1')).toHaveText('Hermes Mobile')
   expect((await (await page.request.get('/api/plugins/chathermes/projects/' + project.id)).json()).project.repos.flatMap((r: { groups: { sessions: { id: string }[] }[] }) => r.groups.flatMap(g => g.sessions)).some((s: { id: string }) => s.id === session.id)).toBe(true)
   await showProjects(); await list.getByRole('button', { name: 'AcumaticaMCP', exact: true }).click()
   await expect(view).toContainText('No workspace configured')

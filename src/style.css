@@ -126,3 +126,17 @@ body { margin: 0; background: #000; }
 @media (prefers-reduced-motion: reduce) { .working-shimmer { animation: none; background: none; -webkit-text-fill-color: currentColor; } }
 
 .drawer-settings:focus-visible, .settings-panel:focus-visible, .settings-panel button:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
+
+.topbar { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; }
+.header-title { grid-column: 2; text-align: center; }
+.screen-menu-wrap { grid-column: 3; }
+.screen-menu > button { min-height: 44px; padding: 10px 12px; border-radius: 10px; text-align: left; font-size: 16px; }
+.screen-menu > button:hover { background: #424242; }
+.screen-menu > button:disabled { opacity: .55; }
+.screen-menu > [aria-checked=true]::after { content: ' ✓'; }
+.project-editor > *, .project-home-content { max-width: 760px; margin-left: auto; margin-right: auto; }
+.project-editor .project-back { display: block; margin-left: 0; }
+.project-chats-heading { padding: 8px 16px; width: fit-content; border-radius: 24px; background: #303030; font-size: 16px; margin-bottom: 24px; }
+.project-list > button { border-bottom: 0; }
+.instructions-form textarea { min-height: 240px; resize: vertical; line-height: 1.6; }
+.instructions-form .project-muted { margin: 0; }

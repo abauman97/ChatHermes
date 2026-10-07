@@ -535,6 +535,111 @@ async def project(request: Request, project_id: str):
     return {'project': _project_node(row, node)}
 
 
+# Directory instruction precedence requested by the project editor. Only these
+# fixed filenames in the authoritative workspace are accessible to the browser.
+_INSTRUCTION_NAMES = ('.hermes.md', 'HERMES.md', 'AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.cursorrules')
+_INSTRUCTION_LIMIT = 128 * 1024
+
+
+def _project_instructions_sync(root, body=None):
+    import hashlib
+    import stat
+    import fcntl
+    try:
+        directory = Path(root).expanduser().resolve(strict=True)
+        if not directory.is_dir():
+            raise HTTPException(409, 'The Project workspace is unavailable')
+        # Resolve filenames through an open directory, never a client path. Refuse
+        # links (including dangling links), non-regular files, and oversized files.
+    except (OSError, ValueError):
+        raise HTTPException(409, 'The Project workspace is unavailable')
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        raise HTTPException(409, 'The Project workspace is unavailable')
+    try:
+        filename = next((name for name in _INSTRUCTION_NAMES
+                         if os.path.lexists(directory / name)), '.hermes.md')
+        exists = os.path.lexists(directory / filename)
+        if body is not None and (body['filename'] != filename or (body['revision'] is None) != (not exists)):
+            raise HTTPException(409, 'Instructions changed. Reload before saving.')
+        if not exists and body is None:
+            return {'filename': filename, 'content': '', 'revision': None}
+        flags = os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_RDONLY if body is None else os.O_RDWR)
+        if not exists:
+            flags |= os.O_CREAT | os.O_EXCL
+        fd = os.open(filename, flags, 0o644, dir_fd=directory_fd)
+        with os.fdopen(fd, 'rb' if body is None else 'r+b') as handle:
+            fcntl.flock(handle, fcntl.LOCK_SH if body is None else fcntl.LOCK_EX)
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise HTTPException(409, 'Instructions must be a regular workspace file')
+            raw = handle.read(_INSTRUCTION_LIMIT + 1)
+            if len(raw) > _INSTRUCTION_LIMIT:
+                raise HTTPException(413, 'Instructions are too large to edit')
+            revision = hashlib.sha256(raw).hexdigest() if exists else None
+            if body is not None:
+                if body['revision'] != revision:
+                    raise HTTPException(409, 'Instructions changed. Reload before saving.')
+                raw = body['content'].encode('utf-8')
+                handle.seek(0)
+                handle.write(raw)
+                handle.truncate()
+                handle.flush()
+                os.fsync(handle.fileno())
+                revision = hashlib.sha256(raw).hexdigest()
+            return {'filename': filename, 'content': raw.decode('utf-8'), 'revision': revision}
+    except HTTPException:
+        raise
+    except (OSError, ValueError, UnicodeError):
+        # Do not return filesystem paths, file contents, or raw OS diagnostics.
+        raise HTTPException(409, 'Could not access the workspace instructions')
+    finally:
+        os.close(directory_fd)
+
+
+async def _project_instructions(request, project_id, body=None):
+    from starlette.concurrency import run_in_threadpool
+    result = await project(request, project_id)
+    node = result['project']
+    root = node.get('path') or next((repo['path'] for repo in node.get('repos', []) if repo.get('path')), None)
+    if not root or node.get('isNoProject'):
+        raise HTTPException(409, 'This Project has no workspace')
+    return await run_in_threadpool(_project_instructions_sync, root, body)
+
+
+@router.get('/project-instructions')
+async def project_instructions(request: Request, project_id: str):
+    return await _project_instructions(request, project_id)
+
+
+@router.put('/project-instructions')
+async def save_project_instructions(request: Request, project_id: str):
+    _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > _INSTRUCTION_LIMIT * 6 + 1024:
+            raise HTTPException(413, 'Instructions are too large to edit')
+    try:
+        import json
+        body = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, 'Invalid instructions')
+    if (not isinstance(body, dict) or set(body) != {'content', 'filename', 'revision'}
+            or not isinstance(body['content'], str) or body['filename'] not in _INSTRUCTION_NAMES
+            or (body['revision'] is not None and (not isinstance(body['revision'], str)
+                or not re.fullmatch(r'[a-f0-9]{64}', body['revision'])))):
+        raise HTTPException(422, 'Invalid instructions')
+    try:
+        size = len(body['content'].encode('utf-8'))
+    except UnicodeError:
+        raise HTTPException(422, 'Invalid instructions')
+    if size > _INSTRUCTION_LIMIT:
+        raise HTTPException(413, 'Instructions are too large to edit')
+    return await _project_instructions(request, project_id, body)
+
+
 @router.post('/projects/manage')
 async def manage_project(request: Request):
     # Fixed native operations and schemas: never dispatch browser-supplied RPC names.
