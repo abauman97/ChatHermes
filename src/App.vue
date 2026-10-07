@@ -259,7 +259,7 @@ async function chooseSession(id: string, fromHistory = false) {
 }
 async function createSession() {
   if (offline.value || creating.value || (projectId.value && selectedProject.value?.archived)) return
-  const id = profile.value, scope = projectId.value, selected = session.value, current = generation
+  const id = profile.value, scope = projectId.value, selected = session.value, current = generation, owner = profileGeneration
   creating.value = true
   try {
     if (scope && !provider.value) { provider.value = providers.value.find(item => item.is_current)?.slug || ''; model.value = '' }
@@ -275,7 +275,13 @@ async function createSession() {
     refreshProjects()
     return made.id
   } catch (cause) { if (current === generation && profile.value === id && projectId.value === scope) { const message = cause instanceof Error ? cause.message : 'Could not create session'; if (scope) projectError.value = message; else error.value = message } }
-  finally { creating.value = false }
+  finally { if (owner === profileGeneration) creating.value = false }
+}
+async function newProjectChat() {
+  if (!projectId.value || projectsPage.value || scheduledPage.value || !selectedProject.value || selectedProject.value.archived || (!selectedProject.value.isNoProject && !projectRoot(selectedProject.value))) return
+  const current = generation, p = profile.value, scope = projectId.value, fromDetail = projectView.value
+  const id = await createSession()
+  if (id && current === generation && p === profile.value && scope === projectId.value && fromDetail === projectView.value && !projectsPage.value && !scheduledPage.value) await chooseSession(id)
 }
 async function suggest(text: string) {
   const current = generation, p = profile.value, id = await createSession()
@@ -722,6 +728,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
           <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu()">
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
+            <button v-if="projectId && !projectsPage && !scheduledPage" class="screen-option" role="menuitem" :disabled="offline || creating || !selectedProject || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))" @click="newProjectChat()">New project chat</button>
             <template v-if="projectsPage">
               <button class="screen-option" role="menuitem" :aria-checked="!archivedProjects" @click="showProjects(false)">Active projects</button>
               <button class="screen-option" role="menuitem" :aria-checked="archivedProjects" @click="showProjects(true)">Archived projects</button>
@@ -739,6 +746,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
       <div v-if="!scheduledPage && viewReconnect" class="notice px-5 py-3 text-sm text-[#b4b4b4]" role="status">{{ eventStreamExpired ? 'Live progress is unavailable; checking run status…' : 'Reconnecting to the live response…' }}</div>
       <div v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)" class="px-5 py-2 text-sm text-[#b4b4b4]" role="status">Run {{ runStatus }}.</div>
       <div v-if="!scheduledPage && viewError" class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]" role="alert">{{ viewError }} <button v-if="session" class="underline" @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()">{{ eventStreamExpired && activeRun ? 'Refresh session history' : 'Refresh history' }}</button> <button v-if="viewUnavailable" class="ml-3 underline" @click="releaseUnavailableRun">I verified the run ended</button></div>
+      <p v-if="projectError && !projectView && !projectsPage && !scheduledPage" class="notice error px-5 py-3 text-sm text-[#fecaca]" role="alert">{{ projectError }}</p>
       <ScheduledPage v-if="scheduledPage" :key="`${profile}:${scheduledPageKey}`" :profile="profile" :chat-busy="creating" :offline="offline" :discussion-error="scheduledDiscussionError" @discuss="discussScheduled" />
       <ProjectsPage v-else-if="projectsPage" :key="profile" :projects="projects" :archived="archivedProjects" :loading="projectsLoading" :error="projectsError || manageError" :busy="projectBusy" :offline="offline" @select="chooseProject" @archive="showProjects" @retry="loadProjects" @manage="manageProject" />
       <section v-else-if="projectView" class="project-detail page-content" aria-label="Selected Project">

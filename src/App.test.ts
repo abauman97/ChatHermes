@@ -71,6 +71,7 @@ describe('drawer settings', () => {
     await wrapper.get('[aria-label="Screen options"]').trigger('click')
     const menu = wrapper.get('[role="menu"]')
     expect(menu.findAll('[role="menuitem"]')).toHaveLength(0)
+    expect(wrapper.get('.drawer-chat').text()).toBe('New chat')
     await menu.trigger('keydown', { key: 'Escape' })
     await flushPromises()
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
