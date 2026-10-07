@@ -3,7 +3,7 @@ import { nextTick, ref, watch } from 'vue'
 import type { Project, ProjectAction } from '../types/hermes'
 const props = defineProps<{ project: Project; busy: boolean; offline: boolean; error: string }>()
 const emit = defineEmits<{ manage: [action: ProjectAction, fields: Record<string, string | boolean>] }>()
-const name = ref(props.project.label), description = ref(props.project.description || '')
+const editing = ref(false), name = ref(props.project.label), description = ref(props.project.description || '')
 const icon = ref(props.project.icon || ''), color = ref(props.project.color || ''), board = ref(props.project.board_slug || '')
 const folder = ref(''), folderLabel = ref(''), primary = ref(true)
 const confirmation = ref<{ action: ProjectAction; fields: Record<string, string | boolean>; text: string }>()
@@ -20,7 +20,9 @@ function submitConfirmation() { const item = confirmation.value; if (item) manag
     <p class="project-muted">Save this discovered workspace as a project to manage its name and folders.</p>
     <button class="project-button" :disabled="busy || offline" @click="emit('manage', 'create', { name: project.label, primary_path: project.path || project.repos.find(r => r.path)?.path || '' })">Save project</button>
   </div>
-  <div v-else-if="!project.isNoProject" ref="settings" tabindex="-1" class="project-settings">
+  <details v-else-if="!project.isNoProject" class="project-settings" @toggle="editing = ($event.target as HTMLDetailsElement).open">
+    <summary ref="settings" tabindex="0">Project settings</summary>
+    <template v-if="editing">
       <p v-if="error" class="project-error" role="alert">{{ error }}</p>
       <p v-if="busy" class="project-muted" role="status">Saving project…</p>
       <form class="project-form" @submit.prevent="manage('update', { name: name.trim(), description, icon, color, board_slug: board })">
@@ -46,9 +48,15 @@ function submitConfirmation() { const item = confirmation.value; if (item) manag
           <button class="project-button" :disabled="!folder.trim()">Add folder</button>
         </fieldset>
       </form>
+      <div class="project-actions">
+        <button v-if="project.archived" class="project-button" :disabled="busy || offline" @click="manage('archive', { restore: true })">Restore project</button>
+        <button v-else class="project-button" :disabled="busy || offline" @click="confirm('archive', {}, `Archive ${project.label}? You can restore it from Archived projects.`)">Archive project</button>
+        <button class="project-button project-danger" :disabled="busy || offline" @click="confirm('delete', {}, `Delete ${project.label}? This permanently removes the project and its folder associations. Files and chats will be kept.`)">Delete project</button>
+      </div>
       <div v-if="confirmation" class="project-confirmation" role="alertdialog" aria-modal="false" aria-labelledby="project-confirm-text" @keydown.esc.prevent="!busy && dismiss()">
         <p id="project-confirm-text">{{ confirmation.text }}</p>
-        <div class="project-actions"><button ref="cancelButton" class="project-button" :disabled="busy" @click="dismiss">Cancel</button><button class="project-button project-danger" :disabled="busy || offline" @click="submitConfirmation">Confirm removal</button></div>
+        <div class="project-actions"><button ref="cancelButton" class="project-button" :disabled="busy" @click="dismiss">Cancel</button><button class="project-button project-danger" :disabled="busy || offline" @click="submitConfirmation">{{ confirmation.action === 'delete' ? 'Delete project permanently' : confirmation.action === 'archive' ? 'Confirm archive' : 'Confirm removal' }}</button></div>
       </div>
-  </div>
+    </template>
+  </details>
 </template>
