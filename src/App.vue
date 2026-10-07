@@ -12,6 +12,7 @@ import ProjectsPage from './components/ProjectsPage.vue'
 import ProjectSettings from './components/ProjectSettings.vue'
 import ProjectInstructions from './components/ProjectInstructions.vue'
 import * as push from './lib/push'
+import { connectPushClient } from './lib/push-client'
 import SessionSidebar from './components/SessionSidebar.vue'
 import ChatTranscript from './components/ChatTranscript.vue'
 import ChatComposer from './components/ChatComposer.vue'
@@ -674,20 +675,22 @@ async function testPush() {
   catch { pushMessage.value = 'Could not send a test notification.' }
   finally { pushBusy.value = false }
 }
+let pushClient: ReturnType<typeof connectPushClient> | undefined
+const notificationSession = computed(() => ({
+  profile: profile.value, session: session.value,
+  chat: !scheduledPage.value && !projectsPage.value && !projectView.value && !projectPage.value,
+  connected: nativeMode.value && native.connection.value === 'open' && !offline.value,
+}))
+watch(notificationSession, () => pushClient?.publish(), { flush: 'post' })
 function serviceWorkerMessage(event: MessageEvent) {
-  if (event.data?.type === 'chathermes.route.query') {
-    // Reply only while this plugin is mounted and the originating window is active.
-    event.ports[0]?.postMessage({ type: 'chathermes.route', url: document.visibilityState === 'visible' && document.hasFocus() ? location.href : '' })
-    return
-  }
   if (event.data?.type !== 'chathermes.navigate' || typeof event.data.url !== 'string') return
   const url = new URL(event.data.url, location.origin)
   if (url.origin !== location.origin || url.pathname !== '/chathermes') return
   history.pushState({}, '', url.pathname + url.search)
   pop()
 }
-onMounted(async () => { void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); document.addEventListener('pointerdown', settingsOutside); document.addEventListener('click', screenMenuOutside); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current !== generation) return; if (state.view === 'project-edit' || state.view === 'project-instructions') openProjectPage(state.view === 'project-edit' ? 'edit' : 'instructions', true); else if (state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
-onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey); document.removeEventListener('pointerdown', settingsOutside); document.removeEventListener('click', screenMenuOutside) })
+onMounted(async () => { if ('serviceWorker' in navigator) pushClient = connectPushClient(navigator.serviceWorker, () => notificationSession.value, () => location.href); void api.profiles().then(result => { profiles.value = result.profiles || [] }).catch(() => { error.value = 'Could not load profiles' }); void reloadPushState(); if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', serviceWorkerMessage); embedded.value = !!menuButton.value?.closest('.chathermes-embedded'); document.addEventListener('visibilitychange', visibilityChange); addEventListener('online', onlineChange); addEventListener('offline', onlineChange); addEventListener('popstate', pop); addEventListener('keydown', drawerKey); document.addEventListener('pointerdown', settingsOutside); document.addEventListener('click', screenMenuOutside); const state = urlState(); const pending = chooseProfile(state.profile, true), current = generation; await pending; if (current === generation && profile.value === state.profile) { if (state.view === 'scheduled') showScheduled(true); else if (state.view === 'projects') showProjects(state.archived, true); else if (state.project) { void chooseProject(state.project, true).then(() => { if (current !== generation) return; if (state.view === 'project-edit' || state.view === 'project-instructions') openProjectPage(state.view === 'project-edit' ? 'edit' : 'instructions', true); else if (state.session && state.view !== 'project') void chooseSession(state.session, true) }) } else if (state.session) void chooseSession(state.session, true) } })
+onUnmounted(() => { pushClient?.stop(); pushClient = undefined; profileGeneration++; closeProjectEvents?.(); clearTimeout(refreshTimer); document.removeEventListener('visibilitychange', visibilityChange); if ('serviceWorker' in navigator) navigator.serviceWorker.removeEventListener('message', serviceWorkerMessage); cancel(); projectsAbort?.abort(); projectAbort?.abort(); removeEventListener('online', onlineChange); removeEventListener('offline', onlineChange); removeEventListener('popstate', pop); removeEventListener('keydown', drawerKey); document.removeEventListener('pointerdown', settingsOutside); document.removeEventListener('click', screenMenuOutside) })
 </script>
 <template>
   <div class="app-shell flex min-h-dvh bg-black font-sans text-white dark:bg-black dark:text-white">

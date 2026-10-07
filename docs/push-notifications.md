@@ -23,14 +23,20 @@ different runtime alias. Native `message.complete` already maps to completion or
 attention; derived completion events do not schedule an additional push. The service
 worker is scoped to `/chathermes` and does not cache dashboard/API responses.
 Notifications are suppressed only when the exact originating profile and session
-is open in a visible, focused ChatHermes window. Home, other sessions/profiles,
-other dashboard pages, and hidden or unfocused windows still receive notifications.
-The worker parses the session/profile query from the current window URL. Since
-Chromium can retain a stale WindowClient URL after SPA history changes, it asks
-the mounted plugin for its current URL over a message channel (300 ms timeout).
-Missing or invalid replies show the notification. In Settings, **Send test** uses
-the same authenticated push transport
-and always shows an explicit content-free test notification, even while focused.
+is open and its native viewer is connected in a mounted ChatHermes plugin. Focus
+and visibility do not affect this: a connected hidden or unfocused tab counts.
+Home, other sessions/profiles, other views, and disconnected viewers receive
+notifications. The worker asks every same-origin window for fresh plugin state
+(profile, session, connection, and current SPA URL), failing open on missing or
+invalid replies. It never relies on stale WindowClient URLs or cached state.
+When a session connects, all matching ChatHermes tagged notifications close,
+including notifications from earlier events. Opening or clicking through to a
+disconnected session retains its notification until it connects. Display and
+cleanup are serialized and state is rechecked after display to cover connection
+races. Sessionless test notifications remain available to inspect.
+Each handshake uses a message channel with a 300 ms timeout. In Settings,
+**Send test** uses the same authenticated push transport and always shows an
+explicit content-free test notification, even with a connected viewer.
 A successful test request means scheduling succeeded, not that the device received it.
 
 Enable INFO logging for the ChatHermes dashboard modules to trace structured

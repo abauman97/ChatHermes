@@ -4,6 +4,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
 import * as push from './lib/push'
+import * as nativeSession from './lib/native-session'
 beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -27,24 +28,41 @@ function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('drawer settings', () => {
-  it('answers worker route queries with current SPA URL only while visible and focused', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const addEventListener = vi.fn(), removeEventListener = vi.fn()
-    vi.stubGlobal('navigator', { onLine: true, serviceWorker: { addEventListener, removeEventListener } })
+  it('reports mounted native session and connection through home, views, profiles and unmount', async () => {
+    const factory = nativeSession.useNativeSession
+    let owner!: ReturnType<typeof factory>
+    vi.spyOn(nativeSession, 'useNativeSession').mockImplementation(callback => {
+      owner = factory(callback)
+      owner.attach = vi.fn(async () => { owner.connection.value = 'open' })
+      return owner
+    })
+    mockFetch(vi.fn(async input => json(input.includes('/capabilities') ? { features: { native_chat: true } } : { sessions: [], total: 0 })))
+    const addEventListener = vi.fn(), removeEventListener = vi.fn(), publish = vi.fn()
+    vi.stubGlobal('navigator', { onLine: true, serviceWorker: { ready: Promise.resolve({ active: { postMessage: publish } }), addEventListener, removeEventListener } })
     vi.spyOn(push, 'state').mockResolvedValue({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
     const wrapper = mount(App)
     await flushPromises()
     const listener = addEventListener.mock.calls.find(call => call[0] === 'message')![1]
     const postMessage = vi.fn()
-    history.replaceState({}, '', '/chathermes?profile=alpha&session=one')
-    listener({ data: { type: 'chathermes.route.query' }, ports: [{ postMessage }] })
-    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.route', url: location.href })
-    focus.mockReturnValue(false)
-    listener({ data: { type: 'chathermes.route.query' }, ports: [{ postMessage }] })
-    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.route', url: '' })
+    const query = () => listener({ data: { type: 'chathermes.session.query' }, ports: [{ postMessage }] })
+    query()
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'alpha', session: '', connected: false }))
+    history.replaceState({}, '', '/chathermes?profile=alpha&session=push_one')
+    window.dispatchEvent(new PopStateEvent('popstate')); await flushPromises(); query()
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.session', url: location.href, profile: 'alpha', session: 'push_one', connected: true })
+    owner.connection.value = 'closed'; await flushPromises(); query()
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ session: 'push_one', connected: false }))
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ session: 'push_one', connected: false }))
+    owner.connection.value = 'open'; await flushPromises()
+    await wrapper.get('.scheduled-nav').trigger('click'); query()
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ session: '', connected: false }))
+    history.replaceState({}, '', '/chathermes?profile=beta&session=push_two')
+    window.dispatchEvent(new PopStateEvent('popstate')); await flushPromises(); query()
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'beta', session: 'push_two', connected: true }))
     wrapper.unmount()
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ session: '', connected: false }))
     expect(removeEventListener).toHaveBeenCalledWith('message', listener)
   })
 
