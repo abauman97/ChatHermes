@@ -30,19 +30,29 @@ function connectedSession(data) {
 
 async function connectedSessions() {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  return (await Promise.all(clients.filter(client => {
+  const sameOrigin = client => {
     try { return new URL(client.url).origin === self.location.origin } catch { return false }
-  }).map(currentSession))).filter(Boolean)
+  }
+  const candidates = (await Promise.all(clients.filter(sameOrigin).map(async client => ({ id: client.id, session: await currentSession(client) })))).filter(reply => reply.session)
+  if (!candidates.length) return []
+  // An early positive may have disconnected while another client timed out.
+  // Re-query only positive candidates that still exist after every handshake.
+  const currentClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  return (await Promise.all(currentClients.filter(sameOrigin).filter(client => candidates.some(reply => reply.id === client.id))
+    .map(currentSession))).filter(Boolean)
 }
 const matches = (a, b) => a.profile === b.profile && a.session === b.session
-async function closeConnectedNotifications(sessions) {
-  if (!sessions.length) return
+async function closeConnectedNotifications(target) {
+  // Fetch first: a pending notification lookup must not age a positive reply.
   const notifications = await self.registration.getNotifications()
+  const sessions = await connectedSessions()
+  if (target && !sessions.some(open => matches(open, target))) return false
   for (const notification of notifications) {
     if (!notification.tag?.startsWith('chathermes:')) continue
     const session = routeSession(notification.data?.url)
     if (session && sessions.some(open => matches(open, session))) notification.close()
   }
+  return true
 }
 
 // Serialize display and close operations; then re-query after display so a
@@ -56,7 +66,7 @@ function enqueue(work) {
 self.addEventListener('message', event => {
   if (event.data?.type !== 'chathermes.session' || !event.source?.id) return
   event.waitUntil(enqueue(async () => {
-    await closeConnectedNotifications(await connectedSessions())
+    await closeConnectedNotifications()
   }))
 })
 
@@ -74,18 +84,14 @@ self.addEventListener('push', event => {
   if (session) url.searchParams.set('session', session)
   event.waitUntil(enqueue(async () => {
     if (data.type !== 'test' && profile) {
-      const sessions = await connectedSessions()
-      if (sessions.some(open => matches(open, { profile, session }))) {
-        await closeConnectedNotifications(sessions)
-        return
-      }
+      if (await closeConnectedNotifications({ profile, session })) return
     }
     await self.registration.showNotification('ChatHermes', {
       body: typeof data.body === 'string' ? data.body.slice(0, 160) : 'Hermes needs your attention.',
       tag: typeof data.tag === 'string' && /^chathermes:[A-Za-z0-9_-]{1,220}$/.test(data.tag) ? data.tag : `chathermes:${profile}:${session}:${data.type}`,
       data: { url: url.href }, icon: '/api/plugins/chathermes/assets/dist/icons/icon-192.png', badge: '/api/plugins/chathermes/assets/dist/icons/icon-192.png',
     })
-    if (data.type !== 'test') await closeConnectedNotifications(await connectedSessions())
+    if (data.type !== 'test') await closeConnectedNotifications()
   }))
 })
 self.addEventListener('notificationclick', event => {

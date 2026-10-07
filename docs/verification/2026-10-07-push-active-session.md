@@ -41,3 +41,46 @@ push provider or an operating-system notification interaction.
 
 Stopped the fixture with `npm run live:stop`; disposable named test data was
 preserved as required. No personal Hermes home was mounted.
+
+## P2 stale positive handshake correction
+
+Added regressions before changing the worker: 18 new cases failed against the
+existing implementation. They cover a positive reply followed by disconnect,
+SPA navigation, plugin unmount (no further replies), or client removal while a
+second same-origin client delays its reply or never replies. Both push handling
+and session-message cleanup are covered. Push cases require a new notification
+to be shown and the existing matching notification to remain open. Two cases
+also disconnect while `getNotifications()` is pending, covering push and cleanup.
+
+The worker now re-enumerates clients after all initial handshakes and re-queries
+only still-present, same-origin positive candidates. Suppression and cleanup use
+those new replies, not the initial positive snapshot. Notification enumeration
+finishes before checking client state, and no asynchronous work separates the
+final state check from closing notifications. Each handshake retains its 300 ms
+timeout; candidate validation adds a second bounded round. Profile/session
+matching, focus-independent behavior, test notifications, notification click
+routing, and serialized display/cleanup are preserved.
+
+Verification for this correction:
+
+- Targeted worker/client/push suites: 3 files, 54 tests passed.
+- `npm test`: 19 files, 206 tests passed.
+- `npm run build`: passed; the committed dist worker was rebuilt and is identical
+  to `public/push-service-worker.js`.
+- Python API tests were not rerun: no Python routes, API contracts, or server
+  behavior changed. The earlier API results above belong to the original change.
+- Playwright `dashboard.spec.ts` and `push-routing.spec.ts`: 4 passed across
+  desktop and mobile against the final rebuilt plugin in the Docker fixture.
+  Inspected screenshots of tool output, attachment/camera previews, and
+  connected/disconnected chat states. Assertions checked home/activity/offline
+  composer focus, profile/model selection, file upload, camera preview,
+  disclosure expansion/collapse, and notification retention/reconnect cleanup.
+  Screenshots showed transcript scrolling through tool and attachment turns.
+- `git diff --check`: passed.
+
+The timing races are deterministic worker unit tests with controlled handshakes
+and notification lookup delays. Browser checks use the actual dashboard plugin
+and worker with synthetic notifications; no external push provider or OS
+notification interaction was tested. The fixture was stopped with
+`npm run live:stop`, preserving its disposable named data volume. No commit,
+push, or deployment was performed for this correction.

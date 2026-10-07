@@ -18,9 +18,10 @@ function harness() {
     port1 = { onmessage: undefined as any, close() {} }
     port2 = { postMessage: (data: any) => this.port1.onmessage?.({ data }), close() {} }
   }
+  const getNotifications = vi.fn(async () => notifications)
   runInNewContext(worker, { URL, MessageChannel: Channel, setTimeout, clearTimeout, self: {
     location: { origin }, addEventListener: (type: string, fn: any) => { handlers[type] = fn },
-    clients: { matchAll: async () => clients, openWindow: vi.fn() }, registration: { showNotification: show, getNotifications: async () => notifications },
+    clients: { matchAll: async () => clients, openWindow: vi.fn() }, registration: { showNotification: show, getNotifications },
   } })
   async function dispatch(type: string, fields: any) {
     let pending: any
@@ -29,7 +30,7 @@ function harness() {
   }
   const push = (extra = {}) => dispatch('push', { data: { json: () => ({ title: 'ChatHermes', type: 'turn.complete', profile: 'alpha', session_id: 'one', body: 'Chat text', ...extra }) } })
   const update = () => dispatch('message', { source: client, data: state })
-  return { client, show, notifications, push, update, dispatch, setState: (value: any) => { state = value }, patch: (value: any) => { state = { ...state, ...value } }, setClients: (value: any[]) => { clients = value } }
+  return { client, show, getNotifications, notifications, push, update, dispatch, setState: (value: any) => { state = value }, patch: (value: any) => { state = { ...state, ...value } }, setClients: (value: any[]) => { clients = value } }
 }
 describe('connected session notifications', () => {
   it.each(['turn.complete', 'approval', 'clarify', 'attention'])('suppresses %s in connected hidden/unfocused tabs', async type => {
@@ -82,6 +83,56 @@ describe('connected session notifications', () => {
   })
   it('does not trust unsolicited stale state when the current handshake disagrees', async () => {
     const h = harness(); h.patch({ connected: false }); await h.push(); h.patch({ connected: true }); h.setClients([]); await h.update(); expect(h.notifications[0].close).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['disconnect', 'delayed'], ['disconnect', 'timeout'],
+    ['navigation', 'delayed'], ['navigation', 'timeout'],
+    ['unmount', 'delayed'], ['unmount', 'timeout'],
+    ['removed client', 'delayed'], ['removed client', 'timeout'],
+  ].flatMap(([change, handshake]) => ['push', 'update'].map(operation => [change, handshake, operation])))('retains notifications after a positive reply followed by %s during a second client %s (%s)', async (change, handshake, operation) => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      h.patch({ connected: false }); await h.push()
+      const existing = h.notifications[0]
+      h.patch({ connected: true })
+      const slow = { id: 'slow', url: origin + '/other-dashboard-view', postMessage: (_message: any, ports: any[]) => {
+        setTimeout(() => {
+          if (change === 'disconnect') h.patch({ connected: false })
+          if (change === 'navigation') h.patch({ url: origin + '/chathermes?view=scheduled' })
+          if (change === 'unmount') h.setState(null)
+          if (change === 'removed client') h.setClients([slow])
+        }, 50)
+        if (handshake === 'delayed') setTimeout(() => ports[0].postMessage({ connected: false }), 200)
+      } }
+      h.setClients([h.client, slow])
+      const pending = operation === 'push' ? h.push() : h.update()
+      await vi.advanceTimersByTimeAsync(1500)
+      await pending
+      expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+      expect(existing.close).not.toHaveBeenCalled()
+      if (operation === 'push') expect(h.notifications[1].close).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+  it.each(['push', 'update'])('rechecks connection after getNotifications is pending during %s', async operation => {
+    const h = harness()
+    h.patch({ connected: false }); await h.push()
+    const existing = h.notifications[0]
+    h.patch({ connected: true })
+    let release!: () => void
+    let started!: () => void
+    const waiting = new Promise<void>(resolve => { started = resolve })
+    h.getNotifications.mockImplementationOnce(() => new Promise(resolve => {
+      release = () => resolve(h.notifications)
+      started()
+    }))
+    const pending = operation === 'push' ? h.push() : h.update()
+    await waiting
+    h.patch({ connected: false })
+    release()
+    await pending
+    expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+    expect(existing.close).not.toHaveBeenCalled()
   })
   it('always displays test notifications and preserves bounded chat body', async () => {
     const h = harness(); await h.push({ type: 'test', session_id: '', body: 'x'.repeat(200) }); expect(h.show).toHaveBeenCalledOnce(); expect(h.notifications[0].body).toHaveLength(160)
