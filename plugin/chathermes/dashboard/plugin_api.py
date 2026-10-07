@@ -42,6 +42,24 @@ async def push_config():
     return _push_store().config()
 
 
+@router.post('/push/test')
+async def push_test(request: Request):
+    """Inherits dashboard authentication, just like the subscription routes."""
+    from starlette.concurrency import run_in_threadpool
+    import secrets
+    profile = _rpc_profile(request)
+    try:
+        if not (await run_in_threadpool(_push_store().config)).get('available') or _push_sender_module is None:
+            raise HTTPException(503, 'Push notifications are unavailable')
+        if _push_sender_module.notify(profile, '', 'test', secrets.token_urlsafe(18)) is not True:
+            raise HTTPException(503, 'Could not schedule test notification')
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Could not schedule test notification') from None
+    return {'scheduled': True}
+
+
 @router.get('/push-service-worker.js')
 async def push_service_worker():
     from fastapi.responses import FileResponse

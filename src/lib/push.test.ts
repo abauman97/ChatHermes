@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { notificationUrl, supported, state } from './push'
+import { notificationUrl, supported, state, sendTest } from './push'
 
 describe('push support', () => {
   afterEach(() => vi.unstubAllGlobals())
+  it('sends explicit tests through the authenticated profile route', async () => {
+    const fetch = vi.fn(async () => new Response('{}'))
+    vi.stubGlobal('fetch', fetch)
+    await sendTest('alpha')
+    expect(fetch).toHaveBeenCalledWith('/api/plugins/chathermes/push/test?profile=alpha', { method: 'POST', credentials: 'same-origin' })
+    fetch.mockResolvedValue(new Response('{}', { status: 503 }))
+    await expect(sendTest('beta')).rejects.toThrow('Could not send a test notification.')
+  })
   it('detects secure Push API availability', () => {
     vi.stubGlobal('window', { isSecureContext: true, PushManager: class {} })
     vi.stubGlobal('navigator', { serviceWorker: {} })

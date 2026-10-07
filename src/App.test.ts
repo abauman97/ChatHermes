@@ -27,6 +27,27 @@ function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
 describe('drawer settings', () => {
+  it('answers worker route queries with current SPA URL only while visible and focused', async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
+    const addEventListener = vi.fn(), removeEventListener = vi.fn()
+    vi.stubGlobal('navigator', { onLine: true, serviceWorker: { addEventListener, removeEventListener } })
+    vi.spyOn(push, 'state').mockResolvedValue({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const focus = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    const wrapper = mount(App)
+    await flushPromises()
+    const listener = addEventListener.mock.calls.find(call => call[0] === 'message')![1]
+    const postMessage = vi.fn()
+    history.replaceState({}, '', '/chathermes?profile=alpha&session=one')
+    listener({ data: { type: 'chathermes.route.query' }, ports: [{ postMessage }] })
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.route', url: location.href })
+    focus.mockReturnValue(false)
+    listener({ data: { type: 'chathermes.route.query' }, ports: [{ postMessage }] })
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.route', url: '' })
+    wrapper.unmount()
+    expect(removeEventListener).toHaveBeenCalledWith('message', listener)
+  })
+
   it('puts New chat above Projects and restores focus when dismissing settings before the drawer', async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
     const wrapper = mount(App, { attachTo: document.body })
@@ -108,6 +129,7 @@ describe('drawer settings', () => {
     vi.spyOn(push, 'state').mockResolvedValue({ supported: true, permission: 'granted', subscribed: false, available: true, error: '' })
     const subscribe = vi.spyOn(push, 'subscribe').mockReturnValue(subscription.promise)
     const unsubscribe = vi.spyOn(push, 'unsubscribe').mockResolvedValue()
+    const sendTest = vi.spyOn(push, 'sendTest').mockResolvedValue()
     const wrapper = mount(App)
     await flushPromises()
     await wrapper.get('.drawer-settings').trigger('click')
@@ -121,6 +143,10 @@ describe('drawer settings', () => {
     await flushPromises()
     expect(toggle.text()).toBe('Disable notifications')
     expect(wrapper.get('.push-setting').text()).toContain('Notifications enabled on this device.')
+    await wrapper.get('.push-setting button:nth-of-type(2)').trigger('click')
+    await flushPromises()
+    expect(sendTest).toHaveBeenCalledWith('alpha')
+    expect(wrapper.get('.push-setting').text()).toContain('Test notification scheduled.')
     await toggle.trigger('click')
     await flushPromises()
     expect(unsubscribe).toHaveBeenCalledWith('alpha')
