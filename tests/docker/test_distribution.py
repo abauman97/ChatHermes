@@ -95,6 +95,8 @@ if sys.argv[1:] == ['-c', 'from pywebpush import webpush; from py_vapid import V
                           'icons/icon-192.png', 'icons/icon-512.png'):
                 self.assertEqual((installed / 'dashboard' / 'dist' / asset).read_bytes(),
                                  (ROOT / 'public' / asset).read_bytes())
+            manifest = json.loads((installed / 'dashboard' / 'dist' / 'manifest.webmanifest').read_text())
+            self.assertEqual([icon['sizes'] for icon in manifest['icons']], ['192x192', '512x512'])
             self.assertIn('does not install Python dependencies', result.stdout)
             self.assertIn('uv pip install --python', result.stdout)
             self.assertIn(str(installed), result.stdout)

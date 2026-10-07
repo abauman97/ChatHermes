@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 
 test('drawer has exactly one New chat immediately above Projects', async ({ page }, testInfo) => {
   await signIn(page)
+  expect(await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content')).toBe('yes')
+  expect(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')).toBe('ChatHermes')
   const plugin = page.locator('.chathermes-embedded')
   const mobile = testInfo.project.name === 'mobile'
   if (mobile) await plugin.getByRole('button', { name: 'Open navigation' }).click()
@@ -41,14 +43,31 @@ test('drawer settings and notifications', async ({ page }, testInfo) => {
   expect(await worker.text()).toContain("addEventListener('push'")
   const manifest = await page.request.get('/api/plugins/chathermes/assets/dist/manifest.webmanifest')
   expect(manifest.status()).toBe(200)
-  expect((await manifest.json()).scope).toBe('/chathermes')
+  expect(manifest.headers()['content-type']).toContain('manifest')
+  const pwaManifest = await manifest.json()
+  expect(pwaManifest.scope).toBe('/chathermes')
+  const icons = pwaManifest.icons.map((icon: { src: string }) => icon.src)
+  expect(icons).toEqual([
+    '/api/plugins/chathermes/assets/dist/icons/icon-192.png',
+    '/api/plugins/chathermes/assets/dist/icons/icon-512.png',
+  ])
   for (const asset of ['apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png']) {
     const response = await page.request.get('/api/plugins/chathermes/assets/dist/' + asset)
     expect(response.status()).toBe(200)
     expect(response.headers()['content-type']).toContain('image/png')
   }
+  const headLinks = await page.evaluate(() => Object.fromEntries(
+    [...document.head.querySelectorAll('link[rel="manifest"], link[rel="apple-touch-icon"]')]
+      .map(link => [link.getAttribute('rel'), link.getAttribute('href')]),
+  ))
+  expect(headLinks).toEqual({
+    manifest: '/api/plugins/chathermes/assets/dist/manifest.webmanifest',
+    'apple-touch-icon': '/api/plugins/chathermes/assets/dist/apple-touch-icon.png',
+  })
+  expect(await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content')).toBe('yes')
+  expect(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')).toBe('ChatHermes')
   const plugin = page.locator('.chathermes-embedded')
-  const mobile = testInfo.project.name === 'mobile'
+
   if (mobile) await plugin.getByRole('button', { name: 'Open navigation' }).click()
   const navigation = plugin.getByRole('complementary', { name: 'Navigation' })
   const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
@@ -85,8 +104,33 @@ test('drawer settings and notifications', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('new-chat.png') })
 })
 
+test('ChatHermes PWA branding tags are injected on mount and cleaned up on unmount', async ({ page }) => {
+  await signIn(page)
+  const pluginAssets = '/api/plugins/chathermes/assets/dist/'
+  const manifestLink = page.locator('link[rel="manifest"]')
+  const appleIconLink = page.locator('link[rel="apple-touch-icon"]')
+  const appleTitle = page.locator('meta[name="apple-mobile-web-app-title"]')
+  await expect(manifestLink).toHaveAttribute('href', pluginAssets + 'manifest.webmanifest')
+  await expect(appleIconLink).toHaveAttribute('href', pluginAssets + 'apple-touch-icon.png')
+  await expect(appleTitle).toHaveAttribute('content', 'ChatHermes')
+  const clean = await page.evaluate(() => {
+    const ownedTags = [...document.head.querySelectorAll(
+      'link[rel="manifest"], link[rel="apple-touch-icon"], meta[name="apple-mobile-web-app-title"]',
+    )].filter(tag => tag.getAttribute('data-chathermes-pwa') === 'true')
+    for (const tag of ownedTags) tag.removeAttribute('data-chathermes-pwa')
+    return ownedTags.length
+  })
+  await page.evaluate(() => document.querySelector('.chathermes-embedded')?.parentElement?.remove())
+  await expect(manifestLink).toHaveCount(0)
+  await expect(appleIconLink).toHaveCount(0)
+  await expect(appleTitle).toHaveCount(0)
+  expect(clean).toBe(0)
+})
+
 test('compact black drawer and screen menu dismissal preserve focus and actions', async ({ page }, testInfo) => {
   await signIn(page)
+  expect(await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content')).toBe('yes')
+  expect(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')).toBe('ChatHermes')
   const plugin = page.locator('.chathermes-embedded')
   await expect(plugin).toHaveCSS('background-color', 'rgb(0, 0, 0)')
   await expect(plugin.locator('.app-shell')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
@@ -143,6 +187,8 @@ test('compact black drawer and screen menu dismissal preserve focus and actions'
 
 test('composer attachments, camera and model controls stay usable on black surfaces', async ({ page }, testInfo) => {
   await signIn(page)
+  expect(await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content')).toBe('yes')
+  expect(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')).toBe('ChatHermes')
   const plugin = page.locator('.chathermes-embedded')
   const composer = plugin.locator('.composer')
   const textarea = composer.getByRole('textbox', { name: 'Message Hermes' })
@@ -186,6 +232,8 @@ test('subscribed settings sends explicit test using authenticated host route', a
     } })
   })
   await signIn(page)
+  expect(await page.locator('meta[name="apple-mobile-web-app-capable"]').getAttribute('content')).toBe('yes')
+  expect(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content')).toBe('ChatHermes')
   const plugin = page.locator('.chathermes-embedded')
   if (testInfo.project.name === 'mobile') await plugin.getByRole('button', { name: 'Open navigation' }).click()
   await plugin.getByRole('button', { name: 'Settings', exact: true }).click()

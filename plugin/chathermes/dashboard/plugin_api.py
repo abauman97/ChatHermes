@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 try:
     import httpx
@@ -58,6 +58,29 @@ async def push_test(request: Request):
     except Exception:
         raise HTTPException(503, 'Could not schedule test notification') from None
     return {'scheduled': True}
+
+
+@router.get('/assets/dist/{file_path:path}')
+async def pwa_asset(file_path: str, request: Request):
+    """Serve only shipped PWA assets through the authenticated plugin API."""
+    from fastapi.responses import FileResponse
+
+    root = Path(__file__).resolve().parent / 'dist'
+    target = (root / file_path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise HTTPException(404, 'Asset not found')
+
+    media_types = {
+        '.webmanifest': 'application/manifest+json',
+        '.png': 'image/png',
+    }
+    media_type = media_types.get(target.suffix.lower())
+    if media_type is None:
+        raise HTTPException(404, 'Asset not found')
+    return FileResponse(target, media_type=media_type, headers={
+        'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+    })
 
 
 @router.get('/push-service-worker.js')

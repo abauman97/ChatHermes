@@ -33,6 +33,25 @@ def app(monkeypatch):
 
 
 @run_async
+async def test_pwa_assets_are_served_with_safe_types_and_path_containment(app):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        manifest = await client.get('/api/plugins/chathermes/assets/dist/manifest.webmanifest')
+        assert manifest.status_code == 200
+        assert manifest.headers['content-type'].startswith('application/manifest+json')
+        assert manifest.headers['x-content-type-options'] == 'nosniff'
+        assert [icon['sizes'] for icon in manifest.json()['icons']] == ['192x192', '512x512']
+
+        icon = await client.get('/api/plugins/chathermes/assets/dist/icons/icon-192.png')
+        assert icon.status_code == 200
+        assert icon.headers['content-type'].startswith('image/png')
+        assert icon.content.startswith(bytes.fromhex('89504e470d0a1a0a'))
+
+        for path in ('../../plugin_api.py', 'push-service-worker.js', 'unknown.txt'):
+            response = await client.get('/api/plugins/chathermes/assets/dist/' + path)
+            assert response.status_code == 404
+
+
+@run_async
 async def test_bearer_profile_and_forwarded_params(app, monkeypatch):
     seen = []
     def gateway(request):
