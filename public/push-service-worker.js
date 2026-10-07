@@ -28,7 +28,7 @@ function connectedSession(data) {
   return route && route.profile === data.profile && route.session === data.session ? route : null
 }
 
-async function connectedSessions() {
+async function connectedSessions(onConnected = () => false) {
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
   const sameOrigin = client => {
     try { return new URL(client.url).origin === self.location.origin } catch { return false }
@@ -38,21 +38,37 @@ async function connectedSessions() {
   // An early positive may have disconnected while another client timed out.
   // Re-query only positive candidates that still exist after every handshake.
   const currentClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-  return (await Promise.all(currentClients.filter(sameOrigin).filter(client => candidates.some(reply => reply.id === client.id))
-    .map(currentSession))).filter(Boolean)
+  const confirmed = (await Promise.all(currentClients.filter(sameOrigin).filter(client => candidates.some(reply => reply.id === client.id))
+    .map(async client => ({ id: client.id, session: await currentSession(client) })))).filter(reply => reply.session)
+  const sessions = []
+  // A positive in that round can age too. Confirm and act one client at a time:
+  // never wait for another client's reply between confirmation and its action.
+  for (const reply of confirmed) {
+    const live = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const client = live.find(client => client.id === reply.id && sameOrigin(client))
+    if (!client) continue
+    const session = await currentSession(client)
+    if (!session || !matches(session, reply.session)) continue
+    sessions.push(session)
+    if (onConnected(session)) break
+  }
+  return sessions
 }
 const matches = (a, b) => a.profile === b.profile && a.session === b.session
 async function closeConnectedNotifications(target) {
   // Fetch first: a pending notification lookup must not age a positive reply.
   const notifications = await self.registration.getNotifications()
-  const sessions = await connectedSessions()
-  if (target && !sessions.some(open => matches(open, target))) return false
-  for (const notification of notifications) {
-    if (!notification.tag?.startsWith('chathermes:')) continue
-    const session = routeSession(notification.data?.url)
-    if (session && sessions.some(open => matches(open, session))) notification.close()
-  }
-  return true
+  let connected = false
+  await connectedSessions(session => {
+    for (const notification of notifications) {
+      if (!notification.tag?.startsWith('chathermes:')) continue
+      const route = routeSession(notification.data?.url)
+      if (route && matches(session, route)) notification.close()
+    }
+    if (target && matches(session, target)) connected = true
+    return connected
+  })
+  return target ? connected : true
 }
 
 // Serialize display and close operations; then re-query after display so a

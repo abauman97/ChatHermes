@@ -1575,6 +1575,8 @@ async def test_push_test_endpoint_scopes_normal_transport_and_is_content_free(ap
         for profile in ('alpha', 'beta', ''):
             response = await client.post('/api/plugins/chathermes/push/test' + ('?profile=' + profile if profile else ''), json={'content': KEY})
             assert response.json() == {'scheduled': True}
+            request = sender.call_args.kwargs['request']
+            assert str(request.base_url) == 'http://dashboard.test/'
             args = sender.call_args.args
             assert args[:3] == (profile or 'default', '', 'test')
             assert KEY not in str(args) and KEY not in response.text

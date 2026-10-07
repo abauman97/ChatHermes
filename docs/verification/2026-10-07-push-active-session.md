@@ -84,3 +84,61 @@ and worker with synthetic notifications; no external push provider or OS
 notification interaction was tested. The fixture was stopped with
 `npm run live:stop`, preserving its disposable named data volume. No commit,
 push, or deployment was performed for this correction.
+
+## Second handshake race and dynamic VAPID subject
+
+Implemented against branch `codex/push-active-session-notifications`, HEAD
+`365aab68acffdbb84a973baacaa5b8fde417b8fc`, with one writer in this checkout.
+The diagnostics checkout was inspected read-only for its subject resolver and
+request propagation; unrelated key handling and diagnostics were not ported.
+
+Four new worker regressions failed before the fix: both initially-positive
+clients enter the second handshake, the first replies immediately then
+disconnects while the other delays or times out. Push must display and retain
+the existing notification; session-message cleanup must retain it too. After
+both parallel rounds settle, the worker re-enumerates and confirms remaining
+positive client IDs individually, checking the exact profile/session again.
+Cleanup acts immediately on that confirmation; suppression stops immediately
+on a confirmed target. No later client handshake ages those actions. Existing
+route, identity, focus-independent behavior and composer constraints remain.
+
+The sender resolves its subject from validated HTTPS
+`HERMES_DASHBOARD_PUBLIC_URL`, otherwise a validated HTTPS request base origin.
+It strips paths, leaves the audience as the push service origin, and fails
+without transport if neither origin is valid. Background events without a
+request require valid public URL configuration. The authenticated test route
+passes its request through the sender's thread to delivery. Tests cover
+preference, fallback, invalid/missing HTTPS, pinned VAPID signing, sender claims,
+request propagation and safe diagnostics. Actual py-vapid 1.9.4 signing also
+revealed that explicit ports are rejected; those origins fail validation or
+use a valid fallback rather than generating rejected claims.
+
+Results for this correction:
+
+- Initial worker regression run: 4 failed, 46 passed (expected reproduction).
+- Focused worker/client/push run: 3 files, 58 passed.
+- Focused Python run:
+  `uv run --python /tmp/chathermes-active-session-tests/bin/python --no-project python -m pytest tests/push_store.test.py -q`:
+  42 passed in 1.15 seconds.
+- `npm test`: 19 files, 210 passed.
+- `PATH=/tmp/chathermes-active-session-tests/bin:$PATH npm run test:api`:
+  100 passed in 6.64 seconds, using the isolated uv Python environment.
+- `npm run build` (also run by `npm run live`): passed. Rebuilt shipped worker
+  is byte-identical to the public source; other dist assets did not change.
+- Docker fixture launched through `npm run live` with a dedicated
+  `365aab68-defects` instance and free dashboard port.
+- Playwright `dashboard.spec.ts` and `push-routing.spec.ts`: 4 passed across
+  desktop and mobile in 45.8 seconds. Inspected screenshots of active/completed
+  disclosures, transcript scrolling, attachments, camera previews, and offline
+  chat states. Assertions covered home/activity/offline focus, profile/model
+  selection and exact-session notification retention/reconnect cleanup.
+- `npm run live:stop`: passed; only this instance's containers removed and its
+  disposable named data volume preserved.
+- `git diff --check`: passed.
+
+Visual tests were feasible and completed, with no Docker/browser blocker.
+Timing regressions use controlled worker handshakes. Browser notification
+checks use synthetic notifications in the real dashboard plugin and worker.
+External push-provider delivery, OS notification clicks and physical iOS
+keyboard/camera behavior were not tested. No commit, push, deployment, `.env`
+change, or other-worktree edit was performed.

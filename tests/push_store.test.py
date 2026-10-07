@@ -9,6 +9,45 @@ store = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(store)
 
 
+@pytest.fixture(autouse=True)
+def public_push_origin(monkeypatch):
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', 'https://dashboard.example.test/chathermes/')
+
+
+@pytest.mark.parametrize('public,base,expected', [
+    ('https://preferred.test/chathermes/', 'https://fallback.test/', 'https://preferred.test'),
+    ('https://preferred.test/nested/path', None, 'https://preferred.test'),
+    ('https://preferred.test:8443/path', 'https://fallback.test/', 'https://fallback.test'),
+    ('', 'https://fallback.test/chathermes/', 'https://fallback.test'),
+    ('http://invalid.test', 'https://fallback.test/', 'https://fallback.test'),
+    ('https://[broken', 'https://fallback.test/', 'https://fallback.test'),
+])
+def test_vapid_subject_preference_and_fallback(monkeypatch, public, base, expected):
+    from types import SimpleNamespace
+    from py_vapid import Vapid
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', public)
+    subject = store.vapid_subject(SimpleNamespace(base_url=base))
+    assert subject == expected
+    key = Vapid()
+    key.generate_keys()
+    assert key.sign({'sub': subject, 'aud': 'https://push.test'})
+
+
+@pytest.mark.parametrize('value', ['', 'http://dashboard.test', 'https://', 'https://localhost/',
+    'https://a.localhost/', 'https://localhost./', 'https://user:password@dashboard.test/',
+    'https://dashboard.test/?private=value', 'https://dashboard.test/#private',
+    'https://[broken', 'https://dashboard.test:bad/', 'https://dashboard.test:65536/',
+    'https://dashboard.test:8443/', 'https://dashboard.test:/', 'https://dashboard.test:0/', 'https://dash board.test/',
+    'https://dashboard.test/\nprivate', 'https://dashboard.test\\private/'])
+def test_vapid_subject_invalid_or_unavailable_https_fails_safely(monkeypatch, value):
+    from types import SimpleNamespace
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', value)
+    for request in (None, SimpleNamespace(base_url=value)):
+        with pytest.raises(RuntimeError, match='^Set HERMES_DASHBOARD_PUBLIC_URL') as error:
+            store.vapid_subject(request)
+        assert str(error.value) == 'Set HERMES_DASHBOARD_PUBLIC_URL to an HTTPS dashboard URL for Web Push'
+
+
 def test_upsert_validation_scoping_and_unsubscribe(tmp_path, monkeypatch):
     monkeypatch.setattr(store, '_path', lambda: tmp_path / 'state' / 'push.json')
     first = {'endpoint': 'https://push.test/a', 'keys': {'p256dh': 'abc_DEF', 'auth': 'auth_123'}}
@@ -61,7 +100,8 @@ def test_keypair_is_persisted_and_private_never_returned(tmp_path, monkeypatch):
     assert store.config() == {'available': False, 'vapid_public_key': None}
 
 
-def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, monkeypatch):
+@pytest.mark.parametrize('configured', [True, False])
+def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, monkeypatch, configured):
     import pywebpush
     sender_spec = importlib.util.spec_from_file_location('chathermes_push_sender_under_test',
                                                        Path(store.__file__).with_name('push_sender.py'))
@@ -75,13 +115,18 @@ def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, 
     store.upsert('beta', {'endpoint': 'https://push.test/b', 'keys': {'p256dh': 'key_456', 'auth': 'auth_456'}})
     sent = []
     monkeypatch.setattr(pywebpush, 'webpush', lambda subscription, payload, **options: sent.append((subscription, json.loads(payload), options)))
-    sender._deliver('alpha', 'session_123', 'turn.complete', 'event_123')
+    from types import SimpleNamespace
+    if not configured:
+        monkeypatch.delenv('HERMES_DASHBOARD_PUBLIC_URL')
+    sender._deliver('alpha', 'session_123', 'turn.complete', 'event_123',
+                    SimpleNamespace(base_url='https://fallback.test/chathermes/'))
     assert len(sent) == 1
     subscription, payload, options = sent[0]
     assert subscription['endpoint'] == 'https://push.test/a'
     assert payload['body'] == 'Hermes finished responding.'
     assert payload['session_id'] == 'session_123'
-    assert options['vapid_claims']['aud'] == 'https://push.test'
+    assert options['vapid_claims'] == {'aud': 'https://push.test',
+        'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
     assert options['timeout'] == 5
     assert options['vapid_private_key'] not in json.dumps(payload)
     assert store.config() == configuration
@@ -219,15 +264,36 @@ def test_notify_reports_thread_start_result(monkeypatch):
     sender_spec = importlib.util.spec_from_file_location('sender_schedule', Path(store.__file__).with_name('push_sender.py'))
     sender = importlib.util.module_from_spec(sender_spec)
     sender_spec.loader.exec_module(sender)
+    from types import SimpleNamespace
+    request = SimpleNamespace(base_url='https://request.test/')
     starts = []
     class Thread:
         def __init__(self, target, args, daemon):
             assert target == sender._deliver and daemon is True
-            assert args == ('alpha', 'stored', 'turn.complete', '1')
+            assert args == ('alpha', 'stored', 'turn.complete', '1', request)
         def start(self): starts.append(True)
     monkeypatch.setattr(threading, 'Thread', Thread)
-    assert sender.notify('alpha', 'stored', 'turn.complete', '1') is True
+    assert sender.notify('alpha', 'stored', 'turn.complete', '1', request=request) is True
     assert starts == [True]
     def fail(self): raise OSError('private-secret')
     monkeypatch.setattr(Thread, 'start', fail)
-    assert sender.notify('alpha', 'stored', 'turn.complete', '1') is False
+    assert sender.notify('alpha', 'stored', 'turn.complete', '1', request=request) is False
+
+
+def test_sender_invalid_subject_never_attempts_transport(tmp_path, monkeypatch, caplog):
+    import pywebpush
+    from unittest.mock import Mock
+    sender_spec = importlib.util.spec_from_file_location('sender_invalid_subject', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(sender_spec)
+    sender_spec.loader.exec_module(sender)
+    monkeypatch.setattr(sender, 'push_store', store)
+    monkeypatch.setattr(store, '_path', lambda: tmp_path / 'push.json')
+    store.upsert('alpha', {'endpoint': 'https://push.test/a', 'keys': {'p256dh': 'key', 'auth': 'auth'}})
+    send = Mock()
+    monkeypatch.setattr(pywebpush, 'webpush', send)
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', 'https://user:private-secret@dashboard.test/')
+    sender._deliver('alpha', 'stored', 'attention', '1')
+    send.assert_not_called()
+    assert len(store.subscriptions('alpha')) == 1
+    assert 'RuntimeError' in caplog.text
+    assert 'private-secret' not in caplog.text and 'dashboard.test' not in caplog.text

@@ -15,6 +15,15 @@ regenerate keys intentionally, stop the dashboard and remove this file; each
 device must then enable notifications again. Do not copy its private key into
 browser configuration or logs.
 
+Set `HERMES_DASHBOARD_PUBLIC_URL` to the dashboard's HTTPS URL for background
+push delivery. The VAPID subject uses its origin with the path removed. When
+that setting is absent or invalid, request-backed delivery (such as **Send test**)
+can use the validated HTTPS request base origin. Without either valid origin,
+delivery fails safely without attempting transport. The pinned py-vapid 1.9.4
+requires a DNS HTTPS origin without a path or explicit port; credentials, query
+strings, fragments, localhost, and malformed URLs are rejected. The VAPID
+audience remains the push service origin, not the dashboard origin.
+
 Notifications are intentionally content-free: completed turns, approval,
 clarification, or failed/interrupted attention only. Tapping opens the existing
 `/chathermes?profile=…&session=…` route and native viewer recovery. The
@@ -34,7 +43,10 @@ including notifications from earlier events. Opening or clicking through to a
 disconnected session retains its notification until it connects. Display and
 cleanup are serialized and state is rechecked after display to cover connection
 races. Sessionless test notifications remain available to inspect.
-Each handshake uses a message channel with a 300 ms timeout. In Settings,
+Each handshake uses a message channel with a 300 ms timeout. After the two
+parallel handshake rounds settle, still-present positive clients are confirmed
+individually. Matching notifications close at that confirmation, and suppression
+stops on a confirmed target; neither action waits for another client's reply. In Settings,
 **Send test** uses the same authenticated push transport and always shows an
 explicit content-free test notification, even with a connected viewer.
 A successful test request means scheduling succeeded, not that the device received it.

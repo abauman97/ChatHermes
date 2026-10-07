@@ -78,6 +78,43 @@ def _b64url(value):
     return base64.urlsafe_b64encode(value).rstrip(b'=').decode('ascii')
 
 
+def vapid_subject(request=None):
+    """Prefer the public dashboard URL; fall back to an HTTPS request origin."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    def origin(value):
+        try:
+            if not isinstance(value, str) or not value or any(c.isspace() or ord(c) < 32 for c in value) or '\\' in value:
+                return None
+            parsed = urlsplit(value)
+            host = parsed.hostname
+            if (parsed.scheme.lower() != 'https' or not host or parsed.username is not None or
+                    parsed.password is not None or parsed.query or parsed.fragment or
+                    host.lower().rstrip('.') == 'localhost' or host.lower().rstrip('.').endswith('.localhost')):
+                return None
+            # Accessing port validates malformed and out-of-range values.
+            port = parsed.port
+            if port is not None or parsed.netloc.endswith(':'):
+                return None
+            # py-vapid 1.9.4 accepts HTTPS DNS origins without paths or ports.
+            if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', host):
+                return None
+            return urlunsplit(('https', parsed.netloc, '', '', ''))
+        except (ValueError, TypeError):
+            return None
+
+    public = origin(os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip())
+    if public:
+        return public
+    try:
+        fallback = origin(str(getattr(request, 'base_url', '') or ''))
+        if fallback:
+            return fallback
+    except Exception:
+        pass
+    raise RuntimeError('Set HERMES_DASHBOARD_PUBLIC_URL to an HTTPS dashboard URL for Web Push')
+
+
 def upsert(profile, subscription):
     if not isinstance(profile, str) or not _PROFILE.fullmatch(profile):
         raise ValueError('Invalid profile')

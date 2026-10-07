@@ -114,6 +114,32 @@ describe('connected session notifications', () => {
       if (operation === 'push') expect(h.notifications[1].close).not.toHaveBeenCalled()
     } finally { vi.useRealTimers() }
   })
+  it.each(['delayed', 'timeout'].flatMap(handshake => ['push', 'update'].map(operation => [handshake, operation])))('rejects an early second-round positive aged by another positive candidate %s (%s)', async (handshake, operation) => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      h.patch({ connected: false }); await h.push()
+      const existing = h.notifications[0]
+      h.patch({ connected: true })
+      let queries = 0
+      const slow = { id: 'slow', url: origin + '/other-view', postMessage: (_message: any, ports: any[]) => {
+        queries++
+        if (queries === 1) {
+          ports[0].postMessage({ type: 'chathermes.session', url: route, profile: 'alpha', session: 'one', connected: true })
+          return
+        }
+        setTimeout(() => h.patch({ connected: false }), 50)
+        if (handshake === 'delayed') setTimeout(() => ports[0].postMessage({ connected: false }), 200)
+      } }
+      h.setClients([h.client, slow])
+      const pending = operation === 'push' ? h.push() : h.update()
+      await vi.advanceTimersByTimeAsync(2500)
+      await pending
+      expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+      expect(existing.close).not.toHaveBeenCalled()
+      if (operation === 'push') expect(h.notifications[1].close).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
   it.each(['push', 'update'])('rechecks connection after getNotifications is pending during %s', async operation => {
     const h = harness()
     h.patch({ connected: false }); await h.push()
