@@ -35,12 +35,12 @@ BODIES = {'turn.complete': 'Hermes finished responding.', 'approval': 'Hermes ne
           'test': 'This is a ChatHermes test notification.'}
 
 
-def notify(profile, session_id, kind, dedupe_id):
+def notify(profile, session_id, kind, dedupe_id, request=None):
     """Schedule delivery off the native event callback; never block Hermes."""
     diagnostic('sender.notify', profile, session_id, kind)
     try:
         import threading
-        thread = threading.Thread(target=_deliver, args=(profile, session_id, kind, dedupe_id), daemon=True)
+        thread = threading.Thread(target=_deliver, args=(profile, session_id, kind, dedupe_id, request), daemon=True)
         thread.start()
         diagnostic('sender.scheduled', profile, session_id, kind, success=True)
         return True
@@ -49,7 +49,7 @@ def notify(profile, session_id, kind, dedupe_id):
         return False
 
 
-def _deliver(profile, session_id, kind, dedupe_id):
+def _deliver(profile, session_id, kind, dedupe_id, request=None):
     if kind not in BODIES or not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile):
         diagnostic('deliver.invalid', profile, session_id, kind)
         return
@@ -63,6 +63,7 @@ def _deliver(profile, session_id, kind, dedupe_id):
         report('deliver.config', matching_enabled=len(rows), available=bool(configuration.get('available')))
         if not configuration.get('available') or not rows:
             return
+        subject = push_store.vapid_subject(request)
         from pywebpush import webpush
         from py_vapid import Vapid
         from cryptography.hazmat.primitives import serialization
@@ -76,7 +77,7 @@ def _deliver(profile, session_id, kind, dedupe_id):
             report('pywebpush.attempt', subscription=row.get('id'), attempted=True)
             try:
                 endpoint = urlparse(row['endpoint'])
-                response = webpush({'endpoint': row['endpoint'], 'keys': {'p256dh': row['p256dh'], 'auth': row['auth']}}, payload, vapid_private_key=key, vapid_claims={'sub': 'mailto:notifications@chathermes.local', 'aud': f'{endpoint.scheme}://{endpoint.netloc}'}, timeout=5)
+                response = webpush({'endpoint': row['endpoint'], 'keys': {'p256dh': row['p256dh'], 'auth': row['auth']}}, payload, vapid_private_key=key, vapid_claims={'sub': subject, 'aud': f'{endpoint.scheme}://{endpoint.netloc}'}, timeout=5)
                 status = getattr(response, 'status_code', None)
                 report('pywebpush.result', subscription=row.get('id'), attempted=True, success=True, http_status=status if type(status) is int else None)
             except Exception as error:

@@ -4,69 +4,163 @@ import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 
 const worker = readFileSync('public/push-service-worker.js', 'utf8')
-async function deliver(url: string, options: { visible?: boolean; focused?: boolean; kind?: string; profile?: string; session?: string; clients?: unknown[]; route?: string; noReply?: boolean; invalidReply?: boolean } = {}) {
-  const handlers: Record<string, (event: unknown) => void> = {}
-  const showNotification = vi.fn(async (_title: string, _options: object) => {})
-  function respondingClient(value: { url: string; visibilityState?: string; focused?: boolean }) {
-    return { ...value, postMessage: (_message: unknown, ports: { postMessage: (data: unknown) => void }[]) => {
-      if (!options.noReply) ports[0]!.postMessage({ type: options.invalidReply ? 'wrong' : 'chathermes.route', url: options.route ?? value.url })
-    } }
-  }
-  const client = respondingClient({ url, visibilityState: options.visible === false ? 'hidden' : 'visible', focused: options.focused !== false })
+const origin = 'https://chat.test'
+const route = origin + '/chathermes?profile=alpha&session=one'
+function harness() {
+  const handlers: Record<string, (event: any) => void> = {}
+  let state: any = { type: 'chathermes.session', url: route, profile: 'alpha', session: 'one', connected: true }
+  const client = { focus: vi.fn(async () => {}), id: 'tab', url: origin + '/old-spa-url', visibilityState: 'hidden', focused: false,
+    postMessage: vi.fn((_message: any, ports: any[]) => { if (state && ports) ports[0].postMessage(state) }) }
+  let clients: any[] = [client]
+  const notifications: any[] = []
+  const show = vi.fn(async (_title: string, options: any) => { notifications.push({ ...options, close: vi.fn() }) })
   class Channel {
-    port1 = { onmessage: undefined as undefined | ((event: { data: unknown }) => void), close() {} }
-    port2 = { postMessage: (data: unknown) => this.port1.onmessage?.({ data }), close() {} }
+    port1 = { onmessage: undefined as any, close() {} }
+    port2 = { postMessage: (data: any) => this.port1.onmessage?.({ data }), close() {} }
   }
-  runInNewContext(worker, { URL, MessageChannel: Channel, setTimeout, clearTimeout, self: { location: { origin: 'https://chat.test' },
-    addEventListener: (kind: string, fn: (event: unknown) => void) => { handlers[kind] = fn },
-    clients: { matchAll: async () => options.clients ? options.clients.map(value => respondingClient(value as typeof client)) : [client] }, registration: { showNotification } } })
-  let pending: Promise<unknown> | undefined
-  handlers.push!({ data: { json: () => ({ title: 'ChatHermes', type: options.kind || 'turn.complete', profile: options.profile ?? 'alpha', session_id: options.session ?? 'one' }) }, waitUntil: (value: Promise<unknown>) => { pending = value } })
-  await pending
-  return showNotification
+  const getNotifications = vi.fn(async () => notifications)
+  runInNewContext(worker, { URL, MessageChannel: Channel, setTimeout, clearTimeout, self: {
+    location: { origin }, addEventListener: (type: string, fn: any) => { handlers[type] = fn },
+    clients: { matchAll: async () => clients, openWindow: vi.fn() }, registration: { showNotification: show, getNotifications },
+  } })
+  async function dispatch(type: string, fields: any) {
+    let pending: any
+    handlers[type]!({ ...fields, waitUntil: (promise: any) => { pending = promise } })
+    await pending
+  }
+  const push = (extra = {}) => dispatch('push', { data: { json: () => ({ title: 'ChatHermes', type: 'turn.complete', profile: 'alpha', session_id: 'one', body: 'Chat text', ...extra }) } })
+  const update = () => dispatch('message', { source: client, data: state })
+  return { client, show, getNotifications, notifications, push, update, dispatch, setState: (value: any) => { state = value }, patch: (value: any) => { state = { ...state, ...value } }, setClients: (value: any[]) => { clients = value } }
 }
-
-describe('worker exact originating session suppression', () => {
-  it.each(['turn.complete', 'approval', 'clarify', 'attention'])('suppresses %s only on matching visible focused session', async kind => {
-    expect(await deliver('https://chat.test/chathermes?profile=alpha&session=one', { kind })).not.toHaveBeenCalled()
+describe('connected session notifications', () => {
+  it.each(['turn.complete', 'approval', 'clarify', 'attention'])('suppresses %s in connected hidden/unfocused tabs', async type => {
+    const h = harness(); await h.push({ type }); expect(h.show).not.toHaveBeenCalled()
+    expect(h.client.postMessage).toHaveBeenCalledWith({ type: 'chathermes.session.query' }, expect.anything())
+  })
+  it.each([{ connected: false }, { profile: 'beta' }, { session: 'two' }, { session: '' }, { type: 'wrong' },
+    { url: origin + '/chathermes' }, { url: route + '&view=projects' }, { url: route + '&view=scheduled' },
+    { url: route + '&session=two' }, { url: route + '&profile=beta' }, { url: 'https://other.test/chathermes' },
+    { connected: 'true' }])('shows for mismatched or disconnected state %j', async patch => {
+    const h = harness(); h.patch(patch); await h.push(); expect(h.show).toHaveBeenCalledOnce()
+    expect(h.show.mock.calls[0]).toMatchObject(['ChatHermes', { body: 'Chat text' }])
+  })
+  it('fails open for missing clients and absent handshakes', async () => {
+    const h = harness(); h.setClients([]); await h.push(); expect(h.show).toHaveBeenCalledOnce()
+    h.setClients([h.client]); h.setState(null); await h.push(); expect(h.show).toHaveBeenCalledTimes(2)
+  })
+  it.each([{ visibilityState: 'visible', focused: true }, { visibilityState: 'visible', focused: false }, { visibilityState: 'hidden', focused: true }, { visibilityState: 'hidden', focused: false }])('uses connection regardless of window activity %j', async activity => {
+    const h = harness(); Object.assign(h.client, activity); await h.push(); expect(h.show).not.toHaveBeenCalled()
+    h.patch({ connected: false }); await h.push(); expect(h.show).toHaveBeenCalledOnce()
+  })
+  it('suppresses and closes if any tab is connected, independently of another disconnected tab', async () => {
+    const h = harness(); h.patch({ connected: false }); await h.push()
+    const other = { ...h.client, id: 'other', postMessage: (_message: any, ports: any[]) => ports[0].postMessage({ type: 'chathermes.session', url: route, profile: 'alpha', session: 'one', connected: true }) }
+    h.setClients([h.client, other]); await h.update(); expect(h.notifications[0].close).toHaveBeenCalledOnce()
+    await h.push(); expect(h.show).toHaveBeenCalledOnce()
+    h.setClients([h.client]); await h.push(); expect(h.show).toHaveBeenCalledTimes(2)
+  })
+  it('keeps a clicked notification while navigating to a disconnected viewer', async () => {
+    const h = harness(); h.patch({ connected: false }); await h.push()
+    h.client.url = route
+    await h.dispatch('notificationclick', { notification: h.notifications[0] })
+    expect(h.notifications[0].close).not.toHaveBeenCalled()
+    expect(h.client.focus).toHaveBeenCalledOnce()
+    expect(h.client.postMessage).toHaveBeenCalledWith({ type: 'chathermes.navigate', url: route })
+  })
+  it('accepts default profile and ignores stale WindowClient URL and focus', async () => {
+    const h = harness(); h.patch({ profile: 'default', url: origin + '/chathermes?session=one' }); await h.push({ profile: 'default' }); expect(h.show).not.toHaveBeenCalled()
+  })
+  it('retains disconnected notifications then closes every matching tag on connection', async () => {
+    const h = harness(); h.patch({ connected: false }); await h.push(); await h.push({ type: 'approval' }); await h.push({ profile: 'beta' }); await h.push({ session_id: 'two' }); await h.push({ type: 'test', session_id: '' })
+    await h.update(); expect(h.notifications.every(n => n.close.mock.calls.length === 0)).toBe(true)
+    h.patch({ connected: true }); await h.update()
+    expect(h.notifications.map(n => n.close.mock.calls.length)).toEqual([1, 1, 0, 0, 0])
+  })
+  it('rechecks after display to close a notification racing connection', async () => {
+    const h = harness(); h.patch({ connected: false }); h.show.mockImplementationOnce(async (_title, options) => {
+      h.notifications.push({ ...options, close: vi.fn() }); h.patch({ connected: true }); void h.update()
+    }); await h.push(); expect(h.notifications[0].close).toHaveBeenCalled()
+  })
+  it('does not trust unsolicited stale state when the current handshake disagrees', async () => {
+    const h = harness(); h.patch({ connected: false }); await h.push(); h.patch({ connected: true }); h.setClients([]); await h.update(); expect(h.notifications[0].close).not.toHaveBeenCalled()
   })
   it.each([
-    '/chathermes', '/chathermes?profile=alpha', '/chathermes?profile=alpha&session=two',
-    '/chathermes?profile=beta&session=one', '/chathermes?session=one',
-    '/chathermes?profile=alpha&session=one&view=projects',
-    '/chathermes?profile=alpha&session=one&view=scheduled',
-    '/chathermes?profile=alpha&session=one&session=two',
-    '/chathermes?profile=alpha&profile=beta&session=one',
-    '/chathermes-other?profile=alpha&session=one', '/sessions?profile=alpha&session=one',
-    'https://other.test/chathermes?profile=alpha&session=one',
-  ])('shows on %s', async path => {
-    expect(await deliver(new URL(path, 'https://chat.test').href)).toHaveBeenCalledOnce()
+    ['disconnect', 'delayed'], ['disconnect', 'timeout'],
+    ['navigation', 'delayed'], ['navigation', 'timeout'],
+    ['unmount', 'delayed'], ['unmount', 'timeout'],
+    ['removed client', 'delayed'], ['removed client', 'timeout'],
+  ].flatMap(([change, handshake]) => ['push', 'update'].map(operation => [change, handshake, operation])))('retains notifications after a positive reply followed by %s during a second client %s (%s)', async (change, handshake, operation) => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      h.patch({ connected: false }); await h.push()
+      const existing = h.notifications[0]
+      h.patch({ connected: true })
+      const slow = { id: 'slow', url: origin + '/other-dashboard-view', postMessage: (_message: any, ports: any[]) => {
+        setTimeout(() => {
+          if (change === 'disconnect') h.patch({ connected: false })
+          if (change === 'navigation') h.patch({ url: origin + '/chathermes?view=scheduled' })
+          if (change === 'unmount') h.setState(null)
+          if (change === 'removed client') h.setClients([slow])
+        }, 50)
+        if (handshake === 'delayed') setTimeout(() => ports[0].postMessage({ connected: false }), 200)
+      } }
+      h.setClients([h.client, slow])
+      const pending = operation === 'push' ? h.push() : h.update()
+      await vi.advanceTimersByTimeAsync(1500)
+      await pending
+      expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+      expect(existing.close).not.toHaveBeenCalled()
+      if (operation === 'push') expect(h.notifications[1].close).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
   })
-  it.each([{ visible: false }, { focused: false }, { visible: false, focused: false }])('shows with inactive matching window %j', async options => {
-    expect(await deliver('https://chat.test/chathermes?profile=alpha&session=one', options)).toHaveBeenCalledOnce()
+  it.each(['delayed', 'timeout'].flatMap(handshake => ['push', 'update'].map(operation => [handshake, operation])))('rejects an early second-round positive aged by another positive candidate %s (%s)', async (handshake, operation) => {
+    vi.useFakeTimers()
+    try {
+      const h = harness()
+      h.patch({ connected: false }); await h.push()
+      const existing = h.notifications[0]
+      h.patch({ connected: true })
+      let queries = 0
+      const slow = { id: 'slow', url: origin + '/other-view', postMessage: (_message: any, ports: any[]) => {
+        queries++
+        if (queries === 1) {
+          ports[0].postMessage({ type: 'chathermes.session', url: route, profile: 'alpha', session: 'one', connected: true })
+          return
+        }
+        setTimeout(() => h.patch({ connected: false }), 50)
+        if (handshake === 'delayed') setTimeout(() => ports[0].postMessage({ connected: false }), 200)
+      } }
+      h.setClients([h.client, slow])
+      const pending = operation === 'push' ? h.push() : h.update()
+      await vi.advanceTimersByTimeAsync(2500)
+      await pending
+      expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+      expect(existing.close).not.toHaveBeenCalled()
+      if (operation === 'push') expect(h.notifications[1].close).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
   })
-  it('matches implicit default profile and SPA updated URL', async () => {
-    expect(await deliver('https://chat.test/chathermes?session=one', { profile: 'default' })).not.toHaveBeenCalled()
-    expect(await deliver('https://chat.test/chathermes?session=two', { profile: 'default' })).toHaveBeenCalledOnce()
+  it.each(['push', 'update'])('rechecks connection after getNotifications is pending during %s', async operation => {
+    const h = harness()
+    h.patch({ connected: false }); await h.push()
+    const existing = h.notifications[0]
+    h.patch({ connected: true })
+    let release!: () => void
+    let started!: () => void
+    const waiting = new Promise<void>(resolve => { started = resolve })
+    h.getNotifications.mockImplementationOnce(() => new Promise(resolve => {
+      release = () => resolve(h.notifications)
+      started()
+    }))
+    const pending = operation === 'push' ? h.push() : h.update()
+    await waiting
+    h.patch({ connected: false })
+    release()
+    await pending
+    expect(h.show).toHaveBeenCalledTimes(operation === 'push' ? 2 : 1)
+    expect(existing.close).not.toHaveBeenCalled()
   })
-  it('shows with no windows and only suppresses when some window matches', async () => {
-    expect(await deliver('', { clients: [] })).toHaveBeenCalledOnce()
-    expect(await deliver('', { clients: [
-      { url: 'https://chat.test/chathermes?profile=alpha&session=two', focused: true, visibilityState: 'visible' },
-      { url: 'https://chat.test/chathermes?profile=alpha&session=one', focused: true, visibilityState: 'visible' },
-    ] })).not.toHaveBeenCalled()
-  })
-  it('uses current SPA route instead of a stale WindowClient URL', async () => {
-    expect(await deliver('https://chat.test/chathermes', { route: 'https://chat.test/chathermes?profile=alpha&session=one' })).not.toHaveBeenCalled()
-    expect(await deliver('https://chat.test/chathermes?profile=alpha&session=one', { route: 'https://chat.test/chathermes?profile=alpha&session=two' })).toHaveBeenCalledOnce()
-    expect(await deliver('https://chat.test/projects', { route: 'https://chat.test/chathermes?profile=alpha&session=one' })).not.toHaveBeenCalled()
-  })
-  it.each([{ noReply: true }, { invalidReply: true }])('shows when mounted client cannot confirm its current route %j', async options => {
-    expect(await deliver('https://chat.test/chathermes?profile=alpha&session=one', options)).toHaveBeenCalledOnce()
-  })
-  it('always shows explicit test, without a session', async () => {
-    const show = await deliver('https://chat.test/chathermes?profile=alpha&session=one', { kind: 'test', session: '' })
-    expect(show).toHaveBeenCalledOnce()
-    expect(show.mock.calls[0]?.[1]).toMatchObject({ data: { url: 'https://chat.test/chathermes?profile=alpha' } })
+  it('always displays test notifications and preserves bounded chat body', async () => {
+    const h = harness(); await h.push({ type: 'test', session_id: '', body: 'x'.repeat(200) }); expect(h.show).toHaveBeenCalledOnce(); expect(h.notifications[0].body).toHaveLength(160)
   })
 })

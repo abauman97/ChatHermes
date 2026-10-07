@@ -51,7 +51,7 @@ async def push_test(request: Request):
     try:
         if not (await run_in_threadpool(_push_store().config)).get('available') or _push_sender_module is None:
             raise HTTPException(503, 'Push notifications are unavailable')
-        if _push_sender_module.notify(profile, '', 'test', secrets.token_urlsafe(18)) is not True:
+        if _push_sender_module.notify(profile, '', 'test', secrets.token_urlsafe(18), request=request) is not True:
             raise HTTPException(503, 'Could not schedule test notification')
     except HTTPException:
         raise
