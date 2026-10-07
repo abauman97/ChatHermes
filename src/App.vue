@@ -715,7 +715,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
           <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
           <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu()">
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
-            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" @click="newChat(); closeScreenMenu()">New chat</button>
+            <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" :disabled="offline || creating || (projectView && (!selectedProject || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))))" @click="projectView ? createSession() : newChat(); closeScreenMenu()">New chat</button>
             <template v-if="projectsPage">
               <button role="menuitemradio" :aria-checked="!archivedProjects" @click="showProjects(false)">Active projects</button>
               <button role="menuitemradio" :aria-checked="archivedProjects" @click="showProjects(true)">Archived projects</button>
@@ -749,7 +749,7 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
         <ProjectSettings v-if="projectPage === 'edit'" :key="`${profile}:${selectedProject.id}`" :project="selectedProject" :busy="projectBusy" :offline="offline" :error="manageError" @manage="manageProject" />
         <ProjectInstructions v-else :key="`${profile}:${selectedProject.id}`" :profile="profile" :project-id="selectedProject.id" :offline="offline" />
       </section>
-      <section v-else-if="projectView" class="min-h-0 flex-1 overflow-y-auto px-6 py-8 min-[701px]:px-10" aria-label="Selected Project">
+      <section v-else-if="projectView" class="project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10" aria-label="Selected Project">
         <div class="project-home-content">
         <button class="project-back" @click="showProjects(!!selectedProject?.archived)">← Projects</button>
         <p v-if="projectLoading" role="status">Loading Project…</p>
@@ -757,10 +757,13 @@ onUnmounted(() => { profileGeneration++; closeProjectEvents?.(); clearTimeout(re
         <template v-if="selectedProject">
           <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
           <p class="mb-4 break-all text-sm text-[#a3a3a3]">{{ projectRoot(selectedProject) ? 'Workspace: ' + projectRoot(selectedProject) : selectedProject.isNoProject ? 'No project workspace' : 'No workspace configured' }}</p>
-          <button class="mb-4 rounded-xl bg-[#303030] px-4 py-3 text-base disabled:opacity-55" :disabled="offline || creating || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))" @click="createSession">New chat</button>
-          <h3 class="project-chats-heading">Chats</h3>
           <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">No conversations yet.</p>
-          <button v-for="row in visibleSessions" :key="row.id" class="block w-full rounded-lg px-3 py-3 text-left text-base hover:bg-[#303030]" @click="chooseSession(row.id)">{{ row.title || 'Untitled session' }}</button>
+          <nav class="project-chat-list" aria-label="Project chats">
+            <button v-for="row in visibleSessions" :key="row.id" class="project-chat-row" :aria-label="row.title || 'Untitled session'" @click="chooseSession(row.id)">
+              <span class="project-chat-title">{{ row.title || 'Untitled session' }}</span>
+              <span v-if="row.preview?.trim()" class="project-chat-preview">{{ row.preview }}</span>
+            </button>
+          </nav>
           <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
         </template>
         </div>
