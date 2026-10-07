@@ -5,6 +5,37 @@ const props = withDefaults(defineProps<{ disabled: boolean; sending: boolean; pr
 const emit = defineEmits<{ stop: []; steer: [text: string]; send: [text: string, attachments: Attachment[]]; 'update:model': [model: string]; 'update:provider': [provider: string] }>()
 const value = ref(''), attachmentsOpen = ref(false), attachments = ref<Attachment[]>([]), attachmentError = ref(''), reading = ref(false)
 const files = ref<HTMLInputElement>(), camera = ref<HTMLInputElement>()
+const textarea = ref<HTMLTextAreaElement>(), form = ref<HTMLFormElement>(), editing = ref(false)
+let resizeObserver: ResizeObserver | undefined
+function resizeInput() {
+  const area = textarea.value
+  if (!area) return
+  const style = getComputedStyle(area)
+  const padding = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0')
+  area.style.height = '0px'
+  const contentHeight = area.scrollHeight - padding
+  const lineHeight = parseFloat(style.lineHeight) || 24
+  const height = Math.max(parseFloat(style.minHeight) || 0, Math.min(contentHeight, 8 * lineHeight)) + padding
+  area.style.height = `${height}px`
+  area.style.overflowY = contentHeight > 8 * lineHeight ? 'auto' : 'hidden'
+}
+function focusInput() { editing.value = true; pickerOpen.value = false }
+function leaveComposer(event: FocusEvent) {
+  if (!(event.relatedTarget instanceof Node) || !form.value?.contains(event.relatedTarget)) editing.value = false
+}
+watch(value, () => resizeInput(), { flush: 'post' })
+onMounted(() => {
+  resizeInput()
+  if (typeof ResizeObserver !== 'undefined') {
+    let width = -1
+    resizeObserver = new ResizeObserver(entries => {
+      const nextWidth = entries[0]?.contentRect.width
+      if (nextWidth !== undefined && nextWidth !== width) { width = nextWidth; resizeInput() }
+    })
+    if (textarea.value) resizeObserver.observe(textarea.value)
+  }
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
 watch(() => props.suggestedPrompt, text => { if (text) value.value = text }, { immediate: true })
 // Gateway catalog roots describe the backing model; their children are selectable routes.
 const routeModels = computed(() => (props.models || []).filter(item => item.parent !== null))
@@ -64,13 +95,17 @@ watch(pickerDisabled, disabled => { if (disabled) closePicker() })
 watch(() => props.providers, () => closePicker())
 onMounted(() => { document.addEventListener('click', outsideClick); document.addEventListener('keydown', pickerKeydown) })
 onBeforeUnmount(() => { document.removeEventListener('click', outsideClick); document.removeEventListener('keydown', pickerKeydown) })
+// Derive availability from current state so every temporary gate can recover.
+const buttonDisabled = computed(() => props.sending
+  ? !props.stoppable || (!!value.value.trim() && (reading.value || imageGated.value))
+  : props.disabled || reading.value || imageGated.value || (!value.value.trim() && !attachments.value.length))
 function send() {
-  if (props.sending && props.stoppable && value.value.trim()) { emit('steer', value.value.trim()); value.value = ''; return }
+  if (buttonDisabled.value) return
+  if (props.sending && value.value.trim()) { emit('steer', value.value.trim()); value.value = ''; return }
   if (props.disabled || props.sending || reading.value || imageGated.value) return
   const text = value.value.trim()
   if (text || attachments.value.length) { emit('send', text, [...attachments.value]); value.value = ''; attachments.value = []; attachmentsOpen.value = false }
 }
-function keydown(event: KeyboardEvent) { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); send() } }
 async function fitImage(data: string): Promise<string> {
   if (data.length <= 1_398_104) return data // roughly 1 MB of decoded image data
   const image = new Image()
@@ -97,7 +132,7 @@ async function attach(event: Event) {
     for (const file of Array.from(input.files || [])) {
       if (file.size > 20 * 1024 * 1024) throw new Error('Each file must be 20 MB or smaller.')
       if (attachments.value.length >= 5) throw new Error('Attach up to five files per message.')
-      let data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Could not read file.')); reader.readAsDataURL(file) })
+      let data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('Could not read file.')); reader.onabort = () => reject(new Error('File reading was cancelled. Try again.')); reader.readAsDataURL(file) })
       if (file.type.startsWith('image/')) data = await fitImage(data)
       const type = file.type.startsWith('image/') ? data.slice(5, data.indexOf(';')) : file.type || 'application/octet-stream'
       attachments.value.push({ name: file.name, type, data, size: file.size })
@@ -107,7 +142,7 @@ async function attach(event: Event) {
 }
 </script>
 <template>
-  <form class="composer relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:mb-6 min-[701px]:w-[calc(100%-48px)]" @submit.prevent="send">
+  <form ref="form" :class="{ 'composer-editing': editing }" @focusout="leaveComposer" class="composer relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:mb-6 min-[701px]:w-[calc(100%-48px)]" @submit.prevent="send">
     <div v-if="attachments.length" class="flex flex-wrap gap-2 px-2 pb-2">
       <div v-for="(file, index) in attachments" :key="index" class="flex max-w-full items-center gap-2 rounded-xl bg-[#424242] p-2 text-sm">
         <img v-if="file.type.startsWith('image/')" :src="file.data" :alt="file.name" class="size-12 rounded-lg object-cover" />
@@ -116,21 +151,23 @@ async function attach(event: Event) {
     </div>
     <p v-if="imageGated" class="px-2 text-sm text-red-300" role="alert">Image sending is unavailable for this native capability. Remove the image to send text or files.</p>
     <p v-if="attachmentError" class="px-2 text-sm text-red-300" role="alert">{{ attachmentError }}</p>
-    <label class="sr-only" for="prompt">Message Hermes</label>
-    <textarea id="prompt" v-model="value" rows="2" maxlength="65536" :placeholder="projectName ? `Message ${projectName}` : 'Message Hermes…'" class="max-h-[35vh] min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-relaxed text-white outline-none placeholder:text-[#b4b4b4]" @keydown="keydown" />
-    <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
-    <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
-    <div class="flex items-center gap-3">
-      <button class="grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="closePicker(); attachmentsOpen = !attachmentsOpen">+</button>
-      <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
-      <button ref="pill" type="button" class="model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-white disabled:opacity-55" aria-label="Choose model" aria-haspopup="dialog" :aria-expanded="pickerOpen" :aria-controls="panelId" :disabled="pickerDisabled" @click="togglePicker">
-        <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-      </button>
-      <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" :type="sending ? 'button' : 'submit'" :disabled="sending ? !stoppable : disabled || reading || imageGated || (!value.trim() && !attachments.length)" :aria-label="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()">
-        <svg v-if="sending && !value.trim()" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
-      </button>
+    <div class="composer-body">
+      <label class="sr-only" for="prompt">Message Hermes</label>
+      <textarea ref="textarea" id="prompt" v-model="value" rows="1" maxlength="65536" :placeholder="projectName ? `Message ${projectName}` : 'Message Hermes…'" class="composer-input min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-6 text-white outline-none placeholder:text-[#b4b4b4]" @focus="focusInput" />
+      <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
+      <input ref="camera" type="file" accept="image/*" capture="environment" hidden aria-label="Take a photo" @change="attach" />
+      <div class="composer-controls flex items-center gap-3">
+        <button class="attach-button grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55" type="button" aria-label="Attachment options" :aria-expanded="attachmentsOpen" :disabled="sending || reading" @click="closePicker(); attachmentsOpen = !attachmentsOpen">+</button>
+        <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">{{ reading ? 'Reading files…' : reason || '' }}</p>
+        <button ref="pill" type="button" class="model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-white disabled:opacity-55" aria-label="Choose model" aria-haspopup="dialog" :aria-expanded="pickerOpen" :aria-controls="panelId" :disabled="pickerDisabled" @click="togglePicker">
+          <span class="truncate">{{ modelsLoading ? 'Loading models…' : model || defaultModel || 'Default' }}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-4 shrink-0" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        <button class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55" type="button" :disabled="buttonDisabled" :aria-label="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'" @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()">
+          <svg v-if="sending && !value.trim()" viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+        </button>
+      </div>
     </div>
     <div v-if="pickerOpen" :id="panelId" ref="panel" role="dialog" aria-modal="true" :aria-label="pickerProvider === null ? 'Choose provider' : pickerTitle" class="model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl">
       <div class="flex shrink-0 items-center gap-2 border-b border-[#424242] p-2">
