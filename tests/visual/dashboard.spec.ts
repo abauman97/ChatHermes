@@ -19,6 +19,7 @@ test('plugin composer, sent timeline, attachments, model and stream disclosures'
   await expect(textarea).toHaveCSS('font-size', '16px')
   expect(await page.locator('meta[name="viewport"]').getAttribute('content')).toContain('maximum-scale=1')
   const pill = composer.getByRole('button', { name: 'Choose model', exact: true })
+  await textarea.evaluate(element => element.blur())
   await pill.click()
   await expect(page.getByRole('dialog', { name: 'Choose provider' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('picker-providers.png') })
