@@ -13,10 +13,26 @@ declare global {
 const React = window.__HERMES_PLUGIN_SDK__?.React
 if (!React || !window.__HERMES_PLUGINS__) throw new Error('Hermes plugin SDK is unavailable')
 const appUrl = new URL(__CHATHERMES_APP_ASSET__, (document.currentScript as HTMLScriptElement | null)?.src || location.href).href
+const pwaHeadTags = [
+  ['link', { rel: 'manifest', href: '/api/plugins/chathermes/assets/dist/manifest.webmanifest' }],
+  ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/api/plugins/chathermes/assets/dist/apple-touch-icon.png' }],
+  ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
+  ['meta', { name: 'apple-mobile-web-app-title', content: 'ChatHermes' }],
+] as const
 function ChatHermesPlugin() {
   const element = React!.useRef(null)
   React!.useEffect(() => {
     let disposed = false
+    const ownedHeadTags: HTMLElement[] = []
+    for (const [tagName, attributes] of pwaHeadTags) {
+      const selector = tagName === 'link' ? `link[rel="${attributes.rel}"]` : `meta[name="${attributes.name}"]`
+      if (document.head.querySelector(selector)) continue
+      const tag = document.createElement(tagName)
+      for (const [name, value] of Object.entries(attributes)) tag.setAttribute(name, value)
+      tag.setAttribute('data-chathermes-pwa', 'true')
+      document.head.append(tag)
+      ownedHeadTags.push(tag)
+    }
     // Mount at the body so transformed host panels cannot contain the fixed overlay.
     const overlay = document.createElement('div')
     overlay.className = 'chathermes-plugin chathermes-embedded'
@@ -35,7 +51,7 @@ function ChatHermesPlugin() {
       app = createChatHermesApp()
       app!.mount(overlay)
     }).catch(() => { if (!disposed) { overlay.textContent = 'ChatHermes could not load.'; const back = document.createElement('a'); back.href = '/'; back.textContent = ' Back to dashboard'; overlay.append(back) } })
-    return () => { disposed = true; app?.unmount(); overlay.remove(); if (viewport) viewport.content = previousViewport!; else ownedViewport.remove() }
+    return () => { disposed = true; app?.unmount(); overlay.remove(); ownedHeadTags.forEach(tag => tag.remove()); if (viewport) viewport.content = previousViewport!; else ownedViewport.remove() }
   }, [])
   return React!.createElement('div', { ref: element, className: 'chathermes-plugin' })
 }
