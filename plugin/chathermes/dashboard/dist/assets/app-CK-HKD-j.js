@@ -3359,7 +3359,7 @@ function ns(e, t) {
 	if (n === "text" || n === "text.snapshot" || n === "text.completed") {
 		ts(e);
 		let t = n === "text.completed" ? Xo(r.content) : i;
-		if (!t) return;
+		if (!t || n === "text.completed" && [...e.blocks].reverse().find((e) => e.kind === "text")?.content === t) return;
 		let a = e.blocks.at(-1);
 		if (n === "text.snapshot") {
 			let n = e.blocks.filter((e) => e.kind === "text").map((e) => e.content).join("");
@@ -3496,7 +3496,7 @@ function as(e, t, n) {
 			data: { delta: Xo(n.text) }
 		}), r.sealedText = e.blocks.at(-1)?.id;
 		else if (t === "message.delta" || t === "message.complete") {
-			if (r.sealedText && r.sealedText === e.blocks.at(-1)?.id && Xo(n.text) && e.blocks.push({
+			if (r.sealedText && r.sealedText === e.blocks.at(-1)?.id && Xo(n.text) && (t === "message.delta" || n.text !== e.blocks.at(-1)?.content) && e.blocks.push({
 				id: `block-${++e.sequence}`,
 				kind: "text",
 				content: ""

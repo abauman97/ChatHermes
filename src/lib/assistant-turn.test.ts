@@ -87,6 +87,31 @@ describe('Hermes event normalization and ordered assistant turns', () => {
     emit('assistant.delta', { delta: 'Answ' }); emit('assistant.completed', { content: 'Answer' }); emit('run.completed')
     expect(turn.blocks.filter(block => block.kind === 'text').map(block => block.content)).toEqual(['Checking', 'Answer'])
   })
+  it.each(['reasoning.delta', 'tool.started'])('does not repeat completed text after trailing %s', activity => {
+    const { turn, emit } = setup()
+    emit('assistant.delta', { delta: 'Final ' }); emit('assistant.delta', { delta: 'answer' })
+    emit(activity, { delta: 'Finishing', tool_call_id: 'a' })
+    emit('assistant.completed', { content: 'Final answer' }); emit('run.completed')
+    expect(turn.blocks).toHaveLength(2)
+    expect(turn.blocks[0]).toMatchObject({ kind: 'text', content: 'Final answer' })
+    expect(turn.blocks[1]).toMatchObject({ complete: true, state: 'completed' })
+  })
+  it.each([['Final checks', 'Final'], ['Final', 'Final answer']])('keeps distinct phases across a tool: %s → %s', (interim, final) => {
+    const { turn, emit } = setup()
+    emit('assistant.delta', { delta: interim })
+    emit('tool.started', { tool_call_id: 'a' }); emit('tool.completed', { tool_call_id: 'a' })
+    emit('assistant.completed', { content: final })
+    expect(turn.blocks.map(block => block.kind)).toEqual(['text', 'tool', 'text'])
+    expect(turn.blocks.filter(block => block.kind === 'text').map(block => block.content)).toEqual([interim, final])
+  })
+  it('compares a repeated completion only with the latest text phase', () => {
+    const { turn, emit } = setup()
+    emit('assistant.delta', { delta: 'Answer' }); emit('tool.started', { tool_call_id: 'a' })
+    emit('assistant.delta', { delta: 'Checking' }); emit('tool.started', { tool_call_id: 'b' })
+    emit('assistant.completed', { content: 'Answer' })
+    expect(turn.blocks.map(block => block.kind)).toEqual(['text', 'tool', 'text', 'tool', 'text'])
+    expect(turn.blocks.filter(block => block.kind === 'text').map(block => block.content)).toEqual(['Answer', 'Checking', 'Answer'])
+  })
   it('reconstructs a completed conversation from native reasoning, call and result fields', () => {
     const blocks = historyBlocks([
       { role: 'assistant', content: 'Checking', reasoning_content: 'Plan', tool_calls: [{ id: 'a', function: { name: 'terminal', arguments: '{"command":"false"}' } }] },
@@ -197,6 +222,23 @@ describe('persisted turn recovery', () => {
 
 
 describe('native Desktop event semantics', () => {
+  it.each([false, true])('does not repeat interim text in a completion (already_streamed: %s)', already_streamed => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    if (already_streamed) reduceNativeTurn(turn, 'message.delta', { text: 'Final answer' })
+    reduceNativeTurn(turn, 'message.interim', { text: 'Final answer', already_streamed })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Final answer', status: 'complete' })
+    expect(turn.blocks).toHaveLength(2)
+    expect(turn.blocks[0]).toMatchObject({ kind: 'tool', complete: true, state: 'completed' })
+    expect(turn.blocks[1]).toMatchObject({ kind: 'text', content: 'Final answer' })
+  })
+  it('retains a distinct completion after sealed interim text even when it shares a prefix', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.delta', { text: 'Final' })
+    reduceNativeTurn(turn, 'message.interim', { text: 'Final', already_streamed: true })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Final answer', status: 'complete' })
+    expect(turn.blocks.map(block => block.content)).toEqual(['Final', 'Final answer'])
+  })
   it('keeps transient status out of reasoning, replaces reasoning, and upserts completed tools by identity', () => {
     const turn = createTurn()
     reduceNativeTurn(turn, 'thinking.delta', { text: 'Waiting on provider' })
