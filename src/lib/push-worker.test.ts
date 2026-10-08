@@ -99,7 +99,7 @@ function harness() {
 }
 describe("visible session notifications", () => {
   it.each(["turn.complete", "approval", "clarify", "attention"])(
-    "suppresses %s in visible connected tabs",
+    "suppresses %s in visible matching tabs",
     async (type) => {
       const h = harness();
       await h.push({ type });
@@ -110,8 +110,41 @@ describe("visible session notifications", () => {
       );
     },
   );
+  it.each(["turn.complete", "approval", "clarify", "attention"])(
+    "suppresses %s and closes matching notifications while the visible session reconnects",
+    async (type) => {
+      const h = harness();
+      h.patch({ connected: false, visible: false });
+      await h.push({ type });
+      const existing = h.notifications[0];
+      h.patch({ visible: true });
+      await h.update();
+      expect(existing.close).toHaveBeenCalledOnce();
+      await h.push({ type });
+      expect(h.show).toHaveBeenCalledOnce();
+    },
+  );
   it.each([
-    { connected: false },
+    { visible: false },
+    { profile: "beta", url: route.replace("alpha", "beta") },
+    { session: "two", url: route.replace("one", "two") },
+  ])("fails open while reconnecting with hidden or mismatched session %j", async (patch) => {
+    const h = harness();
+    h.patch({ connected: false, ...patch });
+    await h.push();
+    expect(h.show).toHaveBeenCalledOnce();
+    expect(h.notifications[0].close).not.toHaveBeenCalled();
+  });
+  it("fails open when a reconnecting visible session stops answering queries", async () => {
+    const h = harness();
+    h.patch({ connected: false });
+    await h.update();
+    h.setState(null);
+    await h.push();
+    expect(h.show).toHaveBeenCalledOnce();
+    expect(h.notifications[0].close).not.toHaveBeenCalled();
+  });
+  it.each([
     { profile: "beta" },
     { session: "two" },
     { session: "" },
@@ -122,11 +155,10 @@ describe("visible session notifications", () => {
     { url: route + "&session=two" },
     { url: route + "&profile=beta" },
     { url: "https://other.test/chathermes" },
-    { connected: "true" },
     { visible: false },
     { visible: undefined },
     { visible: "true" },
-  ])("shows for mismatched or disconnected state %j", async (patch) => {
+  ])("shows for mismatched or hidden state %j", async (patch) => {
     const h = harness();
     h.patch(patch);
     await h.push();
@@ -205,11 +237,11 @@ describe("visible session notifications", () => {
     expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 0 : 1);
     h.patch({ connected: false });
     await h.push();
-    expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 1 : 2);
+    expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 0 : 2);
   });
-  it("suppresses and closes if any tab is visibly connected, independently of another disconnected tab", async () => {
+  it("suppresses and closes if any tab is visible, independently of another hidden tab", async () => {
     const h = harness();
-    h.patch({ connected: false });
+    h.patch({ visible: false });
     await h.push();
     const other = {
       ...h.client,
@@ -233,9 +265,9 @@ describe("visible session notifications", () => {
     await h.push();
     expect(h.show).toHaveBeenCalledTimes(2);
   });
-  it("keeps a clicked notification while navigating to a disconnected viewer", async () => {
+  it("keeps a clicked notification while navigating to a hidden viewer", async () => {
     const h = harness();
-    h.patch({ connected: false });
+    h.patch({ visible: false });
     await h.push();
     h.client.url = route;
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
@@ -249,9 +281,9 @@ describe("visible session notifications", () => {
     await h.push({ profile: "default" });
     expect(h.show).not.toHaveBeenCalled();
   });
-  it("retains disconnected notifications then closes every matching tag on connection", async () => {
+  it("retains hidden notifications then closes every matching tag when visible", async () => {
     const h = harness();
-    h.patch({ connected: false });
+    h.patch({ visible: false });
     await h.push();
     await h.push({ type: "approval" });
     await h.push({ profile: "beta" });
@@ -259,16 +291,16 @@ describe("visible session notifications", () => {
     await h.push({ type: "test", session_id: "" });
     await h.update();
     expect(h.notifications.every((n) => n.close.mock.calls.length === 0)).toBe(true);
-    h.patch({ connected: true, visible: true });
+    h.patch({ visible: true });
     await h.update();
     expect(h.notifications.map((n) => n.close.mock.calls.length)).toEqual([1, 1, 0, 0, 0]);
   });
-  it("rechecks after display to close a notification racing connection", async () => {
+  it("rechecks after display to close a notification racing visibility", async () => {
     const h = harness();
-    h.patch({ connected: false });
+    h.patch({ visible: false });
     h.show.mockImplementationOnce(async (_title, options) => {
       h.notifications.push({ ...options, close: vi.fn() });
-      h.patch({ connected: true, visible: true });
+      h.patch({ visible: true });
       void h.update();
     });
     await h.push();
@@ -276,9 +308,9 @@ describe("visible session notifications", () => {
   });
   it("does not trust unsolicited stale state when the current handshake disagrees", async () => {
     const h = harness();
-    h.patch({ connected: false });
+    h.patch({ visible: false });
     await h.push();
-    h.patch({ connected: true, visible: true });
+    h.patch({ visible: true });
     h.setClients([]);
     await h.update();
     expect(h.notifications[0].close).not.toHaveBeenCalled();
@@ -287,8 +319,8 @@ describe("visible session notifications", () => {
     [
       ["hidden", "delayed"],
       ["hidden", "timeout"],
-      ["disconnect", "delayed"],
-      ["disconnect", "timeout"],
+      ["session change", "delayed"],
+      ["session change", "timeout"],
       ["navigation", "delayed"],
       ["navigation", "timeout"],
       ["unmount", "delayed"],
@@ -304,10 +336,10 @@ describe("visible session notifications", () => {
       vi.useFakeTimers();
       try {
         const h = harness();
-        h.patch({ connected: false });
+        h.patch({ visible: false });
         await h.push();
         const existing = h.notifications[0];
-        h.patch({ connected: true, visible: true });
+        h.patch({ visible: true });
         const slow = {
           id: "slow",
           visibilityState: "visible",
@@ -315,7 +347,8 @@ describe("visible session notifications", () => {
           postMessage: (_message: any, ports: any[]) => {
             setTimeout(() => {
               if (change === "hidden") h.client.visibilityState = "hidden";
-              if (change === "disconnect") h.patch({ connected: false });
+              if (change === "session change")
+                h.patch({ session: "two", url: route.replace("one", "two") });
               if (change === "navigation") h.patch({ url: origin + "/chathermes?view=scheduled" });
               if (change === "unmount") h.setState(null);
               if (change === "removed client") h.setClients([slow]);
@@ -346,10 +379,10 @@ describe("visible session notifications", () => {
       vi.useFakeTimers();
       try {
         const h = harness();
-        h.patch({ connected: false });
+        h.patch({ visible: false });
         await h.push();
         const existing = h.notifications[0];
-        h.patch({ connected: true, visible: true });
+        h.patch({ visible: true });
         let queries = 0;
         const slow = {
           id: "slow",
@@ -368,7 +401,7 @@ describe("visible session notifications", () => {
               });
               return;
             }
-            setTimeout(() => h.patch({ connected: false }), 50);
+            setTimeout(() => h.patch({ visible: false }), 50);
             if (handshake === "delayed")
               setTimeout(() => ports[0].postMessage({ connected: false }), 200);
           },
@@ -386,13 +419,13 @@ describe("visible session notifications", () => {
     },
   );
   it.each(["push", "update"])(
-    "rechecks connection after getNotifications is pending during %s",
+    "rechecks visibility after getNotifications is pending during %s",
     async (operation) => {
       const h = harness();
-      h.patch({ connected: false });
+      h.patch({ visible: false });
       await h.push();
       const existing = h.notifications[0];
-      h.patch({ connected: true, visible: true });
+      h.patch({ visible: true });
       let release!: () => void;
       let started!: () => void;
       const waiting = new Promise<void>((resolve) => {
@@ -407,7 +440,7 @@ describe("visible session notifications", () => {
       );
       const pending = operation === "push" ? h.push() : h.update();
       await waiting;
-      h.patch({ connected: false });
+      h.patch({ visible: false });
       release();
       await pending;
       expect(h.show).toHaveBeenCalledTimes(operation === "push" ? 2 : 1);

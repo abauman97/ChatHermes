@@ -1,6 +1,6 @@
 const APP_URL = "/chathermes";
 
-// Never cache WindowClient URLs or connection state: both can outlive SPA routes.
+// Never cache WindowClient URLs or session state: both can outlive SPA routes.
 function currentSession(client) {
   return new Promise((resolve) => {
     if (client.visibilityState !== "visible") return resolve(null);
@@ -47,12 +47,7 @@ function routeSession(value) {
 }
 
 function visibleSession(data) {
-  if (
-    data?.type !== "chathermes.session" ||
-    data.connected !== true ||
-    data.visible !== true ||
-    typeof data.url !== "string"
-  )
+  if (data?.type !== "chathermes.session" || data.visible !== true || typeof data.url !== "string")
     return null;
   const route = routeSession(data.url);
   return route && route.profile === data.profile && route.session === data.session ? route : null;
@@ -83,7 +78,7 @@ async function visibleSessions(onVisible = () => false) {
     )
   ).filter((reply) => reply.session);
   if (!candidates.length) return [];
-  // An early positive may have become hidden or disconnected while another client timed out.
+  // An early positive may have become hidden or changed sessions while another client timed out.
   // Re-query only positive candidates that still exist after every handshake.
   const currentClients = await windowClients();
   const confirmed = (
@@ -126,7 +121,7 @@ async function closeVisibleNotifications(target) {
 }
 
 // Serialize display and close operations; then re-query after display so a
-// visible connection arriving during showNotification cannot leave a stale notification.
+// visible session arriving during showNotification cannot leave a stale notification.
 let notificationWork = Promise.resolve();
 function enqueue(work) {
   const result = notificationWork.then(work);
@@ -188,7 +183,7 @@ self.addEventListener("push", (event) => {
   );
 });
 self.addEventListener("notificationclick", (event) => {
-  // Keep the notification until the destination session is visibly connected.
+  // Keep the notification until the destination session is visible.
   const target = new URL(event.notification.data?.url || APP_URL, self.location.origin);
   if (target.origin !== self.location.origin || target.pathname !== APP_URL) return;
   event.waitUntil(
