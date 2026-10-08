@@ -9384,7 +9384,11 @@ var Yp = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				"aria-label": "Navigation"
 			}, [
 				q("div", Im, [
-					y[24] ||= q("span", { class: "brand-mark grid size-9 shrink-0 place-items-center text-white" }, "✳", -1),
+					y[24] ||= q("img", {
+						class: "brand-mark size-9 shrink-0 object-contain",
+						alt: "",
+						src: "/api/plugins/chathermes/assets/dist/icons/icon-192.png"
+					}, null, -1),
 					y[25] ||= q("span", null, "ChatHermes", -1),
 					q("button", {
 						ref_key: "closeButton",
