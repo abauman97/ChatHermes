@@ -22,6 +22,7 @@ const projectView = ref(false), projectsPage = ref(false), archivedProjects = re
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
 const scopedSessionIds = ref<string[]>([])
 const projectsLoaded = ref(false)
+const activeProjectContext = computed(() => projectView.value && !projectsPage.value && !scheduledPage.value && !!projectId.value && !!selectedProject.value && !selectedProject.value.isNoProject)
 const visibleSessions = computed(() => projectId.value ? selectedProject.value ? projectSessions(selectedProject.value) : [] : sessions.value.filter(row => !scopedSessionIds.value.includes(row.id)))
 let closeProjectEvents: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
@@ -754,6 +755,7 @@ onUnmounted(() => { pushClient?.stop(); pushClient = undefined; profileGeneratio
           <div v-if="screenMenu" id="screen-menu" class="screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl" role="menu" aria-label="Screen options" @click="closeScreenMenu()">
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{ profile || 'Current profile' }}</span>
             <button class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" :disabled="offline || creating || (projectView && (!selectedProject || selectedProject.archived || (!selectedProject.isNoProject && !projectRoot(selectedProject))))" @click="projectView ? createSession() : newChat(); closeScreenMenu()">New chat</button>
+            <button v-if="activeProjectContext" class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]" role="menuitem" :disabled="offline || creating || !selectedProject || selectedProject.archived || !projectRoot(selectedProject)" @click="createSession(); closeScreenMenu()">New Project Chat</button>
             <template v-if="projectsPage">
               <button role="menuitemradio" :aria-checked="!archivedProjects" @click="showProjects(false)">Active projects</button>
               <button role="menuitemradio" :aria-checked="archivedProjects" @click="showProjects(true)">Archived projects</button>
