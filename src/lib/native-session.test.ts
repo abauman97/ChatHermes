@@ -127,3 +127,33 @@ describe('native session state', () => {
     session.close()
   })
 })
+
+
+it.each(['Same reply', 'Same reply with more detail'])('new user occurrence retains its own final: %s', async final => {
+  vi.spyOn(api, 'messages').mockResolvedValue([]); fake.rpc.mockResolvedValue({ settled: false })
+  const session = useNativeSession(vi.fn()); await session.attach('alpha', 'one')
+  const event = (type: string, payload: any) => fake.hooks!.event({ session_id: 'runtime', type, payload } as any)
+  fake.hooks!.input('First', false)
+  event('message.interim', { text: 'Same reply' })
+  event('message.complete', { text: 'Same reply', status: 'complete' })
+  fake.hooks!.input('Second', false)
+  event('message.start', {})
+  event('message.complete', { text: final, status: 'complete' })
+  expect(session.messages.value.map(row => row.content)).toEqual(['First', 'Second'])
+  expect(session.messages.value.map(row => row.blocks!.filter(b => b.kind === 'text').map(b => b.content)))
+    .toEqual([['Same reply'], [final]])
+  session.close()
+})
+
+it('passes prompt-less message.start boundaries to the native reducer', async () => {
+  vi.spyOn(api, 'messages').mockResolvedValue([]); fake.rpc.mockResolvedValue({ settled: false })
+  const session = useNativeSession(vi.fn()); await session.attach('alpha', 'one')
+  const event = (type: string, payload: any) => fake.hooks!.event({ session_id: 'runtime', type, payload } as any)
+  fake.hooks!.input('Question', false)
+  event('message.interim', { text: 'Same reply' })
+  event('message.start', {})
+  event('message.complete', { text: 'Same reply', status: 'complete' })
+  expect(session.messages.value[0]!.blocks!.filter(b => b.kind === 'text').map(b => b.content))
+    .toEqual(['Same reply', 'Same reply'])
+  session.close()
+})

@@ -222,6 +222,37 @@ describe('persisted turn recovery', () => {
 
 
 describe('native Desktop event semantics', () => {
+  it.each([false, true])('collapses a repeated final onto its sealed interim and retains activity (streamed: %s)', streamed => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.start', {})
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    const kept = turn.blocks[0]
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'tool.complete', { tool_id: 'a', result_text: 'Done' })
+    reduceNativeTurn(turn, 'reasoning.delta', { text: 'Verify' })
+    if (streamed) reduceNativeTurn(turn, 'message.delta', { text: 'Same reply \n' })
+    reduceNativeTurn(turn, 'message.complete', { text: ' Same reply ', status: 'complete' })
+    expect(turn.blocks.filter(block => block.kind === 'text')).toEqual([kept])
+    expect(turn.blocks[1]).toMatchObject({ id: 'a', complete: true, output: 'Done' })
+    expect(turn.blocks[2]).toMatchObject({ kind: 'thinking', complete: true, content: 'Verify' })
+  })
+  it.each(['different live text', 'different interim', 'new occurrence', 'failure'])('keeps completion separate across %s', boundary => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    if (boundary === 'different interim') reduceNativeTurn(turn, 'message.interim', { text: 'Checking' })
+    if (boundary === 'new occurrence') reduceNativeTurn(turn, 'message.start', {})
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    if (boundary === 'different live text') reduceNativeTurn(turn, 'message.delta', { text: 'Different' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: boundary === 'failure' ? 'error' : 'complete' })
+    expect(turn.blocks.filter(block => block.kind === 'text').map(block => block.content)).toEqual(
+      boundary === 'different interim' ? ['Same reply', 'Checking', 'Same reply'] : ['Same reply', 'Same reply'])
+  })
+  it('keeps a failed completion separate from an adjacent matching interim', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'error', error: 'Provider failed' })
+    expect(turn.blocks.filter(block => block.kind === 'text').map(block => block.content)).toEqual(['Same reply', 'Same reply'])
+  })
   it.each([false, true])('does not repeat interim text in a completion (already_streamed: %s)', already_streamed => {
     const turn = createTurn()
     reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
@@ -232,12 +263,12 @@ describe('native Desktop event semantics', () => {
     expect(turn.blocks[0]).toMatchObject({ kind: 'tool', complete: true, state: 'completed' })
     expect(turn.blocks[1]).toMatchObject({ kind: 'text', content: 'Final answer' })
   })
-  it('retains a distinct completion after sealed interim text even when it shares a prefix', () => {
+  it('reconciles a final extension of the same sealed interim', () => {
     const turn = createTurn()
     reduceNativeTurn(turn, 'message.delta', { text: 'Final' })
     reduceNativeTurn(turn, 'message.interim', { text: 'Final', already_streamed: true })
     reduceNativeTurn(turn, 'message.complete', { text: 'Final answer', status: 'complete' })
-    expect(turn.blocks.map(block => block.content)).toEqual(['Final', 'Final answer'])
+    expect(turn.blocks.map(block => block.content)).toEqual(['Final answer'])
   })
   it('keeps transient status out of reasoning, replaces reasoning, and upserts completed tools by identity', () => {
     const turn = createTurn()
@@ -271,4 +302,128 @@ describe('native Desktop event semantics', () => {
     reduceNativeTurn(turn, 'subagent.complete', { subagent_id: 'child', status: 'failed', summary: 'Tool failed' })
     expect(turn.blocks[0]).toMatchObject({ complete: true, state: 'failed', output: 'Tool failed' })
   })
+})
+
+
+describe('native duplicate-final reconciliation', () => {
+  const texts = (turn: ReturnType<typeof createTurn>) => turn.blocks.filter(b => b.kind === 'text').map(b => b.content)
+  it.each(['  Final answer\n', 'Final answer with a final detail'])('settles trimmed or extended interim in place: %s', final => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.delta', { text: 'Final answer' })
+    reduceNativeTurn(turn, 'message.interim', { text: 'Final answer', already_streamed: true })
+    const id = turn.blocks[0]!.id
+    reduceNativeTurn(turn, 'message.complete', { text: final, status: 'complete' })
+    expect(texts(turn)).toEqual([final.trim()])
+    expect(turn.blocks[0]!.id).toBe(id)
+  })
+  it('collapses an identical streamed sibling onto its interim, keeping tool order', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply', already_streamed: true })
+    const id = turn.blocks[0]?.id
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'tool.complete', { tool_id: 'a', result_text: 'done' })
+    reduceNativeTurn(turn, 'message.delta', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Same reply\n', status: 'complete' })
+    expect(texts(turn)).toEqual(['Same reply'])
+    expect(turn.blocks[0]!.id).toBe(id)
+    expect(turn.blocks.map(b => b.kind)).toEqual(['text', 'tool'])
+    expect(turn.blocks[1]).toMatchObject({ id: 'a', complete: true, output: 'done' })
+  })
+  it('settles a same-turn tool-only interim duplicate without losing the call', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'message.complete', { text: ' Same reply\n', status: 'complete' })
+    expect(texts(turn)).toEqual(['Same reply'])
+    expect(turn.blocks.map(b => b.kind)).toEqual(['text', 'tool'])
+    expect(turn.blocks[1]).toMatchObject({ id: 'a', complete: true })
+  })
+  it('repairs a few dropped characters in a long sealed interim', () => {
+    const turn = createTurn(), final = 'A detailed final answer. '.repeat(12)
+    reduceNativeTurn(turn, 'message.interim', { text: final.slice(0, 100) + final.slice(102) })
+    reduceNativeTurn(turn, 'message.complete', { text: final, status: 'complete' })
+    expect(texts(turn)).toEqual([final.trim()])
+  })
+  it.each([false, true])('keeps identical text as a new occurrence after message.start (streamed: %s)', streamed => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'message.start', {})
+    if (streamed) reduceNativeTurn(turn, 'message.delta', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'complete' })
+    expect(texts(turn)).toEqual(['Same reply', 'Same reply'])
+  })
+  it.each(['Different answer', 'Same reply with more detail'])('keeps a separate tool phase for a distinct final: %s', final => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'message.complete', { text: final, status: 'complete' })
+    expect(texts(turn)).toEqual(['Same reply', final])
+    expect(turn.blocks.map(b => b.kind)).toEqual(['text', 'tool', 'text'])
+  })
+  it('does not collapse distinct live text or a failed completion onto an interim', () => {
+    for (const failure of [false, true]) {
+      const turn = createTurn()
+      reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+      reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+      reduceNativeTurn(turn, 'message.delta', { text: failure ? 'Same reply' : 'Different live response' })
+      reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: failure ? 'error' : 'complete' })
+      expect(texts(turn)).toEqual(['Same reply', 'Same reply'])
+    }
+  })
+  it('does not reach past the nearest distinct interim', () => {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+    reduceNativeTurn(turn, 'message.interim', { text: 'Another observation' })
+    reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'terminal' })
+    reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'complete' })
+    expect(texts(turn)).toEqual(['Same reply', 'Another observation', 'Same reply'])
+  })
+})
+
+
+it('native final without post-tool deltas preserves the pre-tool commentary', () => {
+  const turn = createTurn()
+  reduceNativeTurn(turn, 'message.delta', { text: 'Checking the files' })
+  reduceNativeTurn(turn, 'tool.start', { tool_id: 'a', name: 'read_file' })
+  reduceNativeTurn(turn, 'message.complete', { text: 'Checking the files is complete', status: 'complete' })
+  expect(turn.blocks.map(b => b.kind)).toEqual(['text', 'tool', 'text'])
+  expect(turn.blocks.filter(b => b.kind === 'text').map(b => b.content))
+    .toEqual(['Checking the files', 'Checking the files is complete'])
+})
+
+it.each(['Same reply', 'Same reply extended', 'A distinct reply'])('native start protects an earlier interim from final continuity: %s', final => {
+  const turn = createTurn()
+  reduceNativeTurn(turn, 'message.interim', { text: 'Same reply' })
+  reduceNativeTurn(turn, 'message.start', {})
+  reduceNativeTurn(turn, 'message.complete', { text: final, status: 'complete' })
+  expect(turn.blocks.map(b => b.content)).toEqual(['Same reply', final])
+})
+
+it.each(['short report with a typo', 'Long report. '.repeat(20).replaceAll('report', 'answer')])('native continuity leaves different non-prefix interims distinct: %s', final => {
+  const turn = createTurn()
+  reduceNativeTurn(turn, 'message.interim', { text: final.length < 160 ? 'short report with a type' : 'Long report. '.repeat(20) })
+  reduceNativeTurn(turn, 'message.complete', { text: final, status: 'complete' })
+  expect(turn.blocks.filter(b => b.kind === 'text')).toHaveLength(2)
+})
+
+
+it('native late identical interim and repeated terminal deliveries keep the settled occurrence once', () => {
+  const turn = createTurn()
+  reduceNativeTurn(turn, 'message.delta', { text: 'Same reply' })
+  reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'complete' })
+  const id = turn.blocks[0]!.id
+  reduceNativeTurn(turn, 'message.interim', { text: ' Same reply\n', already_streamed: true })
+  reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'complete' })
+  reduceNativeTurn(turn, 'message.complete', { text: 'Same reply', status: 'complete' })
+  expect(turn.blocks).toEqual([expect.objectContaining({ id, kind: 'text', content: 'Same reply' })])
+})
+
+it.each(['response_previewed', 'response_transformed'])('native %s rewrite is limited to the pending interim occurrence', flag => {
+  for (const restart of [false, true]) {
+    const turn = createTurn()
+    reduceNativeTurn(turn, 'message.interim', { text: 'Draft' })
+    if (restart) reduceNativeTurn(turn, 'message.start', {})
+    reduceNativeTurn(turn, 'message.complete', { text: 'Authoritative rewrite', status: 'complete', [flag]: true })
+    expect(turn.blocks.map(b => b.content)).toEqual(restart ? ['Draft', 'Authoritative rewrite'] : ['Authoritative rewrite'])
+  }
 })
