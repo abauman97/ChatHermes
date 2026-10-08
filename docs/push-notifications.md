@@ -6,7 +6,15 @@ app added to the Home Screen before Web Push is available. Open ChatHermes,
 open the navigation drawer, select the footer **Settings** cog, then
 **Enable notifications**; the browser's
 permission prompt is requested only from that explicit action. Use the same
-control to disable the device subscription.
+control to disable notifications for the selected profile on this device. Settings
+names that profile and loads its saved status whenever you switch profiles. The
+empty/default profile selection resolves to `default`, matching the native API.
+Browser permission and the browser PushSubscription are shared; each profile has
+its own stored registration. Disabling one removes only that registration and
+keeps other profiles enabled. Existing per-profile storage is preserved. Status
+uses authenticated `POST /push/status` with the device endpoint and returns only
+profile, enabled state and registration ID; deletion uses that ID with the same
+profile scope. Subscription keys and endpoints are never returned.
 
 The first `/push/config` request creates a VAPID keypair, persisted with the
 Hermes state under `state/chathermes-push.json` (file mode 0600). Back up this
@@ -24,23 +32,39 @@ requires a DNS HTTPS origin without a path or explicit port; credentials, query
 strings, fragments, localhost, and malformed URLs are rejected. The VAPID
 audience remains the push service origin, not the dashboard origin.
 
-Notifications are intentionally content-free: completed turns, approval,
-clarification, or failed/interrupted attention only. Tapping opens the existing
+Notification titles use the originating Hermes profile name, preserving its case
+and spelling; the default profile is titled **default**. Empty or invalid profile
+values fall back to **ChatHermes** without changing the routing identity. The
+worker accepts queued legacy **ChatHermes** titles and displays the validated
+profile name; mismatched titles are rejected. Explicit tests use the same profile
+title rule. Completion and failed/interrupted
+notifications use the native `message.complete.payload.text`: the actual final
+assistant text, already redacted by the credential-safe native transport. This
+is authoritative even when the runtime rewrites its streamed response. Reasoning,
+tool output and usage are excluded. Missing completion text produces an empty
+body rather than a generic substitute. Approval/clarification alerts and explicit
+tests retain their explanatory text. Enabled notifications can display assistant
+content on the device's lock screen; use platform notification privacy settings
+or disable that profile if needed. The full serialized UTF-8 payload is bounded
+to 3000 bytes (below the encrypted Web Push record limit), truncating only the
+body at a Unicode code point boundary with an ellipsis. The worker preserves that
+body, with a defensive 3000-code-point cap. Tapping opens the existing
 `/chathermes?profile=…&session=…` route and native viewer recovery. The
 session ID is the stored dashboard session, even when Hermes resumes it under a
 different runtime alias. Native `message.complete` already maps to completion or
 attention; derived completion events do not schedule an additional push. The service
 worker is scoped to `/chathermes` and does not cache dashboard/API responses.
 Notifications are suppressed only when the exact originating profile and session
-is open and its native viewer is connected in a mounted ChatHermes plugin. Focus
-and visibility do not affect this: a connected hidden or unfocused tab counts.
-Home, other sessions/profiles, other views, and disconnected viewers receive
-notifications. The worker asks every same-origin window for fresh plugin state
-(profile, session, connection, and current SPA URL), failing open on missing or
-invalid replies. It never relies on stale WindowClient URLs or cached state.
-When a session connects, all matching ChatHermes tagged notifications close,
+is visible and its native viewer is connected in a mounted ChatHermes plugin.
+Both fresh plugin visibility and current window visibility must be explicitly
+visible; focus is not required. Hidden windows, home, other sessions/profiles,
+other views, and disconnected viewers receive notifications. The worker asks every same-origin window for fresh plugin state
+(profile, session, connection, visibility, and current SPA URL), failing open on
+missing or invalid replies or unknown visibility. It never relies on stale
+WindowClient URLs or cached state. When a session becomes visibly connected, all
+matching ChatHermes tagged notifications close,
 including notifications from earlier events. Opening or clicking through to a
-disconnected session retains its notification until it connects. Display and
+disconnected session retains its notification until it is visibly connected. Display and
 cleanup are serialized and state is rechecked after display to cover connection
 races. Sessionless test notifications remain available to inspect.
 Each handshake uses a message channel with a 300 ms timeout. After the two
@@ -55,7 +79,7 @@ Enable INFO logging for the ChatHermes dashboard modules to trace structured
 `ChatHermes push` records: `event.detected`, `owner.notify` (including duplicates),
 `sender.notify`, `sender.scheduled`, `deliver.config` (matching enabled subscription count and availability),
 `pywebpush.attempt`, `pywebpush.result` (success and HTTP status), and
-`deliver.expired` (404/410 removal). Failures include only exception classes.
+`deliver.expired` (404/410 removal). Failures include exception classes and bounded transport metadata; provider response bodies are excluded because they may echo notification content.
 Records contain kind/profile/session/subscription IDs, never endpoints, keys, credentials,
 or conversation content. Push failures and unavailable browser support do not
 change chat execution.
@@ -72,5 +96,5 @@ must work before the configuration reports available. If the
 Notifications control reports the service unavailable, verify HTTPS, browser
 permission, Home Screen installation (iOS), and that this library is installed.
 
-See [latest-main verification](verification/2026-10-07-push-notifications.md) for
-test results and the Docker/dashboard verification limitation.
+See [profile-title verification](verification/2026-10-08-push-profile-titles.md)
+for exact test results and browser/transport verification limitations.

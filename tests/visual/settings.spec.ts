@@ -26,6 +26,7 @@ test('drawer has exactly one New chat immediately above Projects', async ({ page
 })
 
 test('drawer settings and notifications', async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name === 'mobile'
   const unauthorized = await page.request.get('/api/plugins/chathermes/push/config')
   expect(unauthorized.status()).toBe(401)
   expect((await page.request.post('/api/plugins/chathermes/push/test')).status()).toBe(401)
@@ -199,6 +200,8 @@ test('composer attachments, camera and model controls stay usable on black surfa
   await textarea.click()
   await expect(textarea).toBeFocused()
   await expect(textarea).toHaveCSS('color', 'rgb(255, 255, 255)')
+  // Mobile editing hides the model pill; leave the composer before opening it.
+  await plugin.locator('.header-title').click()
   await plugin.getByRole('button', { name: 'Choose model', exact: true }).click()
   await expect(plugin.getByRole('dialog', { name: 'Choose provider' })).toBeVisible()
   await page.keyboard.press('Escape')
