@@ -31,6 +31,64 @@ function setup(detail: (id: string) => Promise<Response> = async id => json({ pr
   return fetch
 }
 describe('authoritative gateway Projects', () => {
+  it.each(['hierarchy', 'summary'])('resumes a drawer session in its owning Project using %s membership', async shape => {
+    const fetch = setup()
+    if (shape === 'summary') vi.spyOn(api, 'projects').mockResolvedValue({ projects: [{ ...a, repos: [], previewSessions: [], sessionIds: ['project_s1'] }, b, home], scoped_session_ids: ['project_s1'] })
+    history.replaceState({}, '', '/chathermes?profile=alpha&project=p_b')
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.get('.session-select').trigger('click'); await flushPromises()
+    // Same cwd does not imply membership; an ungrouped chat clears the old scope.
+    expect(location.search).not.toContain('project=')
+    await wrapper.findAll('.session-select')[1]!.trigger('click'); await flushPromises()
+    expect(location.search).toContain('project=p_a')
+    expect(location.search).toContain('session=project_s1')
+    expect(location.search).toContain('profile=alpha')
+    expect(location.search).not.toContain('view=project')
+    expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Native chat history')
+    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+    expect(api.isWorkspace('alpha', 'project_s1')).toBe(true)
+    await wrapper.get('textarea').setValue('Continue in this project')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(fetch.mock.calls.some(([url]) => url.includes('/workspace/sessions/project_s1/chat/stream?profile=alpha'))).toBe(true)
+    await wrapper.get('.session-select').trigger('click'); await flushPromises()
+    expect(location.search).not.toContain('project=')
+    expect(location.search).toContain('session=s1')
+    wrapper.unmount()
+  })
+  it('waits for initial Project membership before resuming from the drawer', async () => {
+    setup(); let finish!: (value: ProjectTree) => void
+    vi.spyOn(api, 'projects').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.findAll('.session-select')[1]!.trigger('click'); await flushPromises()
+    finish({ projects: [a], scoped_session_ids: ['project_s1'] }); await flushPromises()
+    expect(location.search).toContain('project=p_a')
+    expect(location.search).toContain('session=project_s1')
+    wrapper.unmount()
+  })
+  it('ignores a pending drawer resume when the profile changes', async () => {
+    setup(); let finish!: (value: ProjectTree) => void
+    vi.spyOn(api, 'projects').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.findAll('.session-select')[1]!.trigger('click'); await flushPromises()
+    const oldRead = finish
+    await wrapper.get('#profile-field').setValue('beta'); await flushPromises()
+    oldRead({ projects: [a], scoped_session_ids: ['project_s1'] }); await flushPromises()
+    expect(location.search).toBe('?profile=beta')
+    expect(wrapper.text()).not.toContain('Native chat history')
+    wrapper.unmount()
+  })
+  it('ignores initial membership arriving after another drawer session is selected', async () => {
+    setup(); const reads: ((value: ProjectTree) => void)[] = []
+    vi.spyOn(api, 'projects').mockImplementation(() => new Promise(resolve => { reads.push(resolve) }))
+    const wrapper = mount(App); await flushPromises()
+    await wrapper.findAll('.session-select')[1]!.trigger('click'); await flushPromises()
+    await wrapper.get('.session-select').trigger('click'); await flushPromises()
+    reads.at(-1)!({ projects: [a], scoped_session_ids: ['project_s1'] }); await flushPromises()
+    reads.at(-2)!({ projects: [a], scoped_session_ids: ['project_s1'] }); await flushPromises()
+    expect(location.search).toBe('?session=s1')
+    wrapper.unmount()
+  })
   it.each([{ label: 'populated', rows: [a, b] }, { label: 'empty', rows: [] }])('keeps $label Projects stable during event refreshes', async ({ rows }) => {
     setup(); vi.stubGlobal('EventSource', class {})
     let refresh!: () => void, finish!: (value: ProjectTree) => void

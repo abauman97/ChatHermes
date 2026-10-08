@@ -134,8 +134,16 @@ function showProjects(archived = false, fromHistory = false) {
   void loadProjects()
 }
 async function recentSession(id: string) {
-  projectAbort?.abort(); projectId.value = ''; selectedProject.value = undefined; projectsPage.value = false
-  await chooseSession(id)
+  if (!projectsLoaded.value) {
+    cancelChat()
+    const current = generation, p = profile.value
+    await loadProjects()
+    if (current !== generation || p !== profile.value) return
+  }
+  // Use gateway membership, including summary IDs beyond the preview page.
+  const owner = projects.value.find(project => project.sessionIds?.includes(id) || projectSessions(project).some(row => row.id === id))
+  projectAbort?.abort(); projectId.value = owner?.id || ''; selectedProject.value = owner; projectsPage.value = false; projectError.value = ''
+  await Promise.all([chooseSession(id), owner ? loadProject() : Promise.resolve()])
 }
 async function newChat() {
   projectPage.value = ''; projectConfirmation.value = undefined
