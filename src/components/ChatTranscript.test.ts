@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ChatTranscript from './ChatTranscript.vue'
 
@@ -156,6 +156,131 @@ describe('ordered activity presentation', () => {
     await wrapper.setProps({ draft: 'More text' })
     await flushPromises()
     expect(element.scrollTop).toBe(1900)
+  })
+
+  it('starts a resumed conversation at its latest message after history loads', async () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: [], progress: [], draft: '', loading: true } })
+    const element = wrapper.get('.transcript').element as HTMLElement
+    Object.defineProperties(element, { scrollHeight: { value: 2400, configurable: true }, clientHeight: { value: 600, configurable: true } })
+    await wrapper.setProps({ messages: [{ role: 'user', content: 'Earlier' }, { role: 'assistant', content: 'Latest' }], loading: false })
+    await flushPromises()
+    expect(element.scrollTop).toBe(2400)
+  })
+
+  it('shows a scroll-to-latest control only when reading above the bottom and restores following on click', async () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: [{ role: 'user', content: 'Earlier' }], progress: [], draft: '', loading: false } })
+    const element = wrapper.get('.transcript').element as HTMLElement
+    Object.defineProperties(element, { scrollHeight: { value: 1800, configurable: true }, clientHeight: { value: 600, configurable: true } })
+    element.scrollTop = 100
+    await wrapper.get('.transcript').trigger('scroll')
+    const button = wrapper.get('button[aria-label="Scroll to latest message"]')
+    element.scrollTop = 1200
+    await button.trigger('click')
+    expect(element.scrollTop).toBe(1800)
+    expect(wrapper.find('button[aria-label="Scroll to latest message"]').exists()).toBe(false)
+  })
+})
+
+describe('conversation scroll lifecycle', () => {
+  const latest = 'button[aria-label="Scroll to latest message"]'
+  const history = [{ role: 'user', content: 'Earlier' }, { role: 'assistant', content: 'Latest' }]
+  function dimensions(wrapper: ReturnType<typeof mount>, height = 2400) {
+    const element = wrapper.get('.transcript').element as HTMLElement
+    Object.defineProperties(element, { scrollHeight: { value: height, configurable: true }, clientHeight: { value: 600, configurable: true } })
+    return element
+  }
+
+  it('scrolls history already present on mount after the DOM is ready', async () => {
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(2400)
+    const viewport = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(600)
+    try {
+      const wrapper = mount(ChatTranscript, { props: { messages: history, progress: [], draft: '', loading: false } })
+      await flushPromises()
+      expect((wrapper.get('.transcript').element as HTMLElement).scrollTop).toBe(2400)
+      expect(wrapper.find(latest).exists()).toBe(false)
+      wrapper.unmount()
+    } finally { height.mockRestore(); viewport.mockRestore() }
+  })
+
+  it('waits for history when loading ends before messages arrive and resets for another conversation', async () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: [], progress: [], draft: '', loading: true } })
+    const element = dimensions(wrapper)
+    await wrapper.get('.transcript').trigger('scroll')
+    await wrapper.setProps({ loading: false })
+    await wrapper.setProps({ messages: history })
+    expect(element.scrollTop).toBe(2400)
+    element.scrollTop = 100
+    await wrapper.get('.transcript').trigger('scroll')
+    await wrapper.setProps({ messages: [], loading: true })
+    await wrapper.setProps({ messages: history.map(message => ({ ...message, content: 'Other session' })), loading: false })
+    expect(element.scrollTop).toBe(2400)
+    expect(wrapper.find(latest).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('preserves scroll-up on background reloads and equal-length history replacements', async () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: history, progress: [], draft: '', loading: false } })
+    const element = dimensions(wrapper)
+    element.scrollTop = 100
+    await wrapper.get('.transcript').trigger('scroll')
+    await wrapper.setProps({ loading: true })
+    element.scrollTop = 150
+    await wrapper.get('.transcript').trigger('scroll')
+    expect(wrapper.find(latest).exists()).toBe(false)
+    await wrapper.setProps({ messages: history.map(message => ({ ...message, content: 'Refreshed content' })), loading: false })
+    expect(element.scrollTop).toBe(150)
+    expect(wrapper.find(latest).exists()).toBe(true)
+    await wrapper.setProps({ working: true, draft: 'Streaming', progress: [{ id: 'thinking', kind: 'thinking', title: 'Thinking', content: 'Plan', complete: false }] })
+    expect(element.scrollTop).toBe(150)
+    element.scrollTop = 1800
+    await wrapper.get('.transcript').trigger('scroll')
+    expect(wrapper.find(latest).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the arrow just above the bottom, tolerates rounding, and hides it at home', async () => {
+    const wrapper = mount(ChatTranscript, { props: { messages: history, progress: [], draft: '', loading: false } })
+    const element = dimensions(wrapper)
+    element.scrollTop = 1780
+    await wrapper.get('.transcript').trigger('scroll')
+    expect(wrapper.find(latest).exists()).toBe(true)
+    await wrapper.setProps({ home: true })
+    expect(wrapper.find(latest).exists()).toBe(false)
+    await wrapper.setProps({ home: false })
+    element.scrollTop = 1799.5
+    await wrapper.get('.transcript').trigger('scroll')
+    expect(wrapper.find(latest).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('follows delayed layout changes only while at the bottom and disconnects observation', async () => {
+    let resize: () => void = () => {}
+    const observe = vi.fn(), disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe = observe
+      disconnect = disconnect
+    })
+    try {
+      const wrapper = mount(ChatTranscript, { props: { messages: history, progress: [], draft: '', loading: false } })
+      const element = dimensions(wrapper)
+      resize()
+      expect(element.scrollTop).toBe(2400)
+      expect(observe).toHaveBeenCalledTimes(2)
+      element.scrollTop = 100
+      await wrapper.get('.transcript').trigger('scroll')
+      Object.defineProperty(element, 'scrollHeight', { value: 2800, configurable: true })
+      resize()
+      await flushPromises()
+      expect(element.scrollTop).toBe(100)
+      expect(wrapper.find(latest).exists()).toBe(true)
+      await wrapper.get(latest).trigger('click')
+      Object.defineProperty(element, 'scrollHeight', { value: 3000, configurable: true })
+      resize()
+      expect(element.scrollTop).toBe(3000)
+      wrapper.unmount()
+      expect(disconnect).toHaveBeenCalledOnce()
+    } finally { vi.unstubAllGlobals() }
   })
 })
 
