@@ -68,6 +68,16 @@ describe('drawer settings', () => {
     expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ session: '', connected: false }))
     expect(removeEventListener).toHaveBeenCalledWith('message', listener)
   })
+  it('renders the ChatHermes logo in the sidebar drawer', async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
+    const wrapper = mount(App)
+    await flushPromises()
+    const logo = wrapper.get('.brand-mark')
+    expect(logo.element.tagName).toBe('IMG')
+    expect(logo.attributes('src')).toBe('/api/plugins/chathermes/assets/dist/icons/icon-192.png')
+    expect(logo.attributes('alt')).toBe('')
+    wrapper.unmount()
+  })
 
   it('refreshes profile status and rejects stale status and action results after switching profiles', async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))

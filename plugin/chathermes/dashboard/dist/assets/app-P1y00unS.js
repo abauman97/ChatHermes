@@ -9415,7 +9415,11 @@ var Xp = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				"aria-label": "Navigation"
 			}, [
 				K("div", Lm, [
-					y[24] ||= K("span", { class: "brand-mark grid size-9 shrink-0 place-items-center text-white" }, "✳", -1),
+					y[24] ||= K("img", {
+						class: "brand-mark size-9 shrink-0 object-contain",
+						alt: "",
+						src: "/api/plugins/chathermes/assets/dist/icons/icon-192.png"
+					}, null, -1),
 					y[25] ||= K("span", null, "ChatHermes", -1),
 					K("button", {
 						ref_key: "closeButton",
