@@ -77,18 +77,18 @@ byte-identical because the implementation change is in Python.
 
 ## Final verification
 
-| Check | Result |
-| --- | --- |
-| `npm test` | 111 passed, 13 files, exit 0 |
-| `npm run test:api` | 73 passed, exit 0; used the existing repository venv at `/opt/data/projects/ChatHermes-reconnect/.venv-test/bin` on PATH |
-| `npm run build` | Passed; regenerated dist matches tracked assets byte-for-byte |
-| `npm run test:docker` | 18 passed, exit 0 |
-| Older-schema first-send + failed-attach/recovery browser checks | 4 passed, desktop/mobile, exit 0 |
-| `npm run test:native` / `sh tests/docker/native-tests.sh` | 84 pinned Python checks, native model/image runtime probe, 20 desktop/mobile browser cases passed, exit 0 |
-| Full desktop visual suite | 19 passed, 1 failed on the provider dialog before any send, exit 1 |
-| Isolated desktop `dashboard.spec.ts` recheck | 1 passed, exit 0, including profiles, file upload, focus and disclosure transitions |
-| Full mobile visual suite | 20 passed, exit 0 |
-| `git diff --check` | Passed |
+| Check                                                           | Result                                                                                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `npm test`                                                      | 111 passed, 13 files, exit 0                                                                                             |
+| `npm run test:api`                                              | 73 passed, exit 0; used the existing repository venv at `/opt/data/projects/ChatHermes-reconnect/.venv-test/bin` on PATH |
+| `npm run build`                                                 | Passed; regenerated dist matches tracked assets byte-for-byte                                                            |
+| `npm run test:docker`                                           | 18 passed, exit 0                                                                                                        |
+| Older-schema first-send + failed-attach/recovery browser checks | 4 passed, desktop/mobile, exit 0                                                                                         |
+| `npm run test:native` / `sh tests/docker/native-tests.sh`       | 84 pinned Python checks, native model/image runtime probe, 20 desktop/mobile browser cases passed, exit 0                |
+| Full desktop visual suite                                       | 19 passed, 1 failed on the provider dialog before any send, exit 1                                                       |
+| Isolated desktop `dashboard.spec.ts` recheck                    | 1 passed, exit 0, including profiles, file upload, focus and disclosure transitions                                      |
+| Full mobile visual suite                                        | 20 passed, exit 0                                                                                                        |
+| `git diff --check`                                              | Passed                                                                                                                   |
 
 The initial targeted browser launch preceded fixture readiness and returned
 `ERR_EMPTY_RESPONSE`; it was rerun after readiness. An initial unchanged-fixture

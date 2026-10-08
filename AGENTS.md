@@ -1,5 +1,7 @@
 # ChatHermes conventions
 
+Use Vite+ (`vp`) for project linting, formatting, tests, and build workflows. Run `vp lint` and `vp fmt` for code quality; `npm test`, `npm run test:api`, and `npm run build` remain the project validation commands. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from lint and formatting; rebuild them with `npm run build` when source changes require updated committed assets.
+
 ChatHermes is exclusively a Hermes dashboard plugin. Do not add standalone SPA, PWA, browser API keys, connection management, or direct cross-origin gateway requests. Vue mounts through the Hermes React plugin SDK; Python routes inherit dashboard authentication and keep gateway credentials on the server.
 
 Keep the interface simple and compatible with the mobile ChatGPT reference images in `docs/reference/chatgpt/`. Use quiet dark surfaces, readable text, a rounded composer, native profile and model selects, and slim thinking/tool disclosures. Active disclosures expand and show arriving data; completed disclosures collapse and remain available to inspect. Preserve the immediate sent-message → activity → assistant-response order.

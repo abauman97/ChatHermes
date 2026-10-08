@@ -139,17 +139,17 @@ Existing repo: `src/` (Vue app, mostly unchanged), `docs/`, `tests/` (vitest).
 - Endpoints (all proxy to the gateway, injecting `Authorization: Bearer <key>`; `profile`
   query param → `/p/<profile>/` prefix, validated `^[A-Za-z0-9][A-Za-z0-9_-]*$` to prevent path
   injection; forwarded params pass through):
-  | Plugin route | Gateway route |
-  |---|---|
-  | `GET /capabilities` | `GET /v1/capabilities` |
-  | `GET /sessions` (limit, offset) | `GET /api/sessions` |
-  | `POST /sessions` | `POST /api/sessions` |
-  | `GET /sessions/{id}` | `GET /api/sessions/{id}` |
-  | `PATCH /sessions/{id}` (rename) | `PATCH /api/sessions/{id}` |
-  | `DELETE /sessions/{id}` | `DELETE /api/sessions/{id}` |
-  | `GET /sessions/{id}/messages` (limit, offset, order, inline_images) | same |
-  | `POST /sessions/{id}/chat/stream` | same — **SSE passthrough** |
-  | `POST /runs/{run}/stop` | `POST /v1/runs/{run}/stop` |
+  | Plugin route                                                        | Gateway route               |
+  | ------------------------------------------------------------------- | --------------------------- |
+  | `GET /capabilities`                                                 | `GET /v1/capabilities`      |
+  | `GET /sessions` (limit, offset)                                     | `GET /api/sessions`         |
+  | `POST /sessions`                                                    | `POST /api/sessions`        |
+  | `GET /sessions/{id}`                                                | `GET /api/sessions/{id}`    |
+  | `PATCH /sessions/{id}` (rename)                                     | `PATCH /api/sessions/{id}`  |
+  | `DELETE /sessions/{id}`                                             | `DELETE /api/sessions/{id}` |
+  | `GET /sessions/{id}/messages` (limit, offset, order, inline_images) | same                        |
+  | `POST /sessions/{id}/chat/stream`                                   | same — **SSE passthrough**  |
+  | `POST /runs/{run}/stop`                                             | `POST /v1/runs/{run}/stop`  |
 - SSE passthrough: `httpx.AsyncClient.stream()` → FastAPI `StreamingResponse(media_type='text/event-stream')`,
   line-by-line; close upstream when the client disconnects. Verify `httpx` is importable in the
   dashboard process (it is used across Hermes); if it is ever missing, raise a clear 503 with an
@@ -193,11 +193,11 @@ Existing repo: `src/` (Vue app, mostly unchanged), `docs/`, `tests/` (vitest).
 
 ## 10. Risks & mitigations
 
-| Risk | Mitigation |
-|---|---|
-| User plugin not in `plugins.enabled` → silent 404 | install script prints the exact config snippet; E2E step covers it |
-| Gateway key unset at proxy time | 503 with actionable detail, no key leakage |
-| SSE buffering through FastAPI | `StreamingResponse` with chunked passthrough; tested with fake gateway |
-| Absolute asset URLs 404 under `/dashboard-plugins/` | `base: './'` in build; E2E covers |
-| Entry bundle accidentally imports React | lint rule / code review; host exposes React only via SDK |
-| `httpx` missing in dashboard env | import-time check → 503 with hint |
+| Risk                                                | Mitigation                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------- |
+| User plugin not in `plugins.enabled` → silent 404   | install script prints the exact config snippet; E2E step covers it     |
+| Gateway key unset at proxy time                     | 503 with actionable detail, no key leakage                             |
+| SSE buffering through FastAPI                       | `StreamingResponse` with chunked passthrough; tested with fake gateway |
+| Absolute asset URLs 404 under `/dashboard-plugins/` | `base: './'` in build; E2E covers                                      |
+| Entry bundle accidentally imports React             | lint rule / code review; host exposes React only via SDK               |
+| `httpx` missing in dashboard env                    | import-time check → 503 with hint                                      |

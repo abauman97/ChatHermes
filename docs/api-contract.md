@@ -2,20 +2,20 @@
 
 The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/ac28abc96ce83f22f6b831f80d9007e2aba81f21/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
-| Operation | Hermes route | Request | Expected response |
-| --- | --- | --- | --- |
-| List | `GET /api/sessions?limit=30&offset=N` | None | `{ "object":"list", "data":[session…], "limit":30, "offset":N, "has_more":boolean }` |
-| Create | `POST /api/sessions` | `{}` | `{ "object":"hermes.session", "session":{ "id":… } }` (201) |
-| Read | `GET /api/sessions/{id}` | None | `{ "object":"hermes.session", "session":{…} }` |
-| Rename | `PATCH /api/sessions/{id}` | `{ "title": "…" }` | `{ "object":"hermes.session", "session":{…} }` |
-| History | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
-| Start turn | `POST /v1/runs` | `{ "session_id": "…", "input": "…", "model": "…", "provider": "…" }` (selection fields optional) | `{ "run_id": "run_…", "status": "started", "replayed": false }` (202) |
-| Run state | `GET /v1/runs/{run_id}` | None | Flat `{ "run_id":…, "session_id":…, "status":…, "output":…, "approval":… }` (fields vary by state) |
-| Run events | `GET /v1/runs/{run_id}/events?last_seq=N` | None | SSE replay after N, then live events |
-| Approval | `POST /v1/runs/{run_id}/approval` | `{ "choice": "once", "request_id": "…" }` | `{ "object":"hermes.run.approval_response", "run_id":…, "choice":…, "request_id":…, "resolved":1 }` |
-| Steer | `POST /v1/runs/{run_id}/steer` | `{ "input": "…" }` | `{ "object":"hermes.run.steer", "run_id":…, "accepted":true }`; 409 if not accepting |
-| Stop | `POST /v1/runs/{run_id}/stop` | None | `{ "run_id":…, "status":"stopping" }` or existing terminal status |
-| Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
+| Operation    | Hermes route                                                                          | Request                                                                                          | Expected response                                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| List         | `GET /api/sessions?limit=30&offset=N`                                                 | None                                                                                             | `{ "object":"list", "data":[session…], "limit":30, "offset":N, "has_more":boolean }`                                                   |
+| Create       | `POST /api/sessions`                                                                  | `{}`                                                                                             | `{ "object":"hermes.session", "session":{ "id":… } }` (201)                                                                            |
+| Read         | `GET /api/sessions/{id}`                                                              | None                                                                                             | `{ "object":"hermes.session", "session":{…} }`                                                                                         |
+| Rename       | `PATCH /api/sessions/{id}`                                                            | `{ "title": "…" }`                                                                               | `{ "object":"hermes.session", "session":{…} }`                                                                                         |
+| History      | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None                                                                                             | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
+| Start turn   | `POST /v1/runs`                                                                       | `{ "session_id": "…", "input": "…", "model": "…", "provider": "…" }` (selection fields optional) | `{ "run_id": "run_…", "status": "started", "replayed": false }` (202)                                                                  |
+| Run state    | `GET /v1/runs/{run_id}`                                                               | None                                                                                             | Flat `{ "run_id":…, "session_id":…, "status":…, "output":…, "approval":… }` (fields vary by state)                                     |
+| Run events   | `GET /v1/runs/{run_id}/events?last_seq=N`                                             | None                                                                                             | SSE replay after N, then live events                                                                                                   |
+| Approval     | `POST /v1/runs/{run_id}/approval`                                                     | `{ "choice": "once", "request_id": "…" }`                                                        | `{ "object":"hermes.run.approval_response", "run_id":…, "choice":…, "request_id":…, "resolved":1 }`                                    |
+| Steer        | `POST /v1/runs/{run_id}/steer`                                                        | `{ "input": "…" }`                                                                               | `{ "object":"hermes.run.steer", "run_id":…, "accepted":true }`; 409 if not accepting                                                   |
+| Stop         | `POST /v1/runs/{run_id}/stop`                                                         | None                                                                                             | `{ "run_id":…, "status":"stopping" }` or existing terminal status                                                                      |
+| Capabilities | `GET /v1/capabilities`                                                                | None                                                                                             | Feature and endpoint flags                                                                                                             |
 
 ## Native session transport (2026-10-05)
 
@@ -40,16 +40,16 @@ credentials and cookie-only upgrades are rejected. Browser connections expire
 after 600 seconds and obtain fresh tickets. This expires viewer authorization,
 not the retained native execution. Frames are limited to 29 MiB.
 
-| JSON-RPC operation | Contract |
-| --- | --- |
-| `chat.attach` | `{session_id: stored_id}`; verify profile, activate retained runtime or resume stored conversation; full native snapshot plus recovery boundary |
-| `chat.replay` | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks |
-| `chat.reconciled` | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary |
-| `chat.submit` | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
-| `chat.stop` | Empty params; native `session.interrupt` |
-| `chat.steer` | `{text}`; native `session.steer`, separate from sending |
-| `chat.answer` | `{request_id,result}`; validate native open approval/clarify request and result ownership |
-| `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat |
+| JSON-RPC operation                  | Contract                                                                                                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat.attach`                       | `{session_id: stored_id}`; verify profile, activate retained runtime or resume stored conversation; full native snapshot plus recovery boundary                  |
+| `chat.replay`                       | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks                                                           |
+| `chat.reconciled`                   | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary                                 |
+| `chat.submit`                       | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
+| `chat.stop`                         | Empty params; native `session.interrupt`                                                                                                                         |
+| `chat.steer`                        | `{text}`; native `session.steer`, separate from sending                                                                                                          |
+| `chat.answer`                       | `{request_id,result}`; validate native open approval/clarify request and result ownership                                                                        |
+| `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat                                                                                                                               |
 
 Native `event` envelopes retain runtime IDs, sequence numbers and payloads.
 Approval/clarify requests retain their JSON-RPC request IDs. Only local input and
@@ -213,7 +213,6 @@ New chat turns use the socket contract above. The HTTP stream routes described
 here remain compatibility endpoints; the native UI does not fall back to them.
 Selected native sessions are held by their socket, not the metadata SSE watcher.
 
-
 Cookie-authenticated plugin routes use the dashboard's existing
 `tui_gateway.server.dispatch` and `Transport` contract, the same backend as
 `/api/ws`. No browser WebSocket connection configuration or gateway credentials
@@ -221,15 +220,15 @@ are introduced. Every operation pins the selected profile (`default` when the
 current/default profile is selected). Gateway exceptions are returned as generic
 errors, and reflected gateway Bearer keys are redacted from RPC frames.
 
-| Plugin route | Native RPC | Behavior |
-| --- | --- | --- |
-| `GET /projects` | `projects.tree {profile, preview_limit: 3}` | Unmodified authoritative hierarchy, auto/Home nodes and scoped IDs |
-| `GET /projects/detail?project_id=…` | `projects.project_sessions {profile, project_id}` | Hydrated repo/lane sessions; null Project becomes 404 |
-| `POST /projects/session?project_id=…` | Project read → `config.get {key: 'project', cwd: root, profile}` → `session.create` | Path then first repo path; resolved cwd and `source: 'desktop'`; no Project ID on create |
-| `GET /project-events` | Native change-watcher transport | SSE refresh on session/Project changes, initial connect and reconnect |
-| `GET /workspace/sessions/{id}/messages` | `session.resume` | Unpersisted draft fallback; stored ID, no cwd override; compact transcript projected to Message shape |
-| `POST /workspace/sessions/{id}/chat/stream` | `session.resume` → session-only `config.set` model → optional `image.attach_bytes` → `prompt.submit` | Native runtime/context, events adapted to existing SSE reducer |
-| `/workspace/runs/{stored_id}` / `events` / `stop` | Resume snapshot / transport fanout / `session.interrupt` | Existing client run abstraction; `workspace-` prefix distinguishes RPC runs |
+| Plugin route                                      | Native RPC                                                                                           | Behavior                                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `GET /projects`                                   | `projects.tree {profile, preview_limit: 3}`                                                          | Unmodified authoritative hierarchy, auto/Home nodes and scoped IDs                                    |
+| `GET /projects/detail?project_id=…`               | `projects.project_sessions {profile, project_id}`                                                    | Hydrated repo/lane sessions; null Project becomes 404                                                 |
+| `POST /projects/session?project_id=…`             | Project read → `config.get {key: 'project', cwd: root, profile}` → `session.create`                  | Path then first repo path; resolved cwd and `source: 'desktop'`; no Project ID on create              |
+| `GET /project-events`                             | Native change-watcher transport                                                                      | SSE refresh on session/Project changes, initial connect and reconnect                                 |
+| `GET /workspace/sessions/{id}/messages`           | `session.resume`                                                                                     | Unpersisted draft fallback; stored ID, no cwd override; compact transcript projected to Message shape |
+| `POST /workspace/sessions/{id}/chat/stream`       | `session.resume` → session-only `config.set` model → optional `image.attach_bytes` → `prompt.submit` | Native runtime/context, events adapted to existing SSE reducer                                        |
+| `/workspace/runs/{stored_id}` / `events` / `stop` | Resume snapshot / transport fanout / `session.interrupt`                                             | Existing client run abstraction; `workspace-` prefix distinguishes RPC runs                           |
 
 RPC drafts return a `stored_session_id` distinct from their runtime `session_id`;
 URLs always use the durable ID. Empty drafts are native live sessions, with no DB

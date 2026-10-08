@@ -17,16 +17,16 @@ validated by the native chat fixture.
 
 ## Implementation
 
-| Responsibility | Files / behavior |
-| --- | --- |
-| Shared protocol | `src/vendor/hermes/`: unchanged `JsonRpcRequestChannel`, gateway events/generated contracts and reconnect backoff, with upstream MIT license and provenance |
-| Browser transport | `src/lib/native-chat.ts`: authenticated same-origin ticket socket, shared correlation/heartbeat, one reconnect owner, fixed recovery boundary and live-frame hold |
-| Vue state | `src/lib/native-session.ts`: stored session/runtime snapshot, reactive transcript/live parts, native busy state, pending requests and admission uncertainty |
-| Event semantics | `src/lib/assistant-turn.ts`: native reasoning replacement, transient provider/tool-generation status, interim/final phases, native tool IDs and independent delegated completion |
-| Native lifecycle | `native_channel.py`: profile-bound create/resume/activate/submit/steer/interrupt/request answers; explicit busy queue; preparation before prompt admission |
+| Responsibility     | Files / behavior                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared protocol    | `src/vendor/hermes/`: unchanged `JsonRpcRequestChannel`, gateway events/generated contracts and reconnect backoff, with upstream MIT license and provenance                           |
+| Browser transport  | `src/lib/native-chat.ts`: authenticated same-origin ticket socket, shared correlation/heartbeat, one reconnect owner, fixed recovery boundary and live-frame hold                     |
+| Vue state          | `src/lib/native-session.ts`: stored session/runtime snapshot, reactive transcript/live parts, native busy state, pending requests and admission uncertainty                           |
+| Event semantics    | `src/lib/assistant-turn.ts`: native reasoning replacement, transient provider/tool-generation status, interim/final phases, native tool IDs and independent delegated completion      |
+| Native lifecycle   | `native_channel.py`: profile-bound create/resume/activate/submit/steer/interrupt/request answers; explicit busy queue; preparation before prompt admission                            |
 | Retained ownership | `native_owners.py`, `gateway_transport.py`, `chat_gateway.py`: browser subscribers share one native owner; raw sanitized frames survive disconnect and bounded native replay eviction |
-| Plugin integration | `src/App.vue`, `hermes-api.ts`: native controller selection follows reactive capabilities; native actions bypass Runs; genuine legacy pointers drain before native attachment |
-| Contract / assets | `docs/api-contract.md`, `tests/docker/Dockerfile`, committed `dashboard/dist/` assets |
+| Plugin integration | `src/App.vue`, `hermes-api.ts`: native controller selection follows reactive capabilities; native actions bypass Runs; genuine legacy pointers drain before native attachment         |
+| Contract / assets  | `docs/api-contract.md`, `tests/docker/Dockerfile`, committed `dashboard/dist/` assets                                                                                                 |
 
 The full `JsonRpcGatewayClient` is deliberately not wrapped around the `chat.*`
 facade: its automatic native replay RPCs are not wire compatible with the

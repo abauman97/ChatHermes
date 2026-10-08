@@ -1,67 +1,87 @@
-import { expect, test } from '@playwright/test'
-import { signIn } from './login'
+import { expect, test } from "@playwright/test";
+import { signIn } from "./login";
 
-test('project header, menus, details and workspace instructions', async ({ page }, testInfo) => {
-  await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
-  const unauthorized = await page.request.get('/api/plugins/chathermes/project-instructions?project_id=hermes-mobile')
-  expect(unauthorized.status()).toBe(401)
-  await signIn(page, '/chathermes?view=projects')
-  const plugin = page.locator('.chathermes-embedded')
-  const options = plugin.getByRole('button', { name: 'Screen options', exact: true })
-  const title = plugin.locator('.topbar h1')
-  const prompt = plugin.locator('#prompt')
-  await expect(plugin.locator('.project-tabs')).toHaveCount(0)
-  await options.click()
-  await expect(plugin.getByRole('menuitemradio', { name: 'Active projects' })).toHaveAttribute('aria-checked', 'true')
-  await plugin.getByRole('menuitemradio', { name: 'Archived projects' }).click()
-  await expect(plugin.locator('.projects-page')).toContainText('Archived projects')
-  await options.click(); await plugin.getByRole('menuitemradio', { name: 'Active projects' }).click()
-  await plugin.locator('.project-list').getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
-  await expect(title).toHaveText('Hermes Mobile')
-  await expect(prompt).toHaveAttribute('placeholder', 'Message Hermes Mobile')
-  await prompt.click(); await expect(prompt).toBeFocused()
-  const box = (await title.boundingBox())!, main = (await plugin.locator('.main-panel').boundingBox())!
-  expect(Math.abs(box.x + box.width / 2 - (main.x + main.width / 2))).toBeLessThan(2)
-  await expect(plugin.locator('.project-settings')).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath('project-home.png') })
-  await options.click()
-  await expect(plugin.getByRole('menuitem', { name: 'Edit Instructions', exact: true })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('project-menu.png') })
-  await plugin.getByRole('menuitem', { name: 'Edit Instructions', exact: true }).click()
-  const editor = plugin.getByRole('region', { name: 'Edit Instructions', exact: true })
-  const instructions = editor.getByRole('textbox')
-  await expect(instructions).toHaveValue(/CHATHERMES_NATIVE_CONTEXT/)
-  await expect(editor).toContainText('.hermes.md')
-  await expect(instructions).toHaveCSS('font-size', '16px')
-  const original = await instructions.inputValue()
-  await instructions.fill(original + '\nIssue 45 editor verification.\n')
-  await editor.getByRole('button', { name: 'Save instructions', exact: true }).click()
-  await expect(editor).toContainText('Instructions saved.')
-  await page.reload()
-  await expect(instructions).toHaveValue(original + '\nIssue 45 editor verification.\n')
-  await page.screenshot({ path: testInfo.outputPath('project-instructions.png') })
-  await instructions.fill(original)
-  await editor.getByRole('button', { name: 'Save instructions', exact: true }).click()
-  await expect(editor).toContainText('Instructions saved.')
-  await options.click(); await plugin.getByRole('menuitem', { name: 'Edit project', exact: true }).click()
-  const details = plugin.getByRole('region', { name: 'Edit project', exact: true })
-  await expect(details.getByLabel('Project name', { exact: true })).toHaveValue('Hermes Mobile')
-  await expect(details.getByRole('button', { name: 'Delete project', exact: true })).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath('project-edit.png') })
-  await details.getByLabel('Description', { exact: true }).fill('Issue 45 visual test')
-  await details.getByRole('button', { name: 'Save changes', exact: true }).click()
-  await expect(details.getByText('Saving project…')).toHaveCount(0)
-  await page.reload()
-  await expect(details.getByLabel('Description', { exact: true })).toHaveValue('Issue 45 visual test')
-  await details.getByLabel('Description', { exact: true }).fill('')
-  await details.getByRole('button', { name: 'Save changes', exact: true }).click()
-  await expect(details.getByText('Saving project…')).toHaveCount(0)
-  await options.click(); await plugin.getByRole('menuitem', { name: 'Delete project', exact: true }).click()
-  const confirmation = plugin.getByRole('alertdialog')
-  await expect(confirmation.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
-  await page.screenshot({ path: testInfo.outputPath('project-delete-confirmation.png') })
-  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(options).toBeFocused()
-  await prompt.click(); await expect(prompt).toBeFocused()
-  expect(await plugin.evaluate(el => el.scrollWidth <= innerWidth)).toBe(true)
-})
+test("project header, menus, details and workspace instructions", async ({ page }, testInfo) => {
+  await page.setViewportSize(
+    testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1280, height: 900 },
+  );
+  const unauthorized = await page.request.get(
+    "/api/plugins/chathermes/project-instructions?project_id=hermes-mobile",
+  );
+  expect(unauthorized.status()).toBe(401);
+  await signIn(page, "/chathermes?view=projects");
+  const plugin = page.locator(".chathermes-embedded");
+  const options = plugin.getByRole("button", { name: "Screen options", exact: true });
+  const title = plugin.locator(".topbar h1");
+  const prompt = plugin.locator("#prompt");
+  await expect(plugin.locator(".project-tabs")).toHaveCount(0);
+  await options.click();
+  await expect(plugin.getByRole("menuitemradio", { name: "Active projects" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await plugin.getByRole("menuitemradio", { name: "Archived projects" }).click();
+  await expect(plugin.locator(".projects-page")).toContainText("Archived projects");
+  await options.click();
+  await plugin.getByRole("menuitemradio", { name: "Active projects" }).click();
+  await plugin
+    .locator(".project-list")
+    .getByRole("button", { name: "Hermes Mobile", exact: true })
+    .click();
+  await expect(title).toHaveText("Hermes Mobile");
+  await expect(prompt).toHaveAttribute("placeholder", "Message Hermes Mobile");
+  await prompt.click();
+  await expect(prompt).toBeFocused();
+  const box = (await title.boundingBox())!,
+    main = (await plugin.locator(".main-panel").boundingBox())!;
+  expect(Math.abs(box.x + box.width / 2 - (main.x + main.width / 2))).toBeLessThan(2);
+  await expect(plugin.locator(".project-settings")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("project-home.png") });
+  await options.click();
+  await expect(
+    plugin.getByRole("menuitem", { name: "Edit Instructions", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("project-menu.png") });
+  await plugin.getByRole("menuitem", { name: "Edit Instructions", exact: true }).click();
+  const editor = plugin.getByRole("region", { name: "Edit Instructions", exact: true });
+  const instructions = editor.getByRole("textbox");
+  await expect(instructions).toHaveValue(/CHATHERMES_NATIVE_CONTEXT/);
+  await expect(editor).toContainText(".hermes.md");
+  await expect(instructions).toHaveCSS("font-size", "16px");
+  const original = await instructions.inputValue();
+  await instructions.fill(original + "\nIssue 45 editor verification.\n");
+  await editor.getByRole("button", { name: "Save instructions", exact: true }).click();
+  await expect(editor).toContainText("Instructions saved.");
+  await page.reload();
+  await expect(instructions).toHaveValue(original + "\nIssue 45 editor verification.\n");
+  await page.screenshot({ path: testInfo.outputPath("project-instructions.png") });
+  await instructions.fill(original);
+  await editor.getByRole("button", { name: "Save instructions", exact: true }).click();
+  await expect(editor).toContainText("Instructions saved.");
+  await options.click();
+  await plugin.getByRole("menuitem", { name: "Edit project", exact: true }).click();
+  const details = plugin.getByRole("region", { name: "Edit project", exact: true });
+  await expect(details.getByLabel("Project name", { exact: true })).toHaveValue("Hermes Mobile");
+  await expect(details.getByRole("button", { name: "Delete project", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("project-edit.png") });
+  await details.getByLabel("Description", { exact: true }).fill("Issue 45 visual test");
+  await details.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(details.getByText("Saving project…")).toHaveCount(0);
+  await page.reload();
+  await expect(details.getByLabel("Description", { exact: true })).toHaveValue(
+    "Issue 45 visual test",
+  );
+  await details.getByLabel("Description", { exact: true }).fill("");
+  await details.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(details.getByText("Saving project…")).toHaveCount(0);
+  await options.click();
+  await plugin.getByRole("menuitem", { name: "Delete project", exact: true }).click();
+  const confirmation = plugin.getByRole("alertdialog");
+  await expect(confirmation.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath("project-delete-confirmation.png") });
+  await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(options).toBeFocused();
+  await prompt.click();
+  await expect(prompt).toBeFocused();
+  expect(await plugin.evaluate((el) => el.scrollWidth <= innerWidth)).toBe(true);
+});

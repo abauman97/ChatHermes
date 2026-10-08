@@ -1,5 +1,9 @@
 # ChatHermes
 
+## Development tooling
+
+This project uses Vite+ (`vp`) for linting and formatting. Run `vp lint` to check code and `vp fmt` to format it. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from both. Run `npm test`, `npm run test:api`, and `npm run build` for the project test and build workflows; the build refreshes the committed dashboard assets.
+
 A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication protects the UI and its server-side gateway proxy; browser credentials and standalone SPA deployments are not supported.
 
 ## Install
@@ -35,7 +39,6 @@ installed and enabled, basic-auth login, and a deterministic model fixture. It n
 Docker and curl, and supports remote daemons without Compose or bind mounts.
 `npm run live:stop` stops only its test containers and preserves the named volume.
 See [live dashboard workflow](tests/docker/README.md) for remote Docker and real models.
-
 
 For browser tests, run `npx playwright install chromium` once, then `npm run live` followed by `npm run test:visual`. Screenshots and traces are saved to `tests/visual-output/`.
 

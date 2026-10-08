@@ -15,6 +15,7 @@ Six ChatGPT mobile reference screenshots are attached to this prompt (also saved
 `docs/reference/chatgpt/01..06-*.jpg`). Use them as the visual target for requirement 4.
 
 ## HARD CONSTRAINTS (violating any = scope violation)
+
 1. **Do NOT modify the test files** `src/App.test.ts`, `src/components/ChatComposer.test.ts`,
    or anything under `tests/`. They are the contract.
 2. **Preserve every test hook.** The suite depends on these exact selectors/labels — they MUST
@@ -36,34 +37,38 @@ Six ChatGPT mobile reference screenshots are attached to this prompt (also saved
    arbitrary values, `dark:` variants). Don't introduce new dependencies.
 
 ## GATE (must all pass before you finish)
+
 - `npm test` (vitest, 27 tests) — green.
 - `npm run build` (vue-tsc type-check + vite build) — green.
 - `git diff --check` — no whitespace errors.
-Re-run these yourself after every edit; do not report success without running them.
+  Re-run these yourself after every edit; do not report success without running them.
 
 ---
 
 ## Requirement 1 + 2 — Prevent zoom into the composer AND prevent pinch-to-zoom completely
+
 Mirror the SWOL PWA approach. Two layers, applied so they cover BOTH standalone and plugin mode:
 
 a) **Viewport meta.** In `index.html`, set:
-   `content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"`.
-   (Standalone only — the host dashboard owns the viewport in plugin mode, so also do (b).)
+`content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"`.
+(Standalone only — the host dashboard owns the viewport in plugin mode, so also do (b).)
 
 b) **Global CSS** (in `src/style.css`, which is imported by `src/main.ts` and therefore loaded in
-   both modes): 
-   - `html, body { touch-action: manipulation; overscroll-behavior: none; }` — `manipulation`
-     disables double-tap zoom and pinch-zoom while keeping pan + one-finger scroll.
-   - Ensure the app root and the transcript use `touch-action: pan-y` (or `manipulation`) so the
-     composer textarea never double-tap-zooms. Add `-webkit-text-size-adjust: 100%` to `html`.
-   - Make sure the fixed/overlay surfaces (requirement 4) inherit `touch-action: manipulation`.
+both modes):
+
+- `html, body { touch-action: manipulation; overscroll-behavior: none; }` — `manipulation`
+  disables double-tap zoom and pinch-zoom while keeping pan + one-finger scroll.
+- Ensure the app root and the transcript use `touch-action: pan-y` (or `manipulation`) so the
+  composer textarea never double-tap-zooms. Add `-webkit-text-size-adjust: 100%` to `html`.
+- Make sure the fixed/overlay surfaces (requirement 4) inherit `touch-action: manipulation`.
 
 c) **Composer guard** in `ChatComposer.vue`: add a `@touchend`/double-tap guard on the textarea is
-   NOT needed if (b) is in place — prefer CSS `touch-action` over JS. If you add any JS, it must
-   not break the existing `@keydown` Enter-to-send and `@submit.prevent` behavior or the
-   `.composer textarea` / `.composer` hooks.
+NOT needed if (b) is in place — prefer CSS `touch-action` over JS. If you add any JS, it must
+not break the existing `@keydown` Enter-to-send and `@submit.prevent` behavior or the
+`.composer textarea` / `.composer` hooks.
 
 ## Requirement 3 — Thinking indicator before a response streams
+
 Show an explicit, visible "thinking" state for the window **after the user sends but before the
 first streamed content arrives** (i.e. from `sending=true` until the first `assistant.delta` or
 first `tool.started` frame is observed). It must be gone by the time the turn completes (the
@@ -75,12 +80,14 @@ Implementation: add a `thinking` ref in `App.vue`, set it `true` at the top of `
 distinct, clearly-visible indicator — a small pulsing/spinning "Thinking…" chip with animated
 dots or a spinner (CSS keyframes, Tailwind-friendly). It must read as "Hermes is working" and be
 visually distinct from the final assistant message. Keep the existing `progress[]` tool lines and
-the streaming `draft` message; the thinking chip appears *above* them during the pre-token window.
+the streaming `draft` message; the thinking chip appears _above_ them during the pre-token window.
 Do not let the chip's text contain the literal string `Working…` in a way that leaks into the
 final rendered output after completion.
 
 ## Requirement 4 — Make the UI like the ChatGPT app; full-screen layer over the host
+
 Study the six attached screenshots and restyle toward that look. Targets, mapped to the refs:
+
 - **Empty home** (01): when no session is selected, show a clean, centered empty state with a
   suggested-prompt card or two (like "Hermes PR …" / "Send me the most useful …"), a prominent
   rounded composer near the bottom, and a slim top bar with a **hamburger (left)** and the
@@ -114,6 +121,7 @@ do not trap them. In **standalone mode** it should simply fill the viewport (no 
 Guard the full-bleed CSS so it does not break the existing `h-dvh` layout the tests rely on.
 
 ## Requirement 5 — Reconnect + reload all messages when the page returns to view
+
 There is **no persistent websocket**; turns stream via SSE. When the tab is hidden, the browser
 kills the in-flight SSE fetch and the **gateway interrupts the run on SSE disconnect**, so you
 cannot truly resume a dead run. Implement the correct, honest behavior:
@@ -148,6 +156,7 @@ cannot truly resume a dead run. Implement the correct, honest behavior:
   the UI or throw unhandled; it should leave the existing history in place.
 
 ## Definition of done
+
 - All five requirements implemented and working in both standalone and plugin modes.
 - `npm test` green (27), `npm run build` green, `git diff --check` clean.
 - No test file, state-machine, or API-shape changes. New behavior is additive.

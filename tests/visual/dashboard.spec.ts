@@ -1,101 +1,147 @@
-import { signIn } from './login'
-import { expect, test } from '@playwright/test'
+import { signIn } from "./login";
+import { expect, test } from "@playwright/test";
 
-test('plugin composer, sent timeline, attachments, model and stream disclosures', async ({ page }, testInfo) => {
-  const errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  await signIn(page, '/chathermes')
-  await expect(page.locator('.chathermes-embedded')).toBeVisible()
-  await expect(page.locator('.screen-menu-button')).toBeVisible()
-  await page.getByRole('button', { name: 'Screen options' }).click()
-  await expect(page.getByRole('menu')).toBeVisible()
-  await expect(page.getByRole('menu').getByRole('menuitem', { name: 'New chat' })).toBeVisible()
-  await page.getByRole('button', { name: 'Screen options' }).click()
-  const navigation = page.locator('.chathermes-embedded').getByRole('complementary', { name: 'Navigation' })
-  const newChat = navigation.getByRole('button', { name: 'New chat', exact: true })
-  await expect(newChat).toHaveCount(1)
-  if (testInfo.project.name === 'mobile') { await page.locator('.chathermes-embedded').getByRole('button', { name: 'Open navigation' }).click(); await newChat.click() } else await newChat.click()
-  await expect(newChat).toBeEnabled()
-  const composer = page.locator('.composer')
-  const textarea = composer.getByRole('textbox', { name: 'Message Hermes' })
-  await textarea.fill('')
-  await textarea.click()
-  await expect(textarea).toBeFocused()
-  await expect(textarea).toHaveCSS('font-size', '16px')
-  expect(await page.locator('meta[name="viewport"]').getAttribute('content')).toContain('maximum-scale=1')
-  const pill = composer.getByRole('button', { name: 'Choose model', exact: true })
-  await textarea.evaluate(element => element.blur())
-  await pill.click()
-  await expect(page.getByRole('dialog', { name: 'Choose provider' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('picker-providers.png') })
-  await page.getByRole('button', { name: 'Model routes', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Model routes' })).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('picker-models.png') })
-  await page.getByRole('button', { name: 'Back to providers' }).click()
-  await page.getByRole('button', { name: 'Model routes', exact: true }).click()
-  await page.getByRole('button', { name: 'Instant', exact: true }).click()
-  await expect(pill).toContainText('Instant')
-  await expect(pill).toBeFocused()
-  await pill.click()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await expect(pill).toBeFocused()
-  await pill.click()
-  await textarea.click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.screenshot({ path: testInfo.outputPath('home.png') })
+test("plugin composer, sent timeline, attachments, model and stream disclosures", async ({
+  page,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page, "/chathermes");
+  await expect(page.locator(".chathermes-embedded")).toBeVisible();
+  await expect(page.locator(".screen-menu-button")).toBeVisible();
+  await page.getByRole("button", { name: "Screen options" }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "New chat" })).toBeVisible();
+  await page.getByRole("button", { name: "Screen options" }).click();
+  const navigation = page
+    .locator(".chathermes-embedded")
+    .getByRole("complementary", { name: "Navigation" });
+  const newChat = navigation.getByRole("button", { name: "New chat", exact: true });
+  await expect(newChat).toHaveCount(1);
+  if (testInfo.project.name === "mobile") {
+    await page
+      .locator(".chathermes-embedded")
+      .getByRole("button", { name: "Open navigation" })
+      .click();
+    await newChat.click();
+  } else await newChat.click();
+  await expect(newChat).toBeEnabled();
+  const composer = page.locator(".composer");
+  const textarea = composer.getByRole("textbox", { name: "Message Hermes" });
+  await textarea.fill("");
+  await textarea.click();
+  await expect(textarea).toBeFocused();
+  await expect(textarea).toHaveCSS("font-size", "16px");
+  expect(await page.locator('meta[name="viewport"]').getAttribute("content")).toContain(
+    "maximum-scale=1",
+  );
+  const pill = composer.getByRole("button", { name: "Choose model", exact: true });
+  await textarea.evaluate((element) => element.blur());
+  await pill.click();
+  await expect(page.getByRole("dialog", { name: "Choose provider" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("picker-providers.png") });
+  await page.getByRole("button", { name: "Model routes", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Model routes" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("picker-models.png") });
+  await page.getByRole("button", { name: "Back to providers" }).click();
+  await page.getByRole("button", { name: "Model routes", exact: true }).click();
+  await page.getByRole("button", { name: "Instant", exact: true }).click();
+  await expect(pill).toContainText("Instant");
+  await expect(pill).toBeFocused();
+  await pill.click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(pill).toBeFocused();
+  await pill.click();
+  await textarea.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("home.png") });
 
-  await page.getByRole('combobox', { name: 'Profile', exact: true }).selectOption('test-profile')
-  await expect(page.getByRole('combobox', { name: 'Profile', exact: true })).toHaveValue('test-profile')
-  const prompt = 'Run a small isolated test [tool]'
-  await textarea.fill(prompt)
-  await page.getByRole('button', { name: 'Send message', exact: true }).click()
-  await expect(page.getByRole('log', { name: 'Conversation' })).toContainText(prompt)
-  await expect(page.locator('.activity[open]').first()).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('streaming.png') })
-  await expect(page.locator('.message.assistant').last()).toContainText('Isolated Hermes reply', { timeout: 60_000 })
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible({ timeout: 60_000 })
-  await expect(page.locator('.activity[open]')).toHaveCount(0)
-  await page.locator('.work-summary').click()
-  await page.locator('.activity summary').first().click()
-  await expect(page.locator('.activity[open]')).toHaveCount(1)
-  await page.locator('.activity summary').first().click()
-  const tool = page.locator('.activity').filter({ has: page.locator('pre', { hasText: 'terminal' }) })
-  await tool.locator('summary').click()
-  await expect(tool.locator('pre')).toContainText('"output": "hermes-isolated-tool-ok"')
-  await expect(tool.locator('pre')).toContainText('"exit_code": 0')
-  await page.screenshot({ path: testInfo.outputPath('completed.png') })
+  await page.getByRole("combobox", { name: "Profile", exact: true }).selectOption("test-profile");
+  await expect(page.getByRole("combobox", { name: "Profile", exact: true })).toHaveValue(
+    "test-profile",
+  );
+  const prompt = "Run a small isolated test [tool]";
+  await textarea.fill(prompt);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("log", { name: "Conversation" })).toContainText(prompt);
+  await expect(page.locator(".activity[open]").first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("streaming.png") });
+  await expect(page.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
+    timeout: 60_000,
+  });
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.locator(".activity[open]")).toHaveCount(0);
+  await page.locator(".work-summary").click();
+  await page.locator(".activity summary").first().click();
+  await expect(page.locator(".activity[open]")).toHaveCount(1);
+  await page.locator(".activity summary").first().click();
+  const tool = page
+    .locator(".activity")
+    .filter({ has: page.locator("pre", { hasText: "terminal" }) });
+  await tool.locator("summary").click();
+  await expect(tool.locator("pre")).toContainText('"output": "hermes-isolated-tool-ok"');
+  await expect(tool.locator("pre")).toContainText('"exit_code": 0');
+  await page.screenshot({ path: testInfo.outputPath("completed.png") });
 
-  await textarea.click(); await expect(textarea).toBeFocused()
-  await page.getByRole('button', { name: 'Attachment options' }).click()
-  await expect(page.getByRole('button', { name: 'Upload files', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Take a photo', exact: true })).toBeVisible()
-  expect(await page.locator('input[capture]').getAttribute('capture')).toBe('environment')
-  await composer.locator('input[type="file"]').first().setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Isolated attachment contents') })
-  await expect(composer).toContainText('notes.txt')
-  await textarea.fill('Read the attached notes')
-  const upload = page.waitForResponse(response => response.url().includes('/uploads') && response.request().method() === 'POST')
-  await page.getByRole('button', { name: 'Send message', exact: true }).click()
-  expect((await upload).status()).toBe(201)
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible({ timeout: 60_000 })
-  await page.screenshot({ path: testInfo.outputPath('attachment.png') })
-  const captured = await page.screenshot()
-  await composer.locator('input[capture]').setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: captured })
-  await expect(composer.locator('img')).toBeVisible()
-  await textarea.fill('Examine this camera image')
-  await page.screenshot({ path: testInfo.outputPath('camera-image.png') })
-  if (testInfo.project.name === 'mobile') await page.locator('.chathermes-embedded').getByRole('button', { name: 'Open navigation' }).click()
-  const profile = page.getByRole('combobox', { name: 'Profile', exact: true })
-  await expect(profile).toContainText('default')
-  await expect(profile).toContainText('test-profile')
-  await profile.selectOption('test-profile')
-  await expect(page.locator('.message.user')).toHaveCount(0)
-  await expect(pill).toContainText(process.env.LLM_API_MODEL || 'fixture-model')
-  await textarea.fill('Message in the secondary profile')
-  await page.getByRole('button', { name: 'Send message', exact: true }).click()
-  await expect(page.locator('.message.assistant').last()).toContainText('Isolated Hermes reply', { timeout: 60_000 })
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible({ timeout: 60_000 })
-  if (testInfo.project.name === 'mobile') await page.locator('.chathermes-embedded').getByRole('button', { name: 'Open navigation' }).click()
-  await page.screenshot({ path: testInfo.outputPath('profiles.png') })
-  expect(errors).toEqual([])
-})
+  await textarea.click();
+  await expect(textarea).toBeFocused();
+  await page.getByRole("button", { name: "Attachment options" }).click();
+  await expect(page.getByRole("button", { name: "Upload files", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take a photo", exact: true })).toBeVisible();
+  expect(await page.locator("input[capture]").getAttribute("capture")).toBe("environment");
+  await composer
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "notes.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Isolated attachment contents"),
+    });
+  await expect(composer).toContainText("notes.txt");
+  await textarea.fill("Read the attached notes");
+  const upload = page.waitForResponse(
+    (response) => response.url().includes("/uploads") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  expect((await upload).status()).toBe(201);
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.screenshot({ path: testInfo.outputPath("attachment.png") });
+  const captured = await page.screenshot();
+  await composer
+    .locator("input[capture]")
+    .setInputFiles({ name: "camera.png", mimeType: "image/png", buffer: captured });
+  await expect(composer.locator("img")).toBeVisible();
+  await textarea.fill("Examine this camera image");
+  await page.screenshot({ path: testInfo.outputPath("camera-image.png") });
+  if (testInfo.project.name === "mobile")
+    await page
+      .locator(".chathermes-embedded")
+      .getByRole("button", { name: "Open navigation" })
+      .click();
+  const profile = page.getByRole("combobox", { name: "Profile", exact: true });
+  await expect(profile).toContainText("default");
+  await expect(profile).toContainText("test-profile");
+  await profile.selectOption("test-profile");
+  await expect(page.locator(".message.user")).toHaveCount(0);
+  await expect(pill).toContainText(process.env.LLM_API_MODEL || "fixture-model");
+  await textarea.fill("Message in the secondary profile");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
+    timeout: 60_000,
+  });
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+  if (testInfo.project.name === "mobile")
+    await page
+      .locator(".chathermes-embedded")
+      .getByRole("button", { name: "Open navigation" })
+      .click();
+  await page.screenshot({ path: testInfo.outputPath("profiles.png") });
+  expect(errors).toEqual([]);
+});

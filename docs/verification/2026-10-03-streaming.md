@@ -65,13 +65,13 @@ only the real Hermes dashboard can provide its authentication and SDK mount.
 
 Final gates:
 
-| Command | Result |
-| --- | --- |
-| `npm test` | Passed: 66 tests in 7 files |
-| `PATH="$PWD/.venv/bin:$PATH" npm run test:api` | Passed: 33 tests |
-| `npm run build` | Passed: type checking and both plugin builds; shipped `dashboard/dist/` assets rebuilt |
-| `git diff --check` | Passed |
-| Actual dashboard plugin visual checks | Blocked before plugin mount in desktop and mobile; both existing and new workflows attempted |
+| Command                                        | Result                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `npm test`                                     | Passed: 66 tests in 7 files                                                                  |
+| `PATH="$PWD/.venv/bin:$PATH" npm run test:api` | Passed: 33 tests                                                                             |
+| `npm run build`                                | Passed: type checking and both plugin builds; shipped `dashboard/dist/` assets rebuilt       |
+| `git diff --check`                             | Passed                                                                                       |
+| Actual dashboard plugin visual checks          | Blocked before plugin mount in desktop and mobile; both existing and new workflows attempted |
 
 ## Actual dashboard visual workflow — blocked
 
