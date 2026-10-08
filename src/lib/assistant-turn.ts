@@ -6,6 +6,14 @@ type Data = Record<string, unknown>;
 const string = (value: unknown) => (typeof value === "string" ? value : "");
 const detail = (value: unknown) =>
   typeof value === "string" ? value : value == null ? "" : JSON.stringify(value, null, 2);
+export function nativeSubagentId(data: Data): string {
+  const direct = string(data.subagent_id) || string(data.child_session_id);
+  if (direct) return direct;
+  const delegation = string(data.delegation_id);
+  return delegation && typeof data.task_index === "number" && Number.isSafeInteger(data.task_index)
+    ? `${delegation}:${data.task_index}`
+    : "";
+}
 export function toolTitle(name: string, complete = false): string {
   const labels: Record<string, [string, string]> = {
     file_search: ["Searching files", "Searched files"],
@@ -43,7 +51,7 @@ export function normalizeEvent(frame: SSEEvent): TurnEvent | undefined {
   const data = eventPayload(frame),
     name = frame.event;
   const sequence = typeof data.seq === "number" ? String(data.seq) : frame.id;
-  const key = sequence === undefined ? undefined : `${data.run_id || ""}:${sequence}`;
+  const key = sequence === undefined ? undefined : `${string(data.run_id)}:${sequence}`;
   let type: TurnEvent["type"] | undefined;
   if (["assistant.delta", "message.delta"].includes(name)) type = "text";
   else if (name === "assistant.snapshot") type = "text.snapshot";
@@ -569,10 +577,7 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
       },
     });
   } else if (name.startsWith("subagent.")) {
-    const id =
-      string(data.subagent_id) ||
-      string(data.child_session_id) ||
-      (data.delegation_id ? `${data.delegation_id}:${data.task_index}` : "");
+    const id = nativeSubagentId(data);
     if (!id) return;
     const terminal = ["subagent.complete", "subagent.failed", "subagent.cancelled"].includes(name);
     reduceTurn(turn, {

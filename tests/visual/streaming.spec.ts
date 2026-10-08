@@ -60,10 +60,8 @@ test("ordered streamed turn, reload, scroll and disclosures in dashboard plugin"
     const original = window.fetch.bind(window);
     const state = window as unknown as { emitFrame: (event: string, data: unknown) => void };
     window.fetch = (input, init) => {
-      if (
-        String(input).includes("/api/plugins/chathermes/") &&
-        String(input).includes("/run_stream/events")
-      ) {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/plugins/chathermes/") && url.includes("/run_stream/events")) {
         const encoder = new TextEncoder();
         return Promise.resolve(
           new Response(

@@ -187,9 +187,7 @@ const viewApprovalPending = computed(() =>
   nativeMode.value ? !!native.approval.value : approvalPending.value,
 );
 const viewReconnect = computed(() =>
-  nativeMode.value
-    ? !!session.value && !["open"].includes(native.connection.value)
-    : reconnectNotice.value,
+  nativeMode.value ? !!session.value && native.connection.value !== "ready" : reconnectNotice.value,
 );
 const viewUnavailable = computed(() =>
   nativeMode.value ? native.uncertain.value : unavailableRun.value,
@@ -1437,13 +1435,12 @@ async function steerRun(text: string) {
 }
 
 async function visibilityChange() {
-  if (document.visibilityState !== "visible") return;
-  // Do not replace the submit coroutine while its admission acknowledgement is
-  // pending (or unknown). Background state can be idle before that RPC admits.
+  const recovery = native.availability(document.visibilityState === "visible", navigator.onLine);
   if (nativeMode.value) {
-    if (session.value) void native.reconnect();
+    await recovery;
     return;
   }
+  if (document.visibilityState !== "visible") return;
   refreshProjects();
   if (activeRun.value && !eventStreamExpired.value) {
     void followRun(generation, profile.value, session.value, activeRun.value, false);
@@ -1519,6 +1516,7 @@ function exitPlugin() {
 }
 function onlineChange() {
   offline.value = !navigator.onLine;
+  void native.availability(document.visibilityState === "visible", !offline.value);
   if (!offline.value) {
     refreshProjects();
     void loadSessions();
@@ -1655,7 +1653,7 @@ const notificationSession = computed(() => ({
   profile: profile.value,
   session: session.value,
   chat: !scheduledPage.value && !projectsPage.value && !projectView.value && !projectPage.value,
-  connected: nativeMode.value && native.connection.value === "open" && !offline.value,
+  connected: nativeMode.value && native.connection.value === "ready" && !offline.value,
 }));
 watch(notificationSession, () => pushClient?.publish(), { flush: "post" });
 function serviceWorkerMessage(event: MessageEvent) {
@@ -2157,10 +2155,21 @@ onUnmounted(() => {
         role="status"
       >
         {{
-          eventStreamExpired
-            ? "Live progress is unavailable; checking run status…"
-            : "Reconnecting to the live response…"
+          nativeMode
+            ? native.connection.value === "reconnecting"
+              ? "Reconnecting…"
+              : "Session is read-only until reconnected."
+            : eventStreamExpired
+              ? "Live progress is unavailable; checking run status…"
+              : "Reconnecting to the live response…"
         }}
+        <button
+          v-if="nativeMode && native.connection.value === 'stale' && !offline"
+          class="ml-3 underline"
+          @click="native.reconnect()"
+        >
+          Reconnect
+        </button>
       </div>
       <div
         v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)"
@@ -2178,9 +2187,21 @@ onUnmounted(() => {
         <button
           v-if="session"
           class="underline"
-          @click="eventStreamExpired && activeRun ? visibilityChange() : loadMessages()"
+          @click="
+            nativeMode && viewReconnect
+              ? native.reconnect()
+              : eventStreamExpired && activeRun
+                ? visibilityChange()
+                : loadMessages()
+          "
         >
-          {{ eventStreamExpired && activeRun ? "Refresh session history" : "Refresh history" }}
+          {{
+            nativeMode && viewReconnect
+              ? "Retry connection"
+              : eventStreamExpired && activeRun
+                ? "Refresh session history"
+                : "Refresh history"
+          }}
         </button>
         <button v-if="viewUnavailable" class="ml-3 underline" @click="releaseUnavailableRun">
           I verified the run ended
@@ -2321,7 +2342,7 @@ onUnmounted(() => {
                 v-for="choice in Array.isArray(viewApproval?.choices) ? viewApproval.choices : []"
                 :key="String(choice)"
                 class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55"
-                :disabled="actionBusy"
+                :disabled="actionBusy || (nativeMode && viewReconnect)"
                 @click="approveRun(String(choice))"
               >
                 {{
@@ -2351,6 +2372,7 @@ onUnmounted(() => {
                   v-if="question.choices?.length"
                   :multiple="question.multi_select"
                   v-model="clarificationAnswers[question.qid]"
+                  :disabled="nativeMode && viewReconnect"
                   class="block rounded-lg bg-[#303030] p-2 text-base"
                 >
                   <option value="">Select an answer</option>
@@ -2359,17 +2381,22 @@ onUnmounted(() => {
                 <input
                   v-if="!question.choices?.length"
                   v-model="clarificationAnswers[question.qid]"
+                  :disabled="nativeMode && viewReconnect"
                   class="block w-full rounded-lg bg-[#303030] p-2 text-base"
                 />
                 <input
                   v-else
                   v-model="customClarification[question.qid]"
+                  :disabled="nativeMode && viewReconnect"
                   placeholder="Or enter your own answer"
                   :aria-label="question.question + ' — custom answer'"
                   class="mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base"
                 />
               </label>
-              <button :disabled="actionBusy" class="rounded-lg bg-[#303030] p-2 text-base">
+              <button
+                :disabled="actionBusy || (nativeMode && viewReconnect)"
+                class="rounded-lg bg-[#303030] p-2 text-base"
+              >
                 Submit answers
               </button>
             </form>
@@ -2419,7 +2446,7 @@ onUnmounted(() => {
         :default-model="defaultModel"
         v-model:model="model"
         :sending="viewBusy"
-        :stoppable="viewActive && !actionBusy"
+        :stoppable="viewActive && !actionBusy && !(nativeMode && viewReconnect)"
         :suggested-prompt="suggestedPrompt"
         :reason="
           scheduledPage

@@ -1,5 +1,4 @@
 import { JsonRpcRequestChannel, JsonRpcGatewayError } from "../vendor/hermes/json-rpc-channel";
-import { reconnectBackoffDelayMs } from "../vendor/hermes/reconnect-backoff";
 import type { GatewayEvent } from "../vendor/hermes/gateway-events";
 import type {
   SessionResumeResult,
@@ -42,8 +41,9 @@ export class NativeViewer {
   private held: Frame[] = [];
   private offset = 0;
   private runtime = "";
-  private reconnect?: ReturnType<typeof setTimeout>;
-  private attempts = 0;
+  private failed = false;
+  private abort = new AbortController();
+  private cancelOpening?: () => void;
   private hooks: NativeHooks;
   readonly profile: string;
   readonly stored: string;
@@ -78,7 +78,7 @@ export class NativeViewer {
     if (this.detached) throw new NativeError("Viewer detached");
     if (this.opening) return this.opening;
     if (this.ws?.readyState === WebSocket.OPEN && !this.holding) return;
-    clearTimeout(this.reconnect);
+    if (this.failed) throw new NativeError("Native viewer disconnected");
     this.opening = this.open();
     try {
       await this.opening;
@@ -97,6 +97,7 @@ export class NativeViewer {
       credentials: "same-origin",
       cache: "no-store",
       redirect: "manual",
+      signal: this.abort.signal,
     });
     if (!response.ok || response.type === "opaqueredirect")
       throw new NativeError("Dashboard sign-in required", "rejected");
@@ -130,7 +131,7 @@ export class NativeViewer {
         }
       } catch {
         ws.close();
-        this.disconnected("Native data unavailable; reconnecting without resending.");
+        this.disconnected("Native data unavailable. Reconnect to restore this session.");
       }
     };
     await new Promise<void>((resolve, reject) => {
@@ -138,8 +139,16 @@ export class NativeViewer {
         ws.close();
         reject(new NativeError("Native viewer connection timed out"));
       }, 10000);
+      this.cancelOpening = () => {
+        clearTimeout(timer);
+        reject(new NativeError("Viewer detached"));
+      };
       ws.onopen = () => {
         clearTimeout(timer);
+        if (this.detached || this.ws !== ws) {
+          reject(new NativeError("Viewer detached"));
+          return;
+        }
         this.channel.attach({ send: (text) => ws.send(text) });
         resolve();
       };
@@ -148,12 +157,29 @@ export class NativeViewer {
         reject(new NativeError("Native viewer disconnected"));
       };
     });
+    this.cancelOpening = undefined;
     ws.onclose = ws.onerror = () => {
       if (this.ws === ws) this.disconnected();
     };
     this.hooks.connection("recovering");
     const snapshot = await this.rpc<NativeSnapshot>("chat.attach", { session_id: this.stored });
     if (this.detached || this.ws !== ws) throw new NativeError("Viewer detached");
+    if (
+      typeof snapshot.session_id !== "string" ||
+      !snapshot.session_id ||
+      !Array.isArray(snapshot.messages) ||
+      !snapshot.recovery ||
+      typeof snapshot.recovery.epoch !== "string" ||
+      typeof snapshot.recovery.complete !== "boolean" ||
+      !Number.isSafeInteger(snapshot.recovery.through) ||
+      snapshot.recovery.through < 0 ||
+      (snapshot.recovery.start !== undefined &&
+        (!Number.isSafeInteger(snapshot.recovery.start) ||
+          snapshot.recovery.start < 0 ||
+          snapshot.recovery.start > snapshot.recovery.through)) ||
+      (snapshot.recovery.complete && !Array.isArray(snapshot.recovery.base_row_ids))
+    )
+      throw new NativeError("Invalid native recovery snapshot");
     this.runtime = snapshot.session_id;
     this.offset = snapshot.recovery.complete
       ? snapshot.recovery.start || 0
@@ -169,17 +195,26 @@ export class NativeViewer {
         this.detached ||
         this.ws !== ws ||
         page.epoch !== snapshot.recovery.epoch ||
-        page.offset <= offset
+        !Array.isArray(page.frames) ||
+        !Number.isSafeInteger(page.offset) ||
+        page.offset <= offset ||
+        page.offset > snapshot.recovery.through
       )
         throw new NativeError("Recovery generation changed");
+      if (
+        page.frames.length !== page.offset - offset ||
+        page.frames.some((frame, index) => frame.chat_offset !== offset + index + 1)
+      )
+        throw new NativeError("Invalid native replay boundary");
       for (const frame of page.frames) this.apply(frame);
       offset = page.offset;
     }
+    if (this.detached || this.ws !== ws || !this.channel.connected)
+      throw new NativeError("Native viewer disconnected");
     this.holding = false;
     for (const frame of this.held) this.apply(frame);
     this.held = [];
     this.hooks.requests([...this.requestEntries.values()]);
-    this.attempts = 0;
     this.channel.startHeartbeat();
     this.hooks.connection("open");
     this.hooks.recovered();
@@ -209,7 +244,8 @@ export class NativeViewer {
       this.hooks.connection("open", "Unavailable in ChatHermes: " + frame.params?.method);
   }
   private disconnected(message?: string) {
-    if (this.detached) return;
+    if (this.detached || this.failed) return;
+    this.failed = true;
     const ws = this.ws;
     this.ws = undefined;
     if (ws) {
@@ -218,14 +254,6 @@ export class NativeViewer {
     }
     this.channel.detach(new NativeError("Native viewer disconnected"));
     this.hooks.connection("closed", message);
-    if (!this.reconnect)
-      this.reconnect = setTimeout(
-        () => {
-          this.reconnect = undefined;
-          void this.ensure().catch(() => this.disconnected());
-        },
-        reconnectBackoffDelayMs(this.attempts++),
-      );
   }
   async rpc<T = any>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     if (!this.channel.connected)
@@ -252,9 +280,16 @@ export class NativeViewer {
   }
   close() {
     this.detached = true;
-    clearTimeout(this.reconnect);
-    this.reconnect = undefined;
+    this.abort.abort();
+    this.cancelOpening?.();
+    this.cancelOpening = undefined;
     this.channel.detach(new NativeError("Viewer detached"));
-    this.ws?.close();
+    const ws = this.ws;
+    this.ws = undefined;
+    if (ws) {
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      ws.close();
+    }
+    this.held = [];
   }
 }

@@ -59,7 +59,7 @@ describe("drawer settings", () => {
     vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
       owner = factory(callback);
       owner.attach = vi.fn(async () => {
-        owner.connection.value = "open";
+        owner.connection.value = "ready";
       });
       return owner;
     });
@@ -125,7 +125,7 @@ describe("drawer settings", () => {
         visible: true,
       }),
     );
-    owner.connection.value = "closed";
+    owner.connection.value = "stale";
     await flushPromises();
     query();
     expect(publish).toHaveBeenLastCalledWith(
@@ -134,7 +134,7 @@ describe("drawer settings", () => {
     expect(postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ session: "push_one", connected: false }),
     );
-    owner.connection.value = "open";
+    owner.connection.value = "ready";
     await flushPromises();
     await wrapper.get(".scheduled-nav").trigger("click");
     query();
@@ -977,7 +977,7 @@ describe("profile model inventory", () => {
           return new Response("event: run.completed\ndata: {}\n\n");
         if (input.includes("/v1/runs/provider-run")) return json({ status: "running" });
         if (input.includes("/v1/runs")) {
-          turns.push({ profile, body: JSON.parse(String(init?.body)) });
+          turns.push({ profile, body: await new Response(init?.body).json() });
           return json({ run_id: "provider-run", status: "started" });
         }
         if (input.includes("/messages")) return json({ data: [] });

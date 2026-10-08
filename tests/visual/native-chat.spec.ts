@@ -406,6 +406,8 @@ test("first send with unavailable native attach is not submitted and stays edita
   await page.evaluate(() => {
     (window as any).chathermesFailAttach = false;
   });
+  await plugin.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
   await composer.fill("Retry after restored native attachment");
   await plugin.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(plugin.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
