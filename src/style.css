@@ -143,7 +143,7 @@ body { margin: 0; background: #000; }
 .drawer-settings:focus-visible, .settings-panel:focus-visible, .settings-panel button:focus-visible { outline: 2px solid #b4b4b4; outline-offset: 2px; }
 
 .topbar { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; }
-.header-title { grid-column: 2; text-align: center; }
+.header-title, .header-project-subtitle { text-align: center; }
 .screen-menu-wrap { grid-column: 3; }
 .screen-menu > button { min-height: 44px; padding: 10px 12px; border-radius: 10px; text-align: left; font-size: 16px; }
 .screen-menu > button:hover { background: #424242; }
