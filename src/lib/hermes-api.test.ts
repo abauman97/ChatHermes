@@ -32,8 +32,10 @@ describe("dashboard plugin Hermes client", () => {
       redirect: "manual",
       cache: "no-store",
       credentials: "same-origin",
-      headers: { accept: "application/json" },
     });
+    const headers = new Headers(fake.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("accept")).toBe("application/json");
+    expect(headers.has("authorization")).toBe(false);
     expect(JSON.stringify(fake.mock.calls)).not.toContain("Bearer");
   });
   it("uses plugin routes for create, history, rename and fetch-based SSE", async () => {
@@ -65,9 +67,11 @@ describe("dashboard plugin Hermes client", () => {
     );
     expect(fake.mock.calls.at(-1)?.[1]).toMatchObject({
       method: "POST",
-      headers: { accept: "text/event-stream" },
       credentials: "same-origin",
     });
+    const headers = new Headers(fake.mock.calls.at(-1)?.[1]?.headers);
+    expect(headers.get("accept")).toBe("text/event-stream");
+    expect(headers.get("content-type")).toBe("application/json");
   });
   it("uses durable tool history for workspace chats and falls back only for unpersisted drafts", async () => {
     const fake = vi.fn(async (url: string) =>
@@ -137,14 +141,17 @@ it("wraps Runs image parts in a user message and sends authenticated actions and
     { type: "image_url", image_url: { url: "data:image/png;base64,eA==" } },
   ];
   await api.startRun("alpha", "s1", parts, "test-model", "test-provider", "turn-test");
-  expect(JSON.parse(String(fake.mock.calls[0]?.[1]?.body))).toEqual({
+  expect(await new Response(fake.mock.calls[0]?.[1]?.body).json()).toEqual({
     session_id: "s1",
     input: [{ role: "user", content: parts }],
     model: "test-model",
     provider: "test-provider",
     require_model_lock: true,
   });
-  expect(new Headers(fake.mock.calls[0]?.[1]?.headers).get("Idempotency-Key")).toBe("turn-test");
+  const headers = new Headers(fake.mock.calls[0]?.[1]?.headers);
+  expect(headers.get("Idempotency-Key")).toBe("turn-test");
+  expect(headers.get("accept")).toBe("application/json");
+  expect(headers.get("content-type")).toBe("application/json");
   await api.approve("alpha", "run_1", "deny", "req_1");
   await api.steer("alpha", "run_1", "guidance");
   await api.stop("alpha", "run_1");

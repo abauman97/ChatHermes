@@ -4,6 +4,7 @@ import {
   historyBlocks,
   mergeHistoryBlocks,
   normalizeEvent,
+  nativeSubagentId,
   reduceTurn,
   reduceNativeTurn,
 } from "./assistant-turn";
@@ -641,3 +642,27 @@ it.each(["response_previewed", "response_transformed"])(
     }
   },
 );
+
+describe("event identity validation", () => {
+  it("uses only string run IDs when constructing replay keys", () => {
+    expect(normalizeEvent(frame("message.delta", { run_id: "run", seq: 2 }))?.key).toBe("run:2");
+    expect(normalizeEvent(frame("message.delta", { run_id: {}, seq: 2 }))?.key).toBe(":2");
+  });
+  it("resolves native child IDs consistently and rejects malformed delegation identities", () => {
+    expect(nativeSubagentId({ subagent_id: "child", delegation_id: "batch", task_index: 0 })).toBe(
+      "child",
+    );
+    expect(nativeSubagentId({ subagent_id: {}, child_session_id: "session" })).toBe("session");
+    expect(nativeSubagentId({ delegation_id: "batch", task_index: 0 })).toBe("batch:0");
+    for (const data of [
+      { delegation_id: {}, task_index: 0 },
+      { delegation_id: "batch" },
+      { delegation_id: "batch", task_index: {} },
+    ]) {
+      expect(nativeSubagentId(data)).toBe("");
+      const turn = createTurn();
+      reduceNativeTurn(turn, "subagent.start", data);
+      expect(turn.blocks).toEqual([]);
+    }
+  });
+});

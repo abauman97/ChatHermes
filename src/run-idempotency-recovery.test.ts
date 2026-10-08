@@ -135,7 +135,7 @@ describe("durable Runs execution", () => {
     const request = f.fetch.mock.calls.find(
       ([url, init]) => url.includes("/v1/runs?") && init?.method === "POST",
     );
-    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+    expect(await new Response(request?.[1]?.body).json()).toEqual({
       session_id: "one",
       input: "Question",
     });

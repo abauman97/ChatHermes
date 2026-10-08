@@ -140,13 +140,11 @@ describe("durable Runs execution", () => {
     await start(wrapper);
     expect(activeRunFor("alpha", "one")).toBe("run_test");
     expect(
-      JSON.parse(
-        String(
-          f.fetch.mock.calls.find(
-            ([url, init]) => url.includes("/v1/runs?") && init?.method === "POST",
-          )?.[1]?.body,
-        ),
-      ),
+      await new Response(
+        f.fetch.mock.calls.find(
+          ([url, init]) => url.includes("/v1/runs?") && init?.method === "POST",
+        )?.[1]?.body,
+      ).json(),
     ).toEqual({ session_id: "one", input: "Question" });
     await f.ready();
     f.frame("message.delta", 0, { delta: "Live answer" });
@@ -260,14 +258,18 @@ describe("durable Runs execution", () => {
       .trigger("click");
     await flushPromises();
     expect(
-      JSON.parse(String(f.fetch.mock.calls.find(([url]) => url.includes("/approval"))?.[1]?.body)),
+      await new Response(
+        f.fetch.mock.calls.find(([url]) => url.includes("/approval"))?.[1]?.body,
+      ).json(),
     ).toEqual({ choice: "once", request_id: "req_1" });
     await wrapper.get("#prompt").setValue("Use another approach");
     expect(wrapper.get(".send-button").attributes("aria-label")).toBe("Guide this run");
     await wrapper.get('[aria-label="Guide this run"]').trigger("click");
     await flushPromises();
     expect(
-      JSON.parse(String(f.fetch.mock.calls.find(([url]) => url.includes("/steer"))?.[1]?.body)),
+      await new Response(
+        f.fetch.mock.calls.find(([url]) => url.includes("/steer"))?.[1]?.body,
+      ).json(),
     ).toEqual({ input: "Use another approach" });
     await wrapper.get("#prompt").setValue("");
     await wrapper.get("#prompt").trigger("focus");

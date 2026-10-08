@@ -48,13 +48,12 @@ async function directFetch(
   options: RequestInit = {},
   accept = "application/json",
 ): Promise<Response> {
+  const headers = new Headers(options.headers);
+  headers.set("accept", accept);
+  if (options.body) headers.set("content-type", "application/json");
   const response = await fetch(endpoint(profile, path), {
     ...options,
-    headers: {
-      ...options.headers,
-      accept,
-      ...(options.body ? { "content-type": "application/json" } : {}),
-    },
+    headers,
     credentials: "same-origin",
     redirect: "manual",
     cache: "no-store",
