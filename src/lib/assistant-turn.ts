@@ -58,6 +58,9 @@ export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
     closeReasoning(turn)
     const content = type === 'text.completed' ? string(data.content) : delta
     if (!content) return
+    // A completion can repeat streamed text after a trailing activity.
+    // Compare only the latest text phase, exactly, so earlier phases stay distinct.
+    if (type === 'text.completed' && [...turn.blocks].reverse().find(block => block.kind === 'text')?.content === content) return
     let block = turn.blocks.at(-1)
     if (type === 'text.snapshot') {
       const existing = turn.blocks.filter(item => item.kind === 'text').map(item => item.content).join('')
@@ -188,7 +191,8 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
     if (!data.already_streamed) reduceTurn(turn, { type: 'text', data: { delta: string(data.text) } })
     native.sealedText = turn.blocks.at(-1)?.id
   } else if (name === 'message.delta' || name === 'message.complete') {
-    if (native.sealedText && native.sealedText === turn.blocks.at(-1)?.id && string(data.text)) {
+    if (native.sealedText && native.sealedText === turn.blocks.at(-1)?.id && string(data.text)
+      && (name === 'message.delta' || data.text !== turn.blocks.at(-1)?.content)) {
       turn.blocks.push({ id: `block-${++turn.sequence}`, kind: 'text', content: '' })
     }
     reduceTurn(turn, { type: name === 'message.delta' ? 'text' : 'text.completed', data: name === 'message.delta' ? { delta: data.text } : { content: data.text } })
