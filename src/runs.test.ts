@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import App from './App.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
-import { api } from './lib/hermes-api'
-import { nativeOutcome } from './lib/native-admission'
 import { activeRunFor, rememberRun } from './lib/active-runs'
 const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'content-type': 'application/json' } })
 const caps = { features: { run_events_sse: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' } } }
@@ -47,8 +45,9 @@ describe('durable Runs execution', () => {
     const f = fixture(); const wrapper = mount(App); await start(wrapper); await f.ready()
     f.frame('tool.started', 0, { tool_name: 'terminal', tool_call_id: 'call', args: { command: 'pwd' } }); await flushPromises()
     f.frame('tool.progress', 1, { tool_call_id: 'call', delta: 'arriving result' }); await flushPromises()
-    expect(wrapper.findAll('.activity').filter(row => row.text().includes('arriving result'))).toHaveLength(1)
-    expect(wrapper.findAll('.activity')).toHaveLength(2) // Initial thinking plus the one tool.
+    expect(wrapper.findAll('.working-shimmer-tool').map(row => row.text())).toEqual(['Using tool: terminal'])
+    expect(wrapper.text()).not.toContain('arriving result')
+    expect(wrapper.findAll('.activity')).toHaveLength(1) // Active tool stays inline with Working.
     f.frame('tool.completed', 2, { tool_call_id: 'call', output: 'full result' }); await flushPromises()
     expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
     expect(wrapper.text()).toContain('full result')
@@ -98,9 +97,11 @@ describe('durable Runs execution', () => {
     const f = fixture(); const wrapper = mount(App); await start(wrapper)
     await f.ready(); f.frame('reasoning.available', 0, { text: 'Consider the evidence' })
     f.frame('tool.started', 1, { tool: 'terminal', preview: 'echo hello' }); await flushPromises()
-    expect(wrapper.text()).toContain('Consider the evidence'); expect(wrapper.get('.activity[open]').text()).toContain('echo hello')
+    expect(wrapper.text()).toContain('Consider the evidence'); expect(wrapper.get('.working-shimmer-tool').text()).toBe('Using tool: terminal')
+    expect(wrapper.text()).not.toContain('echo hello')
     f.frame('tool.completed', 2, { tool: 'terminal', preview: 'hello', error: false }); await flushPromises()
     expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
+    expect(wrapper.findAll('.activity').at(-1)!.get('pre').text()).toContain('echo hello')
     f.history([{ role: 'user', content: 'Question' }, { role: 'tool', content: 'Full output hello' }, { role: 'assistant', content: 'Final answer' }])
     f.frame('run.completed', 3, { output: 'Final answer' }); await flushPromises()
     expect(wrapper.findAll('.message.assistant')).toHaveLength(1); expect(wrapper.text()).toContain('Final answer')
@@ -204,35 +205,4 @@ describe('durable Runs execution', () => {
     wrapper.unmount()
   })
 
-})
-
-
-describe('native admission foregrounding', () => {
-  it('does not replace a pending submit before its acknowledgement', async () => {
-    fixture()
-    vi.spyOn(api, 'isNative').mockReturnValue(true)
-    vi.spyOn(api, 'capabilities').mockResolvedValue({ features: { native_chat: true, session_chat_streaming: true } })
-    const status = vi.spyOn(api, 'runStatus').mockResolvedValue({ status: 'completed' })
-    let acknowledge!: () => void
-    const admitted = new Promise<void>(resolve => { acknowledge = resolve })
-    vi.spyOn(api, 'stream').mockImplementation(async function* () {
-      await admitted
-      yield { event: 'run.started', data: JSON.stringify({ run_id: 'workspace-one', status: 'streaming' }) }
-      yield { event: 'run.completed', data: '{}' }
-    })
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('#prompt').setValue('Native question')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    expect(nativeOutcome('alpha', 'one')).toBe(true)
-    const before = status.mock.calls.length
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(status.mock.calls.length).toBe(before)
-    acknowledge(); await flushPromises()
-    expect(nativeOutcome('alpha', 'one')).toBe(false)
-    expect(wrapper.find('.send-button').attributes('aria-label')).toBe('Send message')
-    wrapper.unmount()
-  })
 })

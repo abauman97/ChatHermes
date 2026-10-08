@@ -1,6 +1,52 @@
 # Dashboard plugin deployment
 
-Install `plugin/chathermes` using Hermes plugins or `npm run install:plugin` from a clone. Enable the plugin and restart the dashboard. `npm run build` rebuilds the committed assets.
+Install `plugin/chathermes` using Hermes plugins or `npm run install:plugin` from
+a clone. Hermes reads the shipped plugin-root `pyproject.toml` when installing
+through its CLI; the dashboard JSON manifest does not install Python packages.
+`npm run build` rebuilds the committed assets.
+
+Without options, `npm run install:plugin` only copies files, including the dependency declaration.
+The copy-only script prints the concrete install command for its target path.
+To copy and provision dependencies together, pass the dashboard's Python
+executable explicitly (never an unrelated shell Python):
+
+```sh
+npm run install:plugin -- /path/to/hermes-home/plugins --python /absolute/path/to/dashboard/python
+```
+
+This installs the shipped `pyproject.toml` with `uv pip --python` (or the
+selected Python's `-m pip` when uv is unavailable), then verifies both push
+imports in that runtime. Installation or import failure exits nonzero; files
+remain copied so the command can be retried. Omitting `--python` retains the
+copy-only behavior. No Hermes configuration or running service is changed.
+
+For older Hermes installers without dependency support, or existing installs
+missing Web Push, install the shipped dependency package explicitly into
+the **same Python runtime that starts the dashboard**, before restarting:
+
+```sh
+uv pip install --python /absolute/path/to/hermes/.venv/bin/python ./plugin/chathermes
+# If that runtime has pip, this is equivalent:
+/absolute/path/to/hermes/.venv/bin/python -m pip install ./plugin/chathermes
+/absolute/path/to/hermes/.venv/bin/python -c 'from pywebpush import webpush; from py_vapid import Vapid'
+```
+
+Run from the cloned repository; after copy-only installation, the installed
+`~/.hermes/plugins/chathermes` directory can replace `./plugin/chathermes`.
+Installing into an unrelated shell Python does not repair the dashboard.
+No packages are installed on import or through an HTTP request. After restart,
+check the authenticated `/api/plugins/chathermes/push/config` route: it must
+return `available: true` and a public key. An unavailable result also covers
+unwritable or invalid persistent VAPID state; never print the private state file.
+
+The dashboard loads `dashboard/plugin_api.py` into its own Python process;
+`dashboard/manifest.json` does not provision dependencies. In the pinned Hermes
+test source (`ac28abc96ce83f22f6b831f80d9007e2aba81f21`), CLI dependency consent
+is in `hermes_cli/plugins_cmd_install.py`, enable admission prepares the shared
+runtime through `hermes_cli/plugins_admission.py`, and backend imports occur in
+`hermes_cli/web_server_dashboard.py`. Copying files bypasses that admission.
+The build also copies the service worker, manifest and icons after Vite clears
+the output directory, so installed plugin distributions retain these assets.
 
 The plugin is served entirely by the Hermes dashboard. It relies on dashboard authentication for `/api/plugins/chathermes/` and proxies only explicit gateway routes. Set `platforms.api_server.enabled`, `host`, `port`, and a strong `key` in Hermes configuration. The gateway key stays server-side. Install `httpx` in the dashboard Python environment. Use the reviewed native gateway contract and session history API. The browser requires dashboard authentication and host WebSocket tickets; native admission fails closed when these are unavailable.
 
@@ -8,7 +54,9 @@ Use HTTPS when accessing the dashboard remotely. Set the host dashboard's authen
 
 File uploads are bounded, receive generated filenames, and are written under the selected Hermes profile. The agent must have access to that filesystem to read non-image files. Images use native multipart input with durable authenticated original-file references. Native camera capture is offered on supported devices.
 
-Standalone SPA and PWA builds are no longer supported.
+See [PWA and Web Push setup](push-notifications.md) for HTTPS/iOS requirements,
+the explicit enable flow, dependency installation, persistent VAPID state,
+notification privacy, and troubleshooting.
 
 ## Native rollout gate
 

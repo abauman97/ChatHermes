@@ -3,6 +3,8 @@ import select
 import socket
 import socketserver
 import threading
+import os
+from urllib.parse import urlsplit
 
 
 class Relay(socketserver.BaseRequestHandler):
@@ -14,7 +16,9 @@ class Relay(socketserver.BaseRequestHandler):
             pass
 
     def relay(self):
-        with socket.create_connection(('hermes', self.server.server_address[1]), timeout=10) as upstream:
+        target = urlsplit(os.environ.get('CHATHERMES_RELAY_UPSTREAM', ''))
+        host, port = (target.hostname, target.port) if target.hostname else ('hermes', self.server.server_address[1])
+        with socket.create_connection((host, port), timeout=10) as upstream:
             upstream.settimeout(None)
             peers = {self.request: upstream, upstream: self.request}
             while peers:
@@ -33,7 +37,8 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
-for port in (8642, 9119):
+ports = (9119,) if os.environ.get('CHATHERMES_RELAY_UPSTREAM') else (8642, 9119)
+for port in ports:
     server = Server(('0.0.0.0', port), Relay)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 threading.Event().wait()

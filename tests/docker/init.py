@@ -15,6 +15,9 @@ if config_data:
     shutil.copyfile(home / '.chathermes-config.yaml', '/test/config.yaml')
     (home / '.chathermes-config.yaml').unlink()
 shutil.copyfile('/test/config.yaml', home / 'config.yaml')
+# Dashboard auth providers are launched from the top-level Hermes home. The
+# pinned test runtime requires the bundled provider to be explicitly enabled.
+config_path = home / 'config.yaml'
 real = os.environ.get('CHATHERMES_TEST_REAL') == '1'
 # Real credentials stay in the process environment. The pin's multiplexer reads
 # credentials from profile .env files, so real integration uses the default

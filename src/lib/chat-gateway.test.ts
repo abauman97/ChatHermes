@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chatCapabilities, probeChatGateway } from './chat-gateway'
-const contract = { protocol: 'chathermes.chat.v1', mode: 'native-bounded', admission: true, reviewed_source: 'pin', operations: ['gateway.ping'], blockers: ['snapshot_replay_boundary'], guarantees: { crash_safe_idempotency: false, lossless_snapshot_replay: false, offline_turn_lease: false } }
+const contract = { protocol: 'chathermes.chat.v2', mode: 'native-retained', admission: true, reviewed_source: 'pin', operations: ['gateway.ping'], blockers: ['snapshot_replay_boundary'], guarantees: { crash_safe_idempotency: false, lossless_snapshot_replay: false, offline_turn_lease: true } }
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('native chat rollout gate', () => {
   it('requires the reviewed version and refuses unimplemented admission guarantees', () => {
     expect(chatCapabilities(contract)).toEqual(contract)
-    for (const invalid of [null, {}, { ...contract, admission: false }, { ...contract, protocol: 'other' }, { ...contract, guarantees: {} }, { ...contract, guarantees: { ...contract.guarantees, offline_turn_lease: true } }])
+    for (const invalid of [null, {}, { ...contract, admission: false }, { ...contract, protocol: 'other' }, { ...contract, guarantees: {} }, { ...contract, guarantees: { ...contract.guarantees, offline_turn_lease: false } }])
       expect(() => chatCapabilities(invalid)).toThrow('Unsupported native chat contract')
   })
   it('authenticates same-origin, correlates only responses and closes the probe', async () => {

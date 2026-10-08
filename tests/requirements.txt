@@ -1,3 +1,6 @@
 pytest==9.0.2
 fastapi==0.133.1
 httpx==0.28.1
+
+# Install the same Web Push dependency package shipped to Hermes.
+./plugin/chathermes

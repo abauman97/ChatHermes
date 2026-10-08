@@ -1,4 +1,3 @@
-import { NativeError, nativeViewer, closeNativeViewer } from './native-chat'
 import { probeChatGateway } from './chat-gateway'
 import type { Capabilities, Message, Session, SessionPage, Attachment, ModelOption, ModelInventory, Project, ProjectTree, ProjectAction, RunState, ScheduledJob, ScheduledRunPage, ScheduledOutput } from '../types/hermes'
 import { readSSE, type SSEEvent } from './sse'
@@ -9,7 +8,7 @@ const workspaceKey = (profile: string, id: string) => JSON.stringify([profile, i
 const ROOT = '/api/plugins/chathermes'
 function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile)) throw new Error('Invalid profile name')
-  if (!/^\/(?:chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
+  if (!/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(path)) throw new Error('Invalid Hermes API path.')
   return ROOT + path + (profile ? `${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}` : '')
 }
 async function directFetch(profile: string, path: string, options: RequestInit = {}, accept = 'application/json'): Promise<Response> {
@@ -50,7 +49,6 @@ export const api = {
   // Explicit inspection only. No silent switch or mutation retry after admission.
   nativeChatCapabilities: probeChatGateway,
   isNative: (profile: string) => nativeProfiles.has(profile),
-  closeNative: closeNativeViewer,
   profiles: async () => { const response = await fetch(ROOT + '/profiles', { credentials: 'same-origin', cache: 'no-store' }); if (!response.ok) throw new ApiError(response.status, 'Could not load profiles'); return response.json() as Promise<{ profiles: { name: string }[] }> },
   scheduled: (profile: string, signal?: AbortSignal) => request<{ jobs: ScheduledJob[] }>(profile, '/scheduled', { signal }),
   scheduledRuns: (profile: string, job: string, offset = 0, signal?: AbortSignal) => request<ScheduledRunPage>(profile, `/scheduled/runs?job_id=${encodeURIComponent(job)}&offset=${offset}`, { signal }),
@@ -61,6 +59,8 @@ export const api = {
     if (result.project?.id !== id || typeof result.project.label !== 'string') throw new Error('Invalid Hermes Project response')
     return result.project
   },
+  projectInstructions: (profile: string, id: string, signal?: AbortSignal) => request<{ filename: string; content: string; revision: string | null }>(profile, `/project-instructions?project_id=${encodeURIComponent(id)}`, { signal }),
+  saveProjectInstructions: (profile: string, id: string, body: { filename: string; content: string; revision: string | null }) => request<{ filename: string; content: string; revision: string }>(profile, `/project-instructions?project_id=${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
   projectManage: (profile: string, action: ProjectAction, fields: Record<string, string | boolean>) => request<{ project?: { id: string } }>(profile, '/projects/manage', { method: 'POST', body: JSON.stringify({ action, ...fields }) }),
   isWorkspace(profile: string, id: string) { return workspaceSessions.has(workspaceKey(profile, id)) },
   workspace(profile: string, id: string) { workspaceSessions.add(workspaceKey(profile, id)) },
@@ -115,15 +115,6 @@ export const api = {
     }
   },
   async *stream(profile: string, session: string, input: unknown, signal?: AbortSignal, model?: string, provider?: string): AsyncGenerator<SSEEvent> {
-    if (nativeProfiles.has(profile)) {
-      let viewer
-      try { viewer = await nativeViewer(profile, session) }
-      catch { throw new NativeError('Message not submitted. Native viewer unavailable; reconnect and try again.', 'rejected') }
-      const result = await viewer.rpc('chat.submit', { input, ...(model ? { model, ...(provider ? { provider } : {}) } : {}) })
-      yield { event: 'run.started', data: JSON.stringify({ run_id: 'workspace-' + session, status: result.status }) }
-      if (result.status === 'queued') yield { event: 'native.notice', data: JSON.stringify({ text: 'Hermes queued this message behind another viewer’s turn.' }) }
-      yield* viewer.events(signal); return
-    }
     const response = await directFetch(profile, `/${workspaceSessions.has(workspaceKey(profile, session)) ? 'workspace' : 'api'}/sessions/${encodeURIComponent(session)}/chat/stream`, { method: 'POST', body: JSON.stringify({ input, ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}) }), signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
@@ -138,20 +129,15 @@ export const api = {
     return result
   },
   approve: async (profile: string, run: string, choice: string, requestId?: string) => {
-    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.answer', { request_id: requestId, result: { choice } })
     return request(profile, `/v1/runs/${encodeURIComponent(run)}/approval`, { method: 'POST', body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }) })
   },
-  clarify: async (profile: string, run: string, requestId: string, answers: Record<string, string>) => (await nativeViewer(profile, run.slice(10))).rpc('chat.answer', { request_id: requestId, result: { answers } }),
   steer: async (profile: string, run: string, input: string) => {
-    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.steer', { text: input })
     return request(profile, `/v1/runs/${encodeURIComponent(run)}/steer`, { method: 'POST', body: JSON.stringify({ input }) })
   },
   runStatus: async (profile: string, run: string, signal?: AbortSignal): Promise<RunState> => {
-    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).status()
     return request<RunState>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}` : `/v1/runs/${encodeURIComponent(run)}`, { signal })
   },
   async *runEvents(profile: string, run: string, signal?: AbortSignal, lastSeq = -1): AsyncGenerator<SSEEvent> {
-    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) { yield* (await nativeViewer(profile, run.slice(10))).events(signal); return }
     const response = await directFetch(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events` : `/v1/runs/${encodeURIComponent(run)}/events?last_seq=${lastSeq}`, { signal }, 'text/event-stream')
     if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`)
     if (!response.body) throw new Error('Stream unavailable')
@@ -162,7 +148,6 @@ export const api = {
     }
   },
   stop: async (profile: string, run: string) => {
-    if (nativeProfiles.has(profile) && run.startsWith('workspace-')) return (await nativeViewer(profile, run.slice(10))).rpc('chat.stop')
     return request<{ status: string }>(profile, run.startsWith('workspace-') ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop` : `/v1/runs/${encodeURIComponent(run)}/stop`, { method: 'POST' })
   },
 }

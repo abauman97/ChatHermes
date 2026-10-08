@@ -1,13 +1,39 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatComposer from './ChatComposer.vue'
 describe('composer', () => {
-  it('sends on Enter and keeps Shift+Enter for a newline', async () => {
+  it('leaves Enter, Shift+Enter and composition to native newline handling; only the button sends', async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } })
-    const area = wrapper.get('textarea'); await area.setValue('hello')
-    await area.trigger('keydown', { key: 'Enter', shiftKey: true }); expect(wrapper.emitted('send')).toBeUndefined()
-    await area.trigger('keydown', { key: 'Enter' }); expect(wrapper.emitted('send')?.[0]).toEqual(['hello', []])
+    const area = wrapper.get('textarea'); await area.setValue('hello\nworld')
+    for (const extra of [{}, { shiftKey: true }, { isComposing: true }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...extra })
+      area.element.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    expect(wrapper.emitted('send')).toBeUndefined()
+    await wrapper.get('.send-button').trigger('click')
+    expect(wrapper.emitted('send')).toEqual([['hello\nworld', []]])
+    expect(wrapper.get('.send-button').attributes('type')).toBe('button')
+    wrapper.unmount()
+  })
+  it('resizes for drafts, caps at eight rows and shrinks after sending', async () => {
+    const wrapper = mount(ChatComposer, { attachTo: document.body, props: { disabled: false, sending: false } })
+    const area = wrapper.get('textarea').element as HTMLTextAreaElement
+    area.style.lineHeight = '24px'; area.style.padding = '4px'
+    let height = 80
+    Object.defineProperty(area, 'scrollHeight', { get: () => height })
+    await wrapper.setProps({ suggestedPrompt: 'three rows' })
+    expect(area.style.height).toBe('80px')
+    height = 300
+    await wrapper.get('textarea').setValue('long draft')
+    expect(area.style.height).toBe('200px')
+    expect(area.style.overflowY).toBe('auto')
+    height = 32
+    await wrapper.get('.send-button').trigger('click')
+    expect(area.style.height).toBe('32px')
+    expect(area.style.overflowY).toBe('hidden')
+    wrapper.unmount()
   })
 })
 
@@ -34,10 +60,45 @@ describe('composer availability', () => {
     await button.trigger('click')
     expect(wrapper.emitted('stop')).toHaveLength(1)
   })
+  it('reactivates the button when loading and run gates clear, including a draft typed during a run', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: true, sending: false } })
+    await wrapper.get('textarea').setValue('draft')
+    const button = wrapper.get('.send-button')
+    expect(button.attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ disabled: false, sending: true, stoppable: false })
+    expect(button.attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ sending: false })
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('send')).toEqual([['draft', []]])
+    wrapper.unmount()
+  })
+  it('releases the reading gate after an aborted attachment', async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } })
+    let reader: { onabort?: () => void } = {}
+    vi.stubGlobal('FileReader', class {
+      onabort?: () => void
+      constructor() { reader = this }
+      readAsDataURL() {}
+    })
+    try {
+      await wrapper.get('textarea').setValue('draft')
+      const input = wrapper.get('input[aria-label="Upload files"]')
+      Object.defineProperty(input.element, 'files', { value: [new File(['data'], 'test.txt')] })
+      await input.trigger('change')
+      expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
+      reader.onabort?.()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(wrapper.get('[role="alert"]').text()).toContain('cancelled')
+      expect(wrapper.get('.send-button').attributes('disabled')).toBeUndefined()
+      await wrapper.get('.send-button').trigger('click')
+      expect(wrapper.emitted('send')).toEqual([['draft', []]])
+    } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+  })
   it('retains ordinary send behavior outside a run', async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } })
     await wrapper.get('textarea').setValue('hello')
-    await wrapper.get('form').trigger('submit')
+    await wrapper.get('.send-button').trigger('click')
     expect(wrapper.emitted('send')?.[0]).toEqual(['hello', []])
     expect(wrapper.emitted('steer')).toBeUndefined()
   })

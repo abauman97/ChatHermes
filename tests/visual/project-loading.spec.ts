@@ -3,6 +3,13 @@ import { expect, test } from '@playwright/test'
 
 test('loaded Projects do not shift during background refreshes', async ({ page }, testInfo) => {
   await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
+  // This test holds legacy visibility refreshes; native event refreshes have
+  // separate runtime coverage. Keep project responses authenticated and real.
+  await page.route('**/api/plugins/chathermes/v1/capabilities**', async route => {
+    const response = await route.fetch()
+    const body = await response.json()
+    await route.fulfill({ json: { ...body, features: { ...body.features, native_chat: false } } })
+  })
   await signIn(page, '/chathermes?view=projects')
   await page.waitForURL(url => url.pathname !== '/login')
   const plugin = page.locator('.chathermes-embedded')
@@ -25,7 +32,7 @@ test('loaded Projects do not shift during background refreshes', async ({ page }
     await route.fulfill({ response })
   })
   for (const archived of [false, true]) {
-    await projects.getByRole('button', { name: archived ? 'Archived' : 'Active', exact: true }).click()
+    await plugin.getByRole('button', { name: 'Screen options', exact: true }).click(); await plugin.getByRole('menuitemradio', { name: archived ? 'Archived projects' : 'Active projects', exact: true }).click()
     await expect.poll(() => pending).toBe(true)
     const list = projects.getByRole('navigation', { name: 'Project list' })
     const before = await list.boundingBox()
@@ -39,11 +46,11 @@ test('loaded Projects do not shift during background refreshes', async ({ page }
   }
   release()
   await page.unrouteAll({ behavior: 'wait' })
-  await projects.getByRole('button', { name: 'Active', exact: true }).click()
+  await plugin.getByRole('button', { name: 'Screen options', exact: true }).click(); await plugin.getByRole('menuitemradio', { name: 'Active projects', exact: true }).click()
   await projects.getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
   const detail = plugin.getByRole('region', { name: 'Selected Project' })
-  await expect(detail.getByRole('heading', { name: 'Hermes Mobile', exact: true })).toBeVisible()
-  const heading = detail.getByRole('heading', { name: 'Hermes Mobile', exact: true })
+  await expect(plugin.locator('.topbar h1')).toBeVisible()
+  const heading = plugin.locator('.topbar h1')
   const before = await heading.boundingBox()
   let finish!: () => void
   const detailGate = new Promise<void>(resolve => { finish = resolve })

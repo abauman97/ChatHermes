@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/ac28abc96ce83f22f6b831f80d9007e2aba81f21/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
 | Operation | Hermes route | Request | Expected response |
 | --- | --- | --- | --- |
@@ -17,67 +17,86 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | Stop | `POST /v1/runs/{run_id}/stop` | None | `{ "run_id":…, "status":"stopping" }` or existing terminal status |
 | Capabilities | `GET /v1/capabilities` | None | Feature and endpoint flags |
 
-## Native rollout gate (2026-10-04)
+## Native session transport (2026-10-05)
 
-New Other and Project turns use the authenticated plugin native socket on the
-unchanged reviewed Hermes pin. Persisted transcripts remain Hermes history;
-existing REST run pointers drain through Runs. Native failures never resubmit
-through another transport. This is bounded native mode, with explicit weaker
-recovery semantics, rather than exactly-once admission or an owner lease.
+New Other and Project turns use the authenticated plugin native socket. Existing
+REST run pointers drain through Runs; native chat does not use Runs identities,
+SSE normalization, status polling or a completion-polling fallback. Vue mounts
+through the host plugin SDK and retains no credentials or transcript journal.
 
 `GET /api/plugins/chathermes/chat/capabilities` returns
-`protocol: "chathermes.chat.v1"`, `mode: "native-bounded"`, `admission: true`,
-queue-only busy sends, images, approval/clarify support, and the reviewed source
-ID (a contract reference, not runtime attestation). `crash_safe_idempotency`,
-`lossless_snapshot_replay`, and `offline_turn_lease` are explicitly false.
-The normal capability proxy adds `features.native_chat` for controller selection.
-Unsupported native operations remain unavailable; no generic RPC forwarding exists.
+`protocol: "chathermes.chat.v2"`, `mode: "native-retained"`, `admission: true`,
+explicit busy queue choice, images and approval/clarify support. The reviewed
+source is a contract reference, not runtime attestation. `offline_turn_lease` is
+true for sessions retained in this dashboard process; `crash_safe_idempotency`
+and `lossless_snapshot_replay` remain false. External turns can predate ownership
+and native snapshots alone do not include the full activity timeline.
 
 The same-origin `/api/plugins/chathermes/chat/ws` requires a host-issued,
 single-use `POST /api/auth/ws-ticket` ticket in
 `["hermes-gateway-v1", "hermes-gateway-ticket.<ticket>"]` subprotocols. Host,
 Origin, identity, plugin enablement and named profile checks fail closed. Query
-credentials and cookie-only upgrades are rejected. Tickets are not persisted.
-Connections expire after 600 seconds and reconnect with a fresh ticket; this
-limits viewer authorization lifetime, not offline turn lifetime. Frames are
-limited to 29 MiB. Correlation/event buffers are bounded and redact credentials.
+credentials and cookie-only upgrades are rejected. Browser connections expire
+after 600 seconds and obtain fresh tickets. This expires viewer authorization,
+not the retained native execution. Frames are limited to 29 MiB.
 
 | JSON-RPC operation | Contract |
 | --- | --- |
-| `chat.attach` | `{session_id: stored_id}`; verifies owning profile before native `session.resume`; returns native snapshot without full messages |
-| `chat.replay` | `{last_seen: applied_seq}`; native event params, epoch, truncation and open requests |
-| `chat.submit` | Validated `{input, model?, provider?}`; session-only model selection then a single native `prompt.submit` with `queued:true` |
+| `chat.attach` | `{session_id: stored_id}`; verify profile, activate retained runtime or resume stored conversation; full native snapshot plus recovery boundary |
+| `chat.replay` | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks |
+| `chat.reconciled` | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary |
+| `chat.submit` | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
 | `chat.stop` | Empty params; native `session.interrupt` |
-| `chat.steer` | `{text}`; explicit native `session.steer`, separate from sending |
-| `chat.answer` | `{request_id,result}`; validated approval/clarify result for an open request in this attached session |
+| `chat.steer` | `{text}`; native `session.steer`, separate from sending |
+| `chat.answer` | `{request_id,result}`; validate native open approval/clarify request and result ownership |
 | `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat |
 
-Notifications are `chat.event`, `chat.request`, `chat.unsupported` and `chat.ready`.
-Requests requiring OS/credential/Desktop bridges are explicitly declined as not
-shown so another native viewer may handle them. Approval choices and clarification
-question IDs are checked against the live request; stale answers fail with 409.
+Native `event` envelopes retain runtime IDs, sequence numbers and payloads.
+Approval/clarify requests retain their JSON-RPC request IDs. Only local input and
+correction display boundaries use `chat.input`/`chat.correction` notifications;
+`chat_offset` provides a monotonic plugin spool cursor, independent of native seq.
+The optional admission display ID correlates an optimistic bubble with its native
+input frame; it is not a durable prompt receipt or execution identity. There is
+no native-to-Runs event conversion. Other server requests are declined
+as not shown, allowing another supported native viewer to handle them.
 
-The pinned `queued:true` parameter bypasses busy interrupt/steer/redirect policy
-and queues FIFO. It is not a durable idempotency receipt. Before submitting, the
-browser persists only a profile/session/attempt outcome-unknown marker. An
-acknowledgement in one tab cannot clear another tab’s uncertain attempt. A correlated
-acknowledgement clears it; a known rejection restores the draft. Timeout or loss
-of acknowledgement keeps sending locked across reload. The user must inspect
-saved history and active native state and explicitly end verification before a
-new send. The plugin never automatically retries an uncertain prompt.
+The browser uses the vendored, unchanged Hermes `JsonRpcRequestChannel` for
+correlation, timeouts, heartbeat and open-request redelivery. One native Vue
+controller owns history/live projection, connection, pending requests and busy
+state. Recovery holds arriving live events, restores the committed-history
+prefix, replays the active chain from its retained start and releases later
+frames. It does not append an assistant snapshot on top of replayed deltas.
 
-The cursor advances from actual event objects, never the separately read
-`latest_seq`. Same-document reconnect preserves that cursor, deduplicates and
-orders replay/live events. A new document restores saved history plus native
-snapshot and open requests; the snapshot has no atomic watermark, so recovery
-warns that partial activity can be missing. Epoch/truncation changes are visible.
-Crash auto-continuation is a new continuation that may repeat external effects.
-No unchanged-turn, process-crash or lossless offline recovery guarantee is made.
+One in-process owner per profile/stored session retains the native transport.
+Browser disconnect removes only a subscriber. Sanitized raw active-chain frames
+are retained in private anonymous temporary files, paged in 512 KiB batches.
+Successful terminal history reconciliation deletes the retained data. Disconnected
+terminal leftovers expire after 24 hours; active execution, queued work or tracked
+delegation prevents expiry. Owners close on dashboard shutdown. Storage failure
+surfaces degraded recovery while live execution continues. Slow viewer overflow
+closes that viewer, preserving the owner and replay. The registry admits at most
+64 owners. No second backend, runtime, core patch or global orphan-policy change
+is involved.
 
-Viewer detach follows Hermes's orphan reaper: the default grace is 20 seconds;
-recent active work can defer closure while native activity freshness is within
-600 seconds. This is not an unconditional 600-second guarantee. Another attached
-viewer keeps the native session attached. ChatHermes creates no owner or lease.
+`message.complete.persisted_turn` supplies row identities and coverage evidence.
+The controller requires a complete receipt, all addressed rows and matching final
+text before retiring a live turn. Partial/failure output and steering bubbles remain inspectable when persistence
+does not cover their live display identities; these uncovered frames use the
+terminal retention limit. Reasoning availability replaces streamed reasoning;
+provider thinking/tool generation is transient status, and tool/delegation parts
+are keyed by native identity. Parent completion does not close delegated work.
+
+Prompt admission still has no durable exactly-once receipt. Before submission,
+the browser stores a profile/session/attempt uncertainty marker. Acknowledgement
+clears only its attempt; known pre-dispatch rejection unlocks the composer.
+Timeout/lost acknowledgement stays locked across reload and never auto-resubmits.
+The user must inspect history and native state before explicitly ending verification.
+
+Full recovery applies to plugin-owned turns observed from admission, while this
+dashboard process survives and recovery storage succeeds. Already-running external
+turns use native history/inflight and bounded replay, with a visible limitation.
+Process restart is a separate case; native crash continuation is not unchanged-turn
+recovery and can repeat effects. No browser journal or custom Hermes fork is required.
 
 Model selection waits for the cold native agent build through read-only
 `approval.pending`, reads current state, applies session-only `config.set` when
@@ -106,11 +125,11 @@ See [integration verification](verification/2026-10-04-persistent-tui-integratio
 ## Legacy Runs contract and pending-turn drain
 
 Before implementation, the pinned source archive was downloaded and inspected:
-[`api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/gateway/platforms/api_server_runs.py)
+[`api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/ac28abc96ce83f22f6b831f80d9007e2aba81f21/gateway/platforms/api_server_runs.py)
 (`_handle_runs`, `_accepted_response`, `_handle_get_run`, `_handle_run_events`,
 `_handle_run_approval`, `_handle_steer_run`, `_handle_stop_run`), the capabilities
 and route tables in `api_server.py`, and
-[`test_api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/3632f9173d218fd24f3fa595d7affa159b0774cd/tests/gateway/test_api_server_runs.py).
+[`test_api_server_runs.py`](https://github.com/NousResearch/hermes-agent/blob/ac28abc96ce83f22f6b831f80d9007e2aba81f21/tests/gateway/test_api_server_runs.py).
 Relevant upstream tests include `test_start_returns_202`,
 `test_status_reflects_explicit_session_id`,
 `test_start_passes_request_model_provider_options_to_create_agent`,
@@ -186,7 +205,7 @@ Workspace/session-stream `tool.started` carries `tool_name`, `args`, and `previe
 
 ## Test environment
 
-The Docker launcher pins Hermes revision `3632f9173d218fd24f3fa595d7affa159b0774cd` on a digest-pinned runtime image. Runtime state is isolated in a named volume. See README for commands and model endpoint configuration.
+The Docker launcher pins Hermes revision `ac28abc96ce83f22f6b831f80d9007e2aba81f21` on a digest-pinned runtime image. Runtime state is isolated in a named volume. See README for commands and model endpoint configuration.
 
 ## Project metadata and legacy workspace RPC adapter
 
@@ -255,3 +274,20 @@ RPC display projection omits terminal and most other tool results; using REST fo
 history preserves completed disclosure output and attachments. Only a 404 for a
 known workspace draft falls back to the native resume transcript. No non-404
 history error or different profile silently switches transport.
+
+The project instructions editor uses authenticated `GET` and `PUT
+/project-instructions?project_id=…` routes. The selected profile's native Project
+lookup supplies the workspace; the browser cannot supply a directory. Within that
+directory, the first existing file wins in this order: `.hermes.md`, `HERMES.md`,
+`AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`. When none exists,
+GET returns an empty draft and PUT creates `.hermes.md`. This editor targets the
+project directory; it does not edit inherited instructions in parent directories.
+
+GET returns `{filename, content, revision}`; PUT accepts exactly those fields.
+`revision` is a SHA-256 digest of the loaded bytes, or null for a new file. A file
+change or a newly discovered higher-priority file returns 409 and retains the
+browser draft. Content must be UTF-8 and at most 128 KiB. Symlinks, hard links,
+non-regular files and unavailable local workspaces are rejected. Filesystem
+errors are generic. Editing instructions does not move or resume any session;
+Hermes's existing context loader consumes the saved file on subsequent context
+loads. Project details and instructions pages retain profile/project URL scope.

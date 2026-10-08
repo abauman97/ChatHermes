@@ -37,7 +37,7 @@ test('native gate uses host tickets, refuses reused credentials and reports boun
   await login(page)
   const result = await page.request.get('/api/plugins/chathermes/chat/capabilities')
   expect(result.status()).toBe(200)
-  expect(await result.json()).toMatchObject({ protocol: 'chathermes.chat.v1', mode: 'native-bounded', admission: true })
+  expect(await result.json()).toMatchObject({ protocol: 'chathermes.chat.v2', mode: 'native-retained', admission: true })
   const issued = await ticket(page)
   expect(await connect(page, issued)).toEqual({ accepted: true, admission: true })
   expect(await connect(page, issued)).toEqual({ accepted: false })

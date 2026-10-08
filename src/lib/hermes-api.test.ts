@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, ApiError, messageText } from './hermes-api'
-import * as native from './native-chat'
 afterEach(() => { vi.unstubAllGlobals() })
 describe('dashboard plugin Hermes client', () => {
   it('uses same-origin plugin URLs and browser session cookies without Bearer credentials', async () => {
@@ -73,20 +72,4 @@ it('wraps Runs image parts in a user message and sends authenticated actions and
   expect(fake.mock.calls.at(-1)?.[0]).toBe('/api/plugins/chathermes/v1/runs/run_1/events?last_seq=42&profile=alpha')
   expect(frames[0]?.id).toBe('43'); expect(frames[0]?.event).toBe('message.delta')
   expect(fake.mock.calls.every(([, init]) => init?.credentials === 'same-origin')).toBe(true)
-})
-
-
-it('rejects failed native attach before submission but preserves lost submit uncertainty', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ features: { native_chat: true } }))))
-  const profile = 'first-send-regression'
-  await api.capabilities(profile)
-  const open = vi.spyOn(native, 'nativeViewer').mockRejectedValue(new native.NativeError('Native viewer disconnected'))
-  const first = api.stream(profile, 'draft', 'hello')
-  try {
-    await expect(first.next()).rejects.toMatchObject({ outcome: 'rejected', message: expect.stringContaining('Message not submitted') })
-    const submit = vi.fn().mockRejectedValue(new native.NativeError('Lost acknowledgement'))
-    open.mockResolvedValue({ rpc: submit } as unknown as native.NativeViewer)
-    await expect(api.stream(profile, 'draft', 'hello').next()).rejects.toMatchObject({ outcome: 'unknown' })
-    expect(submit).toHaveBeenCalledExactlyOnceWith('chat.submit', { input: 'hello' })
-  } finally { open.mockRestore() }
 })

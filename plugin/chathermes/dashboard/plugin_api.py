@@ -2,10 +2,12 @@
 
 import os
 import re
+import sys
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 try:
     import httpx
@@ -15,6 +17,128 @@ except ImportError:  # The dashboard can still start and show an actionable erro
 router = APIRouter()
 _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
 _AUTH_ERROR = "Hermes gateway authentication failed; check platforms.api_server.key"
+_push_store_module = None
+_push_sender_module = None
+
+
+def _load_sibling(name):
+    import importlib.util
+    path = Path(__file__).with_name(name + '.py')
+    spec = importlib.util.spec_from_file_location('chathermes_' + name, path, submodule_search_locations=[str(path.parent)])
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _push_store():
+    if _push_store_module is None:
+        raise HTTPException(503, 'Push storage unavailable')
+    return _push_store_module
+
+
+@router.get('/push/config')
+async def push_config():
+    return _push_store().config()
+
+
+@router.post('/push/test')
+async def push_test(request: Request):
+    """Inherits dashboard authentication, just like the subscription routes."""
+    from starlette.concurrency import run_in_threadpool
+    import secrets
+    profile = _rpc_profile(request)
+    try:
+        if not (await run_in_threadpool(_push_store().config)).get('available') or _push_sender_module is None:
+            raise HTTPException(503, 'Push notifications are unavailable')
+        if _push_sender_module.notify(profile, '', 'test', secrets.token_urlsafe(18), request=request) is not True:
+            raise HTTPException(503, 'Could not schedule test notification')
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Could not schedule test notification') from None
+    return {'scheduled': True}
+
+
+@router.get('/assets/dist/{file_path:path}')
+async def pwa_asset(file_path: str, request: Request):
+    """Serve only shipped PWA assets through the authenticated plugin API."""
+    from fastapi.responses import FileResponse
+
+    root = Path(__file__).resolve().parent / 'dist'
+    target = (root / file_path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise HTTPException(404, 'Asset not found')
+
+    media_types = {
+        '.webmanifest': 'application/manifest+json',
+        '.png': 'image/png',
+    }
+    media_type = media_types.get(target.suffix.lower())
+    if media_type is None:
+        raise HTTPException(404, 'Asset not found')
+    return FileResponse(target, media_type=media_type, headers={
+        'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+    })
+
+
+@router.get('/push-service-worker.js')
+async def push_service_worker():
+    from fastapi.responses import FileResponse
+    path = Path(__file__).with_name('dist') / 'push-service-worker.js'
+    return FileResponse(path, media_type='application/javascript', headers={
+        'Service-Worker-Allowed': '/chathermes', 'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff'})
+
+
+@router.post('/push/subscriptions')
+async def push_subscribe(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 8192:
+            raise HTTPException(413, 'Push subscription is too large')
+    try:
+        import json
+        body = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, 'Invalid push subscription')
+    try:
+        result = await run_in_threadpool(_push_store().upsert, _rpc_profile(request), body)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(422, str(error))
+    return result
+
+
+@router.post('/push/status')
+async def push_status(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    profile = _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 8192:
+            raise HTTPException(413, 'Push status request is too large')
+    try:
+        import json
+        body = json.loads(raw)
+        endpoint = body['endpoint']
+        if set(body) != {'endpoint'} or not isinstance(endpoint, str) or len(endpoint) > 2048:
+            raise ValueError()
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        raise HTTPException(422, 'Invalid push status request') from None
+    return await run_in_threadpool(_push_store().status, profile, endpoint)
+
+
+@router.delete('/push/subscriptions/{identity}')
+async def push_unsubscribe(request: Request, identity: str):
+    from starlette.concurrency import run_in_threadpool
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', identity):
+        raise HTTPException(422, 'Invalid subscription identity')
+    removed = await run_in_threadpool(_push_store().remove, _rpc_profile(request), identity)
+    return {'removed': removed}
 
 
 def _gateway_settings():
@@ -376,7 +500,6 @@ async def native_image(request: Request, file_id: str):
 # relative to this trusted plugin directory, never through sys.path/CWD.
 def _load_sibling(name):
     import importlib.util
-    from pathlib import Path
     spec = importlib.util.spec_from_file_location('chathermes_' + name, Path(__file__).with_name(name + '.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -389,7 +512,11 @@ _CwdExplicitUnsupported = _gateway_transport._CwdExplicitUnsupported
 _InlineImagesUnsupported = _gateway_transport._InlineImagesUnsupported
 
 _chat_gateway = _load_sibling('chat_gateway')
+_native_owners = _load_sibling('native_owners')
+_push_store_module = _load_sibling('push_store')
+_push_sender_module = _load_sibling('push_sender')
 _native_channel = _load_sibling('native_channel')
+router.add_event_handler('shutdown', _native_owners.shutdown)
 
 
 @router.get('/chat/capabilities')
@@ -467,6 +594,111 @@ async def project(request: Request, project_id: str):
     if row is None:
         raise HTTPException(404, 'Project no longer exists')
     return {'project': _project_node(row, node)}
+
+
+# Directory instruction precedence requested by the project editor. Only these
+# fixed filenames in the authoritative workspace are accessible to the browser.
+_INSTRUCTION_NAMES = ('.hermes.md', 'HERMES.md', 'AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.cursorrules')
+_INSTRUCTION_LIMIT = 128 * 1024
+
+
+def _project_instructions_sync(root, body=None):
+    import hashlib
+    import stat
+    import fcntl
+    try:
+        directory = Path(root).expanduser().resolve(strict=True)
+        if not directory.is_dir():
+            raise HTTPException(409, 'The Project workspace is unavailable')
+        # Resolve filenames through an open directory, never a client path. Refuse
+        # links (including dangling links), non-regular files, and oversized files.
+    except (OSError, ValueError):
+        raise HTTPException(409, 'The Project workspace is unavailable')
+    try:
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    except OSError:
+        raise HTTPException(409, 'The Project workspace is unavailable')
+    try:
+        filename = next((name for name in _INSTRUCTION_NAMES
+                         if os.path.lexists(directory / name)), '.hermes.md')
+        exists = os.path.lexists(directory / filename)
+        if body is not None and (body['filename'] != filename or (body['revision'] is None) != (not exists)):
+            raise HTTPException(409, 'Instructions changed. Reload before saving.')
+        if not exists and body is None:
+            return {'filename': filename, 'content': '', 'revision': None}
+        flags = os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_RDONLY if body is None else os.O_RDWR)
+        if not exists:
+            flags |= os.O_CREAT | os.O_EXCL
+        fd = os.open(filename, flags, 0o644, dir_fd=directory_fd)
+        with os.fdopen(fd, 'rb' if body is None else 'r+b') as handle:
+            fcntl.flock(handle, fcntl.LOCK_SH if body is None else fcntl.LOCK_EX)
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise HTTPException(409, 'Instructions must be a regular workspace file')
+            raw = handle.read(_INSTRUCTION_LIMIT + 1)
+            if len(raw) > _INSTRUCTION_LIMIT:
+                raise HTTPException(413, 'Instructions are too large to edit')
+            revision = hashlib.sha256(raw).hexdigest() if exists else None
+            if body is not None:
+                if body['revision'] != revision:
+                    raise HTTPException(409, 'Instructions changed. Reload before saving.')
+                raw = body['content'].encode('utf-8')
+                handle.seek(0)
+                handle.write(raw)
+                handle.truncate()
+                handle.flush()
+                os.fsync(handle.fileno())
+                revision = hashlib.sha256(raw).hexdigest()
+            return {'filename': filename, 'content': raw.decode('utf-8'), 'revision': revision}
+    except HTTPException:
+        raise
+    except (OSError, ValueError, UnicodeError):
+        # Do not return filesystem paths, file contents, or raw OS diagnostics.
+        raise HTTPException(409, 'Could not access the workspace instructions')
+    finally:
+        os.close(directory_fd)
+
+
+async def _project_instructions(request, project_id, body=None):
+    from starlette.concurrency import run_in_threadpool
+    result = await project(request, project_id)
+    node = result['project']
+    root = node.get('path') or next((repo['path'] for repo in node.get('repos', []) if repo.get('path')), None)
+    if not root or node.get('isNoProject'):
+        raise HTTPException(409, 'This Project has no workspace')
+    return await run_in_threadpool(_project_instructions_sync, root, body)
+
+
+@router.get('/project-instructions')
+async def project_instructions(request: Request, project_id: str):
+    return await _project_instructions(request, project_id)
+
+
+@router.put('/project-instructions')
+async def save_project_instructions(request: Request, project_id: str):
+    _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > _INSTRUCTION_LIMIT * 6 + 1024:
+            raise HTTPException(413, 'Instructions are too large to edit')
+    try:
+        import json
+        body = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, 'Invalid instructions')
+    if (not isinstance(body, dict) or set(body) != {'content', 'filename', 'revision'}
+            or not isinstance(body['content'], str) or body['filename'] not in _INSTRUCTION_NAMES
+            or (body['revision'] is not None and (not isinstance(body['revision'], str)
+                or not re.fullmatch(r'[a-f0-9]{64}', body['revision'])))):
+        raise HTTPException(422, 'Invalid instructions')
+    try:
+        size = len(body['content'].encode('utf-8'))
+    except UnicodeError:
+        raise HTTPException(422, 'Invalid instructions')
+    if size > _INSTRUCTION_LIMIT:
+        raise HTTPException(413, 'Instructions are too large to edit')
+    return await _project_instructions(request, project_id, body)
 
 
 @router.post('/projects/manage')

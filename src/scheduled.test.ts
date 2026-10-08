@@ -50,7 +50,7 @@ it('puts Scheduled below Projects, gates sending and drafts a separate chat', as
   vi.spyOn(api, 'create').mockImplementation(() => new Promise(resolve => { finish = resolve }))
   await wrapper.findAll('button').find(row => row.text() === 'Open a chat about this run')!.trigger('click'); await flushPromises()
   await wrapper.get('#profile-field').setValue(''); await flushPromises()
-  expect(wrapper.get('.new-chat-nav').attributes('disabled')).toBeUndefined()
+  expect(wrapper.get('.drawer-chat').attributes('disabled')).toBeUndefined()
   finish({ id: 'stale_profile_draft' }); await flushPromises()
   expect(new URLSearchParams(location.search).get('session')).toBeNull()
   expect((wrapper.get('.composer textarea').element as HTMLTextAreaElement).value).toBe('')

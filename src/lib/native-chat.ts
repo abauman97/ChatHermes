@@ -1,210 +1,163 @@
-import type { SSEEvent } from './sse'
-type ObjectValue = Record<string, any>
+import { JsonRpcRequestChannel, JsonRpcGatewayError } from '../vendor/hermes/json-rpc-channel'
+import { reconnectBackoffDelayMs } from '../vendor/hermes/reconnect-backoff'
+import type { GatewayEvent } from '../vendor/hermes/gateway-events'
+import type { SessionResumeResult, OpenRequestEntry } from '../vendor/hermes/gateway-contract.generated'
+
 export class NativeError extends Error {
   outcome: string
   constructor(message: string, outcome = 'unknown') { super(message); this.outcome = outcome }
 }
-export function appliedCursor(events: ObjectValue[], cursor: number): number {
-  return events.reduce((last, event) => Number.isSafeInteger(event.seq) ? Math.max(last, event.seq) : last, cursor)
+export interface Recovery { epoch: string; start?: number; through: number; base_row_ids: string[] | null; complete: boolean }
+export type NativeSnapshot = SessionResumeResult & { recovery: Recovery }
+export interface NativeHooks {
+  snapshot: (snapshot: NativeSnapshot) => void
+  event: (event: GatewayEvent) => void
+  input: (text: string, correction: boolean, admissionId?: string) => void
+  requests: (requests: OpenRequestEntry[]) => void
+  connection: (state: 'connecting' | 'recovering' | 'open' | 'closed', error?: string) => void
+  recovered: () => void
 }
-export function nativeFrame(event: ObjectValue, stored: string): SSEEvent | undefined {
-  const p = event.payload || {}, name = event.type
-  const data: ObjectValue = { ...p, run_id: 'workspace-' + stored, ...(typeof event.seq === 'number' ? { seq: event.seq } : {}) }
-  let mapped = name
-  if (name === 'message.delta') { mapped = 'assistant.delta'; data.delta = p.text || '' }
-  if (name === 'message.complete') {
-    mapped = p.status === 'complete' ? 'run.completed' : p.status === 'interrupted' ? 'run.cancelled' : 'run.failed'
-    data.output = p.text
-  }
-  if (name === 'tool.start' || name === 'tool.generating' || name === 'tool.complete' || name === 'tool.progress') {
-    mapped = name === 'tool.complete' ? p.is_error ? 'tool.failed' : 'tool.completed' : name === 'tool.progress' ? name : 'tool.started'
-    data.tool_name = p.name; data.tool_call_id = p.tool_id; data.preview = p.context || ''
-    data.output = p.result_text || (p.result !== undefined ? JSON.stringify(p.result) : '')
-  }
-  if (name === 'reasoning.delta' || name === 'thinking.delta' || name === 'tool.progress') data.delta = p.delta || p.text || ''
-  if (name === 'request.cancel') mapped = 'approval.responded'
-  if (name === 'error') mapped = 'run.failed'
-  if (name === 'approval.request') return // Answerable SRQ frames carry the authoritative identity.
-  if (!mapped) return
-  return { event: mapped, data: JSON.stringify(data) }
-}
-function requestFrame(request: ObjectValue, stored: string): SSEEvent {
-  return { event: 'approval.request', data: JSON.stringify({ ...request.params,
-    run_id: 'workspace-' + stored, request_id: request.id, kind: request.method }) }
-}
+type Frame = { method?: string; params?: any; chat_offset?: number }
+
+/** One authenticated viewer. RPC/heartbeat are upstream; recovery is the
+ * retained plugin owner's ordered spool, not a Runs/SSE interpretation. */
 export class NativeViewer {
   private ws?: WebSocket
-  private pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
-  private queue: SSEEvent[] = []
-  private wake?: () => void
-  private failed?: Error
-  private sequence = 0
-  private holding = true
-  private live: ObjectValue[] = []
-  private snapshot: ObjectValue = {}
-  private heartbeat?: ReturnType<typeof setInterval>
-  private cursor = 0
-  private reorder = new Map<number, ObjectValue>()
-  private epoch?: string
-  private runtime?: string
-  private first = true
+  private channel: JsonRpcRequestChannel
   private opening?: Promise<void>
   private detached = false
-  profile: string
-  stored: string
-  constructor(profile: string, stored: string) { this.profile = profile; this.stored = stored }
-  async open() {
+  private holding = true
+  private held: Frame[] = []
+  private offset = 0
+  private runtime = ''
+  private reconnect?: ReturnType<typeof setTimeout>
+  private attempts = 0
+  private hooks: NativeHooks
+  readonly profile: string
+  readonly stored: string
+  constructor(profile: string, stored: string, hooks: NativeHooks) {
+    this.profile = profile; this.stored = stored
+    this.hooks = hooks
+    this.channel = new JsonRpcRequestChannel({
+      requestIdPrefix: 'c-', heartbeatLiveness: 'any-inbound', requestTimeoutMs: 95000,
+      onHeartbeatFailure: () => { this.ws?.close(); this.disconnected() },
+    })
+    this.channel.onRequest(request => {
+      if (!['approval', 'clarify'].includes(request.method)) return false
+      // Request cards are reconciled by ID; result.open_requests is redelivered
+      // by the upstream channel before the attach promise resolves.
+      this.requestEntries.set(request.id, { id: request.id, method: request.method, params: request.params })
+      if (!this.holding) this.hooks.requests([...this.requestEntries.values()])
+      return true
+    })
+  }
+  private requestEntries = new Map<string, OpenRequestEntry>()
+  async ensure() {
+    if (this.detached) throw new NativeError('Viewer detached')
+    if (this.opening) return this.opening
+    if (this.ws?.readyState === WebSocket.OPEN && !this.holding) return
+    clearTimeout(this.reconnect)
+    this.opening = this.open()
+    try { await this.opening } catch (error) { this.ws?.close(); this.disconnected(); throw error } finally { this.opening = undefined }
+  }
+  private async open() {
+    this.hooks.connection('connecting')
     const response = await fetch('/api/auth/ws-ticket', { method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'manual' })
-    if (!response.ok) throw new NativeError('Dashboard sign-in required', 'rejected')
+    if (!response.ok || response.type === 'opaqueredirect') throw new NativeError('Dashboard sign-in required', 'rejected')
     const { ticket } = await response.json()
     if (typeof ticket !== 'string' || !ticket || ticket.length > 1024) throw new NativeError('Invalid dashboard ticket', 'rejected')
     if (this.detached) throw new NativeError('Viewer detached')
     const url = new URL('/api/plugins/chathermes/chat/ws', location.href)
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     if (this.profile) url.searchParams.set('profile', this.profile)
-    this.failed = undefined; this.holding = true
+    this.holding = true; this.held = []; this.requestEntries.clear()
     const ws = this.ws = new WebSocket(url, ['hermes-gateway-v1', 'hermes-gateway-ticket.' + ticket])
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { ws.close(); reject(new NativeError('Native viewer connection timed out')) }, 10000)
-      ws.onopen = () => { clearTimeout(timer); resolve() }
-      ws.onerror = ws.onclose = () => { clearTimeout(timer); reject(new NativeError('Native viewer disconnected')) }
-    })
-    ws.onclose = ws.onerror = () => { if (this.ws === ws) this.fail(new NativeError('Native viewer disconnected. Reconnect without resending.')) }
     ws.onmessage = event => {
       if (this.ws !== ws || this.detached) return
       try {
-        if (typeof event.data !== 'string' || event.data.length > 8 * 1024 * 1024) throw new Error()
+        if (typeof event.data !== 'string' || event.data.length > 29 * 1024 * 1024) throw new Error()
         const frame = JSON.parse(event.data)
         if (frame.jsonrpc !== '2.0' || Array.isArray(frame)) throw new Error()
-        if ('id' in frame && !frame.method) {
-          const call = this.pending.get(String(frame.id)); if (!call) return
-          clearTimeout(call.timer); this.pending.delete(String(frame.id))
-          if (frame.error) call.reject(new NativeError(frame.error.message || 'Native operation failed', frame.error.outcome || 'unknown'))
-          else call.resolve(frame.result)
-        } else if (frame.method === 'chat.event') {
-          if (this.holding) { if (this.live.length >= 512) throw new Error(); this.live.push(frame.params) }
-          else this.apply(frame.params)
-        } else if (frame.method === 'chat.request') this.push(requestFrame(frame.params, this.stored))
-        else if (frame.method === 'chat.unsupported') this.push({ event: 'native.notice', data: JSON.stringify({ text: 'This Hermes request requires Desktop: ' + frame.params.method }) })
-      } catch { this.fail(new NativeError('Native viewer data unavailable. Inspect saved history.')) }
-    }
-    this.snapshot = await this.rpc('chat.attach', { session_id: this.stored })
-    const replay = await this.rpc('chat.replay', { last_seen: this.cursor })
-    const changed = this.runtime && (this.runtime !== this.snapshot.session_id || this.epoch !== replay.epoch)
-    this.runtime = this.snapshot.session_id; this.epoch = replay.epoch
-    if (this.first || changed || replay.truncated) {
-      // No atomic watermark in this pin. A new document uses the native snapshot
-      // and explicitly warns; it never pretends replacement + replay is lossless.
-      this.cursor = appliedCursor(replay.events, 0)
-      this.reorder.clear()
-      if (this.snapshot.running || this.snapshot.pending_approval)
-        this.push({ event: 'native.notice', data: JSON.stringify({ text: 'Reconnected. Some live progress may be missing; saved messages are authoritative.' }) })
-      if (this.snapshot.inflight?.assistant)
-        this.push({ event: 'assistant.snapshot', data: JSON.stringify({ text: this.snapshot.inflight.assistant }) })
-      this.first = false
-    } else for (const event of replay.events) this.apply(event)
-    for (const request of replay.open_requests || []) if (['approval', 'clarify'].includes(request.method)) this.push(requestFrame(request, this.stored))
-    this.holding = false
-    for (const event of this.live) this.apply(event)
-    this.live = []
-    this.heartbeat = setInterval(() => {
-      void this.rpc('gateway.ping').then(() => this.rpc('chat.replay', { last_seen: this.cursor })).then(replay => {
-        if (replay.epoch !== this.epoch || replay.truncated) {
-          this.push({ event: 'native.notice', data: JSON.stringify({ text: 'Native replay expired or restarted. Partial activity is unavailable; inspect saved history.' }) })
-          this.fail(new NativeError('Native replay boundary changed')); this.ws?.close(); return
+        this.channel.handleFrame(event.data)
+        if (frame.method && !('id' in frame) && frame.method !== 'chat.ready') {
+          if (this.holding) {
+            if (this.held.length >= 2048) throw new Error()
+            this.held.push(frame)
+          } else this.apply(frame)
         }
-        for (const event of replay.events) this.apply(event)
-      }).catch(error => this.fail(error))
-    }, 15000)
-  }
-  private apply(event: ObjectValue) {
-    if (event.session_id !== this.runtime || typeof event.seq !== 'number' || event.seq <= this.cursor) return
-    this.reorder.set(event.seq, event)
-    if (this.reorder.size > 512) { this.fail(new NativeError('Native event gap exceeded recovery bounds. Inspect saved history.')); return }
-    while (this.reorder.has(this.cursor + 1)) {
-      const next = this.reorder.get(++this.cursor)!
-      this.reorder.delete(this.cursor)
-      const frame = nativeFrame(next, this.stored); if (frame) this.push(frame)
+      } catch { ws.close(); this.disconnected('Native data unavailable; reconnecting without resending.') }
     }
-  }
-  private push(frame: SSEEvent) {
-    if (this.queue.length >= 512) { this.fail(new NativeError('Native viewer overflow. Inspect saved history.')); return }
-    this.queue.push(frame); this.wake?.(); this.wake = undefined
-  }
-  private fail(error: Error) {
-    this.failed = error; clearInterval(this.heartbeat)
-    for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(error) }
-    this.pending.clear(); this.wake?.(); this.wake = undefined
-  }
-  close() { this.detached = true; this.fail(new NativeError('Viewer detached')); this.ws?.close() }
-  async ensure() {
-    if (this.detached) throw new NativeError('Viewer detached')
-    if (this.opening) return this.opening
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.failed) {
-      clearInterval(this.heartbeat); this.ws?.close()
-      this.opening = this.open()
-      try { await this.opening } catch (error) { this.ws?.close(); throw error }
-      finally { this.opening = undefined }
-    }
-  }
-  rpc(method: string, params: ObjectValue = {}): Promise<any> {
-    const id = 'c-' + ++this.sequence
-    return new Promise((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) { reject(new NativeError('Message not submitted. Native viewer disconnected; reconnect and try again.', 'rejected')); return }
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new NativeError('Native operation outcome unknown. Inspect history before sending again.')) }, 95000)
-      this.pending.set(id, { resolve, reject, timer })
-      try { this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params })) }
-      catch {
-        clearTimeout(timer); this.pending.delete(id)
-        reject(new NativeError('Message not submitted. Native viewer disconnected; reconnect and try again.', 'rejected'))
-      }
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { ws.close(); reject(new NativeError('Native viewer connection timed out')) }, 10000)
+      ws.onopen = () => { clearTimeout(timer); this.channel.attach({ send: text => ws.send(text) }); resolve() }
+      ws.onerror = ws.onclose = () => { clearTimeout(timer); reject(new NativeError('Native viewer disconnected')) }
     })
+    ws.onclose = ws.onerror = () => { if (this.ws === ws) this.disconnected() }
+    this.hooks.connection('recovering')
+    const snapshot = await this.rpc<NativeSnapshot>('chat.attach', { session_id: this.stored })
+    if (this.detached || this.ws !== ws) throw new NativeError('Viewer detached')
+    this.runtime = snapshot.session_id
+    this.offset = snapshot.recovery.complete ? snapshot.recovery.start || 0 : snapshot.recovery.through
+    this.hooks.snapshot(snapshot)
+    let offset = this.offset
+    while (offset < snapshot.recovery.through) {
+      const page = await this.rpc<{ frames: Frame[]; offset: number; epoch: string }>('chat.replay', { offset, through: snapshot.recovery.through })
+      if (this.detached || this.ws !== ws || page.epoch !== snapshot.recovery.epoch || page.offset <= offset) throw new NativeError('Recovery generation changed')
+      for (const frame of page.frames) this.apply(frame)
+      offset = page.offset
+    }
+    this.holding = false
+    for (const frame of this.held) this.apply(frame)
+    this.held = []
+    this.hooks.requests([...this.requestEntries.values()])
+    this.attempts = 0
+    this.channel.startHeartbeat()
+    this.hooks.connection('open')
+    this.hooks.recovered()
   }
-  async status() {
-    await this.ensure()
-    this.snapshot = await this.rpc('chat.attach', { session_id: this.stored })
-    if (this.snapshot.auto_continue) this.push({ event: 'native.notice', data: JSON.stringify({ text: 'Hermes scheduled crash continuation. External effects may repeat; this is a new continuation, not unchanged-turn replay.' }) })
-    const requests = this.snapshot.open_requests || []
-    const request = requests.find((r: ObjectValue) => ['approval', 'clarify'].includes(r.method))
-    return { status: request ? 'waiting_for_approval' : this.snapshot.running || this.snapshot.queued?.user ? 'running' : 'completed',
-      approval: request ? { ...request.params, request_id: request.id, kind: request.method } : undefined }
-  }
-  async *events(signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-    await this.ensure()
-    const abort = () => { this.wake?.(); this.wake = undefined }
-    signal?.addEventListener('abort', abort, { once: true })
-    try {
-      while (!signal?.aborted) {
-        if (this.queue.length) {
-          const frame = this.queue.shift()!
-          if (['run.completed', 'run.cancelled', 'run.failed'].includes(frame.event)) {
-            const state = await this.status()
-            if (state.status !== 'completed') {
-              yield { event: 'native.notice', data: JSON.stringify({ text: 'Hermes has more native work or a pending request in this session.' }) }
-              continue
-            }
-          }
-          yield frame; continue
-        }
-        if (this.failed) throw this.failed
-        await new Promise<void>(resolve => {
-          const timer = setTimeout(() => { this.wake = undefined; resolve() }, 1000)
-          this.wake = () => { clearTimeout(timer); resolve() }
-        })
-        if (!this.queue.length && !this.failed && !signal?.aborted) {
-          const state = await this.status()
-          if (state.status === 'completed') { yield { event: 'run.completed', data: '{}' }; return }
-        }
+  private apply(frame: Frame) {
+    if (typeof frame.chat_offset === 'number') {
+      if (frame.chat_offset <= this.offset) return
+      this.offset = frame.chat_offset
+    }
+    if (frame.method === 'event') {
+      const event = frame.params as GatewayEvent
+      if (event.session_id !== this.runtime) return
+      if (event.type === 'request.cancel') {
+        this.requestEntries.delete(String((event.payload as any)?.id || (event.payload as any)?.request_id || ''))
+        this.hooks.requests([...this.requestEntries.values()])
       }
-    } finally { signal?.removeEventListener('abort', abort) }
+      this.hooks.event(event)
+    } else if (frame.method === 'chat.input' || frame.method === 'chat.correction') this.hooks.input(String(frame.params?.text || ''), frame.method === 'chat.correction', frame.params?.admission_id)
+    else if (frame.method === 'chat.unsupported') this.hooks.connection('open', 'Unavailable in ChatHermes: ' + frame.params?.method)
+  }
+  private disconnected(message?: string) {
+    if (this.detached) return
+    const ws = this.ws; this.ws = undefined
+    if (ws) { ws.onclose = ws.onerror = null; ws.close() }
+    this.channel.detach(new NativeError('Native viewer disconnected'))
+    this.hooks.connection('closed', message)
+    if (!this.reconnect) this.reconnect = setTimeout(() => {
+      this.reconnect = undefined
+      void this.ensure().catch(() => this.disconnected())
+    }, reconnectBackoffDelayMs(this.attempts++))
+  }
+  async rpc<T = any>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (!this.channel.connected) throw new NativeError('Native viewer disconnected; message not submitted', 'rejected')
+    try { return await this.channel.request<T>(method, params) }
+    catch (error) {
+      if (error instanceof JsonRpcGatewayError) throw new NativeError(error.message,
+        (error.data as { outcome?: string } | undefined)?.outcome || (method === 'chat.submit' ? 'unknown' : 'rejected'))
+      throw error
+    }
+  }
+  async answer(id: string, result: Record<string, unknown>) {
+    await this.rpc('chat.answer', { request_id: id, result })
+    this.requestEntries.delete(id); this.hooks.requests([...this.requestEntries.values()])
+  }
+  get boundary() { return this.offset }
+  close() {
+    this.detached = true; clearTimeout(this.reconnect); this.reconnect = undefined
+    this.channel.detach(new NativeError('Viewer detached')); this.ws?.close()
   }
 }
-let viewer: NativeViewer | undefined
-export async function nativeViewer(profile: string, stored: string) {
-  if (!viewer || viewer.profile !== profile || viewer.stored !== stored) { viewer?.close(); viewer = new NativeViewer(profile, stored) }
-  const current = viewer
-  await current.ensure()
-  if (viewer !== current) throw new NativeError('Viewer detached')
-  return current
-}
-export function closeNativeViewer() { viewer?.close(); viewer = undefined }

@@ -1,20 +1,20 @@
 // The reviewed native rollout gate. This channel cannot submit a prompt.
 // Tickets are ephemeral and only sent in the host's supported subprotocol.
 export interface ChatCapabilities {
-  protocol: 'chathermes.chat.v1'
+  protocol: 'chathermes.chat.v2'
   reviewed_source: string
-  mode: 'native-bounded'
+  mode: 'native-retained'
   admission: true
   operations: string[]
   blockers: string[]
-  guarantees: { crash_safe_idempotency: false; lossless_snapshot_replay: false; offline_turn_lease: false }
+  guarantees: { crash_safe_idempotency: false; lossless_snapshot_replay: false; offline_turn_lease: true }
 }
 export function chatCapabilities(value: unknown): ChatCapabilities {
   const v = value as Partial<ChatCapabilities> | null
-  if (!v || v.protocol !== 'chathermes.chat.v1' || v.mode !== 'native-bounded' || v.admission !== true ||
+  if (!v || v.protocol !== 'chathermes.chat.v2' || v.mode !== 'native-retained' || v.admission !== true ||
       typeof v.reviewed_source !== 'string' || !Array.isArray(v.operations) || !v.operations.every(x => typeof x === 'string') ||
       !Array.isArray(v.blockers) || !v.blockers.every(x => typeof x === 'string') ||
-      !v.guarantees || Object.values(v.guarantees).some(x => x !== false) ||
+      !v.guarantees || v.guarantees.crash_safe_idempotency !== false || v.guarantees.lossless_snapshot_replay !== false || v.guarantees.offline_turn_lease !== true ||
       !['crash_safe_idempotency', 'lossless_snapshot_replay', 'offline_turn_lease'].every(k => k in v.guarantees!))
     throw new Error('Unsupported native chat contract')
   return v as ChatCapabilities
