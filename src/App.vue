@@ -53,7 +53,8 @@ const unavailableRun = ref(false)
 const clarificationAnswers = ref<Record<string, string | string[]>>({}), customClarification = ref<Record<string, string>>({})
 const nativeStatus = ref('')
 const pushState = ref<push.PushState>({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
-const pushBusy = ref(false), pushMessage = ref('')
+const pushBusy = ref(false), pushLoading = ref(false), pushMessage = ref('')
+let pushGeneration = 0
 const settingsOpen = ref(false), settingsButton = ref<HTMLButtonElement | null>(null), settingsPanel = ref<HTMLElement | null>(null)
 watch([drawer, profile, session, projectId, projectsPage, projectView, scheduledPage], () => { settingsOpen.value = false })
 const native = useNativeSession(() => { refreshProjects(); void loadSessions() })
@@ -660,19 +661,27 @@ function drawerKey(event: KeyboardEvent) {
   else if (drawer.value) closeDrawer()
   else closeScreenMenu()
 }
-async function reloadPushState() { pushState.value = await push.state() }
+async function reloadPushState() {
+  const p = profile.value, owner = ++pushGeneration
+  pushLoading.value = true
+  const result = await push.state(p)
+  if (owner === pushGeneration && p === profile.value) { pushState.value = result; pushLoading.value = false }
+}
+watch(profile, () => { pushMessage.value = ''; pushState.value = { ...pushState.value, subscribed: false }; void reloadPushState() }, { flush: 'sync' })
 async function togglePush() {
-  if (pushBusy.value) return
+  if (pushBusy.value || pushLoading.value) return
+  const p = profile.value
   pushBusy.value = true; pushMessage.value = ''
-  try { if (pushState.value.subscribed) await push.unsubscribe(profile.value); else await push.subscribe(profile.value); await reloadPushState() }
-  catch (cause) { pushMessage.value = cause instanceof Error ? cause.message : 'Could not update notifications.'; await reloadPushState() }
+  try { if (pushState.value.subscribed) await push.unsubscribe(p); else await push.subscribe(p); await reloadPushState() }
+  catch (cause) { if (p === profile.value) pushMessage.value = cause instanceof Error ? cause.message : 'Could not update notifications.'; await reloadPushState() }
   finally { pushBusy.value = false }
 }
 async function testPush() {
-  if (pushBusy.value) return
+  if (pushBusy.value || pushLoading.value) return
+  const p = profile.value
   pushBusy.value = true; pushMessage.value = ''
-  try { await push.sendTest(profile.value); pushMessage.value = 'Test notification scheduled.' }
-  catch { pushMessage.value = 'Could not send a test notification.' }
+  try { await push.sendTest(p); if (p === profile.value) pushMessage.value = 'Test notification scheduled.' }
+  catch { if (p === profile.value) pushMessage.value = 'Could not send a test notification.' }
   finally { pushBusy.value = false }
 }
 let pushClient: ReturnType<typeof connectPushClient> | undefined
@@ -704,19 +713,21 @@ onUnmounted(() => { pushClient?.stop(); pushClient = undefined; profileGeneratio
       <div class="sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]">
         <label for="profile-field">Profile</label>
         <div class="drawer-account flex min-w-0 items-center gap-2"><select id="profile-field" class="profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white" :value="profile" @change="chooseProfile(($event.target as HTMLSelectElement).value)">
-          <option value="">Current profile</option><option v-if="profile && !profiles.some(item => item.name === profile)" :value="profile">{{ profile }}</option><option v-for="item in profiles" :key="item.name" :value="item.name">{{ item.name }}</option>
+          <option value="">Default profile</option><option v-if="profile && !profiles.some(item => item.name === profile)" :value="profile">{{ profile }}</option><option v-for="item in profiles" :key="item.name" :value="item.name">{{ item.name }}</option>
         </select><button ref="settingsButton" class="drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]" aria-label="Settings" aria-haspopup="dialog" aria-controls="drawer-settings" :aria-expanded="settingsOpen" @click="toggleSettings"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 3-.6 2.5-2 .9L4 5.7l-2 3.5 1.8 1.8v2L2 14.8l2 3.5 2.4-.7 2 .9L9 21h6l.6-2.5 2-.9 2.4.7 2-3.5-1.8-1.8v-2L22 9.2l-2-3.5-2.4.7-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
         <span><span class="status-dot mr-2 inline-block size-2 rounded-full" :class="offline ? 'disconnected bg-[#dcae6e]' : 'bg-[#94c9a5]'" />{{ offline ? 'Offline · read only' : 'Connected through dashboard' }}</span>
         <section v-if="settingsOpen" id="drawer-settings" ref="settingsPanel" class="settings-panel absolute bottom-full left-0 right-0 mb-3 max-h-[60dvh] overflow-y-auto rounded-2xl border border-[#424242] bg-black p-3 shadow-xl" role="dialog" aria-label="Settings" tabindex="-1">
           <div class="flex items-center justify-between gap-2"><h2 class="text-base font-medium text-white">Settings</h2><button class="size-11 rounded-lg text-xl text-white hover:bg-[#303030]" aria-label="Close settings" @click="closeSettings(true)">×</button></div>
           <div class="push-setting" aria-labelledby="notifications-heading">
-          <h3 id="notifications-heading" class="text-sm font-medium text-white">Notifications</h3>
-          <button class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.supported || (!pushState.subscribed && !pushState.available)" @click="togglePush">{{ pushBusy ? 'Updating…' : pushState.subscribed ? 'Disable notifications' : 'Enable notifications' }}</button>
-          <button v-if="pushState.subscribed" class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || !pushState.available" @click="testPush">Send test</button>
+          <h3 id="notifications-heading" class="text-sm font-medium text-white">Notifications for {{ profile || 'default' }}</h3>
+          <button class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || pushLoading || !pushState.supported || (!pushState.subscribed && !pushState.available)" @click="togglePush">{{ pushLoading ? 'Loading…' : pushBusy ? 'Updating…' : pushState.subscribed ? 'Disable notifications' : 'Enable notifications' }}</button>
+          <button v-if="pushState.subscribed" class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55" :disabled="pushBusy || pushLoading || !pushState.available" @click="testPush">Send test</button>
           <p v-if="pushState.error || pushMessage" class="mt-1 text-xs text-[#dcae6e]" role="status">{{ pushMessage || pushState.error }}</p>
-          <p v-else-if="pushState.subscribed" class="mt-1 text-xs">Notifications enabled on this device.</p>
+          <p v-else-if="pushState.subscribed" class="mt-1 text-xs">Notifications enabled for {{ profile || 'default' }} on this device.</p>
+          <p v-else-if="pushLoading" class="mt-1 text-xs" role="status">Loading profile notification status…</p>
           <p v-else-if="!pushState.supported" class="mt-1 text-xs">Install ChatHermes on a secure HTTPS origin to enable notifications.</p>
           <p v-else-if="pushState.permission === 'denied'" class="mt-1 text-xs">Allow notifications in browser settings to enable them.</p>
+          <p v-else class="mt-1 text-xs">Notifications disabled for {{ profile || 'default' }} on this device.</p>
           </div>
         </section>
       </div>

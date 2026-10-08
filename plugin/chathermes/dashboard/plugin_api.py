@@ -112,6 +112,26 @@ async def push_subscribe(request: Request):
     return result
 
 
+@router.post('/push/status')
+async def push_status(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    profile = _rpc_profile(request)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 8192:
+            raise HTTPException(413, 'Push status request is too large')
+    try:
+        import json
+        body = json.loads(raw)
+        endpoint = body['endpoint']
+        if set(body) != {'endpoint'} or not isinstance(endpoint, str) or len(endpoint) > 2048:
+            raise ValueError()
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        raise HTTPException(422, 'Invalid push status request') from None
+    return await run_in_threadpool(_push_store().status, profile, endpoint)
+
+
 @router.delete('/push/subscriptions/{identity}')
 async def push_unsubscribe(request: Request, identity: str):
     from starlette.concurrency import run_in_threadpool

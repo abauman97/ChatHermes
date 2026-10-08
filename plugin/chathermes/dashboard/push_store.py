@@ -8,6 +8,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 _LOCK = threading.RLock()
 _LOG = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def _b64url(value):
 
 
 def vapid_subject(request=None):
-    """Prefer the public dashboard URL; fall back to an HTTPS request origin."""
+    """Prefer the configured public dashboard URL; fall back to request origin."""
     from urllib.parse import urlsplit, urlunsplit
 
     def origin(value):
@@ -104,15 +105,37 @@ def vapid_subject(request=None):
             return None
 
     public = origin(os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip())
+    _LOG.info('VAPID subject resolution: configured_env_present=%s configured_https_origin_valid=%s',
+              bool(os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip()), bool(public))
     if public:
         return public
     try:
-        fallback = origin(str(getattr(request, 'base_url', '') or ''))
-        if fallback:
-            return fallback
+        headers = getattr(request, 'headers', {})
+        candidates = [headers.get('origin'), getattr(request, 'base_url', '')]
+        for candidate in candidates:
+            fallback = origin(str(candidate or ''))
+            if fallback:
+                return fallback
     except Exception:
         pass
     raise RuntimeError('Set HERMES_DASHBOARD_PUBLIC_URL to an HTTPS dashboard URL for Web Push')
+
+
+def public_dashboard_url(request=None):
+    """Resolve the configured URL, using the incoming request only as fallback."""
+    from urllib.parse import urlsplit
+
+    configured = os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip()
+    if configured:
+        parsed = urlsplit(configured)
+        if parsed.scheme.lower() == 'https' and parsed.netloc:
+            return configured.rstrip('/')
+    if request is not None:
+        base_url = str(getattr(request, 'base_url', '') or '').rstrip('/')
+        parsed = urlsplit(base_url)
+        if parsed.scheme.lower() == 'https' and parsed.netloc:
+            return base_url
+    return None
 
 
 def upsert(profile, subscription):
@@ -136,6 +159,15 @@ def upsert(profile, subscription):
         found.update({'profile': profile, 'endpoint': endpoint, 'p256dh': p256dh, 'auth': auth, 'updated_at': int(time.time()), 'enabled': True})
         _write(data)
         return {'id': found['id'], 'profile': profile, 'created_at': found['created_at'], 'enabled': True}
+
+
+def status(profile, endpoint):
+    """Device/profile status only; never return endpoint or subscription keys."""
+    with _LOCK:
+        row = next((row for row in _read()['subscriptions']
+                    if row.get('profile') == profile and row.get('endpoint') == endpoint
+                    and row.get('enabled') is True), None)
+        return {'profile': profile, 'enabled': row is not None, 'id': row['id'] if row else None}
 
 
 def remove(profile, identity):

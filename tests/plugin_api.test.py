@@ -1427,7 +1427,7 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
     owner = plugin._native_owners.Owner(plugin, transport, 'alpha', 'stored')
     owner.runtime = 'runtime'
     frame = {'jsonrpc': '2.0', 'method': 'event', 'params': {
-        'session_id': 'runtime', 'seq': 1, 'type': 'message.complete', 'payload': {'status': status}}}
+        'session_id': 'runtime', 'seq': 1, 'type': 'message.complete', 'payload': {'status': status, 'text': 'Actual final reply', 'reasoning': 'private thinking'}}}
     try:
         owner.capture({**frame, 'params': {**frame['params'], 'session_id': 'other'}})
         sender.assert_not_called()
@@ -1438,7 +1438,7 @@ async def test_retained_owner_completion_uses_loaded_push_sender(monkeypatch, st
         # adapter also emits a derived turn.complete/attention event.
         owner.capture({'method': 'event', 'params': {'session_id': 'runtime',
             'seq': 2, 'type': expected}})
-        sender.assert_called_once_with('alpha', 'stored', expected, '1')
+        sender.assert_called_once_with('alpha', 'stored', expected, '1', message='Actual final reply')
         assert len(owner.offsets) == 2
         # A delivery scheduling failure must still retain/publish the next frame.
         sender.side_effect = RuntimeError('delivery unavailable')
@@ -1575,7 +1575,7 @@ async def test_push_owner_request_and_event_triggers(monkeypatch, caplog, kind):
             owner.capture(frame)
         owner.capture({'method': 'event', 'id': 'request_1', 'params': {
             'session_id': 'runtime', 'seq': 1, 'type': kind}})
-        sender.assert_called_once_with('alpha', 'stored', kind, 'request_1')
+        sender.assert_called_once_with('alpha', 'stored', kind, 'request_1', message=None)
         assert 'event.detected' in caplog.text and 'owner.notify' in caplog.text
         assert 'private-content' not in caplog.text
         # Scheduling failure cannot stop the native frame reaching viewers.
@@ -1654,6 +1654,64 @@ async def test_push_stored_session_survives_native_attach_alias(monkeypatch):
         await owner.attach()
         owner.capture({'method': 'event', 'params': {'session_id': 'runtime_alias',
             'seq': 1, 'type': 'message.complete', 'payload': {'status': 'complete'}}})
-        sender.assert_called_once_with('alpha', 'stored', 'turn.complete', '1')
+        sender.assert_called_once_with('alpha', 'stored', 'turn.complete', '1', message=None)
+    finally:
+        owner.close()
+
+
+@run_async
+async def test_push_status_matches_device_and_profile_without_exposing_secrets(app, monkeypatch, tmp_path):
+    store = plugin._push_store_module
+    monkeypatch.setattr(store, '_path', lambda: tmp_path / 'push.json')
+    body = {'endpoint': 'https://push.test/private-device', 'keys': {'p256dh': 'private_key', 'auth': 'private_auth'}}
+    alpha = store.upsert('alpha', body)
+    beta = store.upsert('beta', body)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://dashboard') as client:
+        async def status(profile, endpoint=body['endpoint']):
+            result = await client.post('/api/plugins/chathermes/push/status', params={'profile': profile}, json={'endpoint': endpoint})
+            assert result.status_code == 200
+            assert all(value not in result.text for value in ('private-device', 'private_key', 'private_auth'))
+            return result.json()
+        assert await status('alpha') == {'profile': 'alpha', 'enabled': True, 'id': alpha['id']}
+        assert await status('beta') == {'profile': 'beta', 'enabled': True, 'id': beta['id']}
+        assert (await status('alpha', 'https://push.test/other'))['enabled'] is False
+        assert (await status(''))['profile'] == 'default'
+        # An ID from another profile cannot disable its registration.
+        assert (await client.delete('/api/plugins/chathermes/push/subscriptions/' + alpha['id'] + '?profile=beta')).json() == {'removed': False}
+        assert (await client.delete('/api/plugins/chathermes/push/subscriptions/' + alpha['id'] + '?profile=alpha')).json() == {'removed': True}
+        assert (await status('alpha'))['enabled'] is False
+        assert (await status('beta'))['enabled'] is True
+        for data in ({}, [], {'endpoint': 2}, {'endpoint': 'x' * 2049}, {'endpoint': 'ok', 'extra': True}):
+            assert (await client.post('/api/plugins/chathermes/push/status', json=data)).status_code == 422
+        assert (await client.post('/api/plugins/chathermes/push/status', content=b' ' * 8193)).status_code == 413
+        assert (await client.post('/api/plugins/chathermes/push/status?profile=../x', json={'endpoint': body['endpoint']})).status_code == 422
+
+
+@run_async
+async def test_push_completion_uses_authoritative_redacted_text_without_logging_content(monkeypatch, caplog):
+    import sys, types, logging
+    from unittest.mock import Mock
+    sender = Mock(return_value=True)
+    monkeypatch.setattr(plugin._push_sender_module, 'notify', sender)
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server,
+        server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
+    transport = plugin._RpcTransport()
+    transport.secret = KEY
+    owner = plugin._native_owners.Owner(plugin, transport, 'alpha', 'stored')
+    owner.runtime = 'runtime'
+    try:
+        with caplog.at_level(logging.INFO):
+            for seq, kind, payload in [
+                (1, 'message.delta', {'text': 'Earlier streamed content'}),
+                (2, 'message.complete', {'status': 'complete', 'text': 'Rewritten final reply ' + KEY,
+                                         'reasoning': 'Private reasoning', 'warning': 'Private warning'})]:
+                transport.write({'method': 'event', 'params': {'session_id': 'runtime',
+                    'seq': seq, 'type': kind, 'payload': payload}})
+                await asyncio.sleep(0)
+        sender.assert_called_once_with('alpha', 'stored', 'turn.complete', '2', message='Rewritten final reply [redacted]')
+        for private in ('Rewritten final reply', 'Earlier streamed content', 'Private reasoning', 'Private warning', KEY):
+            assert private not in caplog.text
     finally:
         owner.close()
