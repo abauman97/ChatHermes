@@ -109,7 +109,7 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   expect(errors).toEqual([])
 })
 
-test('New Project Chat stays scoped from project home and an open chat', async ({ page }, testInfo) => {
+test('New Project Chat stays scoped starting from a project chat session', async ({ page }, testInfo) => {
   const mobile = testInfo.project.name === 'mobile'
   await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 })
   await signIn(page, '/chathermes?view=projects')
@@ -119,8 +119,20 @@ test('New Project Chat stays scoped from project home and an open chat', async (
   await options.click(); await expect(action).toHaveCount(0); await page.keyboard.press('Escape')
   await plugin.locator('.project-list').getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
   const projectId = new URL(page.url()).searchParams.get('project')!
-  const ids: string[] = []
-  for (const context of ['home', 'chat']) {
+  // Start at the reported URL shape, without view=project. Creating a draft
+  // through the authenticated API keeps the menu under test out of setup.
+  const initial = await page.request.post('/api/plugins/chathermes/projects/session?project_id=' + encodeURIComponent(projectId), { data: {} })
+  expect(initial.status()).toBe(201)
+  const initialSession = (await initial.json()).session
+  await page.goto(`/chathermes?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(initialSession.id)}`)
+  await expect(plugin.getByRole('region', { name: 'Selected Project' })).toHaveCount(0)
+  await expect(plugin.locator('.header-project-subtitle')).toHaveText('Hermes Mobile')
+  const ids: string[] = [initialSession.id]
+  for (const context of ['chat', 'home']) {
+    if (context === 'home') {
+      await page.goto('/chathermes?project=' + encodeURIComponent(projectId))
+      await expect(plugin.getByRole('region', { name: 'Selected Project' })).toBeVisible()
+    }
     await options.click()
     await expect(action).toBeEnabled()
     await expect(plugin.getByRole('menuitem', { name: 'New chat', exact: true })).toBeVisible()
@@ -142,7 +154,7 @@ test('New Project Chat stays scoped from project home and an open chat', async (
     await expect(prompt).toHaveAttribute('placeholder', 'Message Hermes Mobile')
     expect(await plugin.evaluate(el => el.scrollWidth <= innerWidth)).toBe(true)
   }
-  expect(ids[0]).not.toBe(ids[1])
+  expect(new Set(ids).size).toBe(3)
   // Navigation retains selectedProject internally; the action must still disappear.
   if (mobile) await plugin.getByRole('button', { name: 'Open navigation', exact: true }).click()
   await plugin.locator('.sidebar').getByRole('button', { name: 'Scheduled', exact: true }).click()

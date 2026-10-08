@@ -22,7 +22,7 @@ const projectView = ref(false), projectsPage = ref(false), archivedProjects = re
 const projectId = ref(''), projects = ref<Project[]>([]), selectedProject = ref<Project>(), projectsLoading = ref(false), projectLoading = ref(false), projectsError = ref(''), projectError = ref('')
 const scopedSessionIds = ref<string[]>([])
 const projectsLoaded = ref(false)
-const activeProjectContext = computed(() => projectView.value && !projectsPage.value && !scheduledPage.value && !!projectId.value && !!selectedProject.value && !selectedProject.value.isNoProject)
+const activeProjectContext = computed(() => (projectView.value || !!session.value) && !projectsPage.value && !scheduledPage.value && !!projectId.value && !!selectedProject.value && !selectedProject.value.isNoProject)
 const visibleSessions = computed(() => projectId.value ? selectedProject.value ? projectSessions(selectedProject.value) : [] : sessions.value.filter(row => !scopedSessionIds.value.includes(row.id)))
 let closeProjectEvents: (() => void) | undefined
 let refreshTimer: ReturnType<typeof setTimeout> | undefined

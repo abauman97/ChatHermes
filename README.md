@@ -55,7 +55,10 @@ Projects and Home. Selecting a Project loads its fully hydrated
 session query parameters preserve scope across refresh and browser navigation.
 Other chats remain available. Hermes owns all membership and Git/worktree grouping.
 
-**New chat** uses the Project path, then its first repository path, resolves the
+**New Project Chat** appears on Project home and in an open chat with a selected
+Project. It creates a distinct chat in that selected Project. **New chat** in an
+open chat still starts an unscoped chat; on Project home it retains scoped creation.
+Scoped creation uses the Project path, then its first repository path, resolves the
 workspace with `config.get` under the owning profile, and creates a native
 `session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
 `project_id` is sent to session creation. A pathless Project cannot start a chat;
