@@ -38,7 +38,14 @@ export function normalizeEvent(frame: SSEEvent): TurnEvent | undefined {
   else if (name === 'approval.request') type = 'approval'
   return type ? { type, data, key } : undefined
 }
-export interface AssistantTurn { blocks: TurnBlock[]; seen: Set<string>; sequence: number }
+interface NativeTurnState {
+  boundary: number
+  streamText?: string
+  interimText?: string
+  finalText?: string
+  toolStream: boolean
+}
+export interface AssistantTurn { blocks: TurnBlock[]; seen: Set<string>; sequence: number; native?: NativeTurnState }
 export const createTurn = (): AssistantTurn => ({ blocks: [], seen: new Set(), sequence: 0 })
 export function finishTurn(turn: AssistantTurn) {
   for (const block of turn.blocks) if (block.kind !== 'text') { block.complete = true; if (block.kind === 'thinking') block.title = 'Thought'; if (block.state === 'running' || block.state === 'pending') block.state = 'completed' }
@@ -181,21 +188,140 @@ export function mergeHistoryBlocks(turn: AssistantTurn, restored: TurnBlock[], a
   }
 }
 
+/**
+ * A sealed stream can lose a few characters while the authoritative final
+ * remains the same reply. Limit the tolerated edit distance so a separate
+ * assistant segment cannot replace a merely similar interim.
+ */
+function hasHighTextOverlap(left: string, right: string): boolean {
+  const maxLength = Math.max(left.length, right.length)
+
+  if (maxLength < 160) {
+    return false
+  }
+
+  const maxEdits = Math.max(1, Math.min(32, Math.floor(maxLength * 0.02)))
+
+  if (Math.abs(left.length - right.length) > maxEdits) {
+    return false
+  }
+
+  const [shorter, longer] = left.length < right.length ? [left, right] : [right, left]
+
+  let previous = Array.from({ length: shorter.length + 1 }, (_, index) =>
+    index <= maxEdits ? index : Number.POSITIVE_INFINITY
+  )
+
+  let current = new Array<number>(shorter.length + 1).fill(Number.POSITIVE_INFINITY)
+
+  for (let longerIndex = 1; longerIndex <= longer.length; longerIndex += 1) {
+    const start = Math.max(1, longerIndex - maxEdits)
+    const end = Math.min(shorter.length, longerIndex + maxEdits)
+    current.fill(Number.POSITIVE_INFINITY, start, end + 1)
+    current[start - 1] = start === 1 ? longerIndex : Number.POSITIVE_INFINITY
+
+    let rowMinimum = Number.POSITIVE_INFINITY
+
+    for (let shorterIndex = start; shorterIndex <= end; shorterIndex += 1) {
+      current[shorterIndex] = Math.min(
+        previous[shorterIndex] + 1,
+        current[shorterIndex - 1] + 1,
+        previous[shorterIndex - 1] + Number(longer[longerIndex - 1] !== shorter[shorterIndex - 1])
+      )
+      rowMinimum = Math.min(rowMinimum, current[shorterIndex])
+    }
+
+    if (rowMinimum > maxEdits) {
+      return false
+    }
+
+    const nextPrevious = current
+    current = previous
+    previous = nextPrevious
+  }
+
+  return previous[shorter.length] <= maxEdits
+}
+
 /** Native Desktop semantics, without Electron/React presentation side effects.
- * References: gateway-event/message-stream.ts, tools.ts and chat-messages/tool-parts.ts
+ * References: gateway-event/message-stream.ts, index.ts, collapse-duplicate-final.ts,
+ * tools.ts and chat-messages/tool-parts.ts
  * in Hermes ac28abc96ce83f22f6b831f80d9007e2aba81f21 (MIT). */
 export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) {
-  const native = turn as AssistantTurn & { sealedText?: string }
+  const native = turn.native ??= { boundary: 0, toolStream: false,
+    streamText: turn.blocks.at(-1)?.kind === 'text' ? turn.blocks.at(-1)?.id : undefined }
+  const textBlock = (id?: string) => turn.blocks.find((block, index) => index >= native.boundary && block.kind === 'text' && block.id === id)
+  const appendText = (content: string) => {
+    const block: TurnBlock = { id: `block-${++turn.sequence}`, kind: 'text', content }
+    turn.blocks.push(block)
+    return block
+  }
+  if (name === 'message.start') {
+    // Inputs/corrections allocate fresh turns in native-session. A prompt-less
+    // start also begins an occurrence, while retaining earlier display parts.
+    turn.native = { boundary: turn.blocks.length, toolStream: false }
+    return
+  }
   if (name === 'thinking.delta' || name === 'tool.generating') return
   if (name === 'message.interim') {
-    if (!data.already_streamed) reduceTurn(turn, { type: 'text', data: { delta: string(data.text) } })
-    native.sealedText = turn.blocks.at(-1)?.id
-  } else if (name === 'message.delta' || name === 'message.complete') {
-    if (native.sealedText && native.sealedText === turn.blocks.at(-1)?.id && string(data.text)
-      && (name === 'message.delta' || data.text !== turn.blocks.at(-1)?.content)) {
-      turn.blocks.push({ id: `block-${++turn.sequence}`, kind: 'text', content: '' })
+    const content = string(data.text).trim()
+    if (!content) return
+    closeReasoning(turn)
+    let block = textBlock(native.streamText)
+    // Even already_streamed interims materialize when deltas were missed.
+    // Only the nearest seal can be a duplicate; earlier phases stay distinct.
+    if (!block) {
+      const prior = textBlock(native.interimText ?? native.finalText)
+      if (prior && prior.content.replace(/\s+/g, ' ').trim() === content.replace(/\s+/g, ' ').trim()) block = prior
     }
-    reduceTurn(turn, { type: name === 'message.delta' ? 'text' : 'text.completed', data: name === 'message.delta' ? { delta: data.text } : { content: data.text } })
+    block ??= appendText(content)
+    block.content = content
+    native.interimText = block.id
+    native.streamText = undefined
+    native.finalText = undefined
+    native.toolStream = false
+  } else if (name === 'message.delta' || name === 'message.complete') {
+    const content = string(data.text)
+    if (name === 'message.delta' && content) {
+      closeReasoning(turn)
+      let block = textBlock(native.streamText)
+      if (!block || block !== turn.blocks.at(-1)) block = appendText('')
+      block.content += content
+      native.streamText = block.id
+      native.finalText = undefined
+    } else if (name === 'message.complete' && content.trim()) {
+      closeReasoning(turn)
+      const final = content.trim()
+      const streamed = textBlock(native.streamText)
+      const lastTool = turn.blocks.reduce((last, block, index) => block.kind === 'tool' ? index : last, -1)
+      // A final with no post-tool deltas is a new text phase. An interim seal
+      // can still confirm pre-tool text via streamText (delayed seal ordering).
+      const live = streamed && turn.blocks.indexOf(streamed) > lastTool ? streamed : undefined
+      const interim = textBlock(native.interimText)
+      const failed = Boolean(data.error || data.status && data.status !== 'complete')
+      // Flattened Desktop bubbles retain their tools in place. Drop only the
+      // duplicate text sibling, never any intervening activity or prior phase.
+      const identicalSibling = !failed && interim && interim.content.trim() === final
+        && (!live || live.content.trim() === final)
+      const continuesInterim = !failed && !live && !native.toolStream && interim && interim.content.trim()
+        && (data.response_previewed || data.response_transformed || interim.content.trim() === final || final.startsWith(interim.content.trim())
+          || interim.content.trim().startsWith(final) || hasHighTextOverlap(interim.content.trim(), final))
+      let block: TurnBlock
+      if (identicalSibling || continuesInterim) {
+        block = interim!
+        if (live && live !== interim) turn.blocks.splice(turn.blocks.indexOf(live), 1)
+      } else {
+        // Settle an existing stream even if the authoritative text differs.
+        // Exact terminal repeats are scoped to this occurrence, not all text.
+        const settled = textBlock(native.finalText)
+        block = live ?? (settled?.content.trim() === final ? settled : appendText(''))
+      }
+      block.content = final
+      native.finalText = block.id
+      native.streamText = undefined
+      native.interimText = undefined
+      native.toolStream = false
+    }
     if (name === 'message.complete') {
       for (const block of turn.blocks) if (block.kind !== 'text' && !block.delegated) {
         block.complete = true
@@ -211,6 +337,7 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
     }
     reduceTurn(turn, { type: 'reasoning', data: { delta: data.text } })
   } else if (name === 'tool.start' || name === 'tool.complete' || name === 'tool.progress') {
+    if (name === 'tool.start') native.toolStream = true
     const result = data.result as Record<string, unknown> | undefined
     const failed = data.is_error || data.error || result && typeof result === 'object' && (result.error || result.success === false || typeof result.exit_code === 'number' && result.exit_code !== 0)
     reduceTurn(turn, { type: name === 'tool.start' ? 'tool.started' : name === 'tool.progress' ? 'tool.updated' : failed ? 'tool.failed' : 'tool.completed',
