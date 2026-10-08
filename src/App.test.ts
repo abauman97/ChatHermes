@@ -52,7 +52,7 @@ const streaming = {
     session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" },
   },
 };
-describe("drawer settings", () => {
+describe("settings page", () => {
   it("reports mounted native session and connection through home, views, profiles and unmount", async () => {
     const factory = nativeSession.useNativeSession;
     let owner!: ReturnType<typeof factory>;
@@ -211,7 +211,7 @@ describe("drawer settings", () => {
     wrapper.unmount();
   });
 
-  it("puts New chat above Projects and restores focus when dismissing settings before the drawer", async () => {
+  it("opens a dedicated settings page, closes the drawer and restores focus", async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
     const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
@@ -226,18 +226,102 @@ describe("drawer settings", () => {
     expect(sidebar.find(".sidebar-foot .drawer-chat").exists()).toBe(false);
     await wrapper.get('[aria-label="Open navigation"]').trigger("click");
     await wrapper.get('[aria-label="Settings"]').trigger("click");
-    const panel = wrapper.get('[role="dialog"][aria-label="Settings"]');
-    expect(panel.element).toBe(document.activeElement);
-    expect(wrapper.get(".drawer-settings").attributes("aria-expanded")).toBe("true");
+    const panel = wrapper.get(".settings-page");
+    expect(panel.get("h2").element).toBe(document.activeElement);
+    expect(wrapper.get(".drawer-settings").attributes("aria-current")).toBe("page");
+    expect(location.search).toContain("view=settings");
+    expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
     expect(panel.text()).toContain("Enable notifications");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
-    expect(wrapper.find(".settings-panel").exists()).toBe(false);
+    expect(wrapper.find(".settings-page").exists()).toBe(false);
     expect(wrapper.get(".drawer-settings").element).toBe(document.activeElement);
-    expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
+    await wrapper.get('[aria-label="Open navigation"]').trigger("click");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
     expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement);
+    wrapper.unmount();
+  });
+  it("preserves the composer draft and live runtime across settings history", async () => {
+    const factory = nativeSession.useNativeSession;
+    let owner!: ReturnType<typeof factory>;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      owner = factory(callback);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+      });
+      return owner;
+    });
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=live-chat");
+    const fake = vi.fn(async (input: string) =>
+      json(
+        input.includes("/capabilities")
+          ? { features: { native_chat: true } }
+          : { sessions: [], total: 0 },
+      ),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    const close = vi.spyOn(owner, "close");
+    owner.busy.value = true;
+    const composer = wrapper.get(".composer").element;
+    const textarea = wrapper.get("textarea");
+    await textarea.setValue("Unsent draft");
+    const chatUrl = location.href;
+    await wrapper.get(".drawer-settings").trigger("click");
+    const settingsUrl = location.href;
+    expect(wrapper.get(".settings-page").text()).toContain("Settings");
+    expect(wrapper.find('[role="dialog"][aria-label="Settings"]').exists()).toBe(false);
+    const requests = fake.mock.calls.length;
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(wrapper.find(".settings-page").exists()).toBe(true);
+    for (const url of [chatUrl, settingsUrl, chatUrl]) {
+      history.replaceState({}, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await flushPromises();
+      expect(wrapper.find(".settings-page").exists()).toBe(url === settingsUrl);
+    }
+    expect(close).not.toHaveBeenCalled();
+    expect(owner.attach).toHaveBeenCalledTimes(1);
+    expect(owner.busy.value).toBe(true);
+    expect(fake.mock.calls).toHaveLength(requests);
+    expect(wrapper.get(".composer").element).toBe(composer);
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
+    await textarea.trigger("focus");
+    expect(textarea.attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+  it("loads settings links and returns to archived projects, then keeps profile changes on settings", async () => {
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha&view=settings&return_view=projects&archived=1",
+    );
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    vi.spyOn(push, "state").mockImplementation(async () => ({
+      supported: false,
+      permission: "unsupported",
+      subscribed: false,
+      available: false,
+      error: "",
+    }));
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".settings-page").text()).toContain("Notifications for alpha");
+    await wrapper.get('[aria-label="Close settings"]').trigger("click");
+    expect(new URLSearchParams(location.search).get("view")).toBe("projects");
+    expect(new URLSearchParams(location.search).get("archived")).toBe("1");
+    await wrapper.get(".drawer-settings").trigger("click");
+    expect(new URLSearchParams(location.search).get("archived")).toBe("1");
+    await wrapper.get("#settings-profile").setValue("beta");
+    await flushPromises();
+    expect(wrapper.get(".settings-page").text()).toContain("Notifications for beta");
+    expect(new URLSearchParams(location.search).get("view")).toBe("settings");
+    expect(new URLSearchParams(location.search).get("profile")).toBe("beta");
+    await wrapper.get('[aria-label="Close settings"]').trigger("click");
+    expect(wrapper.find(".projects-page").exists()).toBe(false);
     wrapper.unmount();
   });
   it("offers screen actions in the top bar while retaining profile settings", async () => {
@@ -339,11 +423,10 @@ describe("drawer settings", () => {
     expect(unsubscribe).toHaveBeenCalledWith("alpha");
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     await flushPromises();
-    expect(wrapper.find(".settings-panel").exists()).toBe(false);
-    await wrapper.get(".drawer-settings").trigger("click");
+    expect(wrapper.find(".settings-page").exists()).toBe(true);
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
-    expect(wrapper.find(".settings-panel").exists()).toBe(false);
+    expect(wrapper.find(".settings-page").exists()).toBe(false);
     wrapper.unmount();
   });
 });

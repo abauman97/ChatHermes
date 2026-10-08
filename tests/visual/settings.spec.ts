@@ -1,6 +1,8 @@
 import { signIn } from "./login";
 import { expect, test } from "@playwright/test";
 
+test.use({ trace: "off" });
+
 test("drawer has exactly one New chat immediately above Projects", async ({ page }, testInfo) => {
   await signIn(page);
   expect(
@@ -29,7 +31,7 @@ test("drawer has exactly one New chat immediately above Projects", async ({ page
   await expect(textarea).toBeFocused();
 });
 
-test("drawer settings and notifications", async ({ page }, testInfo) => {
+test("dedicated settings page and notifications", async ({ page }, testInfo) => {
   const mobile = testInfo.project.name === "mobile";
   const unauthorized = await page.request.get("/api/plugins/chathermes/push/config");
   expect(unauthorized.status()).toBe(401);
@@ -99,23 +101,32 @@ test("drawer settings and notifications", async ({ page }, testInfo) => {
   );
   const settings = navigation.getByRole("button", { name: "Settings", exact: true });
   await settings.click();
-  const panel = navigation.getByRole("dialog", { name: "Settings", exact: true });
-  await expect(panel).toBeFocused();
-  await expect(settings).toHaveAttribute("aria-expanded", "true");
+  const panel = plugin.getByRole("region", { name: "Settings", exact: true });
+  await expect(panel.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
+  await expect(page).toHaveURL(/view=settings/);
+  if (mobile) await expect(navigation).toHaveClass(/-translate-x-full/);
+  await expect(panel.getByRole("combobox", { name: "Active profile" })).toHaveCSS(
+    "font-size",
+    "16px",
+  );
   await expect(panel.getByRole("button", { name: "Enable notifications" })).toBeVisible();
   const box = (await panel.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
-  await page.screenshot({ path: testInfo.outputPath("drawer-settings.png") });
+  await page.screenshot({ path: testInfo.outputPath("settings-page.png") });
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(settings).toBeFocused();
-  if (mobile) await expect(navigation).toHaveClass(/translate-x-0/);
+  await expect(
+    mobile ? plugin.getByRole("button", { name: "Open navigation" }) : settings,
+  ).toBeFocused();
+  if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
   await settings.click();
   await panel.getByRole("button", { name: "Close settings" }).click();
-  await expect(settings).toBeFocused();
+  await expect(panel).toHaveCount(0);
+  if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
   await settings.click();
+  if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
   await projects.click();
   await expect(panel).toHaveCount(0);
   if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
@@ -212,9 +223,13 @@ test("compact black drawer and screen menu dismissal preserve focus and actions"
   await page.screenshot({ path: testInfo.outputPath("compact-black-drawer.png") });
   const settings = navigation.getByRole("button", { name: "Settings", exact: true });
   await settings.click();
-  await expect(navigation.getByRole("dialog", { name: "Settings", exact: true })).toBeFocused();
+  await expect(plugin.locator(".settings-page h2")).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(settings).toBeFocused();
+  await expect(
+    testInfo.project.name === "mobile"
+      ? plugin.getByRole("button", { name: "Open navigation" })
+      : settings,
+  ).toBeFocused();
 });
 
 test("composer attachments, camera and model controls stay usable on black surfaces", async ({
@@ -302,7 +317,7 @@ test("subscribed settings sends explicit test using authenticated host route", a
   if (testInfo.project.name === "mobile")
     await plugin.getByRole("button", { name: "Open navigation" }).click();
   await plugin.getByRole("button", { name: "Settings", exact: true }).click();
-  const panel = plugin.getByRole("dialog", { name: "Settings", exact: true });
+  const panel = plugin.getByRole("region", { name: "Settings", exact: true });
   const send = panel.getByRole("button", { name: "Send test", exact: true });
   await expect(send).toBeVisible();
   const response = page.waitForResponse(
@@ -315,4 +330,67 @@ test("subscribed settings sends explicit test using authenticated host route", a
   expect(await result.json()).toEqual({ scheduled: true });
   await expect(panel).toContainText("Test notification scheduled.");
   await page.screenshot({ path: testInfo.outputPath("subscribed-send-test.png") });
+});
+
+test("settings history and reload preserve chat context, drafts and attachments", async ({
+  page,
+}, info) => {
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const openSettings = async () => {
+    if (info.project.name === "mobile")
+      await plugin.getByRole("button", { name: "Open navigation" }).click();
+    await plugin.getByRole("button", { name: "Settings", exact: true }).click();
+  };
+  await composer.fill("Settings runtime regression [tool] [activity-hold]");
+  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(plugin.locator(".activity[open]").first()).toBeVisible({ timeout: 30_000 });
+  await composer.fill("Keep this draft");
+  await plugin
+    .locator('.composer input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "draft.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Unsent attachment"),
+    });
+  const chatUrl = page.url();
+  await openSettings();
+  const settings = plugin.getByRole("region", { name: "Settings", exact: true });
+  await expect(settings).toBeVisible();
+  await page.goBack();
+  await expect(settings).toHaveCount(0);
+  await expect(page).toHaveURL(chatUrl);
+  await expect(composer).toHaveValue("Keep this draft");
+  await expect(plugin.locator(".composer")).toContainText("draft.txt");
+  await page.goForward();
+  await expect(settings).toBeVisible();
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: viewport.width, height: 350 });
+  await settings.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect(await settings.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.screenshot({ path: info.outputPath("settings-short-viewport.png") });
+  await page.setViewportSize(viewport);
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page).toHaveURL(chatUrl);
+  await composer.click();
+  await expect(composer).toBeFocused();
+  await expect(composer).toHaveValue("Keep this draft");
+  await expect(plugin.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
+    timeout: 30_000,
+  });
+  await expect(plugin.locator(".activity[open]")).toHaveCount(0);
+  await expect(plugin.locator(".message.user")).toHaveCount(1);
+  await plugin.locator(".activity summary").last().click();
+  await expect(plugin.locator(".activity[open]").last()).toBeVisible();
+  await page.screenshot({ path: info.outputPath("settings-returned-chat.png") });
+  await openSettings();
+  await page.reload();
+  await expect(settings).toBeVisible();
+  await settings.getByRole("button", { name: "Close settings" }).click();
+  await expect(page).toHaveURL(chatUrl);
+  await expect(plugin.locator(".message.assistant").last()).toContainText("Isolated Hermes reply");
 });

@@ -25,6 +25,7 @@ import {
 import { projectRoot, projectSessions } from "./lib/projects";
 import ScheduledPage from "./components/ScheduledPage.vue";
 import ProjectsPage from "./components/ProjectsPage.vue";
+import SettingsPage from "./components/SettingsPage.vue";
 import ProjectSettings from "./components/ProjectSettings.vue";
 import ProjectInstructions from "./components/ProjectInstructions.vue";
 import * as push from "./lib/push";
@@ -161,12 +162,19 @@ const pushBusy = ref(false),
   pushLoading = ref(false),
   pushMessage = ref("");
 let pushGeneration = 0;
-const settingsOpen = ref(false),
-  settingsButton = ref<HTMLButtonElement | null>(null),
-  settingsPanel = ref<HTMLElement | null>(null);
-watch([drawer, profile, session, projectId, projectsPage, projectView, scheduledPage], () => {
-  settingsOpen.value = false;
-});
+const settingsPage = ref(false),
+  settingsButton = ref<HTMLButtonElement | null>(null);
+function contentView() {
+  return scheduledPage.value
+    ? "scheduled"
+    : projectsPage.value
+      ? "projects"
+      : projectPage.value
+        ? "project-" + projectPage.value
+        : projectView.value
+          ? "project"
+          : "";
+}
 const native = useNativeSession(() => {
   refreshProjects();
   void loadSessions();
@@ -207,6 +215,7 @@ function urlState() {
     session: params.get("session") || "",
     project: params.get("project") || "",
     view: params.get("view") || "",
+    returnView: params.get("return_view") || "",
     archived: params.get("archived") === "1",
   };
 }
@@ -216,21 +225,26 @@ function setUrl(replace = false) {
   url.searchParams.delete("session");
   url.searchParams.delete("project");
   url.searchParams.delete("view");
+  url.searchParams.delete("return_view");
   url.searchParams.delete("archived");
   url.searchParams.delete("job");
   url.searchParams.delete("scheduled_run");
-  if (scheduledPage.value) url.searchParams.set("view", "scheduled");
+  if (settingsPage.value) {
+    url.searchParams.set("view", "settings");
+    if (contentView()) url.searchParams.set("return_view", contentView());
+  } else if (scheduledPage.value) url.searchParams.set("view", "scheduled");
   else if (projectsPage.value) {
     url.searchParams.set("view", "projects");
-    if (archivedProjects.value) url.searchParams.set("archived", "1");
   } else if (projectPage.value) url.searchParams.set("view", "project-" + projectPage.value);
   else if (projectView.value) url.searchParams.set("view", "project");
+  if (projectsPage.value && archivedProjects.value) url.searchParams.set("archived", "1");
   if (!scheduledPage.value && projectId.value) url.searchParams.set("project", projectId.value);
   if (profile.value) url.searchParams.set("profile", profile.value);
   if (!scheduledPage.value && session.value) url.searchParams.set("session", session.value);
   history[replace ? "replaceState" : "pushState"]({}, "", url.pathname + url.search + url.hash);
 }
 function showScheduled(fromHistory = false) {
+  settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
   scheduledDiscussionError.value = "";
@@ -348,6 +362,7 @@ async function loadProject() {
   }
 }
 async function chooseProject(id: string, fromHistory = false) {
+  settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
   scheduledPage.value = false;
@@ -364,6 +379,7 @@ async function chooseProject(id: string, fromHistory = false) {
   await loadProject();
 }
 function showProjects(archived = false, fromHistory = false) {
+  settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
   scheduledPage.value = false;
@@ -398,6 +414,7 @@ async function recentSession(id: string) {
   await Promise.all([chooseSession(id), owner ? loadProject() : Promise.resolve()]);
 }
 async function newChat() {
+  settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
   scheduledPage.value = false;
@@ -409,6 +426,7 @@ async function newChat() {
   return await createSession();
 }
 function openProjectPage(page: "edit" | "instructions", fromHistory = false) {
+  settingsPage.value = false;
   if (!selectedProject.value || selectedProject.value.isNoProject) return;
   projectPage.value = page;
   projectView.value = true;
@@ -561,6 +579,7 @@ async function loadMessages() {
   return false;
 }
 async function chooseProfile(id: string, fromHistory = false) {
+  if (fromHistory) settingsPage.value = false;
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
     error.value = "Invalid profile name";
     return;
@@ -636,6 +655,7 @@ async function chooseProfile(id: string, fromHistory = false) {
   }
 }
 async function chooseSession(id: string, fromHistory = false) {
+  settingsPage.value = false;
   scheduledPage.value = false;
   if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id);
   else if (
@@ -1523,28 +1543,49 @@ function onlineChange() {
     void visibilityChange();
   }
 }
+async function restoreView(state: ReturnType<typeof urlState>) {
+  const view = state.view === "settings" ? state.returnView : state.view;
+  const pending = chooseProfile(state.profile, true);
+  let current = generation;
+  await pending;
+  if (current !== generation || profile.value !== state.profile) return;
+  if (view === "scheduled") showScheduled(true);
+  else if (view === "projects") showProjects(state.archived, true);
+  else if (state.project) {
+    await chooseProject(state.project, true);
+    if (current !== generation) return;
+    if (view === "project-edit" || view === "project-instructions")
+      openProjectPage(view === "project-edit" ? "edit" : "instructions", true);
+    else if (state.session && view !== "project") {
+      const selected = chooseSession(state.session, true);
+      current = generation;
+      await selected;
+    }
+  } else if (state.session) {
+    const selected = chooseSession(state.session, true);
+    current = generation;
+    await selected;
+  }
+  if (current === generation && state.view === "settings") await showSettings(true);
+}
 function pop() {
   const state = urlState();
-  const pending = chooseProfile(state.profile, true),
-    current = generation;
-  void pending.then(() => {
-    if (current === generation && profile.value === state.profile) {
-      if (state.view === "scheduled") showScheduled(true);
-      else if (state.view === "projects") showProjects(state.archived, true);
-      else if (state.project) {
-        void chooseProject(state.project, true).then(() => {
-          if (current !== generation) return;
-          if (state.view === "project-edit" || state.view === "project-instructions")
-            openProjectPage(state.view === "project-edit" ? "edit" : "instructions", true);
-          else if (state.session && state.view !== "project")
-            void chooseSession(state.session, true);
-        });
-      } else if (state.session) void chooseSession(state.session, true);
-    }
-  });
+  // Settings history never tears down an unchanged conversation or live stream.
+  if (
+    state.profile === profile.value &&
+    state.session === (scheduledPage.value ? "" : session.value) &&
+    state.project === (scheduledPage.value ? "" : projectId.value) &&
+    (!projectsPage.value || state.archived === archivedProjects.value) &&
+    ((state.view === "settings" && state.returnView === contentView()) ||
+      (settingsPage.value && state.view === contentView()))
+  ) {
+    if (state.view === "settings") void showSettings(true);
+    else void closeSettings(true);
+    return;
+  }
+  void restoreView(state);
 }
 function closeDrawer() {
-  settingsOpen.value = false;
   drawer.value = false;
   menuButton.value?.focus();
 }
@@ -1553,27 +1594,20 @@ async function openDrawer() {
   await nextTick();
   closeButton.value?.focus();
 }
-function closeSettings(restoreFocus = false) {
-  settingsOpen.value = false;
-  if (restoreFocus) settingsButton.value?.focus();
-}
-async function toggleSettings() {
-  if (settingsOpen.value) {
-    closeSettings(true);
-    return;
-  }
-  settingsOpen.value = true;
+async function closeSettings(fromHistory = false) {
+  settingsPage.value = false;
+  if (!fromHistory) setUrl();
   await nextTick();
-  settingsPanel.value?.focus();
+  // The drawer is hidden on mobile; restore focus to its visible opener.
+  if (window.matchMedia?.("(min-width: 701px)").matches ?? true) settingsButton.value?.focus();
+  else menuButton.value?.focus();
 }
-function settingsOutside(event: PointerEvent) {
-  if (
-    settingsOpen.value &&
-    event.target instanceof Node &&
-    !settingsPanel.value?.contains(event.target) &&
-    !settingsButton.value?.contains(event.target)
-  )
-    closeSettings();
+async function showSettings(fromHistory = false) {
+  if (settingsPage.value) return;
+  settingsPage.value = true;
+  drawer.value = false;
+  closeScreenMenu(false);
+  if (!fromHistory) setUrl();
 }
 function closeScreenMenu(restoreFocus = true) {
   if (screenMenu.value) {
@@ -1591,11 +1625,11 @@ function screenMenuOutside(event: MouseEvent) {
 }
 function drawerKey(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
-  if (settingsOpen.value) {
+  if (drawer.value) closeDrawer();
+  else if (settingsPage.value) {
     event.preventDefault();
-    closeSettings(true);
-  } else if (drawer.value) closeDrawer();
-  else closeScreenMenu();
+    void closeSettings();
+  } else closeScreenMenu();
 }
 async function reloadPushState() {
   const p = profile.value,
@@ -1652,7 +1686,12 @@ let pushClient: ReturnType<typeof connectPushClient> | undefined;
 const notificationSession = computed(() => ({
   profile: profile.value,
   session: session.value,
-  chat: !scheduledPage.value && !projectsPage.value && !projectView.value && !projectPage.value,
+  chat:
+    !settingsPage.value &&
+    !scheduledPage.value &&
+    !projectsPage.value &&
+    !projectView.value &&
+    !projectPage.value,
   connected: nativeMode.value && native.connection.value === "ready" && !offline.value,
 }));
 watch(notificationSession, () => pushClient?.publish(), { flush: "post" });
@@ -1687,24 +1726,8 @@ onMounted(async () => {
   addEventListener("offline", onlineChange);
   addEventListener("popstate", pop);
   addEventListener("keydown", drawerKey);
-  document.addEventListener("pointerdown", settingsOutside);
   document.addEventListener("click", screenMenuOutside);
-  const state = urlState();
-  const pending = chooseProfile(state.profile, true),
-    current = generation;
-  await pending;
-  if (current === generation && profile.value === state.profile) {
-    if (state.view === "scheduled") showScheduled(true);
-    else if (state.view === "projects") showProjects(state.archived, true);
-    else if (state.project) {
-      void chooseProject(state.project, true).then(() => {
-        if (current !== generation) return;
-        if (state.view === "project-edit" || state.view === "project-instructions")
-          openProjectPage(state.view === "project-edit" ? "edit" : "instructions", true);
-        else if (state.session && state.view !== "project") void chooseSession(state.session, true);
-      });
-    } else if (state.session) void chooseSession(state.session, true);
-  }
+  await restoreView(urlState());
 });
 onUnmounted(() => {
   pushClient?.stop();
@@ -1722,7 +1745,6 @@ onUnmounted(() => {
   removeEventListener("offline", onlineChange);
   removeEventListener("popstate", pop);
   removeEventListener("keydown", drawerKey);
-  document.removeEventListener("pointerdown", settingsOutside);
   document.removeEventListener("click", screenMenuOutside);
 });
 </script>
@@ -1843,10 +1865,8 @@ onUnmounted(() => {
             ref="settingsButton"
             class="drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]"
             aria-label="Settings"
-            aria-haspopup="dialog"
-            aria-controls="drawer-settings"
-            :aria-expanded="settingsOpen"
-            @click="toggleSettings"
+            :aria-current="settingsPage ? 'page' : undefined"
+            @click="showSettings()"
           >
             <svg
               class="size-6"
@@ -1869,81 +1889,6 @@ onUnmounted(() => {
             :class="offline ? 'disconnected bg-[#dcae6e]' : 'bg-[#94c9a5]'"
           />{{ offline ? "Offline · read only" : "Connected through dashboard" }}</span
         >
-        <section
-          v-if="settingsOpen"
-          id="drawer-settings"
-          ref="settingsPanel"
-          class="settings-panel absolute bottom-full left-0 right-0 mb-3 max-h-[60dvh] overflow-y-auto rounded-2xl border border-[#424242] bg-black p-3 shadow-xl"
-          role="dialog"
-          aria-label="Settings"
-          tabindex="-1"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <h2 class="text-base font-medium text-white">Settings</h2>
-            <button
-              class="size-11 rounded-lg text-xl text-white hover:bg-[#303030]"
-              aria-label="Close settings"
-              @click="closeSettings(true)"
-            >
-              ×
-            </button>
-          </div>
-          <div class="push-setting" aria-labelledby="notifications-heading">
-            <h3 id="notifications-heading" class="text-sm font-medium text-white">
-              Notifications for {{ profile || "default" }}
-            </h3>
-            <button
-              class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55"
-              :disabled="
-                pushBusy ||
-                pushLoading ||
-                !pushState.supported ||
-                (!pushState.subscribed && !pushState.available)
-              "
-              @click="togglePush"
-            >
-              {{
-                pushLoading
-                  ? "Loading…"
-                  : pushBusy
-                    ? "Updating…"
-                    : pushState.subscribed
-                      ? "Disable notifications"
-                      : "Enable notifications"
-              }}
-            </button>
-            <button
-              v-if="pushState.subscribed"
-              class="mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55"
-              :disabled="pushBusy || pushLoading || !pushState.available"
-              @click="testPush"
-            >
-              Send test
-            </button>
-            <p
-              v-if="pushState.error || pushMessage"
-              class="mt-1 text-xs text-[#dcae6e]"
-              role="status"
-            >
-              {{ pushMessage || pushState.error }}
-            </p>
-            <p v-else-if="pushState.subscribed" class="mt-1 text-xs">
-              Notifications enabled for {{ profile || "default" }} on this device.
-            </p>
-            <p v-else-if="pushLoading" class="mt-1 text-xs" role="status">
-              Loading profile notification status…
-            </p>
-            <p v-else-if="!pushState.supported" class="mt-1 text-xs">
-              Install ChatHermes on a secure HTTPS origin to enable notifications.
-            </p>
-            <p v-else-if="pushState.permission === 'denied'" class="mt-1 text-xs">
-              Allow notifications in browser settings to enable them.
-            </p>
-            <p v-else class="mt-1 text-xs">
-              Notifications disabled for {{ profile || "default" }} on this device.
-            </p>
-          </div>
-        </section>
       </div>
     </aside>
     <div
@@ -1974,16 +1919,18 @@ onUnmounted(() => {
         <div class="min-w-0 flex-1">
           <h1 class="header-title truncate text-base font-medium">
             {{
-              scheduledPage
-                ? "Scheduled"
-                : projectsPage
-                  ? "Projects"
-                  : sessions.find((s) => s.id === session)?.title ||
-                    (session ? "Conversation" : selectedProject?.label || "ChatHermes")
+              settingsPage
+                ? "Settings"
+                : scheduledPage
+                  ? "Scheduled"
+                  : projectsPage
+                    ? "Projects"
+                    : sessions.find((s) => s.id === session)?.title ||
+                      (session ? "Conversation" : selectedProject?.label || "ChatHermes")
             }}
           </h1>
           <p
-            v-if="projectId && session && selectedProject"
+            v-if="!settingsPage && projectId && session && selectedProject"
             class="header-project-subtitle truncate text-xs text-[#a3a3a3]"
           >
             {{ selectedProject.label }}
@@ -1991,6 +1938,7 @@ onUnmounted(() => {
         </div>
         <span class="topbar-profile sr-only">{{ profile || "Current profile" }}</span>
         <div
+          v-if="!settingsPage"
           ref="screenMenuWrap"
           class="screen-menu-wrap relative"
           @keydown.esc.stop.prevent="closeScreenMenu()"
@@ -2150,7 +2098,7 @@ onUnmounted(() => {
         You are offline. Messages cannot be loaded or sent.
       </div>
       <div
-        v-if="!scheduledPage && viewReconnect"
+        v-if="!settingsPage && !scheduledPage && viewReconnect"
         class="notice px-5 py-3 text-sm text-[#b4b4b4]"
         role="status"
       >
@@ -2172,14 +2120,14 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        v-if="!scheduledPage && !activeRun && terminalStatuses.includes(runStatus)"
+        v-if="!settingsPage && !scheduledPage && !activeRun && terminalStatuses.includes(runStatus)"
         class="px-5 py-2 text-sm text-[#b4b4b4]"
         role="status"
       >
         Run {{ runStatus }}.
       </div>
       <div
-        v-if="!scheduledPage && viewError"
+        v-if="!settingsPage && !scheduledPage && viewError"
         class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]"
         role="alert"
       >
@@ -2207,8 +2155,21 @@ onUnmounted(() => {
           I verified the run ended
         </button>
       </div>
+      <SettingsPage
+        v-if="settingsPage"
+        :profile="profile"
+        :profiles="profiles"
+        :push-state="pushState"
+        :push-busy="pushBusy"
+        :push-loading="pushLoading"
+        :push-message="pushMessage"
+        @profile="chooseProfile"
+        @toggle-push="togglePush"
+        @test-push="testPush"
+        @close="closeSettings()"
+      />
       <ScheduledPage
-        v-if="scheduledPage"
+        v-else-if="scheduledPage"
         :key="`${profile}:${scheduledPageKey}`"
         :profile="profile"
         :chat-busy="creating"
@@ -2407,13 +2368,20 @@ onUnmounted(() => {
         </template>
       </ChatTranscript>
       <div
-        v-if="!scheduledPage && viewActive && !viewReconnect && runStatus === 'stopping'"
+        v-if="
+          !settingsPage &&
+          !scheduledPage &&
+          viewActive &&
+          !viewReconnect &&
+          runStatus === 'stopping'
+        "
         class="px-5 py-2 text-sm text-[#b4b4b4]"
         role="status"
       >
         Stopping…
       </div>
       <ChatComposer
+        v-show="!settingsPage"
         :project-name="
           !scheduledPage && !projectsPage && !selectedProject?.isNoProject
             ? selectedProject?.label
