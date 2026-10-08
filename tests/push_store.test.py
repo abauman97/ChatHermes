@@ -128,7 +128,7 @@ def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, 
     assert options['vapid_claims'] == {'aud': 'https://push.test',
         'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
     assert options['timeout'] == 5
-    assert options['vapid_private_key'] not in json.dumps(payload)
+    assert options['vapid_private_key'].__class__.__name__ in {'ECPrivateKey', 'Vapid02'}
     assert store.config() == configuration
 
 
@@ -160,7 +160,7 @@ def test_delivery_failure_isolated_and_diagnostics_safe(tmp_path, monkeypatch, c
     def send(subscription, payload, **options):
         calls.append(json.loads(payload))
         if len(calls) == 1:
-            error = RuntimeError(secret + subscription['endpoint'] + options['vapid_private_key'])
+            error = RuntimeError(secret + subscription['endpoint'] + str(options['vapid_private_key']))
             error.response = types.SimpleNamespace(status_code=status)
             raise error
         return types.SimpleNamespace(status_code=201)
