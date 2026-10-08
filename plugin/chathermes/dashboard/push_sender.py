@@ -142,7 +142,9 @@ def notification_payload(profile, session_id, kind, message=None):
     # Missing completion text remains empty; never invent an assistant response.
     body = message if isinstance(message, str) else ('' if kind == 'turn.complete' else BODIES[kind])
     body = body.encode('utf-8', errors='replace').decode('utf-8')
-    data = {'type': kind, 'title': 'ChatHermes', 'profile': profile,
+    # Display identity must not rewrite the profile used for delivery/routing.
+    title = profile if isinstance(profile, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile) else 'ChatHermes'
+    data = {'type': kind, 'title': title, 'profile': profile,
             'session_id': session_id, 'tag': f'chathermes:{profile}:{session_id}:{kind}'}
     def encode(text):
         return json.dumps({**data, 'body': text}, ensure_ascii=False, separators=(',', ':'))

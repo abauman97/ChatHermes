@@ -32,7 +32,12 @@ requires a DNS HTTPS origin without a path or explicit port; credentials, query
 strings, fragments, localhost, and malformed URLs are rejected. The VAPID
 audience remains the push service origin, not the dashboard origin.
 
-Notification titles are exactly **ChatHermes**. Completion and failed/interrupted
+Notification titles use the originating Hermes profile name, preserving its case
+and spelling; the default profile is titled **default**. Empty or invalid profile
+values fall back to **ChatHermes** without changing the routing identity. The
+worker accepts queued legacy **ChatHermes** titles and displays the validated
+profile name; mismatched titles are rejected. Explicit tests use the same profile
+title rule. Completion and failed/interrupted
 notifications use the native `message.complete.payload.text`: the actual final
 assistant text, already redacted by the credential-safe native transport. This
 is authoritative even when the runtime rewrites its streamed response. Reasoning,
@@ -91,5 +96,5 @@ must work before the configuration reports available. If the
 Notifications control reports the service unavailable, verify HTTPS, browser
 permission, Home Screen installation (iOS), and that this library is installed.
 
-See [latest-main verification](verification/2026-10-07-push-notifications.md) for
-test results and the Docker/dashboard verification limitation.
+See [profile-title verification](verification/2026-10-08-push-profile-titles.md)
+for exact test results and browser/transport verification limitations.

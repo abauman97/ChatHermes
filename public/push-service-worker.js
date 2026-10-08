@@ -96,8 +96,11 @@ self.addEventListener('activate', event => event.waitUntil(self.clients.claim())
 self.addEventListener('push', event => {
   let data
   try { data = event.data?.json() } catch { return }
-  if (!data || data.title !== 'ChatHermes' || !['turn.complete', 'approval', 'clarify', 'attention', 'test'].includes(data.type)) return
+  if (!data || !['turn.complete', 'approval', 'clarify', 'attention', 'test'].includes(data.type)) return
   const profile = typeof data.profile === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(data.profile) ? data.profile : ''
+  const title = profile || 'ChatHermes'
+  // Accept queued legacy payloads, but never display a title for another profile.
+  if (data.title !== title && data.title !== 'ChatHermes') return
   const session = typeof data.session_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(data.session_id) ? data.session_id : ''
   if (!session && data.type !== 'test') return
   const url = new URL(APP_URL, self.location.origin)
@@ -107,7 +110,7 @@ self.addEventListener('push', event => {
     if (data.type !== 'test' && profile) {
       if (await closeVisibleNotifications({ profile, session })) return
     }
-    await self.registration.showNotification('ChatHermes', {
+    await self.registration.showNotification(title, {
       body: typeof data.body === 'string' ? Array.from(data.body).slice(0, 3000).join('') : '',
       tag: typeof data.tag === 'string' && /^chathermes:[A-Za-z0-9_-]{1,220}$/.test(data.tag) ? data.tag : `chathermes:${profile}:${session}:${data.type}`,
       data: { url: url.href }, icon: '/api/plugins/chathermes/assets/dist/icons/icon-192.png', badge: '/api/plugins/chathermes/assets/dist/icons/icon-192.png',

@@ -123,9 +123,11 @@ def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, mon
     assert len(sent) == 1
     subscription, payload, options = sent[0]
     assert subscription['endpoint'] == 'https://push.test/a'
-    assert payload['title'] == 'ChatHermes'
+    assert payload['title'] == 'alpha'
     assert payload['body'] == 'Actual assistant message 😀'
+    assert payload['profile'] == 'alpha'
     assert payload['session_id'] == 'session_123'
+    assert payload['tag'] == 'chathermes:alpha:session_123:turn.complete'
     assert options['vapid_claims'] == {'aud': 'https://push.test',
         'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
     assert options['timeout'] == 5
@@ -308,7 +310,7 @@ def test_assistant_payload_size_title_and_safe_unicode(message):
     raw = sender.notification_payload('a' * 64, 's' * 128, 'turn.complete', message)
     assert len(raw.encode('utf-8')) <= sender.MAX_PAYLOAD_BYTES
     payload = json.loads(raw)
-    assert payload['title'] == 'ChatHermes'
+    assert payload['title'] == 'a' * 64
     normalized = message.encode('utf-8', errors='replace').decode('utf-8')
     assert payload['body'] == normalized or (payload['body'].endswith('…') and normalized.startswith(payload['body'][:-1]))
     assert json.loads(sender.notification_payload('alpha', 'session', 'turn.complete'))['body'] == ''
@@ -326,3 +328,20 @@ def test_provider_diagnostics_cannot_echo_assistant_message(caplog):
         sender.diagnostic('pywebpush.result', 'alpha', 'session', 'turn.complete', success=False,
                           **sender._response_details(response), provider_body=message)
     assert message not in caplog.text
+
+
+@pytest.mark.parametrize('profile, title', [('Alpha_Name-2', 'Alpha_Name-2'), ('default', 'default'),
+                                           ('', 'ChatHermes'), (None, 'ChatHermes'),
+                                           ('../bad', 'ChatHermes'), ('a' * 65, 'ChatHermes')])
+@pytest.mark.parametrize('kind', ['turn.complete', 'approval', 'clarify', 'attention', 'test'])
+def test_payload_profile_title_preserves_identity_and_test_body(profile, title, kind):
+    spec = importlib.util.spec_from_file_location('sender_profile_title', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sender)
+    session = '' if kind == 'test' else 'stored_session'
+    payload = json.loads(sender.notification_payload(profile, session, kind))
+    assert payload['title'] == title
+    assert payload['profile'] == profile
+    assert payload['session_id'] == session
+    assert payload['tag'] == f'chathermes:{profile}:{session}:{kind}'
+    assert payload['body'] == ('' if kind == 'turn.complete' else sender.BODIES[kind])

@@ -29,7 +29,10 @@ function harness() {
     handlers[type]!({ ...fields, waitUntil: (promise: any) => { pending = promise } })
     await pending
   }
-  const push = (extra = {}) => dispatch('push', { data: { json: () => ({ title: 'ChatHermes', type: 'turn.complete', profile: 'alpha', session_id: 'one', body: 'Chat text', ...extra }) } })
+  const push = (extra: Record<string, any> = {}) => {
+    const profile = extra.profile ?? 'alpha'
+    return dispatch('push', { data: { json: () => ({ title: profile || 'ChatHermes', type: 'turn.complete', profile, session_id: 'one', body: 'Chat text', ...extra }) } })
+  }
   const update = () => dispatch('message', { source: client, data: state })
   return { client, show, getNotifications, matchAll, notifications, push, update, dispatch, setState: (value: any) => { state = value }, patch: (value: any) => { state = { ...state, ...value } }, setClients: (value: any[]) => { clients = value } }
 }
@@ -43,7 +46,7 @@ describe('visible session notifications', () => {
     { url: route + '&session=two' }, { url: route + '&profile=beta' }, { url: 'https://other.test/chathermes' },
     { connected: 'true' }, { visible: false }, { visible: undefined }, { visible: 'true' }])('shows for mismatched or disconnected state %j', async patch => {
     const h = harness(); h.patch(patch); await h.push(); expect(h.show).toHaveBeenCalledOnce()
-    expect(h.show.mock.calls[0]).toMatchObject(['ChatHermes', { body: 'Chat text' }])
+    expect(h.show.mock.calls[0]).toMatchObject(['alpha', { body: 'Chat text' }])
   })
   it.each([undefined, 'hidden', 'unknown'])('delivers when window visibility is %s even with a positive reply', async visibilityState => {
     const h = harness(); Object.assign(h.client, { visibilityState }); await h.push()
@@ -193,9 +196,43 @@ describe('visible session notifications', () => {
     const h = harness(); h.setClients([])
     const body = 'Actual assistant reply ' + '😀'.repeat(250)
     await h.push({ body })
-    expect(h.show).toHaveBeenCalledWith('ChatHermes', expect.objectContaining({ body }))
+    expect(h.show).toHaveBeenCalledWith('alpha', expect.objectContaining({ body }))
     await h.push({ body: '😀'.repeat(3001) })
     expect(h.show.mock.calls[1]![1].body).toBe('😀'.repeat(3000))
+  })
+  it.each(['Alpha_Name-2', 'default', 'a'.repeat(64)])('uses profile %s for titles and session routing for every notification kind', async profile => {
+    const h = harness(); h.setClients([])
+    for (const type of ['turn.complete', 'approval', 'clarify', 'attention', 'test']) {
+      const session = type === 'test' ? '' : 'stored_session'
+      await h.push({ profile, type, session_id: session })
+      const url = new URL('/chathermes', origin)
+      url.searchParams.set('profile', profile)
+      if (session) url.searchParams.set('session', session)
+      expect(h.show).toHaveBeenLastCalledWith(profile, expect.objectContaining({
+        tag: `chathermes:${profile}:${session}:${type}`, data: { url: url.href },
+      }))
+    }
+    expect(h.show).toHaveBeenCalledTimes(5)
+  })
+  it.each(['', undefined, null, '../bad', 'a'.repeat(65)])('uses a safe title fallback for profile %s without adding a route profile', async profile => {
+    const h = harness(); h.setClients([])
+    await h.push({ profile, title: 'ChatHermes' })
+    expect(h.show).toHaveBeenCalledWith('ChatHermes', expect.objectContaining({
+      data: { url: origin + '/chathermes?session=one' },
+    }))
+  })
+  it('accepts queued legacy titles and displays their originating profile', async () => {
+    const h = harness(); h.setClients([])
+    await h.push({ title: 'ChatHermes', profile: 'beta' })
+    expect(h.show).toHaveBeenCalledWith('beta', expect.objectContaining({
+      data: { url: origin + '/chathermes?profile=beta&session=one' },
+    }))
+  })
+  it.each([{ title: 'beta' }, { title: '' }, { title: undefined }, { title: {} },
+    { title: 'x'.repeat(5000) }, { type: 'unknown' }, { session_id: '' },
+    { session_id: '../bad' }, { profile: '../bad', title: '../bad' }])('rejects malformed or mismatched payload %j', async extra => {
+    const h = harness(); h.setClients([]); await h.push(extra)
+    expect(h.show).not.toHaveBeenCalled()
   })
   it('always displays test notifications and preserves bounded chat body', async () => {
     const h = harness(); await h.push({ type: 'test', session_id: '', body: 'x'.repeat(200) }); expect(h.show).toHaveBeenCalledOnce(); expect(h.notifications[0].body).toHaveLength(200)
