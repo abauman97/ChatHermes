@@ -101,7 +101,7 @@ def test_keypair_is_persisted_and_private_never_returned(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('configured', [True, False])
-def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, monkeypatch, configured):
+def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, monkeypatch, configured):
     import pywebpush
     sender_spec = importlib.util.spec_from_file_location('chathermes_push_sender_under_test',
                                                        Path(store.__file__).with_name('push_sender.py'))
@@ -119,11 +119,12 @@ def test_installed_sender_uses_persisted_key_and_content_free_payload(tmp_path, 
     if not configured:
         monkeypatch.delenv('HERMES_DASHBOARD_PUBLIC_URL')
     sender._deliver('alpha', 'session_123', 'turn.complete', 'event_123',
-                    SimpleNamespace(base_url='https://fallback.test/chathermes/'))
+                    SimpleNamespace(base_url='https://fallback.test/chathermes/'), message='Actual assistant message 😀')
     assert len(sent) == 1
     subscription, payload, options = sent[0]
     assert subscription['endpoint'] == 'https://push.test/a'
-    assert payload['body'] == 'Hermes finished responding.'
+    assert payload['title'] == 'ChatHermes'
+    assert payload['body'] == 'Actual assistant message 😀'
     assert payload['session_id'] == 'session_123'
     assert options['vapid_claims'] == {'aud': 'https://push.test',
         'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
@@ -270,7 +271,7 @@ def test_notify_reports_thread_start_result(monkeypatch):
     class Thread:
         def __init__(self, target, args, daemon):
             assert target == sender._deliver and daemon is True
-            assert args == ('alpha', 'stored', 'turn.complete', '1', request)
+            assert args == ('alpha', 'stored', 'turn.complete', '1', request, None)
         def start(self): starts.append(True)
     monkeypatch.setattr(threading, 'Thread', Thread)
     assert sender.notify('alpha', 'stored', 'turn.complete', '1', request=request) is True
@@ -297,3 +298,31 @@ def test_sender_invalid_subject_never_attempts_transport(tmp_path, monkeypatch, 
     assert len(store.subscriptions('alpha')) == 1
     assert 'RuntimeError' in caplog.text
     assert 'private-secret' not in caplog.text and 'dashboard.test' not in caplog.text
+
+
+@pytest.mark.parametrize('message', ['Real reply', '😀' * 5000, '\n"\\' * 5000, '漢字' * 5000, '\ud800' * 5000, ''])
+def test_assistant_payload_size_title_and_safe_unicode(message):
+    spec = importlib.util.spec_from_file_location('sender_payload', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sender)
+    raw = sender.notification_payload('a' * 64, 's' * 128, 'turn.complete', message)
+    assert len(raw.encode('utf-8')) <= sender.MAX_PAYLOAD_BYTES
+    payload = json.loads(raw)
+    assert payload['title'] == 'ChatHermes'
+    normalized = message.encode('utf-8', errors='replace').decode('utf-8')
+    assert payload['body'] == normalized or (payload['body'].endswith('…') and normalized.startswith(payload['body'][:-1]))
+    assert json.loads(sender.notification_payload('alpha', 'session', 'turn.complete'))['body'] == ''
+
+
+def test_provider_diagnostics_cannot_echo_assistant_message(caplog):
+    from types import SimpleNamespace
+    import logging
+    spec = importlib.util.spec_from_file_location('sender_private_message', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sender)
+    message = 'A private assistant message'
+    response = SimpleNamespace(text=message, status_code=400)
+    with caplog.at_level(logging.INFO):
+        sender.diagnostic('pywebpush.result', 'alpha', 'session', 'turn.complete', success=False,
+                          **sender._response_details(response), provider_body=message)
+    assert message not in caplog.text

@@ -104,24 +104,7 @@ def _response_details(response):
                 safe_headers[key] = value
         if safe_headers:
             details['provider_headers'] = safe_headers
-    body = getattr(response, 'text', None)
-    if isinstance(body, str) and body:
-        details['provider_body'] = _sanitize_provider_body(body)
     return details
-
-
-def _sanitize_provider_body(body):
-    """Keep diagnostic wording but redact likely identifiers, endpoints and credentials."""
-    text = body[:4096]
-    text = re.sub(r'https?://\S+', '[redacted-url]', text, flags=re.IGNORECASE)
-    text = re.sub(r'(?i)(authorization|token|secret|key|endpoint|subscription)\s*[=:]([^\s,;]+)',
-                  r'\1=[redacted]', text)
-    text = re.sub(r'(?i)bearer\s+\S+', 'Bearer [redacted]', text)
-    text = re.sub(r'(?<![A-Za-z0-9])[A-Za-z0-9_-]{48,}(?![A-Za-z0-9])', '[redacted-token]', text)
-    if len(text) > 2000:
-        text = text[:1989] + '[truncated]'
-    return text
-
 
 
 def diagnostic(stage, profile, session_id, kind, **fields):
@@ -141,7 +124,6 @@ def diagnostic(stage, profile, session_id, kind, **fields):
             (key == 'error_category' and isinstance(value, str) and value in _ERROR_CATEGORIES) or
             (key == 'error_line' and type(value) is int and 1 <= value <= 100000) or
             (key == 'http_reason' and isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9 _.-]{1,80}', value)) or
-            (key == 'provider_body' and isinstance(value, str) and len(value) <= 2000) or
             (key == 'provider_headers' and isinstance(value, dict) and
              all(k in _PUSH_HEADER_ALLOWLIST and isinstance(v, str) and len(v) <= 160 for k, v in value.items()))}), separators=(',', ':')))
 
@@ -151,12 +133,39 @@ BODIES = {'turn.complete': 'Hermes finished responding.', 'approval': 'Hermes ne
           'test': 'This is a ChatHermes test notification.'}
 
 
-def notify(profile, session_id, kind, dedupe_id, request=None):
+# Leave room below the Web Push 4096-byte encrypted record limit for encryption.
+MAX_PAYLOAD_BYTES = 3000
+
+
+def notification_payload(profile, session_id, kind, message=None):
+    # Native message.complete.text is authoritative, including rewritten finals.
+    # Missing completion text remains empty; never invent an assistant response.
+    body = message if isinstance(message, str) else ('' if kind == 'turn.complete' else BODIES[kind])
+    body = body.encode('utf-8', errors='replace').decode('utf-8')
+    data = {'type': kind, 'title': 'ChatHermes', 'profile': profile,
+            'session_id': session_id, 'tag': f'chathermes:{profile}:{session_id}:{kind}'}
+    def encode(text):
+        return json.dumps({**data, 'body': text}, ensure_ascii=False, separators=(',', ':'))
+    # Bound initial work too: no message can fit more than this many code points.
+    candidate = body[:MAX_PAYLOAD_BYTES]
+    if len(body) <= MAX_PAYLOAD_BYTES and len(encode(candidate).encode('utf-8')) <= MAX_PAYLOAD_BYTES:
+        return encode(candidate)
+    low, high = 0, len(candidate)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if len(encode(candidate[:mid] + '…').encode('utf-8')) <= MAX_PAYLOAD_BYTES:
+            low = mid
+        else:
+            high = mid - 1
+    return encode(candidate[:low] + '…')
+
+
+def notify(profile, session_id, kind, dedupe_id, request=None, message=None):
     """Schedule delivery off the native event callback; never block Hermes."""
     diagnostic('sender.notify', profile, session_id, kind)
     try:
         import threading
-        thread = threading.Thread(target=_deliver, args=(profile, session_id, kind, dedupe_id, request), daemon=True)
+        thread = threading.Thread(target=_deliver, args=(profile, session_id, kind, dedupe_id, request, message), daemon=True)
         thread.start()
         diagnostic('sender.scheduled', profile, session_id, kind, success=True)
         return True
@@ -165,7 +174,7 @@ def notify(profile, session_id, kind, dedupe_id, request=None):
         return False
 
 
-def _deliver(profile, session_id, kind, dedupe_id, request=None):
+def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None):
     if kind not in BODIES or not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile):
         diagnostic('deliver.invalid', profile, session_id, kind)
         return
@@ -190,8 +199,7 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None):
             failure_stage = 'vapid_key_load'
             vapid = Vapid.from_pem(data['vapid']['private_key'].encode())
         failure_stage = 'payload_build'
-        payload = json.dumps({'type': kind, 'title': 'ChatHermes', 'body': BODIES[kind], 'profile': profile,
-            'session_id': session_id, 'tag': f'chathermes:{profile}:{session_id}:{kind}'}, separators=(',', ':'))
+        payload = notification_payload(profile, session_id, kind, message)
         subject = push_store.vapid_subject(request)
         for row in rows:
             report('pywebpush.attempt', subscription=row.get('id'), attempted=True)

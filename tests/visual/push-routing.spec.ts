@@ -4,12 +4,12 @@ import { signIn } from './login'
 // Real mounted plugin and worker; only synthetic notification text and sessions.
 const origin = new URL(process.env.CHATHERMES_TEST_URL || 'http://127.0.0.1:9119').origin
 test.use({ trace: 'off', launchOptions: { executablePath: process.env.CHATHERMES_CHROMIUM, args: ['--unsafely-treat-insecure-origin-as-secure=' + origin] } })
-test('worker checks connected SPA session and closes matching notifications on reconnect', async ({ page, context }, info) => {
+test('worker checks visible connected SPA session and closes matching notifications on reconnect', async ({ page, context }, info) => {
   await context.grantPermissions(['notifications'], { origin })
   await signIn(page)
   await page.evaluate(async () => { await navigator.serviceWorker.ready })
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker')
-  const sessions = () => worker.evaluate(`connectedSessions()`)
+  const sessions = () => worker.evaluate(`visibleSessions()`)
   const tags = () => worker.evaluate(`(async () => (await self.registration.getNotifications()).map(n => n.tag).sort())()`)
   await expect.poll(sessions).toEqual([])
   const composer = page.getByRole('textbox', { name: 'Message Hermes' })

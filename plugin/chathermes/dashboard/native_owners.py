@@ -96,9 +96,9 @@ class Owner:
                 self.finished_at = time.time()
                 self.schedule_cleanup()
                 if payload.get('status', 'complete') == 'complete':
-                    self.notify('turn.complete', p.get('seq'))
+                    self.notify('turn.complete', p.get('seq'), payload.get('text'))
                 elif payload.get('status') in ('error', 'failed', 'stopped', 'interrupted'):
-                    self.notify('attention', p.get('seq'))
+                    self.notify('attention', p.get('seq'), payload.get('text'))
             if kind in ('approval', 'clarify'):
                 request_id = frame.get('id')
                 self.notify(kind, request_id if isinstance(request_id, (str, int)) else p.get('seq'))
@@ -110,7 +110,7 @@ class Owner:
             frame = {'jsonrpc': '2.0', 'method': 'chat.unsupported', 'params': {'method': frame['method']}}
         self.publish(frame)
 
-    def notify(self, kind, identity):
+    def notify(self, kind, identity, message=None):
         push_log('owner.notify', self.profile, self.stored, kind, duplicate=(kind, str(identity)) in self.notified)
         if identity is None:
             return
@@ -125,7 +125,7 @@ class Owner:
             sender = self.api._push_sender_module
             if sender:
                 # Browser routes use the stored session ID, not the resumed runtime alias.
-                scheduled = sender.notify(self.profile, self.stored, kind, str(identity))
+                scheduled = sender.notify(self.profile, self.stored, kind, str(identity), message=message if isinstance(message, str) else None)
                 if scheduled is not True:
                     push_log('owner.unscheduled', self.profile, self.stored, kind)
             else:

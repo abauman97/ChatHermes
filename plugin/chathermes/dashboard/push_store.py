@@ -161,6 +161,15 @@ def upsert(profile, subscription):
         return {'id': found['id'], 'profile': profile, 'created_at': found['created_at'], 'enabled': True}
 
 
+def status(profile, endpoint):
+    """Device/profile status only; never return endpoint or subscription keys."""
+    with _LOCK:
+        row = next((row for row in _read()['subscriptions']
+                    if row.get('profile') == profile and row.get('endpoint') == endpoint
+                    and row.get('enabled') is True), None)
+        return {'profile': profile, 'enabled': row is not None, 'id': row['id'] if row else None}
+
+
 def remove(profile, identity):
     with _LOCK:
         data = _read()
