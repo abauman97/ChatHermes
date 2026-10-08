@@ -40,7 +40,7 @@ test("profile notifications have independent status and actions in the mounted d
   if (info.project.name === "mobile")
     await plugin.getByRole("button", { name: "Open navigation" }).click();
   const settings = plugin.getByRole("button", { name: "Settings", exact: true });
-  const select = plugin.getByRole("combobox", { name: "Profile", exact: true });
+  const select = plugin.getByRole("combobox", { name: "Active profile", exact: true });
   const panel = plugin.locator(".push-setting");
   const endpoint = "https://push.example.test/synthetic-profile-settings";
   const status = async (profile: string) => {
@@ -69,9 +69,6 @@ test("profile notifications have independent status and actions in the mounted d
   await expect(panel).toContainText("Notifications enabled for default on this device.");
   await page.screenshot({ path: info.outputPath("push-default-enabled.png") });
   await select.selectOption("test-profile");
-  if (info.project.name === "mobile")
-    await plugin.getByRole("button", { name: "Open navigation" }).click();
-  await settings.click();
   await expect(panel).toContainText("Notifications for test-profile");
   await expect(panel).toContainText("Notifications disabled for test-profile on this device.");
   await panel.getByRole("button", { name: "Enable notifications", exact: true }).click();
@@ -83,9 +80,6 @@ test("profile notifications have independent status and actions in the mounted d
   expect((await status("test-profile")).enabled).toBe(false);
   await page.screenshot({ path: info.outputPath("push-secondary-disabled.png") });
   await select.selectOption("");
-  if (info.project.name === "mobile")
-    await plugin.getByRole("button", { name: "Open navigation" }).click();
-  await settings.click();
   await expect(panel).toContainText("Notifications enabled for default on this device.");
   await panel.getByRole("button", { name: "Disable notifications", exact: true }).click();
   await expect(panel).toContainText("Notifications disabled for default on this device.");
