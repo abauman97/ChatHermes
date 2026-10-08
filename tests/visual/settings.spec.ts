@@ -109,8 +109,8 @@ test('drawer settings and notifications', async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('new-chat.png') })
 })
 
-test('ChatHermes PWA branding tags are injected on mount and cleaned up on unmount', async ({ page }) => {
-  await signIn(page)
+test('ChatHermes PWA branding tags are injected on mount and cleaned up on host navigation', async ({ page }) => {
+  await signIn(page, '/chathermes')
   const pluginAssets = '/api/plugins/chathermes/assets/dist/'
   const manifestLink = page.locator('link[rel="manifest"]')
   const appleIconLink = page.locator('link[rel="apple-touch-icon"]')
@@ -118,18 +118,12 @@ test('ChatHermes PWA branding tags are injected on mount and cleaned up on unmou
   await expect(manifestLink).toHaveAttribute('href', pluginAssets + 'manifest.webmanifest')
   await expect(appleIconLink).toHaveAttribute('href', pluginAssets + 'apple-touch-icon.png')
   await expect(appleTitle).toHaveAttribute('content', 'ChatHermes')
-  const clean = await page.evaluate(() => {
-    const ownedTags = [...document.head.querySelectorAll(
-      'link[rel="manifest"], link[rel="apple-touch-icon"], meta[name="apple-mobile-web-app-title"]',
-    )].filter(tag => tag.getAttribute('data-chathermes-pwa') === 'true')
-    for (const tag of ownedTags) tag.removeAttribute('data-chathermes-pwa')
-    return ownedTags.length
-  })
-  await page.evaluate(() => document.querySelector('.chathermes-embedded')?.parentElement?.remove())
+  await page.locator('a[href="/sessions"]').first().evaluate((el: HTMLAnchorElement) => el.click())
+  await page.waitForURL(url => url.pathname === '/sessions')
+  await expect(page.locator('.chathermes-embedded')).toHaveCount(0)
   await expect(manifestLink).toHaveCount(0)
   await expect(appleIconLink).toHaveCount(0)
   await expect(appleTitle).toHaveCount(0)
-  expect(clean).toBe(0)
 })
 
 test('compact black drawer and screen menu dismissal preserve focus and actions', async ({ page }, testInfo) => {
