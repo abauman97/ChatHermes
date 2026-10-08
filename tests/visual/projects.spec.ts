@@ -109,6 +109,50 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   expect(errors).toEqual([])
 })
 
+test('New Project Chat stays scoped from project home and an open chat', async ({ page }, testInfo) => {
+  const mobile = testInfo.project.name === 'mobile'
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 })
+  await signIn(page, '/chathermes?view=projects')
+  const plugin = page.locator('.chathermes-embedded')
+  const options = plugin.getByRole('button', { name: 'Screen options', exact: true })
+  const action = plugin.getByRole('menuitem', { name: 'New Project Chat', exact: true })
+  await options.click(); await expect(action).toHaveCount(0); await page.keyboard.press('Escape')
+  await plugin.locator('.project-list').getByRole('button', { name: 'Hermes Mobile', exact: true }).click()
+  const projectId = new URL(page.url()).searchParams.get('project')!
+  const ids: string[] = []
+  for (const context of ['home', 'chat']) {
+    await options.click()
+    await expect(action).toBeEnabled()
+    await expect(plugin.getByRole('menuitem', { name: 'New chat', exact: true })).toBeVisible()
+    await page.screenshot({ animations: 'disabled', path: testInfo.outputPath(`new-project-chat-${context}-menu.png`) })
+    const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/plugins/chathermes/projects/session' && response.request().method() === 'POST')
+    await action.click()
+    const response = await created
+    expect(response.status()).toBe(201)
+    expect(new URL(response.url()).searchParams.get('project_id')).toBe(projectId)
+    const session = (await response.json()).session
+    expect(session.cwd).toBe('/tmp/chathermes-issue7-runtime/workspace-a')
+    ids.push(session.id)
+    await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(session.id)
+    expect(new URL(page.url()).searchParams.get('project')).toBe(projectId)
+    expect(new URL(page.url()).searchParams.has('view')).toBe(false)
+    await expect(plugin.getByRole('menu', { name: 'Screen options', exact: true })).toHaveCount(0)
+    const prompt = plugin.getByRole('textbox', { name: 'Message Hermes' })
+    await prompt.click(); await expect(prompt).toBeFocused()
+    await expect(prompt).toHaveAttribute('placeholder', 'Message Hermes Mobile')
+    expect(await plugin.evaluate(el => el.scrollWidth <= innerWidth)).toBe(true)
+  }
+  expect(ids[0]).not.toBe(ids[1])
+  // Navigation retains selectedProject internally; the action must still disappear.
+  if (mobile) await plugin.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await plugin.locator('.sidebar').getByRole('button', { name: 'Scheduled', exact: true }).click()
+  await options.click(); await expect(action).toHaveCount(0); await page.keyboard.press('Escape')
+  if (mobile) await plugin.getByRole('button', { name: 'Open navigation', exact: true }).click()
+  await plugin.locator('.drawer-chat').click()
+  await expect.poll(() => new URL(page.url()).searchParams.has('project')).toBe(false)
+  await options.click(); await expect(action).toHaveCount(0)
+})
+
 test('Other chats preserve sent/activity/response order and disclosure transitions', async ({ page }, testInfo) => {
   await page.setViewportSize(testInfo.project.name === 'mobile' ? { width: 390, height: 844 } : { width: 1280, height: 900 })
   let sent = false, finish!: () => void
