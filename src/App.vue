@@ -744,7 +744,10 @@ onUnmounted(() => { pushClient?.stop(); pushClient = undefined; profileGeneratio
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button ref="menuButton" class="mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]" aria-label="Open navigation" :aria-expanded="drawer" @click="openDrawer"><svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 13h12" /></svg></button>
-        <h1 class="header-title min-w-0 flex-1 truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : (projectId ? selectedProject?.label : sessions.find(s => s.id === session)?.title) || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
+        <div class="min-w-0 flex-1">
+          <h1 class="header-title truncate text-base font-medium">{{ scheduledPage ? 'Scheduled' : projectsPage ? 'Projects' : sessions.find(s => s.id === session)?.title || (session ? 'Conversation' : selectedProject?.label || 'ChatHermes') }}</h1>
+          <p v-if="projectId && session && selectedProject" class="header-project-subtitle truncate text-xs text-[#a3a3a3]">{{ selectedProject.label }}</p>
+        </div>
         <span class="topbar-profile sr-only">{{ profile || 'Current profile' }}</span>
         <div ref="screenMenuWrap" class="screen-menu-wrap relative" @keydown.esc.stop.prevent="closeScreenMenu()">
           <button ref="screenMenuButton" class="screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]" aria-label="Screen options" aria-haspopup="menu" :aria-expanded="screenMenu" aria-controls="screen-menu" @click="screenMenu = !screenMenu">···</button>
