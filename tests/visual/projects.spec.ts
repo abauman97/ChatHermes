@@ -58,6 +58,7 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   const tree = await page.request.get('/api/plugins/chathermes/projects')
   const project = (await tree.json()).projects.find((p: { label: string }) => p.label === 'Hermes Mobile')
   expect(project.sessionIds).toContain(session.id)
+  const recentTitle = await nav.locator('.session-select[aria-current="page"] span').innerText()
   // Enter B without moving the existing A session; another turn still runs in A.
   await showProjects(); await list.getByRole('button', { name: 'AcumaticaMCP', exact: true }).click()
   expect(new URL(page.url()).searchParams.get('session')).toBe(session.id)
@@ -65,6 +66,18 @@ test('gateway Projects create workspace chats, discover context, refresh and pre
   await page.reload()
   await expect(view).toContainText('AcumaticaMCP')
   const selectedScope = new URL(page.url()).searchParams.get('project')!
+  // Resuming A from Recents restores its own scope while displaying the chat.
+  await open(); await nav.locator('.session-select').filter({ has: page.getByText(recentTitle, { exact: true }) }).click()
+  await expect(view).toHaveCount(0)
+  await expect(plugin.locator('.message.assistant').last()).toContainText('Project context discovered.')
+  expect(new URL(page.url()).searchParams.get('project')).toBe(project.id)
+  expect(new URL(page.url()).searchParams.get('session')).toBe(session.id)
+  expect(new URL(page.url()).searchParams.has('view')).toBe(false)
+  await composer.click(); await expect(composer).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath('project-drawer-resumed.png') })
+  await page.reload()
+  await expect(plugin.locator('.message.assistant').last()).toContainText('Project context discovered.')
+  expect(new URL(page.url()).searchParams.get('project')).toBe(project.id)
   await page.goto(`/chathermes?project=${encodeURIComponent(selectedScope)}&session=${encodeURIComponent(session.id)}`)
   await expect(plugin.locator('.message.assistant').last()).toContainText('Project context discovered.')
   await composer.fill('Check my unchanged workspace [tool] [workspace]')
