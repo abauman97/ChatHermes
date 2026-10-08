@@ -214,26 +214,36 @@ describe('authoritative gateway Projects', () => {
     expect(fetch.mock.calls.some(([url]) => url.includes('/workspace/sessions/project_created/chat/stream?profile=alpha'))).toBe(true)
     wrapper.unmount()
   })
-  it.each(['', '&view=project-edit', '&view=project-instructions'])('creates a fresh project chat from active context %s', async view => {
-    setup(); history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a' + view)
+  it.each(['', '&session=project_s1', '&view=project-edit', '&view=project-instructions'])('creates a fresh project chat from active context %s', async context => {
+    setup(); history.replaceState({}, '', '/chathermes?profile=alpha&project=p_a' + context)
     const create = vi.spyOn(api, 'projectCreate'), unscoped = vi.spyOn(api, 'create')
     const wrapper = mount(App); await flushPromises()
+    if (context === '&session=project_s1') {
+      expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false)
+      expect(new URLSearchParams(location.search).get('session')).toBe('project_s1')
+    }
     await wrapper.get('[aria-label="Screen options"]').trigger('click')
     const menu = wrapper.get('[role="menu"]')
     expect(menu.findAll('[role="menuitem"]').filter(button => button.text() === 'New chat')).toHaveLength(1)
     const action = menu.findAll('[role="menuitem"]').find(button => button.text() === 'New Project Chat')!
+    expect(action).toBeDefined()
     expect(action.attributes('disabled')).toBeUndefined()
     await action.trigger('click'); await flushPromises()
     expect(create).toHaveBeenCalledExactlyOnceWith('alpha', 'p_a')
     expect(unscoped).not.toHaveBeenCalled()
     expect(new URLSearchParams(location.search).get('project')).toBe('p_a')
     expect(new URLSearchParams(location.search).get('session')).toBe('project_created')
+    expect(new URLSearchParams(location.search).get('session')).not.toBe('project_s1')
     expect(new URLSearchParams(location.search).has('view')).toBe(false)
     expect(wrapper.find('[role="menu"]').exists()).toBe(false)
     expect(wrapper.get('#prompt').attributes('placeholder')).toBe('Message Project A')
     wrapper.unmount()
   })
-  it.each(['', '?session=s1', '?view=projects', '?view=scheduled', '?project=home', '?project=p_missing'])('hides New Project Chat outside project context: %s', async query => {
+  it.each([
+    '', '?session=s1', '?session=project_s1', '?view=projects', '?view=scheduled',
+    '?project=p_a&session=project_s1&view=projects', '?project=p_a&session=project_s1&view=scheduled',
+    '?project=home', '?project=home&session=s1', '?project=p_missing', '?project=p_missing&session=project_s1',
+  ])('hides New Project Chat outside project context: %s', async query => {
     setup(); history.replaceState({}, '', '/chathermes' + query)
     const wrapper = mount(App); await flushPromises()
     await wrapper.get('[aria-label="Screen options"]').trigger('click')
