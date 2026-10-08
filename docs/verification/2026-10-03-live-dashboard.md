@@ -19,22 +19,22 @@ at `/opt/data`. No personal Hermes home or host bind mounts were used. Source
 revision, source checksum and base image digest are unchanged. Provider secrets
 were not needed. Basic auth used only the existing synthetic test credentials.
 
-| Check | Result |
-| --- | --- |
-| `npm test` | 48 tests passed, 6 files |
-| `npm run test:api` (test virtualenv) | 27 passed |
-| `npm run test:docker` | 6 passed |
-| `npm run build` | Passed; rebuilt committed assets are byte-identical |
-| `sh -n tests/docker/run.sh` | Passed |
-| Native `/test/verify_seed.py` | Passed |
-| Anonymous plugin Projects request | HTTP 401 |
-| Desktop composer/browser case | Passed (20.4s) |
-| Mobile composer/browser case | Passed (14.7s) |
-| Desktop Project and activity cases | 2 passed (42.2s total) |
-| Mobile Project and activity cases | 2 passed (40.1s total) |
-| Additional real-history scroll/focus check | Passed at 1280×720 and 390×667 |
-| `npm run live:stop` | Passed; dedicated volume preserved, other containers untouched |
-| Relaunch with `npm run live` | Passed; authenticated history and desktop/mobile scroll checks passed again |
+| Check                                      | Result                                                                      |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| `npm test`                                 | 48 tests passed, 6 files                                                    |
+| `npm run test:api` (test virtualenv)       | 27 passed                                                                   |
+| `npm run test:docker`                      | 6 passed                                                                    |
+| `npm run build`                            | Passed; rebuilt committed assets are byte-identical                         |
+| `sh -n tests/docker/run.sh`                | Passed                                                                      |
+| Native `/test/verify_seed.py`              | Passed                                                                      |
+| Anonymous plugin Projects request          | HTTP 401                                                                    |
+| Desktop composer/browser case              | Passed (20.4s)                                                              |
+| Mobile composer/browser case               | Passed (14.7s)                                                              |
+| Desktop Project and activity cases         | 2 passed (42.2s total)                                                      |
+| Mobile Project and activity cases          | 2 passed (40.1s total)                                                      |
+| Additional real-history scroll/focus check | Passed at 1280×720 and 390×667                                              |
+| `npm run live:stop`                        | Passed; dedicated volume preserved, other containers untouched              |
+| Relaunch with `npm run live`               | Passed; authenticated history and desktop/mobile scroll checks passed again |
 
 The first full Playwright invocation was terminated with exit 143 after the
 desktop composer case passed, during the following Project case. The remaining

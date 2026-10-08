@@ -43,3 +43,4 @@ __pycache__/
 *.egg-info/
 plugin/chathermes/build/
 compose.override.yml
+.vitest/

@@ -1,853 +1,1325 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import App from './App.vue'
-import SessionSidebar from './components/SessionSidebar.vue'
-import * as push from './lib/push'
-import * as nativeSession from './lib/native-session'
-beforeEach(() => { history.replaceState({}, '', '/chathermes?profile=alpha') })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); history.replaceState({}, '', '/chathermes'); localStorage.clear() })
-const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { mount, flushPromises } from "@vue/test-utils";
+import App from "./App.vue";
+import SessionSidebar from "./components/SessionSidebar.vue";
+import * as push from "./lib/push";
+import * as nativeSession from "./lib/native-session";
+beforeEach(() => {
+  history.replaceState({}, "", "/chathermes?profile=alpha");
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  history.replaceState({}, "", "/chathermes");
+  localStorage.clear();
+});
+const json = (value: unknown) =>
+  new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response>) {
-  const streams = new Map<string, Response>()
-  vi.stubGlobal('fetch', async (input: string, init?: RequestInit) => {
-    if (input.endsWith('/profiles')) return json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] })
-    if (/\/projects(?:\?|$)/.test(input)) return json({ projects: [] })
-    if (input.includes('/v1/models')) return json({ data: [{ id: 'Instant' }] })
-    const profile = new URL(input, location.origin).searchParams.get('profile') || ''
-    if (input.includes('/v1/runs/run-1/events')) return streams.get(profile) || new Response('')
-    if (input.includes('/v1/runs/run-1')) return json({ run_id: 'run-1', status: 'running' })
-    const response = await fake(input, init)
-    if (input.includes('/v1/runs') && init?.method === 'POST') {
-      streams.set(profile, response)
-      return json({ run_id: 'run-1', status: 'started', replayed: false })
+  const streams = new Map<string, Response>();
+  vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+    if (input.endsWith("/profiles"))
+      return json({ profiles: [{ name: "alpha" }, { name: "beta" }] });
+    if (/\/projects(?:\?|$)/.test(input)) return json({ projects: [] });
+    if (input.includes("/v1/models")) return json({ data: [{ id: "Instant" }] });
+    const profile = new URL(input, location.origin).searchParams.get("profile") || "";
+    if (input.includes("/v1/runs/run-1/events")) return streams.get(profile) || new Response("");
+    if (input.includes("/v1/runs/run-1")) return json({ run_id: "run-1", status: "running" });
+    const response = await fake(input, init);
+    if (input.includes("/v1/runs") && init?.method === "POST") {
+      streams.set(profile, response);
+      return json({ run_id: "run-1", status: "started", replayed: false });
     }
-    return response
-  })
+    return response;
+  });
 }
-function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-const streaming = { features: { run_events_sse: true, session_chat_streaming: true }, endpoints: { runs: { method: 'POST', path: '/v1/runs' }, session_chat_stream: { method: 'POST', path: '/api/sessions/{session_id}/chat/stream' } } }
-describe('drawer settings', () => {
-  it('reports mounted native session and connection through home, views, profiles and unmount', async () => {
-    const factory = nativeSession.useNativeSession
-    let owner!: ReturnType<typeof factory>
-    vi.spyOn(nativeSession, 'useNativeSession').mockImplementation(callback => {
-      owner = factory(callback)
-      owner.attach = vi.fn(async () => { owner.connection.value = 'open' })
-      return owner
-    })
-    mockFetch(vi.fn(async input => json(input.includes('/capabilities') ? { features: { native_chat: true } } : { sessions: [], total: 0 })))
-    const addEventListener = vi.fn(), removeEventListener = vi.fn(), publish = vi.fn()
-    vi.stubGlobal('navigator', { onLine: true, serviceWorker: { ready: Promise.resolve({ active: { postMessage: publish } }), addEventListener, removeEventListener } })
-    vi.spyOn(push, 'state').mockResolvedValue({ supported: false, permission: 'unsupported', subscribed: false, available: false, error: '' })
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
-    const wrapper = mount(App)
-    await flushPromises()
-    const listener = addEventListener.mock.calls.find(call => call[0] === 'message')![1]
-    const postMessage = vi.fn()
-    const query = () => listener({ data: { type: 'chathermes.session.query' }, ports: [{ postMessage }] })
-    query()
-    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'alpha', session: '', connected: false }))
-    history.replaceState({}, '', '/chathermes?profile=alpha&session=push_one')
-    window.dispatchEvent(new PopStateEvent('popstate')); await flushPromises(); query()
-    expect(postMessage).toHaveBeenLastCalledWith({ type: 'chathermes.session', url: location.href, profile: 'alpha', session: 'push_one', connected: true, visible: false })
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange')); query()
-    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'alpha', session: 'push_one', connected: true, visible: true }))
-    owner.connection.value = 'closed'; await flushPromises(); query()
-    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ session: 'push_one', connected: false }))
-    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ session: 'push_one', connected: false }))
-    owner.connection.value = 'open'; await flushPromises()
-    await wrapper.get('.scheduled-nav').trigger('click'); query()
-    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ session: '', connected: false }))
-    history.replaceState({}, '', '/chathermes?profile=beta&session=push_two')
-    window.dispatchEvent(new PopStateEvent('popstate')); await flushPromises(); query()
-    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ profile: 'beta', session: 'push_two', connected: true }))
-    wrapper.unmount()
-    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ session: '', connected: false }))
-    expect(removeEventListener).toHaveBeenCalledWith('message', listener)
-  })
-  it('renders the ChatHermes logo in the sidebar drawer', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const wrapper = mount(App)
-    await flushPromises()
-    const logo = wrapper.get('.brand-mark')
-    expect(logo.element.tagName).toBe('IMG')
-    expect(logo.attributes('src')).toBe('/api/plugins/chathermes/assets/dist/icons/icon-192.png')
-    expect(logo.attributes('alt')).toBe('')
-    wrapper.unmount()
-  })
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+const streaming = {
+  features: { run_events_sse: true, session_chat_streaming: true },
+  endpoints: {
+    runs: { method: "POST", path: "/v1/runs" },
+    session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" },
+  },
+};
+describe("drawer settings", () => {
+  it("reports mounted native session and connection through home, views, profiles and unmount", async () => {
+    const factory = nativeSession.useNativeSession;
+    let owner!: ReturnType<typeof factory>;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      owner = factory(callback);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "open";
+      });
+      return owner;
+    });
+    mockFetch(
+      vi.fn(async (input) =>
+        json(
+          input.includes("/capabilities")
+            ? { features: { native_chat: true } }
+            : { sessions: [], total: 0 },
+        ),
+      ),
+    );
+    const addEventListener = vi.fn(),
+      removeEventListener = vi.fn(),
+      publish = vi.fn();
+    vi.stubGlobal("navigator", {
+      onLine: true,
+      serviceWorker: {
+        ready: Promise.resolve({ active: { postMessage: publish } }),
+        addEventListener,
+        removeEventListener,
+      },
+    });
+    vi.spyOn(push, "state").mockResolvedValue({
+      supported: false,
+      permission: "unsupported",
+      subscribed: false,
+      available: false,
+      error: "",
+    });
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const wrapper = mount(App);
+    await flushPromises();
+    const listener = addEventListener.mock.calls.find((call) => call[0] === "message")![1];
+    const postMessage = vi.fn();
+    const query = () =>
+      listener({ data: { type: "chathermes.session.query" }, ports: [{ postMessage }] });
+    query();
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ profile: "alpha", session: "", connected: false }),
+    );
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=push_one");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    query();
+    expect(postMessage).toHaveBeenLastCalledWith({
+      type: "chathermes.session",
+      url: location.href,
+      profile: "alpha",
+      session: "push_one",
+      connected: true,
+      visible: false,
+    });
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    query();
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        profile: "alpha",
+        session: "push_one",
+        connected: true,
+        visible: true,
+      }),
+    );
+    owner.connection.value = "closed";
+    await flushPromises();
+    query();
+    expect(publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({ session: "push_one", connected: false }),
+    );
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ session: "push_one", connected: false }),
+    );
+    owner.connection.value = "open";
+    await flushPromises();
+    await wrapper.get(".scheduled-nav").trigger("click");
+    query();
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ session: "", connected: false }),
+    );
+    history.replaceState({}, "", "/chathermes?profile=beta&session=push_two");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    query();
+    expect(postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ profile: "beta", session: "push_two", connected: true }),
+    );
+    wrapper.unmount();
+    expect(publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({ session: "", connected: false }),
+    );
+    expect(removeEventListener).toHaveBeenCalledWith("message", listener);
+  });
+  it("renders the ChatHermes logo in the sidebar drawer", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const wrapper = mount(App);
+    await flushPromises();
+    const logo = wrapper.get(".brand-mark");
+    expect(logo.element.tagName).toBe("IMG");
+    expect(logo.attributes("src")).toBe("/api/plugins/chathermes/assets/dist/icons/icon-192.png");
+    expect(logo.attributes("alt")).toBe("");
+    wrapper.unmount();
+  });
 
-  it('refreshes profile status and rejects stale status and action results after switching profiles', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const oldState = deferred<push.PushState>(), action = deferred<void>()
-    const enabled = { supported: true, permission: 'granted' as const, subscribed: true, available: true, error: '' }
-    const state = vi.spyOn(push, 'state').mockImplementation(async p => p === 'alpha' ? enabled : { ...enabled, subscribed: false })
-    const disable = vi.spyOn(push, 'unsubscribe').mockReturnValue(action.promise)
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('.drawer-settings').trigger('click')
-    expect(wrapper.get('.push-setting').text()).toContain('Notifications for alpha')
-    await wrapper.get('.push-setting button').trigger('click')
-    expect(disable).toHaveBeenCalledWith('alpha')
-    state.mockImplementation(p => p === 'alpha' ? oldState.promise : Promise.resolve({ ...enabled, subscribed: false }))
-    await wrapper.get('#profile-field').setValue('beta')
-    await flushPromises()
-    await wrapper.get('.drawer-settings').trigger('click')
-    expect(wrapper.get('.push-setting').text()).toContain('Notifications for beta')
-    expect(wrapper.get('.push-setting').text()).toContain('Notifications disabled for beta')
-    action.reject(new Error('Alpha action failed'))
-    await flushPromises()
-    expect(wrapper.get('.push-setting').text()).not.toContain('Alpha action failed')
-    await wrapper.get('#profile-field').setValue('alpha')
-    await flushPromises()
-    await wrapper.get('#profile-field').setValue('beta')
-    await flushPromises()
-    oldState.resolve(enabled)
-    await flushPromises()
-    await wrapper.get('.drawer-settings').trigger('click')
-    expect(wrapper.get('.push-setting button').text()).toBe('Enable notifications')
-    expect(state).toHaveBeenCalledWith('beta')
-    wrapper.unmount()
-  })
+  it("refreshes profile status and rejects stale status and action results after switching profiles", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const oldState = deferred<push.PushState>(),
+      action = deferred<void>();
+    const enabled = {
+      supported: true,
+      permission: "granted" as const,
+      subscribed: true,
+      available: true,
+      error: "",
+    };
+    const state = vi
+      .spyOn(push, "state")
+      .mockImplementation(async (p) =>
+        p === "alpha" ? enabled : { ...enabled, subscribed: false },
+      );
+    const disable = vi.spyOn(push, "unsubscribe").mockReturnValue(action.promise);
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".drawer-settings").trigger("click");
+    expect(wrapper.get(".push-setting").text()).toContain("Notifications for alpha");
+    await wrapper.get(".push-setting button").trigger("click");
+    expect(disable).toHaveBeenCalledWith("alpha");
+    state.mockImplementation((p) =>
+      p === "alpha" ? oldState.promise : Promise.resolve({ ...enabled, subscribed: false }),
+    );
+    await wrapper.get("#profile-field").setValue("beta");
+    await flushPromises();
+    await wrapper.get(".drawer-settings").trigger("click");
+    expect(wrapper.get(".push-setting").text()).toContain("Notifications for beta");
+    expect(wrapper.get(".push-setting").text()).toContain("Notifications disabled for beta");
+    action.reject(new Error("Alpha action failed"));
+    await flushPromises();
+    expect(wrapper.get(".push-setting").text()).not.toContain("Alpha action failed");
+    await wrapper.get("#profile-field").setValue("alpha");
+    await flushPromises();
+    await wrapper.get("#profile-field").setValue("beta");
+    await flushPromises();
+    oldState.resolve(enabled);
+    await flushPromises();
+    await wrapper.get(".drawer-settings").trigger("click");
+    expect(wrapper.get(".push-setting button").text()).toBe("Enable notifications");
+    expect(state).toHaveBeenCalledWith("beta");
+    wrapper.unmount();
+  });
 
-  it('puts New chat above Projects and restores focus when dismissing settings before the drawer', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const wrapper = mount(App, { attachTo: document.body })
-    await flushPromises()
-    const sidebar = wrapper.get('.sidebar')
-    expect(sidebar.findAll('button').filter(button => button.text() === 'New chat')).toHaveLength(1)
-    expect(sidebar.get('.drawer-chat').element.nextElementSibling).toBe(sidebar.get('.projects-nav').element)
-    expect(wrapper.find('.push-setting').exists()).toBe(false)
-    expect(sidebar.find('.sidebar-foot .drawer-chat').exists()).toBe(false)
-    await wrapper.get('[aria-label="Open navigation"]').trigger('click')
-    await wrapper.get('[aria-label="Settings"]').trigger('click')
-    const panel = wrapper.get('[role="dialog"][aria-label="Settings"]')
-    expect(panel.element).toBe(document.activeElement)
-    expect(wrapper.get('.drawer-settings').attributes('aria-expanded')).toBe('true')
-    expect(panel.text()).toContain('Enable notifications')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await flushPromises()
-    expect(wrapper.find('.settings-panel').exists()).toBe(false)
-    expect(wrapper.get('.drawer-settings').element).toBe(document.activeElement)
-    expect(wrapper.get('[aria-label="Open navigation"]').attributes('aria-expanded')).toBe('true')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await flushPromises()
-    expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement)
-    wrapper.unmount()
-  })
-  it('offers screen actions in the top bar while retaining profile settings', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.get('.drawer-chat').text()).toBe('New chat')
-    expect(wrapper.find('.drawer-settings').exists()).toBe(true)
-    await wrapper.get('[aria-label="Screen options"]').trigger('click')
-    const menu = wrapper.get('[role="menu"]')
-    expect(menu.get('[role="menuitem"]').text()).toBe('New chat')
-    await menu.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    expect(wrapper.get('[aria-label="Screen options"]').attributes('aria-expanded')).toBe('false')
-    wrapper.unmount()
-  })
-  it('dismisses screen options outside without stealing focus, and preserves toggle, actions and Escape', async () => {
-    const fake = vi.fn(async (input: string, init?: RequestInit) => init?.method === 'POST' ? json({ id: 'new-session' }) : input.includes('/v1/capabilities') ? json({}) : json({ sessions: [], total: 0 }))
-    mockFetch(fake)
-    const wrapper = mount(App, { attachTo: document.body })
-    await flushPromises()
-    const button = wrapper.get('[aria-label="Screen options"]')
-    await button.trigger('click')
-    await wrapper.get('[role="menuitem"]').trigger('pointerdown')
-    expect(wrapper.find('[role="menu"]').exists()).toBe(true)
-    await button.trigger('click')
-    await button.trigger('click')
-    await button.trigger('click')
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    await button.trigger('click')
-    const textarea = wrapper.get('textarea')
-    ;(textarea.element as HTMLTextAreaElement).focus()
-    await textarea.trigger('click')
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    expect(document.activeElement).toBe(textarea.element)
-    await button.trigger('click')
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    expect(document.activeElement).toBe(button.element)
-    await textarea.setValue('Draft')
-    await button.trigger('click')
-    await wrapper.get('[role="menuitem"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    expect(fake.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true)
-    expect(document.activeElement).toBe(button.element)
-    const removeListener = vi.spyOn(document, 'removeEventListener')
-    wrapper.unmount()
-    expect(removeListener).toHaveBeenCalledWith('click', expect.any(Function))
-  })
-  it('retains the notification toggle, busy state, status and profile scope inside settings', async () => {
-    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })))
-    const subscription = deferred<void>()
-    vi.spyOn(push, 'state').mockResolvedValue({ supported: true, permission: 'granted', subscribed: false, available: true, error: '' })
-    const subscribe = vi.spyOn(push, 'subscribe').mockReturnValue(subscription.promise)
-    const unsubscribe = vi.spyOn(push, 'unsubscribe').mockResolvedValue()
-    const sendTest = vi.spyOn(push, 'sendTest').mockResolvedValue()
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('.drawer-settings').trigger('click')
-    const toggle = wrapper.get('.push-setting button')
-    await toggle.trigger('click')
-    expect(subscribe).toHaveBeenCalledWith('alpha')
-    expect(toggle.text()).toBe('Updating…')
-    expect(toggle.attributes('disabled')).toBeDefined()
-    vi.mocked(push.state).mockResolvedValue({ supported: true, permission: 'granted', subscribed: true, available: true, error: '' })
-    subscription.resolve()
-    await flushPromises()
-    expect(toggle.text()).toBe('Disable notifications')
-    expect(wrapper.get('.push-setting').text()).toContain('Notifications enabled for alpha on this device.')
-    await wrapper.get('.push-setting button:nth-of-type(2)').trigger('click')
-    await flushPromises()
-    expect(sendTest).toHaveBeenCalledWith('alpha')
-    expect(wrapper.get('.push-setting').text()).toContain('Test notification scheduled.')
-    await toggle.trigger('click')
-    await flushPromises()
-    expect(unsubscribe).toHaveBeenCalledWith('alpha')
-    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    await flushPromises()
-    expect(wrapper.find('.settings-panel').exists()).toBe(false)
-    await wrapper.get('.drawer-settings').trigger('click')
-    await wrapper.get('.projects-nav').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.settings-panel').exists()).toBe(false)
-    wrapper.unmount()
-  })
-})
-describe('profile navigation', () => {
-  it('keeps global navigation in the drawer and exposes screen actions from the top-right menu', async () => {
-    mockFetch(vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [], total: 0 })))
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.find('.drawer-chat').exists()).toBe(true)
-    expect(wrapper.find('.projects-nav').exists()).toBe(true)
-    expect(wrapper.find('.scheduled-nav').exists()).toBe(true)
-    expect(wrapper.find('.topbar .topbar-profile').classes()).toContain('sr-only')
-    expect(wrapper.find('.screen-menu .topbar-profile').exists()).toBe(false)
-    expect(wrapper.findAll('.drawer-chat')).toHaveLength(1)
-    expect(wrapper.find('.drawer-chat').attributes('disabled')).toBeUndefined()
-    await wrapper.get('[aria-label="Screen options"]').trigger('click')
-    expect(wrapper.get('[role="menu"]').get('[role="menuitem"]').text()).toBe('New chat')
-    expect(wrapper.get('[aria-label="Screen options"]').attributes('aria-expanded')).toBe('true')
-    await wrapper.get('[role="menuitem"]').trigger('click')
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('rejects invalid profile names without requesting or storing credentials', async () => {
-    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 }))
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    const calls = fake.mock.calls.length
-    history.pushState({}, '', '/chathermes?profile=../x'); dispatchEvent(new PopStateEvent('popstate'))
-    await flushPromises()
-    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('Invalid profile name')
-    expect(fake).toHaveBeenCalledTimes(calls)
-    expect(wrapper.text()).toContain('Alpha session')
-    expect(localStorage.length).toBe(0)
-    wrapper.unmount()
-  })
-  it('clears old history when browser navigation selects the current or another profile', async () => {
-    mockFetch( vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
-      : input.includes('/messages') ? json([{ role: 'assistant', content: 'Private history' }])
-      : input.includes('profile=alpha') ? json({ sessions: [{ id: 'one', title: 'Alpha session' }], total: 1 })
-      : json({ sessions: [{ id: 'two', title: 'Current session' }], total: 1 })))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Private history')
-    history.pushState({}, '', '/chathermes')
-    dispatchEvent(new PopStateEvent('popstate'))
-    await flushPromises()
-    expect(wrapper.get('.topbar-profile').text()).toBe('Current profile')
-    expect(wrapper.text()).not.toContain('Private history')
-    expect(wrapper.text()).not.toContain('Alpha session')
-    expect(wrapper.text()).toContain('Current session')
-    history.pushState({}, '', '/chathermes?profile=alpha')
-    dispatchEvent(new PopStateEvent('popstate'))
-    await flushPromises()
-    expect(wrapper.get('.topbar-profile').text()).toBe('alpha')
-    expect(wrapper.text()).not.toContain('Private history')
-    expect(wrapper.text()).toContain('Alpha session')
-    wrapper.unmount()
-  })
-  it('shows PATCH failures when renaming', async () => {
-    mockFetch( vi.fn(async (input: string, init?: RequestInit) => {
-      if (init?.method === 'PATCH') throw new TypeError('Failed to fetch')
-      return input.includes('/v1/capabilities') ? json({}) : json({ sessions: [{ id: 'one', title: 'Original' }], total: 1 })
-    }))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('rename', 'one', 'New title')
-    await flushPromises()
-    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain('Failed to fetch')
-    expect(wrapper.text()).toContain('Original')
-    expect(wrapper.text()).not.toContain('New title')
-    wrapper.unmount()
-  })
-  it('uses Hermes page offsets when pinned sessions are included beyond the limit', async () => {
-    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json({})
-      : input.includes('offset=30') ? json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'second', title: 'Second page' }], limit: 30, offset: 30, has_more: false })
-      : json({ object: 'list', data: [{ id: 'pin', title: 'Pinned' }, { id: 'first', title: 'First page' }], limit: 30, offset: 0, has_more: true }))
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('.load-more').trigger('click')
-    await flushPromises()
-    expect(fake.mock.calls.some(([input]) => String(input).includes('offset=30'))).toBe(true)
-    expect(wrapper.findAll('.session-row')).toHaveLength(3)
-    expect(wrapper.text()).toContain('Second page')
-    wrapper.unmount()
-  })
-  it('shows Hermes envelopes and completed stream output in each profile', async () => {
+  it("puts New chat above Projects and restores focus when dismissing settings before the drawer", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    const sidebar = wrapper.get(".sidebar");
+    expect(sidebar.findAll("button").filter((button) => button.text() === "New chat")).toHaveLength(
+      1,
+    );
+    expect(sidebar.get(".drawer-chat").element.nextElementSibling).toBe(
+      sidebar.get(".projects-nav").element,
+    );
+    expect(wrapper.find(".push-setting").exists()).toBe(false);
+    expect(sidebar.find(".sidebar-foot .drawer-chat").exists()).toBe(false);
+    await wrapper.get('[aria-label="Open navigation"]').trigger("click");
+    await wrapper.get('[aria-label="Settings"]').trigger("click");
+    const panel = wrapper.get('[role="dialog"][aria-label="Settings"]');
+    expect(panel.element).toBe(document.activeElement);
+    expect(wrapper.get(".drawer-settings").attributes("aria-expanded")).toBe("true");
+    expect(panel.text()).toContain("Enable notifications");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+    expect(wrapper.find(".settings-panel").exists()).toBe(false);
+    expect(wrapper.get(".drawer-settings").element).toBe(document.activeElement);
+    expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("true");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement);
+    wrapper.unmount();
+  });
+  it("offers screen actions in the top bar while retaining profile settings", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".drawer-chat").text()).toBe("New chat");
+    expect(wrapper.find(".drawer-settings").exists()).toBe(true);
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    const menu = wrapper.get('[role="menu"]');
+    expect(menu.get('[role="menuitem"]').text()).toBe("New chat");
+    await menu.trigger("keydown", { key: "Escape" });
+    await flushPromises();
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("false");
+    wrapper.unmount();
+  });
+  it("dismisses screen options outside without stealing focus, and preserves toggle, actions and Escape", async () => {
+    const fake = vi.fn(async (input: string, init?: RequestInit) =>
+      init?.method === "POST"
+        ? json({ id: "new-session" })
+        : input.includes("/v1/capabilities")
+          ? json({})
+          : json({ sessions: [], total: 0 }),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    const button = wrapper.get('[aria-label="Screen options"]');
+    await button.trigger("click");
+    await wrapper.get('[role="menuitem"]').trigger("pointerdown");
+    expect(wrapper.find('[role="menu"]').exists()).toBe(true);
+    await button.trigger("click");
+    await button.trigger("click");
+    await button.trigger("click");
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    await button.trigger("click");
+    const textarea = wrapper.get("textarea");
+    (textarea.element as HTMLTextAreaElement).focus();
+    await textarea.trigger("click");
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(textarea.element);
+    await button.trigger("click");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(button.element);
+    await textarea.setValue("Draft");
+    await button.trigger("click");
+    await wrapper.get('[role="menuitem"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(fake.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
+    expect(document.activeElement).toBe(button.element);
+    const removeListener = vi.spyOn(document, "removeEventListener");
+    wrapper.unmount();
+    expect(removeListener).toHaveBeenCalledWith("click", expect.any(Function));
+  });
+  it("retains the notification toggle, busy state, status and profile scope inside settings", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const subscription = deferred<void>();
+    vi.spyOn(push, "state").mockResolvedValue({
+      supported: true,
+      permission: "granted",
+      subscribed: false,
+      available: true,
+      error: "",
+    });
+    const subscribe = vi.spyOn(push, "subscribe").mockReturnValue(subscription.promise);
+    const unsubscribe = vi.spyOn(push, "unsubscribe").mockResolvedValue();
+    const sendTest = vi.spyOn(push, "sendTest").mockResolvedValue();
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".drawer-settings").trigger("click");
+    const toggle = wrapper.get(".push-setting button");
+    await toggle.trigger("click");
+    expect(subscribe).toHaveBeenCalledWith("alpha");
+    expect(toggle.text()).toBe("Updating…");
+    expect(toggle.attributes("disabled")).toBeDefined();
+    vi.mocked(push.state).mockResolvedValue({
+      supported: true,
+      permission: "granted",
+      subscribed: true,
+      available: true,
+      error: "",
+    });
+    subscription.resolve();
+    await flushPromises();
+    expect(toggle.text()).toBe("Disable notifications");
+    expect(wrapper.get(".push-setting").text()).toContain(
+      "Notifications enabled for alpha on this device.",
+    );
+    await wrapper.get(".push-setting button:nth-of-type(2)").trigger("click");
+    await flushPromises();
+    expect(sendTest).toHaveBeenCalledWith("alpha");
+    expect(wrapper.get(".push-setting").text()).toContain("Test notification scheduled.");
+    await toggle.trigger("click");
+    await flushPromises();
+    expect(unsubscribe).toHaveBeenCalledWith("alpha");
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await flushPromises();
+    expect(wrapper.find(".settings-panel").exists()).toBe(false);
+    await wrapper.get(".drawer-settings").trigger("click");
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".settings-panel").exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+describe("profile navigation", () => {
+  it("keeps global navigation in the drawer and exposes screen actions from the top-right menu", async () => {
+    mockFetch(
+      vi.fn(async (input: string) =>
+        input.includes("/v1/capabilities") ? json({}) : json({ sessions: [], total: 0 }),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find(".drawer-chat").exists()).toBe(true);
+    expect(wrapper.find(".projects-nav").exists()).toBe(true);
+    expect(wrapper.find(".scheduled-nav").exists()).toBe(true);
+    expect(wrapper.find(".topbar .topbar-profile").classes()).toContain("sr-only");
+    expect(wrapper.find(".screen-menu .topbar-profile").exists()).toBe(false);
+    expect(wrapper.findAll(".drawer-chat")).toHaveLength(1);
+    expect(wrapper.find(".drawer-chat").attributes("disabled")).toBeUndefined();
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    expect(wrapper.get('[role="menu"]').get('[role="menuitem"]').text()).toBe("New chat");
+    expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("true");
+    await wrapper.get('[role="menuitem"]').trigger("click");
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it("rejects invalid profile names without requesting or storing credentials", async () => {
+    const fake = vi.fn(async (input: string) =>
+      input.includes("/v1/capabilities")
+        ? json({})
+        : json({ sessions: [{ id: "one", title: "Alpha session" }], total: 1 }),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    const calls = fake.mock.calls.length;
+    history.pushState({}, "", "/chathermes?profile=../x");
+    dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain("Invalid profile name");
+    expect(fake).toHaveBeenCalledTimes(calls);
+    expect(wrapper.text()).toContain("Alpha session");
+    expect(localStorage.length).toBe(0);
+    wrapper.unmount();
+  });
+  it("clears old history when browser navigation selects the current or another profile", async () => {
+    mockFetch(
+      vi.fn(async (input: string) =>
+        input.includes("/v1/capabilities")
+          ? json({})
+          : input.includes("/messages")
+            ? json([{ role: "assistant", content: "Private history" }])
+            : input.includes("profile=alpha")
+              ? json({ sessions: [{ id: "one", title: "Alpha session" }], total: 1 })
+              : json({ sessions: [{ id: "two", title: "Current session" }], total: 1 }),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+    await flushPromises();
+    expect(wrapper.text()).toContain("Private history");
+    history.pushState({}, "", "/chathermes");
+    dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    expect(wrapper.get(".topbar-profile").text()).toBe("Current profile");
+    expect(wrapper.text()).not.toContain("Private history");
+    expect(wrapper.text()).not.toContain("Alpha session");
+    expect(wrapper.text()).toContain("Current session");
+    history.pushState({}, "", "/chathermes?profile=alpha");
+    dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    expect(wrapper.get(".topbar-profile").text()).toBe("alpha");
+    expect(wrapper.text()).not.toContain("Private history");
+    expect(wrapper.text()).toContain("Alpha session");
+    wrapper.unmount();
+  });
+  it("shows PATCH failures when renaming", async () => {
+    mockFetch(
+      vi.fn(async (input: string, init?: RequestInit) => {
+        if (init?.method === "PATCH") throw new TypeError("Failed to fetch");
+        return input.includes("/v1/capabilities")
+          ? json({})
+          : json({ sessions: [{ id: "one", title: "Original" }], total: 1 });
+      }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("rename", "one", "New title");
+    await flushPromises();
+    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain("Failed to fetch");
+    expect(wrapper.text()).toContain("Original");
+    expect(wrapper.text()).not.toContain("New title");
+    wrapper.unmount();
+  });
+  it("uses Hermes page offsets when pinned sessions are included beyond the limit", async () => {
+    const fake = vi.fn(async (input: string) =>
+      input.includes("/v1/capabilities")
+        ? json({})
+        : input.includes("offset=30")
+          ? json({
+              object: "list",
+              data: [
+                { id: "pin", title: "Pinned" },
+                { id: "second", title: "Second page" },
+              ],
+              limit: 30,
+              offset: 30,
+              has_more: false,
+            })
+          : json({
+              object: "list",
+              data: [
+                { id: "pin", title: "Pinned" },
+                { id: "first", title: "First page" },
+              ],
+              limit: 30,
+              offset: 0,
+              has_more: true,
+            }),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".load-more").trigger("click");
+    await flushPromises();
+    expect(fake.mock.calls.some(([input]) => String(input).includes("offset=30"))).toBe(true);
+    expect(wrapper.findAll(".session-row")).toHaveLength(3);
+    expect(wrapper.text()).toContain("Second page");
+    wrapper.unmount();
+  });
+  it("shows Hermes envelopes and completed stream output in each profile", async () => {
     const fake = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      const profile = input.includes('profile=alpha') ? 'alpha' : 'beta'
-      if (input.includes('/v1/runs')) return new Response('event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' + profile + '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
-      if (input.includes('/messages')) return json({ object: 'list', session_id: `${profile}-new`, data: [{ id: `${profile}-user`, role: 'user', content: 'Question' }, { id: `${profile}-reply`, role: 'assistant', content: `Answer from ${profile}` }], pagination: { limit: 500, offset: 0, order: 'oldest', returned: 2 } })
-      if (init?.method === 'POST') return json({ object: 'hermes.session', session: { id: `${profile}-new` } })
-      if (input.includes('/api/sessions?')) return json({ object: 'list', data: [{ id: `${profile}-new`, title: `${profile} conversation` }], limit: 30, offset: 0, has_more: false })
-      return json({})
-    })
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    for (const profile of ['alpha', 'beta']) {
-      if (profile === 'beta') await wrapper.get('.profile-field').setValue('beta')
-      await flushPromises()
-      expect(wrapper.text()).toContain(`${profile} conversation`)
-      wrapper.findComponent(SessionSidebar).vm.$emit('create')
-      await flushPromises()
-      expect(location.search).toBe(`?profile=${profile}&session=${profile}-new`)
-      expect(wrapper.text()).toContain(`Answer from ${profile}`)
-      await wrapper.get('.composer textarea').setValue('Question')
-      await wrapper.get('.composer').trigger('submit')
-      await flushPromises()
-      expect(wrapper.text()).toContain(`Answer from ${profile}`)
-      expect(wrapper.text()).not.toContain('Working…')
-      expect(wrapper.text()).not.toContain('Stream ended without confirmation')
+      if (input.includes("/v1/capabilities")) return json(streaming);
+      const profile = input.includes("profile=alpha") ? "alpha" : "beta";
+      if (input.includes("/v1/runs"))
+        return new Response(
+          'event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' +
+            profile +
+            '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n',
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      if (input.includes("/messages"))
+        return json({
+          object: "list",
+          session_id: `${profile}-new`,
+          data: [
+            { id: `${profile}-user`, role: "user", content: "Question" },
+            { id: `${profile}-reply`, role: "assistant", content: `Answer from ${profile}` },
+          ],
+          pagination: { limit: 500, offset: 0, order: "oldest", returned: 2 },
+        });
+      if (init?.method === "POST")
+        return json({ object: "hermes.session", session: { id: `${profile}-new` } });
+      if (input.includes("/api/sessions?"))
+        return json({
+          object: "list",
+          data: [{ id: `${profile}-new`, title: `${profile} conversation` }],
+          limit: 30,
+          offset: 0,
+          has_more: false,
+        });
+      return json({});
+    });
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    for (const profile of ["alpha", "beta"]) {
+      if (profile === "beta") await wrapper.get(".profile-field").setValue("beta");
+      await flushPromises();
+      expect(wrapper.text()).toContain(`${profile} conversation`);
+      wrapper.findComponent(SessionSidebar).vm.$emit("create");
+      await flushPromises();
+      expect(location.search).toBe(`?profile=${profile}&session=${profile}-new`);
+      expect(wrapper.text()).toContain(`Answer from ${profile}`);
+      await wrapper.get(".composer textarea").setValue("Question");
+      await wrapper.get(".composer").trigger("submit");
+      await flushPromises();
+      expect(wrapper.text()).toContain(`Answer from ${profile}`);
+      expect(wrapper.text()).not.toContain("Working…");
+      expect(wrapper.text()).not.toContain("Stream ended without confirmation");
     }
-    wrapper.unmount()
-  })
-  it('clears the previous profile sessions when switching', async () => {
+    wrapper.unmount();
+  });
+  it("clears the previous profile sessions when switching", async () => {
     const fake = vi.fn(async (input: string) => {
-      const value = input.includes('/v1/capabilities') ? streaming
-        : input.includes('profile=alpha') ? { sessions: [{ id: 'alpha-one', title: 'Alpha only' }], total: 1 }
-        : input.includes('profile=beta') ? { sessions: [{ id: 'beta-one', title: 'Beta only' }], total: 1 } : {}
-      return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } })
-    })
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.text()).toContain('Alpha only')
-    await wrapper.get('.profile-field').setValue('beta')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Beta only')
-    expect(wrapper.text()).not.toContain('Alpha only')
-    wrapper.unmount()
-  })
-  it('keeps the session list request alive when a conversation is selected', async () => {
-    const list = deferred<Response>()
-    const fake = vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? list.promise : Promise.resolve(json({})))
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.text()).toContain('Loading sessions…')
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'shared')
-    await flushPromises()
-    list.resolve(json({ sessions: [{ id: 'shared', title: 'Still loading' }], total: 1 }))
-    await flushPromises()
-    expect(wrapper.text()).toContain('Still loading')
-    expect(wrapper.text()).not.toContain('Loading sessions…')
-    wrapper.unmount()
-  })
-  it('does not let an older list request clear a newer loading state or show its error', async () => {
-    const alpha = deferred<Response>(), beta = deferred<Response>()
-    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
-      : input.includes('profile=alpha') ? alpha.promise
-      : input.includes('profile=beta') ? beta.promise : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.get('.profile-field').setValue('beta')
-    await flushPromises()
-    alpha.reject(new Error('Old profile failed'))
-    await flushPromises()
-    expect(wrapper.text()).toContain('Loading sessions…')
-    expect(wrapper.text()).not.toContain('Old profile failed')
-    beta.resolve(json({ sessions: [{ id: 'shared', title: 'Beta session' }], total: 1 }))
-    await flushPromises()
-    expect(wrapper.text()).toContain('Beta session')
-    expect(wrapper.text()).not.toContain('Loading sessions…')
-    wrapper.unmount()
-  })
-  it('does not apply a delayed rename to the next profile with the same session ID', async () => {
-    const rename = deferred<Response>()
-    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json({}))
-      : init?.method === 'PATCH' ? rename.promise
-      : input.includes('profile=alpha') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Alpha title' }], total: 1 }))
-      : input.includes('profile=beta') ? Promise.resolve(json({ sessions: [{ id: 'shared', title: 'Beta title' }], total: 1 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('rename', 'shared', 'Renamed alpha')
-    await wrapper.get('.profile-field').setValue('beta')
-    await flushPromises()
-    rename.resolve(json({ id: 'shared', title: 'Renamed alpha' }))
-    await flushPromises()
-    expect(wrapper.text()).toContain('Beta title')
-    expect(wrapper.text()).not.toContain('Renamed alpha')
-    wrapper.unmount()
-  })
-  it('discards a popstate session when the user switches profile before capabilities return', async () => {
-    const betaCapabilities = deferred<Response>()
-    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities?profile=beta') ? betaCapabilities.promise
-      : input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    history.pushState({}, '', '/chathermes?profile=beta&session=beta-one')
-    dispatchEvent(new PopStateEvent('popstate'))
-    await flushPromises()
-    await wrapper.get('.profile-field').setValue('alpha')
-    betaCapabilities.resolve(json(streaming))
-    await flushPromises()
-    expect((wrapper.get('.profile-field').element as HTMLInputElement).value).toBe('alpha')
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeUndefined()
-    expect(location.search).toBe('?profile=alpha')
-    wrapper.unmount()
-  })
-  it('clears unsent text on session and profile changes', async () => {
-    mockFetch( vi.fn((input: string) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'first')
-    await flushPromises()
-    await wrapper.get('.composer textarea').setValue('secret draft')
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'second')
-    await flushPromises()
-    expect((wrapper.get('.composer textarea').element as HTMLTextAreaElement).value).toBe('')
-    await wrapper.get('.composer textarea').setValue('another draft')
-    await wrapper.get('.profile-field').setValue('beta')
-    expect((wrapper.get('.composer textarea').element as HTMLTextAreaElement).value).toBe('')
-    wrapper.unmount()
-  })
-  it('does not select an in-flight create after a newer session selection or show its stale error', async () => {
-    const create = deferred<Response>()
-    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : init?.method === 'POST' ? create.promise
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('create')
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'existing')
-    create.reject(new Error('Stale create failed'))
-    await flushPromises()
-    expect(location.search).toBe('?profile=alpha&session=existing')
-    expect(wrapper.text()).not.toContain('Stale create failed')
-    wrapper.unmount()
-  })
-  it('does not select a completed create after a newer session selection', async () => {
-    const create = deferred<Response>()
-    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : init?.method === 'POST' ? create.promise
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [{ id: 'existing', title: 'Existing' }], total: 1 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('create')
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'existing')
-    create.resolve(json({ id: 'new' }))
-    await flushPromises()
-    expect(location.search).toBe('?profile=alpha&session=existing')
-    wrapper.unmount()
-  })
-  it('allows a successful create to select its new session when selection is unchanged', async () => {
-    mockFetch( vi.fn((input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? Promise.resolve(json(streaming))
-      : init?.method === 'POST' ? Promise.resolve(json({ id: 'new' }))
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 })) : Promise.resolve(json({}))))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('create')
-    await flushPromises()
-    expect(location.search).toBe('?profile=alpha&session=new')
-    wrapper.unmount()
-  })
-  it('locks sending until the documented streaming capability and endpoint are confirmed', async () => {
-    const capabilities = deferred<Response>()
-    const fake = vi.fn((input: string) => input.includes('/v1/capabilities?profile=alpha') ? capabilities.promise
-      : input.includes('/v1/capabilities?profile=beta') ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
-      : input.includes('/messages') ? Promise.resolve(json([]))
-      : input.includes('/api/sessions?') ? Promise.resolve(json({ sessions: [], total: 0 }))
-      : input.includes('/v1/runs') ? Promise.resolve(new Response('event: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })) : Promise.resolve(json({})))
-    mockFetch( fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
-    capabilities.resolve(json(streaming))
-    await flushPromises()
-    expect(wrapper.get('.composer textarea').attributes('disabled')).toBeUndefined()
-    await wrapper.get('.composer textarea').setValue('hello')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    expect(fake.mock.calls.some(([input]) => String(input).includes('/v1/runs'))).toBe(true)
-    await wrapper.get('.profile-field').setValue('beta')
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'two')
-    await flushPromises()
-    expect(wrapper.get('.send-button').attributes('disabled')).toBeDefined()
-    wrapper.unmount()
-  })
-})
+      const value = input.includes("/v1/capabilities")
+        ? streaming
+        : input.includes("profile=alpha")
+          ? { sessions: [{ id: "alpha-one", title: "Alpha only" }], total: 1 }
+          : input.includes("profile=beta")
+            ? { sessions: [{ id: "beta-one", title: "Beta only" }], total: 1 }
+            : {};
+      return new Response(JSON.stringify(value), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.text()).toContain("Alpha only");
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    expect(wrapper.text()).toContain("Beta only");
+    expect(wrapper.text()).not.toContain("Alpha only");
+    wrapper.unmount();
+  });
+  it("keeps the session list request alive when a conversation is selected", async () => {
+    const list = deferred<Response>();
+    const fake = vi.fn((input: string) =>
+      input.includes("/v1/capabilities")
+        ? Promise.resolve(json(streaming))
+        : input.includes("/messages")
+          ? Promise.resolve(json([]))
+          : input.includes("/api/sessions?")
+            ? list.promise
+            : Promise.resolve(json({})),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.text()).toContain("Loading sessions…");
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "shared");
+    await flushPromises();
+    list.resolve(json({ sessions: [{ id: "shared", title: "Still loading" }], total: 1 }));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Still loading");
+    expect(wrapper.text()).not.toContain("Loading sessions…");
+    wrapper.unmount();
+  });
+  it("does not let an older list request clear a newer loading state or show its error", async () => {
+    const alpha = deferred<Response>(),
+      beta = deferred<Response>();
+    mockFetch(
+      vi.fn((input: string) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json({}))
+          : input.includes("profile=alpha")
+            ? alpha.promise
+            : input.includes("profile=beta")
+              ? beta.promise
+              : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    alpha.reject(new Error("Old profile failed"));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Loading sessions…");
+    expect(wrapper.text()).not.toContain("Old profile failed");
+    beta.resolve(json({ sessions: [{ id: "shared", title: "Beta session" }], total: 1 }));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Beta session");
+    expect(wrapper.text()).not.toContain("Loading sessions…");
+    wrapper.unmount();
+  });
+  it("does not apply a delayed rename to the next profile with the same session ID", async () => {
+    const rename = deferred<Response>();
+    mockFetch(
+      vi.fn((input: string, init?: RequestInit) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json({}))
+          : init?.method === "PATCH"
+            ? rename.promise
+            : input.includes("profile=alpha")
+              ? Promise.resolve(
+                  json({ sessions: [{ id: "shared", title: "Alpha title" }], total: 1 }),
+                )
+              : input.includes("profile=beta")
+                ? Promise.resolve(
+                    json({ sessions: [{ id: "shared", title: "Beta title" }], total: 1 }),
+                  )
+                : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("rename", "shared", "Renamed alpha");
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    rename.resolve(json({ id: "shared", title: "Renamed alpha" }));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Beta title");
+    expect(wrapper.text()).not.toContain("Renamed alpha");
+    wrapper.unmount();
+  });
+  it("discards a popstate session when the user switches profile before capabilities return", async () => {
+    const betaCapabilities = deferred<Response>();
+    mockFetch(
+      vi.fn((input: string) =>
+        input.includes("/v1/capabilities?profile=beta")
+          ? betaCapabilities.promise
+          : input.includes("/v1/capabilities")
+            ? Promise.resolve(json(streaming))
+            : input.includes("/messages")
+              ? Promise.resolve(json([]))
+              : input.includes("/api/sessions?")
+                ? Promise.resolve(json({ sessions: [], total: 0 }))
+                : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    history.pushState({}, "", "/chathermes?profile=beta&session=beta-one");
+    dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    await wrapper.get(".profile-field").setValue("alpha");
+    betaCapabilities.resolve(json(streaming));
+    await flushPromises();
+    expect((wrapper.get(".profile-field").element as HTMLInputElement).value).toBe("alpha");
+    expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
+    expect(location.search).toBe("?profile=alpha");
+    wrapper.unmount();
+  });
+  it("clears unsent text on session and profile changes", async () => {
+    mockFetch(
+      vi.fn((input: string) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json(streaming))
+          : input.includes("/messages")
+            ? Promise.resolve(json([]))
+            : input.includes("/api/sessions?")
+              ? Promise.resolve(json({ sessions: [], total: 0 }))
+              : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "first");
+    await flushPromises();
+    await wrapper.get(".composer textarea").setValue("secret draft");
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "second");
+    await flushPromises();
+    expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe("");
+    await wrapper.get(".composer textarea").setValue("another draft");
+    await wrapper.get(".profile-field").setValue("beta");
+    expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe("");
+    wrapper.unmount();
+  });
+  it("does not select an in-flight create after a newer session selection or show its stale error", async () => {
+    const create = deferred<Response>();
+    mockFetch(
+      vi.fn((input: string, init?: RequestInit) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json(streaming))
+          : init?.method === "POST"
+            ? create.promise
+            : input.includes("/messages")
+              ? Promise.resolve(json([]))
+              : input.includes("/api/sessions?")
+                ? Promise.resolve(
+                    json({ sessions: [{ id: "existing", title: "Existing" }], total: 1 }),
+                  )
+                : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
+    create.reject(new Error("Stale create failed"));
+    await flushPromises();
+    expect(location.search).toBe("?profile=alpha&session=existing");
+    expect(wrapper.text()).not.toContain("Stale create failed");
+    wrapper.unmount();
+  });
+  it("does not select a completed create after a newer session selection", async () => {
+    const create = deferred<Response>();
+    mockFetch(
+      vi.fn((input: string, init?: RequestInit) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json(streaming))
+          : init?.method === "POST"
+            ? create.promise
+            : input.includes("/messages")
+              ? Promise.resolve(json([]))
+              : input.includes("/api/sessions?")
+                ? Promise.resolve(
+                    json({ sessions: [{ id: "existing", title: "Existing" }], total: 1 }),
+                  )
+                : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
+    create.resolve(json({ id: "new" }));
+    await flushPromises();
+    expect(location.search).toBe("?profile=alpha&session=existing");
+    wrapper.unmount();
+  });
+  it("allows a successful create to select its new session when selection is unchanged", async () => {
+    mockFetch(
+      vi.fn((input: string, init?: RequestInit) =>
+        input.includes("/v1/capabilities")
+          ? Promise.resolve(json(streaming))
+          : init?.method === "POST"
+            ? Promise.resolve(json({ id: "new" }))
+            : input.includes("/messages")
+              ? Promise.resolve(json([]))
+              : input.includes("/api/sessions?")
+                ? Promise.resolve(json({ sessions: [], total: 0 }))
+                : Promise.resolve(json({})),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    expect(location.search).toBe("?profile=alpha&session=new");
+    wrapper.unmount();
+  });
+  it("locks sending until the documented streaming capability and endpoint are confirmed", async () => {
+    const capabilities = deferred<Response>();
+    const fake = vi.fn((input: string) =>
+      input.includes("/v1/capabilities?profile=alpha")
+        ? capabilities.promise
+        : input.includes("/v1/capabilities?profile=beta")
+          ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
+          : input.includes("/messages")
+            ? Promise.resolve(json([]))
+            : input.includes("/api/sessions?")
+              ? Promise.resolve(json({ sessions: [], total: 0 }))
+              : input.includes("/v1/runs")
+                ? Promise.resolve(
+                    new Response("event: run.completed\ndata: {}\n\n", {
+                      headers: { "content-type": "text/event-stream" },
+                    }),
+                  )
+                : Promise.resolve(json({})),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+    await flushPromises();
+    expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
+    capabilities.resolve(json(streaming));
+    await flushPromises();
+    expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
+    await wrapper.get(".composer textarea").setValue("hello");
+    await wrapper.get(".composer").trigger("submit");
+    await flushPromises();
+    expect(fake.mock.calls.some(([input]) => String(input).includes("/v1/runs"))).toBe(true);
+    await wrapper.get(".profile-field").setValue("beta");
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "two");
+    await flushPromises();
+    expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
+    wrapper.unmount();
+  });
+});
 
-describe('live turn presentation', () => {
-  it.each(['tool.progress', 'tool.delta'])('merges %s before start without call IDs and closes the same activity on completion', async event => {
-    let controller!: ReadableStreamDefaultController<Uint8Array>
-    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
-    const encoder = new TextEncoder()
-    const frame = async (event: string, data: unknown) => {
-      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
-      await flushPromises()
-    }
-    mockFetch(vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json(streaming)
-      : input.includes('/messages') ? json([])
-      : input.includes('/v1/runs') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-      : json({ sessions: [], total: 0 })))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    await wrapper.get('textarea').setValue('Search')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    await frame(event, { tool_name: 'search', delta: 'Early progress' })
-    const tool = wrapper.get('.work-summary .working-shimmer-tool')
-    expect(tool.text()).toBe('Using tool: search')
-    await frame('tool.started', { tool_name: 'search', args: { query: 'example' } })
-    expect(wrapper.findAll('.activity')).toHaveLength(1) // Tool stays inline until completed.
-    expect(wrapper.get('.work-summary .working-shimmer-tool').element).toBe(tool.element)
-    expect(tool.text()).toBe('Using tool: search')
-    await frame('tool.progress', { tool_name: 'search', delta: 'Later progress' })
-    expect(tool.text()).toBe('Using tool: search')
-    await frame('tool.completed', { tool_name: 'search', output: 'Search result' })
-    expect(wrapper.findAll('.activity')).toHaveLength(2)
-    expect(wrapper.find('.current-activity').exists()).toBe(false)
-    expect(wrapper.get('.work-summary').text()).toContain('Working…')
-    const completedTool = wrapper.findAll('.activity')[1]!
-    expect(completedTool.attributes('open')).toBeUndefined()
-    await wrapper.get('.work-summary').trigger('click')
-    expect(completedTool.isVisible()).toBe(true)
-    expect(completedTool.text()).toContain('Search result')
-    expect(completedTool.text()).toContain('example')
-    wrapper.unmount()
-  })
+describe("live turn presentation", () => {
+  it.each(["tool.progress", "tool.delta"])(
+    "merges %s before start without call IDs and closes the same activity on completion",
+    async (event) => {
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value;
+        },
+      });
+      const encoder = new TextEncoder();
+      const frame = async (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        await flushPromises();
+      };
+      mockFetch(
+        vi.fn(async (input: string) =>
+          input.includes("/v1/capabilities")
+            ? json(streaming)
+            : input.includes("/messages")
+              ? json([])
+              : input.includes("/v1/runs")
+                ? new Response(body, { headers: { "content-type": "text/event-stream" } })
+                : json({ sessions: [], total: 0 }),
+        ),
+      );
+      const wrapper = mount(App);
+      await flushPromises();
+      wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+      await flushPromises();
+      await wrapper.get("textarea").setValue("Search");
+      await wrapper.get(".composer").trigger("submit");
+      await flushPromises();
+      await frame(event, { tool_name: "search", delta: "Early progress" });
+      const tool = wrapper.get(".work-summary .working-shimmer-tool");
+      expect(tool.text()).toBe("Using tool: search");
+      await frame("tool.started", { tool_name: "search", args: { query: "example" } });
+      expect(wrapper.findAll(".activity")).toHaveLength(1); // Tool stays inline until completed.
+      expect(wrapper.get(".work-summary .working-shimmer-tool").element).toBe(tool.element);
+      expect(tool.text()).toBe("Using tool: search");
+      await frame("tool.progress", { tool_name: "search", delta: "Later progress" });
+      expect(tool.text()).toBe("Using tool: search");
+      await frame("tool.completed", { tool_name: "search", output: "Search result" });
+      expect(wrapper.findAll(".activity")).toHaveLength(2);
+      expect(wrapper.find(".current-activity").exists()).toBe(false);
+      expect(wrapper.get(".work-summary").text()).toContain("Working…");
+      const completedTool = wrapper.findAll(".activity")[1]!;
+      expect(completedTool.attributes("open")).toBeUndefined();
+      await wrapper.get(".work-summary").trigger("click");
+      expect(completedTool.isVisible()).toBe(true);
+      expect(completedTool.text()).toContain("Search result");
+      expect(completedTool.text()).toContain("example");
+      wrapper.unmount();
+    },
+  );
 
-  it('shows sent/thinking/tool activity without secure-context crypto APIs, then collapses completed activity', async () => {
-    vi.stubGlobal('crypto', {}) // LAN HTTP dashboards do not expose randomUUID.
-    let controller!: ReadableStreamDefaultController<Uint8Array>
-    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
-    const encoder = new TextEncoder()
-    const frame = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
-    const fake = vi.fn(async (input: string) => input.includes('/v1/capabilities') ? json(streaming)
-      : input.includes('/messages') ? json([])
-      : input.includes('/v1/runs') ? new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-      : json({ sessions: [], total: 0 }))
-    mockFetch(fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    await wrapper.get('textarea').setValue('Show this immediately')
-    await wrapper.get('.composer').trigger('submit')
-    expect(wrapper.get('.message.user').text()).toBe('Show this immediately')
-    expect(wrapper.get('.activity').attributes('open')).toBeDefined()
-    expect(wrapper.get('.activity').text()).toContain('Thinking')
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(wrapper.get('.message.user').text()).toBe('Show this immediately')
-    frame('tool.started', { tool_name: 'search', args: { query: 'example' } })
-    await flushPromises()
-    expect(wrapper.findAll('.activity')[0]!.element.hasAttribute('open')).toBe(false)
-    expect(wrapper.get('.work-summary .working-shimmer-tool').text()).toBe('Using tool: search')
-    expect(wrapper.text()).not.toContain('example')
-    frame('tool.progress', { tool_name: 'search', delta: 'Partial search output' })
-    await flushPromises()
-    expect(wrapper.get('.work-summary .working-shimmer-tool').text()).toBe('Using tool: search')
-    expect(wrapper.text()).not.toContain('Partial search output')
-    frame('tool.completed', { tool_name: 'search' })
-    await flushPromises()
-    expect(wrapper.findAll('.activity')[1]!.attributes('open')).toBeUndefined()
-    frame('tool.started', { tool_call_id: 'failed-call', tool_name: 'terminal' })
-    await flushPromises()
-    frame('tool.completed', { tool_call_id: 'failed-call', error: 'command failed' })
-    await flushPromises()
-    expect(wrapper.findAll('.activity').at(-1)!.classes()).toContain('activity-failed')
-    expect(wrapper.findAll('.activity').at(-1)!.text()).toContain('Failed')
-    frame('run.completed', {})
-    controller.close()
-    await flushPromises()
-    wrapper.unmount()
-  })
+  it("shows sent/thinking/tool activity without secure-context crypto APIs, then collapses completed activity", async () => {
+    vi.stubGlobal("crypto", {}); // LAN HTTP dashboards do not expose randomUUID.
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value;
+      },
+    });
+    const encoder = new TextEncoder();
+    const frame = (event: string, data: unknown) =>
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    const fake = vi.fn(async (input: string) =>
+      input.includes("/v1/capabilities")
+        ? json(streaming)
+        : input.includes("/messages")
+          ? json([])
+          : input.includes("/v1/runs")
+            ? new Response(body, { headers: { "content-type": "text/event-stream" } })
+            : json({ sessions: [], total: 0 }),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("Show this immediately");
+    await wrapper.get(".composer").trigger("submit");
+    expect(wrapper.get(".message.user").text()).toBe("Show this immediately");
+    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
+    expect(wrapper.get(".activity").text()).toContain("Thinking");
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushPromises();
+    expect(wrapper.get(".message.user").text()).toBe("Show this immediately");
+    frame("tool.started", { tool_name: "search", args: { query: "example" } });
+    await flushPromises();
+    expect(wrapper.findAll(".activity")[0]!.element.hasAttribute("open")).toBe(false);
+    expect(wrapper.get(".work-summary .working-shimmer-tool").text()).toBe("Using tool: search");
+    expect(wrapper.text()).not.toContain("example");
+    frame("tool.progress", { tool_name: "search", delta: "Partial search output" });
+    await flushPromises();
+    expect(wrapper.get(".work-summary .working-shimmer-tool").text()).toBe("Using tool: search");
+    expect(wrapper.text()).not.toContain("Partial search output");
+    frame("tool.completed", { tool_name: "search" });
+    await flushPromises();
+    expect(wrapper.findAll(".activity")[1]!.attributes("open")).toBeUndefined();
+    frame("tool.started", { tool_call_id: "failed-call", tool_name: "terminal" });
+    await flushPromises();
+    frame("tool.completed", { tool_call_id: "failed-call", error: "command failed" });
+    await flushPromises();
+    expect(wrapper.findAll(".activity").at(-1)!.classes()).toContain("activity-failed");
+    expect(wrapper.findAll(".activity").at(-1)!.text()).toContain("Failed");
+    frame("run.completed", {});
+    controller.close();
+    await flushPromises();
+    wrapper.unmount();
+  });
 
-  it('creates a session on the first home-screen send', async () => {
-    history.replaceState({}, '', '/chathermes')
-    const fake = vi.fn(async (input: string, init?: RequestInit) => input.includes('/v1/capabilities') ? json(streaming)
-      : input.includes('/messages') ? json([])
-      : input.includes('/v1/runs') ? new Response('event: run.completed\ndata: {}\n\n')
-      : init?.method === 'POST' ? json({ session: { id: 'auto-created' } }) : json({ sessions: [], total: 0 }))
-    mockFetch(fake)
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
-    await wrapper.get('textarea').setValue('Start here')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    expect(location.search).toBe('?session=auto-created')
-    expect(fake.mock.calls.find(([input]) => input.includes('/v1/runs'))?.[1]?.body).toBe(JSON.stringify({ session_id: 'auto-created', input: 'Start here' }))
-    wrapper.unmount()
-  })
-})
+  it("creates a session on the first home-screen send", async () => {
+    history.replaceState({}, "", "/chathermes");
+    const fake = vi.fn(async (input: string, init?: RequestInit) =>
+      input.includes("/v1/capabilities")
+        ? json(streaming)
+        : input.includes("/messages")
+          ? json([])
+          : input.includes("/v1/runs")
+            ? new Response("event: run.completed\ndata: {}\n\n")
+            : init?.method === "POST"
+              ? json({ session: { id: "auto-created" } })
+              : json({ sessions: [], total: 0 }),
+    );
+    mockFetch(fake);
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+    await wrapper.get("textarea").setValue("Start here");
+    await wrapper.get(".composer").trigger("submit");
+    await flushPromises();
+    expect(location.search).toBe("?session=auto-created");
+    expect(fake.mock.calls.find(([input]) => input.includes("/v1/runs"))?.[1]?.body).toBe(
+      JSON.stringify({ session_id: "auto-created", input: "Start here" }),
+    );
+    wrapper.unmount();
+  });
+});
 
-describe('profile model inventory', () => {
-  it('defaults to each profile provider and sends provider/model changes to the runtime', async () => {
-    const turns: { profile: string; body: Record<string, unknown> }[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
-      const profile = input.includes('profile=beta') ? 'beta' : 'alpha'
-      if (input.endsWith('/profiles')) return json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] })
-      if (input.includes('/api/model/options')) return json({ provider: profile, model: `${profile}-default`, providers: [
-        { slug: profile, name: profile, is_current: true, models: [`${profile}-default`, `${profile}-extra`] },
-        { slug: 'custom:other', name: 'Other', models: ['shared-model'] }
-      ] })
-      if (input.includes('/v1/models')) return json({ data: [{ id: 'base', parent: null }, { id: 'Instant', parent: 'base' }] })
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      if (input.includes('/v1/runs/provider-run/events')) return new Response('event: run.completed\ndata: {}\n\n')
-      if (input.includes('/v1/runs/provider-run')) return json({ status: 'running' })
-      if (input.includes('/v1/runs')) {
-        turns.push({ profile, body: JSON.parse(String(init?.body)) })
-        return json({ run_id: 'provider-run', status: 'started' })
+describe("profile model inventory", () => {
+  it("defaults to each profile provider and sends provider/model changes to the runtime", async () => {
+    const turns: { profile: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init?: RequestInit) => {
+        const profile = input.includes("profile=beta") ? "beta" : "alpha";
+        if (input.endsWith("/profiles"))
+          return json({ profiles: [{ name: "alpha" }, { name: "beta" }] });
+        if (input.includes("/api/model/options"))
+          return json({
+            provider: profile,
+            model: `${profile}-default`,
+            providers: [
+              {
+                slug: profile,
+                name: profile,
+                is_current: true,
+                models: [`${profile}-default`, `${profile}-extra`],
+              },
+              { slug: "custom:other", name: "Other", models: ["shared-model"] },
+            ],
+          });
+        if (input.includes("/v1/models"))
+          return json({
+            data: [
+              { id: "base", parent: null },
+              { id: "Instant", parent: "base" },
+            ],
+          });
+        if (input.includes("/v1/capabilities")) return json(streaming);
+        if (input.includes("/v1/runs/provider-run/events"))
+          return new Response("event: run.completed\ndata: {}\n\n");
+        if (input.includes("/v1/runs/provider-run")) return json({ status: "running" });
+        if (input.includes("/v1/runs")) {
+          turns.push({ profile, body: JSON.parse(String(init?.body)) });
+          return json({ run_id: "provider-run", status: "started" });
+        }
+        if (input.includes("/messages")) return json({ data: [] });
+        if (init?.method === "POST") return json({ session: { id: `${profile}-session` } });
+        return json({ data: [], has_more: false });
+      }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".model-pill").text()).toBe("alpha-default");
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.get('[data-provider="alpha"]').text()).toContain("Current");
+    await wrapper.get('[data-provider="alpha"]').trigger("click");
+    expect(
+      wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
+    ).toEqual(["alpha-default", "alpha-extra"]);
+    await wrapper.get('[data-model="alpha-default"]').trigger("click");
+    await wrapper.get("textarea").setValue("default turn");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(turns[0]).toEqual({
+      profile: "alpha",
+      body: {
+        session_id: "alpha-session",
+        input: "default turn",
+        model: "alpha-default",
+        provider: "alpha",
+        require_model_lock: true,
+      },
+    });
+    await wrapper.get(".model-pill").trigger("click");
+    await wrapper.get('[data-provider="custom:other"]').trigger("click");
+    await wrapper.get('[data-model="shared-model"]').trigger("click");
+    await wrapper.get("textarea").setValue("other turn");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(turns[1]?.body).toMatchObject({
+      model: "shared-model",
+      provider: "custom:other",
+      require_model_lock: true,
+    });
+    await wrapper.get(".model-pill").trigger("click");
+    await wrapper.get('[data-provider=""]').trigger("click");
+    expect(wrapper.findAll(".model-option").map((item) => item.text())).toEqual(["Instant"]);
+    await wrapper.get('[data-model="Instant"]').trigger("click");
+    await wrapper.get("textarea").setValue("route turn");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(turns[2]?.body).toEqual({
+      session_id: "alpha-session",
+      input: "route turn",
+      model: "Instant",
+      require_model_lock: true,
+    });
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    expect(wrapper.get(".model-pill").text()).toBe("beta-default");
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.get('[data-provider="beta"]').text()).toContain("Current");
+    await wrapper.get('[data-provider="beta"]').trigger("click");
+    expect(
+      wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
+    ).toEqual(["beta-default", "beta-extra"]);
+    await wrapper.get('[data-model="beta-extra"]').trigger("click");
+    await wrapper.get("textarea").setValue("beta turn");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(turns[3]).toEqual({
+      profile: "beta",
+      body: {
+        session_id: "beta-session",
+        input: "beta turn",
+        model: "beta-extra",
+        provider: "beta",
+        require_model_lock: true,
+      },
+    });
+    wrapper.unmount();
+  });
+
+  it("ignores late inventory from a previous profile and falls back to the configured default and routes", async () => {
+    const old = deferred<Response>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (input.endsWith("/profiles"))
+          return json({ profiles: [{ name: "alpha" }, { name: "beta" }] });
+        if (input.includes("/api/model/options"))
+          return input.includes("profile=alpha")
+            ? old.promise
+            : new Response("{}", { status: 404 });
+        if (input.includes("/v1/models"))
+          return json({
+            default_model: "saved",
+            data: [
+              { id: "base", parent: null },
+              { id: "route", parent: "base" },
+            ],
+          });
+        if (input.includes("/v1/capabilities")) return json(streaming);
+        return json({ data: [] });
+      }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    old.resolve(
+      json({
+        provider: "alpha",
+        model: "old-model",
+        providers: [{ slug: "alpha", name: "Alpha", models: ["old-model"], is_current: true }],
+      }),
+    );
+    await flushPromises();
+    expect(wrapper.get(".model-pill").text()).toBe("saved");
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.findAll(".provider-option").map((item) => item.text())).toEqual([
+      "Model routes",
+    ]);
+    await wrapper.get('[data-provider=""]').trigger("click");
+    expect(
+      wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
+    ).toEqual(["saved", "route"]);
+    expect(wrapper.text()).not.toContain("old-model");
+    wrapper.unmount();
+  });
+});
+
+describe("assistant turn recovery", () => {
+  for (const phase of ["tool", "text", "missed-tool"])
+    it(`preserves the turn when resuming during ${phase} streaming`, async () => {
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      const body = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value;
+        },
+      });
+      const encoder = new TextEncoder();
+      const emit = (event: string, data: unknown) =>
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      let final = false;
+      mockFetch(
+        vi.fn(async (input: string) => {
+          if (input.includes("/v1/capabilities")) return json(streaming);
+          if (input.includes("/messages"))
+            return json(
+              final
+                ? [
+                    { id: "user", role: "user", content: "Question" },
+                    {
+                      role: "assistant",
+                      content: "",
+                      reasoning_content: "Plan",
+                      tool_calls: [{ id: "call", function: { name: "terminal" } }],
+                    },
+                    {
+                      role: "tool",
+                      tool_call_id: "call",
+                      tool_name: "terminal",
+                      content: "result",
+                    },
+                    ...(phase === "missed-tool"
+                      ? [
+                          {
+                            role: "assistant",
+                            content: "",
+                            reasoning_content: "Another plan",
+                            tool_calls: [{ id: "missed", function: { name: "read_file" } }],
+                          },
+                          {
+                            role: "tool",
+                            tool_call_id: "missed",
+                            tool_name: "read_file",
+                            content: "file content",
+                          },
+                        ]
+                      : []),
+                    { role: "assistant", content: "Hello world" },
+                  ]
+                : [],
+            );
+          if (input.includes("/chat/stream"))
+            return new Response(body, { headers: { "content-type": "text/event-stream" } });
+          if (input.includes("/events")) {
+            final = true;
+            return new Response(
+              'event: assistant.snapshot\ndata: {"text":"Hello world"}\n\nevent: tool.completed\ndata: {"tool_call_id":"call","output":"result"}\n\nevent: run.completed\ndata: {}\n\n',
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          }
+          if (input.includes("/runs/")) return json({ status: "running" });
+          if (input.includes("/api/sessions/one")) return json({ id: "one", source: "desktop" });
+          return json({ sessions: [{ id: "one" }], total: 1 });
+        }),
+      );
+      const wrapper = mount(App);
+      await flushPromises();
+      wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+      await flushPromises();
+      await wrapper.get("textarea").setValue("Question");
+      await wrapper.get(".composer").trigger("submit");
+      emit("run.started", { run_id: "workspace-one" });
+      emit("reasoning.delta", { delta: "Plan" });
+      emit("tool.started", { tool_call_id: "call", tool_name: "terminal" });
+      if (phase === "text") {
+        emit("tool.completed", { tool_call_id: "call", output: "result" });
+        emit("assistant.delta", { delta: "Hello" });
       }
-      if (input.includes('/messages')) return json({ data: [] })
-      if (init?.method === 'POST') return json({ session: { id: `${profile}-session` } })
-      return json({ data: [], has_more: false })
-    }))
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.get('.model-pill').text()).toBe('alpha-default')
-    await wrapper.get('.model-pill').trigger('click')
-    expect(wrapper.get('[data-provider="alpha"]').text()).toContain('Current')
-    await wrapper.get('[data-provider="alpha"]').trigger('click')
-    expect(wrapper.findAll('.model-option').map(item => item.text().replace('✓', '').trim())).toEqual(['alpha-default', 'alpha-extra'])
-    await wrapper.get('[data-model="alpha-default"]').trigger('click')
-    await wrapper.get('textarea').setValue('default turn')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(turns[0]).toEqual({ profile: 'alpha', body: { session_id: 'alpha-session', input: 'default turn', model: 'alpha-default', provider: 'alpha', require_model_lock: true } })
-    await wrapper.get('.model-pill').trigger('click')
-    await wrapper.get('[data-provider="custom:other"]').trigger('click')
-    await wrapper.get('[data-model="shared-model"]').trigger('click')
-    await wrapper.get('textarea').setValue('other turn')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(turns[1]?.body).toMatchObject({ model: 'shared-model', provider: 'custom:other', require_model_lock: true })
-    await wrapper.get('.model-pill').trigger('click')
-    await wrapper.get('[data-provider=""]').trigger('click')
-    expect(wrapper.findAll('.model-option').map(item => item.text())).toEqual(['Instant'])
-    await wrapper.get('[data-model="Instant"]').trigger('click')
-    await wrapper.get('textarea').setValue('route turn')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(turns[2]?.body).toEqual({ session_id: 'alpha-session', input: 'route turn', model: 'Instant', require_model_lock: true })
-    await wrapper.get('.profile-field').setValue('beta')
-    await flushPromises()
-    expect(wrapper.get('.model-pill').text()).toBe('beta-default')
-    await wrapper.get('.model-pill').trigger('click')
-    expect(wrapper.get('[data-provider="beta"]').text()).toContain('Current')
-    await wrapper.get('[data-provider="beta"]').trigger('click')
-    expect(wrapper.findAll('.model-option').map(item => item.text().replace('✓', '').trim())).toEqual(['beta-default', 'beta-extra'])
-    await wrapper.get('[data-model="beta-extra"]').trigger('click')
-    await wrapper.get('textarea').setValue('beta turn')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(turns[3]).toEqual({ profile: 'beta', body: { session_id: 'beta-session', input: 'beta turn', model: 'beta-extra', provider: 'beta', require_model_lock: true } })
-    wrapper.unmount()
-  })
+      await flushPromises();
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await flushPromises();
+      expect(wrapper.findAll(".activity")).toHaveLength(phase === "missed-tool" ? 4 : 2);
+      expect(wrapper.findAll(".assistant-turn > *").at(-1)?.classes()).toContain("assistant");
+      expect(wrapper.findAll(".activity[open]")).toHaveLength(0);
+      expect(wrapper.findAll(".message.assistant")).toHaveLength(1);
+      expect(wrapper.get(".message.assistant").text()).toBe("Hello world");
+      expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+      expect(wrapper.text()).toContain("result");
+      wrapper.unmount();
+    });
+});
 
-  it('ignores late inventory from a previous profile and falls back to the configured default and routes', async () => {
-    const old = deferred<Response>()
-    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
-      if (input.endsWith('/profiles')) return json({ profiles: [{ name: 'alpha' }, { name: 'beta' }] })
-      if (input.includes('/api/model/options')) return input.includes('profile=alpha') ? old.promise : new Response('{}', { status: 404 })
-      if (input.includes('/v1/models')) return json({ default_model: 'saved', data: [{ id: 'base', parent: null }, { id: 'route', parent: 'base' }] })
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      return json({ data: [] })
-    }))
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
-    await wrapper.get('.profile-field').setValue('beta')
-    await flushPromises()
-    old.resolve(json({ provider: 'alpha', model: 'old-model', providers: [{ slug: 'alpha', name: 'Alpha', models: ['old-model'], is_current: true }] }))
-    await flushPromises()
-    expect(wrapper.get('.model-pill').text()).toBe('saved')
-    await wrapper.get('.model-pill').trigger('click')
-    expect(wrapper.findAll('.provider-option').map(item => item.text())).toEqual(['Model routes'])
-    await wrapper.get('[data-provider=""]').trigger('click')
-    expect(wrapper.findAll('.model-option').map(item => item.text().replace('✓', '').trim())).toEqual(['saved', 'route'])
-    expect(wrapper.text()).not.toContain('old-model')
-    wrapper.unmount()
-  })
-})
-
-describe('assistant turn recovery', () => {
-  for (const phase of ['tool', 'text', 'missed-tool']) it(`preserves the turn when resuming during ${phase} streaming`, async () => {
-    let controller!: ReadableStreamDefaultController<Uint8Array>
-    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value } })
-    const encoder = new TextEncoder()
-    const emit = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
-    let final = false
-    mockFetch(vi.fn(async (input: string) => {
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      if (input.includes('/messages')) return json(final ? [
-        { id: 'user', role: 'user', content: 'Question' },
-        { role: 'assistant', content: '', reasoning_content: 'Plan', tool_calls: [{ id: 'call', function: { name: 'terminal' } }] },
-        { role: 'tool', tool_call_id: 'call', tool_name: 'terminal', content: 'result' },
-        ...(phase === 'missed-tool' ? [
-          { role: 'assistant', content: '', reasoning_content: 'Another plan', tool_calls: [{ id: 'missed', function: { name: 'read_file' } }] },
-          { role: 'tool', tool_call_id: 'missed', tool_name: 'read_file', content: 'file content' },
-        ] : []),
-        { role: 'assistant', content: 'Hello world' },
-      ] : [])
-      if (input.includes('/chat/stream')) return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-      if (input.includes('/events')) {
-        final = true
-        return new Response('event: assistant.snapshot\ndata: {"text":"Hello world"}\n\nevent: tool.completed\ndata: {"tool_call_id":"call","output":"result"}\n\nevent: run.completed\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
-      }
-      if (input.includes('/runs/')) return json({ status: 'running' })
-      if (input.includes('/api/sessions/one')) return json({ id: 'one', source: 'desktop' })
-      return json({ sessions: [{ id: 'one' }], total: 1 })
-    }))
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    await wrapper.get('textarea').setValue('Question')
-    await wrapper.get('.composer').trigger('submit')
-    emit('run.started', { run_id: 'workspace-one' })
-    emit('reasoning.delta', { delta: 'Plan' })
-    emit('tool.started', { tool_call_id: 'call', tool_name: 'terminal' })
-    if (phase === 'text') { emit('tool.completed', { tool_call_id: 'call', output: 'result' }); emit('assistant.delta', { delta: 'Hello' }) }
-    await flushPromises()
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(wrapper.findAll('.activity')).toHaveLength(phase === 'missed-tool' ? 4 : 2)
-    expect(wrapper.findAll('.assistant-turn > *').at(-1)?.classes()).toContain('assistant')
-    expect(wrapper.findAll('.activity[open]')).toHaveLength(0)
-    expect(wrapper.findAll('.message.assistant')).toHaveLength(1)
-    expect(wrapper.get('.message.assistant').text()).toBe('Hello world')
-    expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
-    expect(wrapper.text()).toContain('result')
-    wrapper.unmount()
-  })
-})
-
-describe('cached turn history isolation', () => {
-  it('recovers the sent turn rather than a later turn appended by another client', async () => {
-    let saved = false
+describe("cached turn history isolation", () => {
+  it("recovers the sent turn rather than a later turn appended by another client", async () => {
+    let saved = false;
     mockFetch(async (input: string) => {
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      if (input.includes('/messages')) return json(saved ? [
-        { id: 'first', role: 'user', content: 'Question' },
-        { role: 'assistant', content: 'Checking', tool_calls: [{ id: 'a' }] },
-        { role: 'tool', tool_call_id: 'a', content: 'result' },
-        { role: 'assistant', content: 'Intermediate', tool_calls: [{ id: 'b' }] },
-        { role: 'tool', tool_call_id: 'b', content: 'second result' },
-        { role: 'assistant', content: 'First answer' },
-        { id: 'second', role: 'user', content: 'Other question' },
-        { role: 'assistant', content: 'Other answer' },
-      ] : [])
-      if (input.includes('/v1/runs') || input.includes('/chat/stream')) {
-        saved = true
-        return new Response('event: assistant.delta\ndata: {"delta":"Checking"}\n\nevent: tool.started\ndata: {"tool_call_id":"a"}\n\nevent: tool.completed\ndata: {"tool_call_id":"a","output":"result"}\n\nevent: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
+      if (input.includes("/v1/capabilities")) return json(streaming);
+      if (input.includes("/messages"))
+        return json(
+          saved
+            ? [
+                { id: "first", role: "user", content: "Question" },
+                { role: "assistant", content: "Checking", tool_calls: [{ id: "a" }] },
+                { role: "tool", tool_call_id: "a", content: "result" },
+                { role: "assistant", content: "Intermediate", tool_calls: [{ id: "b" }] },
+                { role: "tool", tool_call_id: "b", content: "second result" },
+                { role: "assistant", content: "First answer" },
+                { id: "second", role: "user", content: "Other question" },
+                { role: "assistant", content: "Other answer" },
+              ]
+            : [],
+        );
+      if (input.includes("/v1/runs") || input.includes("/chat/stream")) {
+        saved = true;
+        return new Response(
+          'event: assistant.delta\ndata: {"delta":"Checking"}\n\nevent: tool.started\ndata: {"tool_call_id":"a"}\n\nevent: tool.completed\ndata: {"tool_call_id":"a","output":"result"}\n\nevent: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n',
+        );
       }
-      return json({ sessions: [{ id: 'one' }], total: 1 })
-    })
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    await wrapper.get('textarea').setValue('Question')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    const turns = wrapper.findAll('.assistant-turn')
-    expect(turns).toHaveLength(2)
-    expect(turns[0]!.findAll('.message.assistant').map(item => item.text())).toEqual(['Checking', 'Intermediate', 'First answer'])
-    expect(turns[0]!.text()).not.toContain('Other answer')
-    expect(turns[1]!.text()).toBe('Other answer')
-    expect(wrapper.findAll('.message.user').map(item => item.text())).toEqual(['Question', 'Other question'])
-    wrapper.unmount()
-  })
+      return json({ sessions: [{ id: "one" }], total: 1 });
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("Question");
+    await wrapper.get(".composer").trigger("submit");
+    await flushPromises();
+    const turns = wrapper.findAll(".assistant-turn");
+    expect(turns).toHaveLength(2);
+    expect(turns[0]!.findAll(".message.assistant").map((item) => item.text())).toEqual([
+      "Checking",
+      "Intermediate",
+      "First answer",
+    ]);
+    expect(turns[0]!.text()).not.toContain("Other answer");
+    expect(turns[1]!.text()).toBe("Other answer");
+    expect(wrapper.findAll(".message.user").map((item) => item.text())).toEqual([
+      "Question",
+      "Other question",
+    ]);
+    wrapper.unmount();
+  });
 
-  it('ignores a visibility history request that resolves after a new send starts', async () => {
-    const stale = deferred<Response>()
-    let reads = 0, sends = 0
-    let controller!: ReadableStreamDefaultController<Uint8Array>
+  it("ignores a visibility history request that resolves after a new send starts", async () => {
+    const stale = deferred<Response>();
+    let reads = 0,
+      sends = 0;
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
     mockFetch(async (input: string) => {
-      if (input.includes('/v1/capabilities')) return json(streaming)
-      if (input.includes('/messages')) {
-        reads++
-        if (reads === 4) return stale.promise
-        return json(reads === 1 ? [] : [
-          { id: 'first', role: 'user', content: 'First' },
-          { role: 'assistant', content: 'First answer' },
-        ])
+      if (input.includes("/v1/capabilities")) return json(streaming);
+      if (input.includes("/messages")) {
+        reads++;
+        if (reads === 4) return stale.promise;
+        return json(
+          reads === 1
+            ? []
+            : [
+                { id: "first", role: "user", content: "First" },
+                { role: "assistant", content: "First answer" },
+              ],
+        );
       }
-      if (input.includes('/v1/runs') || input.includes('/chat/stream')) {
-        if (++sends === 1) return new Response('event: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n')
-        return new Response(new ReadableStream<Uint8Array>({ start(value) { controller = value } }))
+      if (input.includes("/v1/runs") || input.includes("/chat/stream")) {
+        if (++sends === 1)
+          return new Response(
+            'event: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n',
+          );
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(value) {
+              controller = value;
+            },
+          }),
+        );
       }
-      return json({ sessions: [{ id: 'one' }], total: 1 })
-    })
-    const wrapper = mount(App)
-    await flushPromises()
-    wrapper.findComponent(SessionSidebar).vm.$emit('select', 'one')
-    await flushPromises()
-    await wrapper.get('textarea').setValue('First')
-    await wrapper.get('.composer').trigger('submit')
-    await flushPromises()
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(reads).toBeGreaterThanOrEqual(3)
-    await wrapper.get('textarea').setValue('Second')
-    await wrapper.get('.composer').trigger('submit')
-    controller.enqueue(new TextEncoder().encode('event: assistant.delta\ndata: {"delta":"Second live answer"}\n\n'))
-    await flushPromises()
-    stale.resolve(json([
-      { id: 'first', role: 'user', content: 'First' },
-      { role: 'assistant', content: 'Stale first answer' },
-    ]))
-    await flushPromises()
-    expect(wrapper.findAll('.message.assistant').map(item => item.text())).toEqual(['First answer', 'Second live answer'])
-    expect(wrapper.findAll('.message.user').map(item => item.text())).toEqual(['First', 'Second'])
-    wrapper.unmount()
-  })
-})
+      return json({ sessions: [{ id: "one" }], total: 1 });
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First");
+    await wrapper.get(".composer").trigger("submit");
+    await flushPromises();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushPromises();
+    expect(reads).toBeGreaterThanOrEqual(3);
+    await wrapper.get("textarea").setValue("Second");
+    await wrapper.get(".composer").trigger("submit");
+    controller.enqueue(
+      new TextEncoder().encode('event: assistant.delta\ndata: {"delta":"Second live answer"}\n\n'),
+    );
+    await flushPromises();
+    stale.resolve(
+      json([
+        { id: "first", role: "user", content: "First" },
+        { role: "assistant", content: "Stale first answer" },
+      ]),
+    );
+    await flushPromises();
+    expect(wrapper.findAll(".message.assistant").map((item) => item.text())).toEqual([
+      "First answer",
+      "Second live answer",
+    ]);
+    expect(wrapper.findAll(".message.user").map((item) => item.text())).toEqual([
+      "First",
+      "Second",
+    ]);
+    wrapper.unmount();
+  });
+});

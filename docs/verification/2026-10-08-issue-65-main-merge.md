@@ -10,15 +10,15 @@
 
 ## Resolution
 
-| Overlap | Resolution |
-| --- | --- |
-| `src/App.vue` navigation refs, lifecycle, drawer, screen menu | Preserve main's current implementation, including settings, project editor/instructions, menu focus handling, logo, native session lifecycle and notification behavior. Retain the PR's `recentSession` fix. |
-| `src/projects.test.ts` drawer selector | Use main's `.drawer-chat`; retain all PR project membership and navigation race tests alongside main's tests. |
-| `src/App.test.ts`, `src/scheduled.test.ts` automatically merged navigation tests | Adapt older `.new-chat-nav` assertions to main's single `.drawer-chat` button. Keep the original regression intent. |
-| `tests/visual/dashboard.spec.ts` | Keep PR screen-menu checks and main's scoped navigation selector/single-button check. |
-| `tests/visual/projects.spec.ts` automatic merge | Keep both suites' changes. Read the recent title from `.truncate`, since main's session buttons also contain a source-label span. |
-| Apple touch icon, favicon, manifest | Preserve main's newer branding fixes and authenticated plugin asset paths. Existing icon copies on both branches remain present. |
-| Generated bundle rename/rename, entry, stylesheet | Regenerate from merged source. One app bundle (`app-DX8HILUg.js`), referenced by `index.js`; stylesheet matches main. Manifest, worker, icon files and distributed touch icon match the build script's sources. |
+| Overlap                                                                          | Resolution                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/App.vue` navigation refs, lifecycle, drawer, screen menu                    | Preserve main's current implementation, including settings, project editor/instructions, menu focus handling, logo, native session lifecycle and notification behavior. Retain the PR's `recentSession` fix.    |
+| `src/projects.test.ts` drawer selector                                           | Use main's `.drawer-chat`; retain all PR project membership and navigation race tests alongside main's tests.                                                                                                   |
+| `src/App.test.ts`, `src/scheduled.test.ts` automatically merged navigation tests | Adapt older `.new-chat-nav` assertions to main's single `.drawer-chat` button. Keep the original regression intent.                                                                                             |
+| `tests/visual/dashboard.spec.ts`                                                 | Keep PR screen-menu checks and main's scoped navigation selector/single-button check.                                                                                                                           |
+| `tests/visual/projects.spec.ts` automatic merge                                  | Keep both suites' changes. Read the recent title from `.truncate`, since main's session buttons also contain a source-label span.                                                                               |
+| Apple touch icon, favicon, manifest                                              | Preserve main's newer branding fixes and authenticated plugin asset paths. Existing icon copies on both branches remain present.                                                                                |
+| Generated bundle rename/rename, entry, stylesheet                                | Regenerate from merged source. One app bundle (`app-DX8HILUg.js`), referenced by `index.js`; stylesheet matches main. Manifest, worker, icon files and distributed touch icon match the build script's sources. |
 
 The only runtime source delta against main is the intended drawer-resume fix: await initial authoritative project membership, reject stale profile/session navigation, restore the owning project using hierarchy or summary session IDs, clear scope for ungrouped chats, and load project detail alongside the session. Main's `chooseSession` continues to clear project editor/confirmation state and attach the current native runtime. All other main source changes are preserved.
 

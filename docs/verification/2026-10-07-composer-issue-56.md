@@ -19,13 +19,13 @@ blocking sending; abort now rejects and the existing finally releases the gate.
 Unit regressions cover abort recovery, clearing temporary loading/run gates,
 newlines, single button emission, growth, scrolling and shrink after send.
 
-| Check | Result |
-| --- | --- |
-| `npm test` | 182 passed in 18 files |
-| `npm run test:api` | 100 passed |
-| `npm run build` | Passed; committed plugin dist assets regenerated |
-| Desktop/mobile composer and dashboard Playwright tests | 4 passed |
-| `git diff --check` | Passed |
+| Check                                                  | Result                                           |
+| ------------------------------------------------------ | ------------------------------------------------ |
+| `npm test`                                             | 182 passed in 18 files                           |
+| `npm run test:api`                                     | 100 passed                                       |
+| `npm run build`                                        | Passed; committed plugin dist assets regenerated |
+| Desktop/mobile composer and dashboard Playwright tests | 4 passed                                         |
+| `git diff --check`                                     | Passed                                           |
 
 API tests used a worktree-local `.venv` with pytest, FastAPI, httpx,
 python-multipart and Web Push dependencies. The initial system Python lacked

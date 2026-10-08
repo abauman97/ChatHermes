@@ -19,23 +19,23 @@ inspect saved history and native activity before explicitly ending verification.
 
 ## Pinned investigation and alternatives
 
-* `LiveSessionSnapshot` has no epoch/sequence watermark. Replay reads events and
+- `LiveSessionSnapshot` has no epoch/sequence watermark. Replay reads events and
   `latest_seq` separately. The intervening-writer probe proves that advancing to
   `latest_seq` can skip an unreturned event. The controller instead advances from
   actual event objects, deduplicates/reorders replay/live data and retains its
   cursor across same-document reconnect. New-document snapshot recovery warns
   that partial activity can be missing; persisted history is authoritative.
-* `PromptSubmitParams` has no idempotency key/receipt or reject-if-busy flag. The
+- `PromptSubmitParams` has no idempotency key/receipt or reject-if-busy flag. The
   public `queued:true` option is a safe alternative to accidental busy steering,
   interrupt or redirect. A focused pinned probe forbids those agent methods and
   verifies FIFO queuing even under Desktop's interrupt policy. It cannot establish
   exactly-once admission after lost response or a process crash.
-* Model switching before a cold native build can be overwritten by captured
+- Model switching before a cold native build can be overwritten by captured
   defaults. Read-only `approval.pending` waits for that build; session activation,
   session-only config switching and post-switch checks precede prompt admission.
   The provider probe verifies actual qwen model requests. No atomic selection
   guarantee against an independent Desktop model mutation is advertised.
-* Native multipart images reach a vision preprocessing request; the normal reply
+- Native multipart images reach a vision preprocessing request; the normal reply
   can subsequently receive text. Hermes persists a text projection, rather than
   raw image bytes. Uploading originals first and retaining durable references in
   that text makes authenticated image reopen possible. One prompt carries all
@@ -43,7 +43,7 @@ inspect saved history and native activity before explicitly ending verification.
   probe checks vision request structure, actual model, durable reference, original
   bytes and resumed history. The browser test checks authenticated byte-identical
   retrieval, anonymous rejection and foreign-profile rejection.
-* Native detach uses default 20-second orphan grace. Fresh running activity can
+- Native detach uses default 20-second orphan grace. Fresh running activity can
   defer reaping within the default 600-second activity freshness threshold; this
   is not an unconditional 600-second offline guarantee. Additive second viewers
   remain attached. Native crash continuation is distinct work and may repeat
@@ -56,21 +56,21 @@ with a plugin mutex or a separately written receipt.
 
 ## Environment
 
-* Hermes source: `3632f9173d218fd24f3fa595d7affa159b0774cd`.
-* Archive SHA-256: `e62be810520c1fe592b82661c0dfacfff29c52efae529840f78c78551c07b384`.
-* Base: `nousresearch/hermes-agent@sha256:cdcda342ff2b3919eaa7b3dbd7c5178b7b7676db62ddac273af2b921e9be4aa3`.
-* Final image: `chathermes-test:3632f917`,
+- Hermes source: `3632f9173d218fd24f3fa595d7affa159b0774cd`.
+- Archive SHA-256: `e62be810520c1fe592b82661c0dfacfff29c52efae529840f78c78551c07b384`.
+- Base: `nousresearch/hermes-agent@sha256:cdcda342ff2b3919eaa7b3dbd7c5178b7b7676db62ddac273af2b921e9be4aa3`.
+- Final image: `chathermes-test:3632f917`,
   `sha256:4d9c9caeb7e0956aa86ca75e5f93fc5215f1d699d0355c537ddfd6d06e7205c6`.
-* Only data mount: `volume:chathermes-test-hermes-test-data:/opt/data`.
+- Only data mount: `volume:chathermes-test-hermes-test-data:/opt/data`.
   No existing personal Hermes home or host data bind mount was used.
-* Hermes/model run on `chathermes-test-internal` with no fixture provider egress.
+- Hermes/model run on `chathermes-test-internal` with no fixture provider egress.
   Only the inbound dashboard relay joins the browser network. Other running
   dashboards were left alone. Dashboard: `http://172.25.0.2:9127/chathermes`.
-* Launcher: `CHATHERMES_BIND_ADDRESS=172.25.0.2 CHATHERMES_DASHBOARD_PORT=9127
+- Launcher: `CHATHERMES_BIND_ADDRESS=172.25.0.2 CHATHERMES_DASHBOARD_PORT=9127
   DOCKER_HOST=tcp://172.25.0.2:2375 sh tests/docker/run.sh fixture`.
   Compose CLI is absent; compose pins/volume rules have regression coverage,
   but Compose itself was not executed.
-* Python API checks use `/tmp/chathermes-issue10-venv/bin` on PATH. Playwright
+- Python API checks use `/tmp/chathermes-issue10-venv/bin` on PATH. Playwright
   uses the installed Chromium via `CHATHERMES_CHROMIUM`, and
   `CHATHERMES_TEST_URL=http://172.25.0.2:9127`. All credentials/data are synthetic.
   No real provider credentials were supplied.
@@ -119,17 +119,17 @@ SQLite DELETE journaling due the embedded SQLite version; pins were preserved.
 
 ## Final evidence
 
-| Command | Result |
-| --- | --- |
-| `npm test` | 104 passed in 11 files |
-| `npm run test:api` (isolated venv on PATH) | 62 passed |
-| `npm run test:docker` | 7 passed |
-| `npm run test:native` | Exit 0: 84 pinned Python checks, runtime/provider probe, 16 authenticated desktop/mobile integration cases |
-| `npm run build` | Passed; committed-asset location rebuilt as `app-BuM6J0zJ.js`, loader and CSS |
-| Combined `npm run test:visual` | All 34 cases reported passing; process returned 143 after the summary, so both size projects were rerun separately for clean-exit verification |
-| `npm run test:visual -- --project=desktop --output=tests/visual-output/desktop-final` | Exit 0: 17 passed |
-| `npm run test:visual -- --project=mobile --output=tests/visual-output/mobile-final` | Exit 0: 17 passed |
-| `git diff --check` | Passed |
+| Command                                                                               | Result                                                                                                                                         |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`                                                                            | 104 passed in 11 files                                                                                                                         |
+| `npm run test:api` (isolated venv on PATH)                                            | 62 passed                                                                                                                                      |
+| `npm run test:docker`                                                                 | 7 passed                                                                                                                                       |
+| `npm run test:native`                                                                 | Exit 0: 84 pinned Python checks, runtime/provider probe, 16 authenticated desktop/mobile integration cases                                     |
+| `npm run build`                                                                       | Passed; committed-asset location rebuilt as `app-BuM6J0zJ.js`, loader and CSS                                                                  |
+| Combined `npm run test:visual`                                                        | All 34 cases reported passing; process returned 143 after the summary, so both size projects were rerun separately for clean-exit verification |
+| `npm run test:visual -- --project=desktop --output=tests/visual-output/desktop-final` | Exit 0: 17 passed                                                                                                                              |
+| `npm run test:visual -- --project=mobile --output=tests/visual-output/mobile-final`   | Exit 0: 17 passed                                                                                                                              |
+| `git diff --check`                                                                    | Passed                                                                                                                                         |
 
 Local and running-fixture checksums match for `native_channel.py`
 (`cbf16fb17483d6d0019fbdb28d583588165d4a4e1e04f100d538c92571e1b0d1`)

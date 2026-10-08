@@ -1,6 +1,7 @@
 """Gateway proxy contract, exercised without reading any local Hermes configuration."""
 import importlib.util
 import asyncio
+import re
 from functools import wraps
 from pathlib import Path
 
@@ -152,7 +153,7 @@ async def test_push_subscription_routes_validate_scope_and_never_echo_key_materi
         service_worker = await client.get('/api/plugins/chathermes/push-service-worker.js')
         assert service_worker.status_code == 200
         assert service_worker.headers['service-worker-allowed'] == '/chathermes'
-        assert "addEventListener('push'" in service_worker.text
+        assert re.search(r"""addEventListener\(\s*(['"])push\1""", service_worker.text)
         body = {'endpoint': 'https://push.test/private-endpoint', 'keys': {'p256dh': 'secret-key', 'auth': 'secret-auth'}}
         response = await client.post('/api/plugins/chathermes/push/subscriptions?profile=alpha', json=body)
         assert response.status_code == 200
