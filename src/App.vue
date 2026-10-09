@@ -13,6 +13,8 @@ import type {
   ProjectAction,
 } from "./types/hermes";
 import { projectRoot, projectSessions } from "./lib/projects";
+import ClarificationCard from "./components/ClarificationCard.vue";
+import type { ClarifyQuestion } from "./vendor/hermes/gateway-contract.generated";
 import ScheduledPage from "./components/ScheduledPage.vue";
 import ProjectsPage from "./components/ProjectsPage.vue";
 import SettingsPage from "./components/SettingsPage.vue";
@@ -108,8 +110,9 @@ let listAbort: AbortController | undefined,
   chatAbort: AbortController | undefined,
   generation = 0,
   profileGeneration = 0;
-const clarificationAnswers = ref<Record<string, string | string[]>>({}),
-  customClarification = ref<Record<string, string>>({});
+const clarificationSubmitting = ref(false);
+const secretAnswer = ref("");
+let secretRequestId = "";
 const pushState = ref<push.PushState>({
   supported: false,
   permission: "unsupported",
@@ -138,6 +141,13 @@ const native = useNativeSession(() => {
   refreshProjects();
   void loadSessions();
 });
+watch(
+  () => (native.approval.value?.kind === "secret" ? native.approval.value.request_id : undefined),
+  (id) => {
+    if (id !== secretRequestId) secretAnswer.value = "";
+    secretRequestId = typeof id === "string" ? id : "";
+  },
+);
 const nativeMode = canStream;
 const viewMessages = computed(() => (nativeMode.value ? native.messages.value : messages.value));
 const viewBusy = computed(() => native.busy.value || native.uncertain.value);
@@ -718,26 +728,36 @@ async function approveResponse(choice: string) {
     return;
   }
 }
-async function answerClarification() {
-  if (nativeMode.value) {
-    const id = native.approval.value?.request_id;
-    const answers = Object.fromEntries(
-      Object.entries(clarificationAnswers.value).map(([key, value]) => [
-        key,
-        Array.isArray(value) ? value.join(", ") : value,
-      ]),
-    );
-    Object.assign(answers, customClarification.value);
-    if (typeof id === "string") {
-      try {
-        await native.answer(id, { answers });
-        clarificationAnswers.value = {};
-        customClarification.value = {};
-      } catch {
-        native.error.value = "Clarification could not be settled.";
-      }
-    }
+async function answerClarification(answers: Record<string, string>) {
+  const id = native.approval.value?.request_id;
+  if (
+    !nativeMode.value ||
+    viewReconnect.value ||
+    clarificationSubmitting.value ||
+    typeof id !== "string"
+  )
     return;
+  const current = generation;
+  clarificationSubmitting.value = true;
+  try {
+    await native.answer(id, { answers });
+  } catch {
+    if (current === generation) native.error.value = "Clarification could not be settled.";
+  } finally {
+    clarificationSubmitting.value = false;
+  }
+}
+async function answerSecret() {
+  const id =
+    native.approval.value?.kind === "secret" ? native.approval.value.request_id : undefined;
+  const value = secretAnswer.value;
+  secretAnswer.value = "";
+  secretRequestId = "";
+  if (typeof id !== "string" || !value) return;
+  try {
+    await native.answer(id, { value });
+  } catch {
+    native.error.value = "Secret request could not be settled.";
   }
 }
 async function steerResponse(text: string) {
@@ -1490,16 +1510,52 @@ onUnmounted(() => {
         @suggest="suggest"
       >
         <template #request>
-          <div v-if="viewApprovalPending" class="notice px-5 py-3 text-sm" role="status">
+          <div
+            v-if="viewApprovalPending && viewApproval?.kind === 'secret'"
+            class="notice px-5 py-3 text-sm"
+            role="status"
+          >
+            <p>{{ viewApproval.prompt }}</p>
+            <form @submit.prevent="answerSecret">
+              <label class="block my-3"
+                >{{ viewApproval.env_var }}
+                <input
+                  v-model="secretAnswer"
+                  type="password"
+                  autocomplete="off"
+                  :aria-label="String(viewApproval.prompt || 'Secret')"
+                  :disabled="viewReconnect"
+                  class="block w-full rounded-lg bg-[#303030] p-2 text-base"
+                />
+              </label>
+              <button
+                type="submit"
+                :disabled="viewReconnect || !secretAnswer"
+                class="rounded-lg bg-[#303030] p-2 text-base"
+              >
+                Submit secret
+              </button>
+            </form>
+          </div>
+          <div
+            v-if="viewApprovalPending && viewApproval?.kind !== 'secret'"
+            class="notice px-5 py-3 text-sm"
+            role="status"
+          >
             <p v-if="viewApproval?.kind !== 'clarify'">
               Approval required{{ viewApproval?.command ? ": " + viewApproval.command : "" }}
             </p>
-            <template v-if="viewActive && viewApproval?.kind !== 'clarify'">
+            <div
+              v-if="viewActive && viewApproval?.kind === 'approval'"
+              class="approval-choices grid grid-cols-1 gap-2 my-3"
+            >
               <button
                 v-for="choice in Array.isArray(viewApproval?.choices) ? viewApproval.choices : []"
                 :key="String(choice)"
-                class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55"
+                class="w-full rounded-xl px-3 py-3 text-base text-white disabled:opacity-55"
+                :class="choice === 'deny' ? 'bg-[#b91c1c]' : 'bg-[#15803d]'"
                 :disabled="viewReconnect"
+                @mousedown.prevent
                 @click="approveResponse(String(choice))"
               >
                 {{
@@ -1512,48 +1568,14 @@ onUnmounted(() => {
                         : "Always allow"
                 }}
               </button>
-            </template>
-            <form v-if="viewApproval?.kind === 'clarify'" @submit.prevent="answerClarification">
-              <label
-                v-for="question in viewApproval.questions as {
-                  qid: string;
-                  question: string;
-                  choices?: string[];
-                  multi_select?: boolean;
-                }[]"
-                :key="question.qid"
-                class="block my-3"
-              >
-                {{ question.question }}
-                <select
-                  v-if="question.choices?.length"
-                  :multiple="question.multi_select"
-                  v-model="clarificationAnswers[question.qid]"
-                  :disabled="nativeMode && viewReconnect"
-                  class="block rounded-lg bg-[#303030] p-2 text-base"
-                >
-                  <option value="">Select an answer</option>
-                  <option v-for="choice in question.choices" :key="choice">{{ choice }}</option>
-                </select>
-                <input
-                  v-if="!question.choices?.length"
-                  v-model="clarificationAnswers[question.qid]"
-                  :disabled="nativeMode && viewReconnect"
-                  class="block w-full rounded-lg bg-[#303030] p-2 text-base"
-                />
-                <input
-                  v-else
-                  v-model="customClarification[question.qid]"
-                  :disabled="nativeMode && viewReconnect"
-                  placeholder="Or enter your own answer"
-                  :aria-label="question.question + ' — custom answer'"
-                  class="mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base"
-                />
-              </label>
-              <button :disabled="viewReconnect" class="rounded-lg bg-[#303030] p-2 text-base">
-                Submit answers
-              </button>
-            </form>
+            </div>
+            <ClarificationCard
+              v-if="viewApproval?.kind === 'clarify'"
+              :key="JSON.stringify([profile, session, viewApproval.request_id])"
+              :questions="viewApproval.questions as ClarifyQuestion[]"
+              :disabled="viewReconnect || clarificationSubmitting"
+              @answer="answerClarification"
+            />
           </div>
         </template>
       </ChatTranscript>

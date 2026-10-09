@@ -141,10 +141,10 @@ class Channel:
             if set(params) != {'request_id', 'result'}:
                 raise HTTPException(422, 'Invalid answer')
             opened = next((r for r in server_requests.open_requests(self.runtime) if r['id'] == params['request_id']), None)
-            if not opened or opened['method'] not in ('approval', 'clarify'):
+            if not opened or opened['method'] not in ('approval', 'clarify', 'secret'):
                 raise HTTPException(409, 'Request is no longer open in this session')
-            from tui_gateway.contracts.server_requests import ApprovalResult, ClarifyResult
-            schema = ApprovalResult if opened['method'] == 'approval' else ClarifyResult
+            from tui_gateway.contracts.server_requests import ApprovalResult, ClarifyResult, ValueResult
+            schema = {'approval': ApprovalResult, 'clarify': ClarifyResult, 'secret': ValueResult}[opened['method']]
             try:
                 answer = schema.model_validate(params['result']).model_dump(exclude_none=True)
             except Exception:
@@ -153,7 +153,9 @@ class Channel:
                 raise HTTPException(422, 'Approval choice unavailable')
             if opened['method'] == 'clarify' and set(answer.get('answers', {})) - {q['qid'] for q in opened['params']['questions']}:
                 raise HTTPException(422, 'Unknown clarification question')
-            settled = server_requests.resolve_response({'jsonrpc': '2.0', 'id': opened['id'], 'result': answer}, self.transport)
+            if opened['method'] == 'secret' and answer['value']:
+                self.transport.secrets.add(answer['value'])
+            settled = server_requests.resolve_response({'jsonrpc': '2.0', 'id': opened['id'], 'result': answer})
             if not settled:
                 raise HTTPException(409, 'Request already settled')
             return {'settled': True}

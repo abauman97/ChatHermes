@@ -215,3 +215,64 @@ describe("retained native recovery", () => {
     expect(nativeOutcome("same", "session")).toBe(false);
   });
 });
+
+it("surfaces secret prompts and keeps their reply on the normal chat.answer route", async () => {
+  vi.stubGlobal("location", new URL("https://dashboard.test/chathermes"));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ ticket: "ephemeral" }))),
+  );
+  const sent: Record<string, unknown>[] = [];
+  class Socket {
+    static OPEN = 1;
+    readyState = 1;
+    onopen?: () => void;
+    onmessage?: (event: { data: string }) => void;
+    constructor() {
+      queueMicrotask(() => this.onopen?.());
+    }
+    close() {
+      this.readyState = 3;
+    }
+    send(text: string) {
+      const frame = JSON.parse(text);
+      sent.push(frame);
+      const result =
+        frame.method === "chat.attach"
+          ? {
+              session_id: "runtime",
+              messages: [],
+              recovery: { epoch: "epoch", through: 0, complete: true, base_row_ids: [] },
+              open_requests: [
+                {
+                  id: "secret-1",
+                  method: "secret",
+                  params: { session_id: "runtime", env_var: "API_TOKEN", prompt: "Token?" },
+                },
+              ],
+            }
+          : { ok: true };
+      queueMicrotask(() =>
+        this.onmessage?.({ data: JSON.stringify({ jsonrpc: "2.0", id: frame.id, result }) }),
+      );
+    }
+  }
+  vi.stubGlobal("WebSocket", Socket);
+  const h = hooks();
+  const viewer = new NativeViewer("a", "stored", h);
+  await viewer.ensure();
+  expect(h.requests).toHaveBeenLastCalledWith([
+    {
+      id: "secret-1",
+      method: "secret",
+      params: { session_id: "runtime", env_var: "API_TOKEN", prompt: "Token?" },
+    },
+  ]);
+  await viewer.answer("secret-1", { value: "one-time-token" });
+  expect(sent.at(-1)).toMatchObject({
+    method: "chat.answer",
+    params: { request_id: "secret-1", result: { value: "one-time-token" } },
+  });
+  expect(h.requests).toHaveBeenLastCalledWith([]);
+  viewer.close();
+});

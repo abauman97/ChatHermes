@@ -61,7 +61,7 @@ export class NativeViewer {
       },
     });
     this.channel.onRequest((request) => {
-      if (!["approval", "clarify"].includes(request.method)) return false;
+      if (!["approval", "clarify", "secret"].includes(request.method)) return false;
       // Request cards are reconciled by ID; result.open_requests is redelivered
       // by the upstream channel before the attach promise resolves.
       this.requestEntries.set(request.id, {

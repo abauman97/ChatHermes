@@ -103,10 +103,10 @@ class Owner:
                 request_id = frame.get('id')
                 self.notify(kind, request_id if isinstance(request_id, (str, int)) else p.get('seq'))
             self.record(frame)
-        elif frame.get('method') not in ('approval', 'clarify') and 'id' in frame:
+        elif frame.get('method') not in ('approval', 'clarify', 'secret') and 'id' in frame:
             from tui_gateway import server_requests
             server_requests.resolve_response({'id': frame['id'], 'error': {
-                'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}}, self.transport)
+                'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}})
             frame = {'jsonrpc': '2.0', 'method': 'chat.unsupported', 'params': {'method': frame['method']}}
         self.publish(frame)
 

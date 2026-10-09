@@ -439,6 +439,7 @@ export function useNativeSession(onSettled: () => void) {
     status,
     connection,
     approval,
+    requests,
     uncertain,
     attach,
     submit,
