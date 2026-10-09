@@ -21,7 +21,7 @@ def push_log(stage, profile, session, kind, **fields):
         return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value) else None
     write = log.warning if fields.get('exception') else log.info
     write('ChatHermes push %s', json.dumps(dict(stage=stage, profile=safe(profile),
-        session=safe(session), kind=kind if kind in ('message.complete', 'turn.complete', 'approval', 'clarify', 'attention') else None,
+        kind=kind if kind in ('message.complete', 'turn.complete', 'approval', 'clarify', 'secret', 'attention') else None,
         **{key: value for key, value in fields.items() if
             (key in ('session_matched', 'duplicate') and type(value) is bool) or
             (key == 'exception' and isinstance(value, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', value))}), separators=(',', ':')))
@@ -64,14 +64,14 @@ class Owner:
         p = frame.get('params') or {}
         method = frame.get('method')
         detected = p.get('type') if method == 'event' else method
-        if detected in ('message.complete', 'turn.complete', 'approval', 'clarify', 'attention'):
+        if detected in ('message.complete', 'turn.complete', 'approval', 'clarify', 'secret', 'attention'):
             push_log('event.detected', self.profile, p.get('session_id'), detected,
                 session_matched=p.get('session_id') == self.runtime)
         # The transport is profile-bound. During first resume the runtime is not
         # known yet; adopt only after that RPC, then seed native replay below.
         if self.runtime is None or p.get('session_id') != self.runtime:
             return
-        if method in ('approval', 'clarify'):
+        if method in ('approval', 'clarify', 'secret'):
             self.notify(method, frame.get('id'))
         if method == 'event':
             seq = p.get('seq')
@@ -99,14 +99,11 @@ class Owner:
                     self.notify('turn.complete', p.get('seq'), payload.get('text'))
                 elif payload.get('status') in ('error', 'failed', 'stopped', 'interrupted'):
                     self.notify('attention', p.get('seq'), payload.get('text'))
-            if kind in ('approval', 'clarify'):
-                request_id = frame.get('id')
-                self.notify(kind, request_id if isinstance(request_id, (str, int)) else p.get('seq'))
             self.record(frame)
-        elif frame.get('method') not in ('approval', 'clarify') and 'id' in frame:
+        elif frame.get('method') not in ('approval', 'clarify', 'secret') and 'id' in frame:
             from tui_gateway import server_requests
             server_requests.resolve_response({'id': frame['id'], 'error': {
-                'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}}, self.transport)
+                'code': server_requests.NOT_SHOWN_CODE, 'message': 'Unavailable in ChatHermes'}})
             frame = {'jsonrpc': '2.0', 'method': 'chat.unsupported', 'params': {'method': frame['method']}}
         self.publish(frame)
 

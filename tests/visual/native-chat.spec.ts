@@ -207,43 +207,121 @@ test("native Other turn reload, second viewer, guidance, stop and persisted hist
   expect(runs).toBe(0);
 });
 
-test("native clarification survives reload and answers through the attached socket", async ({
-  page,
-}, info) => {
-  await login(page);
-  const plugin = page.locator(".chathermes-embedded");
-  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
-  await composer.fill("Please ask two fixture questions [clarify]");
-  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
-  await expect(plugin.locator("label").filter({ hasText: "Choose a fixture colour" })).toBeVisible({
-    timeout: 30000,
+for (const { response, reload } of [
+  { response: "option", reload: false },
+  { response: "other", reload: false },
+  { response: "option", reload: true },
+  { response: "other", reload: true },
+] as const) {
+  test(`native clarification ${response} ${reload ? "survives reload" : "arrives live"} and settles the exact answer`, async ({
+    page,
+  }, info) => {
+    const answers: { request_id: string; result: unknown }[] = [];
+    const settled = new Set<string>();
+    let requestId = "";
+    page.on("websocket", (socket) => {
+      if (!socket.url().includes("/chathermes/chat/ws")) return;
+      const answerIds = new Set<string>();
+      socket.on("framesent", (frame) => {
+        const value = JSON.parse(String(frame.payload));
+        if (value.method === "chat.answer") {
+          answers.push(value.params);
+          answerIds.add(value.id);
+        }
+      });
+      socket.on("framereceived", (frame) => {
+        const value = JSON.parse(String(frame.payload));
+        if (value.method === "clarify") requestId = value.id;
+        if (answerIds.has(value.id) && value.result?.settled) settled.add(value.id);
+      });
+    });
+    await login(page);
+    const plugin = page.locator(".chathermes-embedded");
+    const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+    await composer.fill("Please ask two fixture questions [clarify]");
+    await plugin.getByRole("button", { name: "Send message", exact: true }).click();
+    const card = plugin.locator(".clarification-card");
+    await expect(card).toBeVisible({ timeout: 30000 });
+    if (reload) {
+      await page.reload();
+      await expect(card).toBeVisible();
+    }
+    const question = card.locator("fieldset").filter({ hasText: "Choose a fixture colour" });
+    await expect(question.getByRole("button")).toHaveText(["Blue (Recommended)", "Green", "Send"]);
+    await expect(card.locator("select")).toHaveCount(0);
+    await expect(card.locator("button")).toHaveCount(4);
+    await composer.click();
+    await expect(composer).toBeFocused();
+    const boxes = await question.locator(".clarification-choices button").evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom };
+      }),
+    );
+    const width = (await question.boundingBox())!.width;
+    expect(boxes[0]!.width).toBeCloseTo(width, 0);
+    expect(boxes[1]!.width).toBeCloseTo(width, 0);
+    expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.bottom);
+    const input = question.getByRole("textbox", {
+      name: "Choose a fixture colour — Other response",
+    });
+    await input.fill(response === "option" ? "Discarded draft" : "My exact other response");
+    // Read both controls in one layout pass; mobile focus can scroll between
+    // separate boundingBox calls even though the controls share a row.
+    const { inputBox, sendBox } = await question
+      .locator(".clarification-other")
+      .evaluate((row) => ({
+        inputBox: row.querySelector("input")!.getBoundingClientRect().toJSON(),
+        sendBox: row.querySelector("button")!.getBoundingClientRect().toJSON(),
+      }));
+    expect(sendBox.x).toBeGreaterThan(inputBox.x);
+    expect(sendBox.y).toBeCloseTo(inputBox.y, 0);
+    expect(await input.evaluate((element) => getComputedStyle(element).fontSize)).toBe("16px");
+    await page.screenshot({ path: info.outputPath(`clarification-${response}-controls.png`) });
+    if (response === "option")
+      await question.getByRole("button", { name: "Blue (Recommended)", exact: true }).click();
+    else await question.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    expect(answers).toEqual([
+      {
+        request_id: requestId,
+        result: {
+          answers: { q0: response === "option" ? "Blue (Recommended)" : "My exact other response" },
+        },
+      },
+    ]);
+    expect(settled.size).toBe(1);
+    await expect(plugin.locator(".message.assistant").last()).toContainText(
+      "Isolated Hermes reply",
+      { timeout: 30000 },
+    );
+    await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
+    await expect(plugin.locator(".activity[open]")).toHaveCount(0);
+    await composer.click();
+    await expect(composer).toBeFocused();
+    await page.screenshot({ path: info.outputPath(`clarification-${response}-answered.png`) });
   });
-  await page.reload();
-  await expect(
-    plugin.locator("label").filter({ hasText: "Choose a fixture colour" }),
-  ).toBeVisible();
-  await plugin
-    .locator("label")
-    .filter({ hasText: "Choose a fixture colour" })
-    .locator("select")
-    .selectOption({ label: "Blue (Recommended)" });
-  await plugin
-    .locator("label")
-    .filter({ hasText: "Name this fixture" })
-    .locator("input")
-    .fill("Synthetic fixture");
-  await composer.click();
-  await expect(composer).toBeFocused();
-  await page.screenshot({ path: info.outputPath("native-clarification.png") });
-  await plugin.getByRole("button", { name: "Submit answers" }).click();
-  await expect(plugin.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
-    timeout: 30000,
-  });
-  await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
-});
+}
 test("native dangerous command approval survives reload and denial settles once", async ({
   page,
 }, info) => {
+  const answers: unknown[] = [];
+  let settled = 0;
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes("/chathermes/chat/ws")) return;
+    const answerIds = new Set<string>();
+    socket.on("framesent", (frame) => {
+      const value = JSON.parse(String(frame.payload));
+      if (value.method === "chat.answer") {
+        answers.push(value.params.result);
+        answerIds.add(value.id);
+      }
+    });
+    socket.on("framereceived", (frame) => {
+      const value = JSON.parse(String(frame.payload));
+      if (answerIds.has(value.id) && value.result?.settled) settled++;
+    });
+  });
   await login(page);
   const plugin = page.locator(".chathermes-embedded");
   await plugin
@@ -255,8 +333,28 @@ test("native dangerous command approval survives reload and denial settles once"
   });
   await page.reload();
   await expect(plugin.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
+  const choices = plugin.locator(".approval-choices");
+  const buttons = await choices.locator("button").evaluateAll((elements) =>
+    elements.map((element) => ({
+      label: element.textContent!.trim(),
+      rect: element.getBoundingClientRect().toJSON(),
+      color: getComputedStyle(element).backgroundColor,
+    })),
+  );
+  const width = (await choices.boundingBox())!.width;
+  for (const [index, button] of buttons.entries()) {
+    expect(button.rect.width).toBeCloseTo(width, 0);
+    expect(button.color).toBe(button.label === "Deny" ? "rgb(185, 28, 28)" : "rgb(21, 128, 61)");
+    if (index) expect(button.rect.y).toBeGreaterThan(buttons[index - 1]!.rect.bottom);
+  }
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await composer.click();
+  await expect(composer).toBeFocused();
   await page.screenshot({ path: info.outputPath("native-approval.png") });
   await plugin.getByRole("button", { name: "Deny", exact: true }).click();
+  await expect.poll(() => answers).toEqual([{ choice: "deny" }]);
+  await expect.poll(() => settled).toBe(1);
+  await expect(choices).toHaveCount(0);
   await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeVisible({
     timeout: 30000,
   });

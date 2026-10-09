@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount, flushPromises } from "@vue/test-utils";
+import { computed, ref } from "vue";
 import App from "./App.vue";
 import SessionSidebar from "./components/SessionSidebar.vue";
 import * as push from "./lib/push";
@@ -1004,6 +1005,170 @@ describe("TUI-only chat execution", () => {
     expect(fetch.mock.calls.some(([url]) => /\/runs|\/chat\/stream/.test(url))).toBe(false);
     expect(localStorage.getItem(pointer)).toBe("legacy-run");
     expect(localStorage.getItem(idempotency)).toBe("legacy-attempt");
+    wrapper.unmount();
+  });
+});
+
+describe("native clarification submission", () => {
+  it("passes an option to the response handler exactly once, retains errors for retry and resets new requests", async () => {
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    const factory = nativeSession.useNativeSession;
+    let owner!: ReturnType<typeof factory>;
+    const approval = ref<Record<string, unknown>>();
+    const response = deferred<void>();
+    const answer = vi.fn(() => response.promise);
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      owner = { ...factory(callback), approval: computed(() => approval.value) };
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+      });
+      owner.answer = answer;
+      return owner;
+    });
+    mockFetch(async (url) =>
+      json(url.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    const request = {
+      id: "clarify-1",
+      method: "clarify",
+      params: {
+        session_id: "runtime",
+        questions: [{ qid: "q0", question: "Colour?", choices: ["Blue (Recommended)", "Green"] }],
+      },
+    };
+    approval.value = { ...request.params, request_id: request.id, kind: request.method };
+    await flushPromises();
+    await wrapper.get(".clarification-other input").setValue("Draft");
+    await wrapper.get(".clarification-choices button").trigger("click");
+    await wrapper.get(".clarification-choices button").trigger("click");
+    expect(answer).toHaveBeenCalledExactlyOnceWith("clarify-1", {
+      answers: { q0: "Blue (Recommended)" },
+    });
+    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+    response.reject(new Error("rejected"));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Clarification could not be settled.");
+    answer.mockImplementation(async () => {});
+    await wrapper.get(".clarification-choices button").trigger("click");
+    await flushPromises();
+    expect(answer).toHaveBeenCalledTimes(2);
+    await wrapper.get(".clarification-other input").setValue("Old draft");
+    approval.value = { ...request.params, request_id: "clarify-2", kind: request.method };
+    await flushPromises();
+    expect((wrapper.get(".clarification-other input").element as HTMLInputElement).value).toBe("");
+    await wrapper.get(".clarification-other input").setValue("Exact other response");
+    await wrapper.get(".clarification-card form").trigger("submit");
+    await flushPromises();
+    expect(answer).toHaveBeenLastCalledWith("clarify-2", {
+      answers: { q0: "Exact other response" },
+    });
+    wrapper.unmount();
+  });
+});
+
+describe("native approval controls", () => {
+  it("renders stacked approve and deny actions and sends the exact choice", async () => {
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    const factory = nativeSession.useNativeSession;
+    const answer = vi.fn(async () => {});
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      const owner = factory(callback);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+        owner.busy.value = true;
+      });
+      owner.busy.value = true;
+      owner.answer = answer;
+      return {
+        ...owner,
+        approval: computed(() => ({
+          request_id: "approve-1",
+          kind: "approval",
+          command: "synthetic command",
+          choices: ["once", "session", "always", "deny"],
+        })),
+      };
+    });
+    mockFetch(async (url) =>
+      json(url.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    const choices = wrapper.get(".approval-choices");
+    expect(choices.classes()).toContain("grid-cols-1");
+    const buttons = choices.findAll("button");
+    expect(buttons.map((button) => button.text())).toEqual([
+      "Allow once",
+      "Allow for session",
+      "Always allow",
+      "Deny",
+    ]);
+    for (const button of buttons) expect(button.classes()).toContain("w-full");
+    expect(buttons[0]!.element.className).toContain("bg-[#303030]");
+    expect(buttons[0]!.element.className).toContain("px-[14px]");
+    expect(buttons[0]!.element.className).toContain("py-[10px]");
+    expect(buttons[0]!.element.className).toContain("rounded-xl");
+    expect(buttons[0]!.element.className).toContain("text-left");
+    expect(buttons[0]!.element.className).not.toContain("bg-[#15803d]");
+    expect(buttons[3]!.element.className).toContain("text-red-500");
+    expect(buttons[3]!.element.className).not.toContain("bg-[#b91c1c]");
+    await buttons[0]!.trigger("click");
+    await flushPromises();
+    expect(answer).toHaveBeenLastCalledWith("approve-1", { choice: "once" });
+    await buttons[3]!.trigger("click");
+    await flushPromises();
+    expect(answer).toHaveBeenLastCalledWith("approve-1", { choice: "deny" });
+    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+});
+
+describe("native secret prompts", () => {
+  it("renders a masked native secret prompt and sends its exact value result", async () => {
+    const factory = nativeSession.useNativeSession;
+    let owner!: ReturnType<typeof factory>;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      owner = factory(callback);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+      });
+      return owner;
+    });
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=secret-chat");
+    mockFetch(
+      vi.fn(async (input) =>
+        json(
+          input.includes("/capabilities")
+            ? { features: { native_chat: true } }
+            : { sessions: [], total: 0 },
+        ),
+      ),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    const answer = vi.spyOn(owner, "answer").mockResolvedValue();
+    owner.requests.value = [
+      {
+        id: "secret-request-id",
+        method: "secret",
+        params: {
+          session_id: "secret-chat",
+          env_var: "API_TOKEN",
+          prompt: "Enter deployment token",
+        },
+      },
+    ];
+    await flushPromises();
+    expect(wrapper.text()).toContain("Enter deployment token");
+    const input = wrapper.get('input[type="password"]');
+    expect(input.attributes("autocomplete")).toBe("off");
+    await input.setValue("sensitive-value");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(answer).toHaveBeenCalledWith("secret-request-id", { value: "sensitive-value" });
+    expect((input.element as HTMLInputElement).value).toBe("");
     wrapper.unmount();
   });
 });
