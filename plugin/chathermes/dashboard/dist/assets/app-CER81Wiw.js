@@ -9588,7 +9588,7 @@ var gm = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 						H(R)?.kind === "clarify" ? J("v-if", !0) : (W(), G("p", ng, " Approval required" + M(H(R)?.command ? ": " + H(R).command : ""), 1)),
 						H(qe) && H(R)?.kind === "approval" ? (W(), G("div", rg, [(W(!0), G(U, null, hr(Array.isArray(H(R)?.choices) ? H(R).choices : [], (e) => (W(), G("button", {
 							key: String(e),
-							class: me(["w-full rounded-xl px-3 py-3 text-base text-white disabled:opacity-55", e === "deny" ? "bg-[#b91c1c]" : "bg-[#15803d]"]),
+							class: me(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", e === "deny" ? "text-red-500" : ""]),
 							disabled: We.value,
 							onMousedown: y[26] ||= To(() => {}, ["prevent"]),
 							onClick: (t) => bt(String(e))

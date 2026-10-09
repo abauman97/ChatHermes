@@ -1552,8 +1552,8 @@ onUnmounted(() => {
               <button
                 v-for="choice in Array.isArray(viewApproval?.choices) ? viewApproval.choices : []"
                 :key="String(choice)"
-                class="w-full rounded-xl px-3 py-3 text-base text-white disabled:opacity-55"
-                :class="choice === 'deny' ? 'bg-[#b91c1c]' : 'bg-[#15803d]'"
+                class="w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55"
+                :class="choice === 'deny' ? 'text-red-500' : ''"
                 :disabled="viewReconnect"
                 @mousedown.prevent
                 @click="approveResponse(String(choice))"

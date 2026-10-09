@@ -159,9 +159,13 @@ def test_secret_request_is_delivered_without_recording(monkeypatch):
     owner = module.Owner.__new__(module.Owner)
     owner.runtime, owner.profile = 'synthetic-runtime', 'synthetic-profile'
     owner.record = forbidden
+    owner.notified = set()
+    notifications = []
+    owner.notify = lambda *args: notifications.append(args)
     published = []
     owner.publish = published.append
     frame = {'jsonrpc': '2.0', 'id': 'secret-1', 'method': 'secret', 'params': {
         'session_id': owner.runtime, 'env_var': 'SYNTHETIC_TOKEN', 'prompt': 'Synthetic token?'}}
     owner.capture(frame)
+    assert notifications == [('secret', 'secret-1')]
     assert published == [frame]

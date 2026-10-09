@@ -224,11 +224,13 @@ it("surfaces secret prompts and keeps their reply on the normal chat.answer rout
   );
   const sent: Record<string, unknown>[] = [];
   class Socket {
+    static instances: Socket[] = [];
     static OPEN = 1;
     readyState = 1;
     onopen?: () => void;
     onmessage?: (event: { data: string }) => void;
     constructor() {
+      Socket.instances.push(this);
       queueMicrotask(() => this.onopen?.());
     }
     close() {
@@ -243,35 +245,46 @@ it("surfaces secret prompts and keeps their reply on the normal chat.answer rout
               session_id: "runtime",
               messages: [],
               recovery: { epoch: "epoch", through: 0, complete: true, base_row_ids: [] },
-              open_requests: [
-                {
-                  id: "secret-1",
-                  method: "secret",
-                  params: { session_id: "runtime", env_var: "API_TOKEN", prompt: "Token?" },
-                },
-              ],
+              open_requests: [],
             }
-          : { ok: true };
+          : { settled: true };
       queueMicrotask(() =>
         this.onmessage?.({ data: JSON.stringify({ jsonrpc: "2.0", id: frame.id, result }) }),
       );
     }
   }
   vi.stubGlobal("WebSocket", Socket);
-  const h = hooks();
+  const h = {
+    snapshot: vi.fn(),
+    event: vi.fn(),
+    input: vi.fn(),
+    requests: vi.fn(),
+    connection: vi.fn(),
+    recovered: vi.fn(),
+  };
   const viewer = new NativeViewer("a", "stored", h);
-  await viewer.ensure();
+  const pending = viewer.ensure();
+  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
+  Socket.instances[0]!.onmessage!({
+    data: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "srq-live-secret",
+      method: "secret",
+      params: { session_id: "runtime", env_var: "API_TOKEN", prompt: "Token?" },
+    }),
+  });
+  await pending;
   expect(h.requests).toHaveBeenLastCalledWith([
     {
-      id: "secret-1",
+      id: "srq-live-secret",
       method: "secret",
       params: { session_id: "runtime", env_var: "API_TOKEN", prompt: "Token?" },
     },
   ]);
-  await viewer.answer("secret-1", { value: "one-time-token" });
+  await viewer.answer("srq-live-secret", { value: "one-time-token" });
   expect(sent.at(-1)).toMatchObject({
     method: "chat.answer",
-    params: { request_id: "secret-1", result: { value: "one-time-token" } },
+    params: { request_id: "srq-live-secret", result: { value: "one-time-token" } },
   });
   expect(h.requests).toHaveBeenLastCalledWith([]);
   viewer.close();

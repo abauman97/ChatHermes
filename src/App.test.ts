@@ -1106,8 +1106,14 @@ describe("native approval controls", () => {
       "Deny",
     ]);
     for (const button of buttons) expect(button.classes()).toContain("w-full");
-    expect(buttons[0]!.classes()).toContain("bg-[#15803d]");
-    expect(buttons[3]!.classes()).toContain("bg-[#b91c1c]");
+    expect(buttons[0]!.element.className).toContain("bg-[#303030]");
+    expect(buttons[0]!.element.className).toContain("px-[14px]");
+    expect(buttons[0]!.element.className).toContain("py-[10px]");
+    expect(buttons[0]!.element.className).toContain("rounded-xl");
+    expect(buttons[0]!.element.className).toContain("text-left");
+    expect(buttons[0]!.element.className).not.toContain("bg-[#15803d]");
+    expect(buttons[3]!.element.className).toContain("text-red-500");
+    expect(buttons[3]!.element.className).not.toContain("bg-[#b91c1c]");
     await buttons[0]!.trigger("click");
     await flushPromises();
     expect(answer).toHaveBeenLastCalledWith("approve-1", { choice: "once" });
