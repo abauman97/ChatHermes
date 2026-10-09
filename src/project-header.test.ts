@@ -54,8 +54,7 @@ describe("project chat header", () => {
           });
         if (input.includes("/api/sessions?"))
           return json({ sessions: [{ id: "s1", title: "Investigate mobile flow" }], total: 1 });
-        if (input.includes("/capabilities"))
-          return json({ features: { session_chat_streaming: true }, endpoints: {} });
+        if (input.includes("/capabilities")) return json({ features: {}, endpoints: {} });
         if (input.includes("/models")) return json({ data: [] });
         if (input.includes("/workspace/sessions/s1"))
           return json({ session: { id: "s1", title: "Investigate mobile flow" }, messages: [] });

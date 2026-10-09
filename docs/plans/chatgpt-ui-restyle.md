@@ -1,5 +1,8 @@
 # ChatHermes: zoom prevention, ChatGPT-style UI, thinking indicator, full-screen overlay, visibility reconnect
 
+Historical plan: REST Runs chat execution, its drain adapter and chat SSE routes
+were removed on 2026-10-09. The current [API contract](../api-contract.md)
+supersedes transport and recovery guidance below. Scheduled-job history is retained.
 You are implementing a bounded, feature-complete change to the **ChatHermes** repo at
 `/opt/data/projects/ChatHermes` (branch `feat/chatgpt-ui`, already checked out, clean tree).
 

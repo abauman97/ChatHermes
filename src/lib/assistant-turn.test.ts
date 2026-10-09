@@ -3,58 +3,50 @@ import {
   createTurn,
   historyBlocks,
   mergeHistoryBlocks,
-  normalizeEvent,
   nativeSubagentId,
   reduceTurn,
   reduceNativeTurn,
+  type TurnEvent,
 } from "./assistant-turn";
-import type { SSEEvent } from "./sse";
-const frame = (event: string, data: unknown, id?: string): SSEEvent => ({
-  event,
-  data: JSON.stringify(data),
-  id,
-});
 function setup() {
   const turn = createTurn();
-  const emit = (name: string, data: unknown = {}, id?: string) => {
-    const event = normalizeEvent(frame(name, data, id));
-    if (event) reduceTurn(turn, event);
-  };
+  const emit = (type: TurnEvent["type"], data: Record<string, unknown> = {}, key?: string) =>
+    reduceTurn(turn, { type, data, key });
   return { turn, emit };
 }
-describe("Hermes event normalization and ordered assistant turns", () => {
+describe("Ordered assistant turns", () => {
   it("streams plain text without requiring reasoning or tools", () => {
     const { turn, emit } = setup();
-    emit("assistant.delta", { delta: "**Hello" });
-    emit("assistant.delta", { delta: "** world" });
-    emit("run.completed");
+    emit("text", { delta: "**Hello" });
+    emit("text", { delta: "** world" });
+    emit("completed");
     expect(turn.blocks).toEqual([{ id: "block-1", kind: "text", content: "**Hello** world" }]);
   });
   it("coalesces continuous reasoning and collapses it before text", () => {
     const { turn, emit } = setup();
-    emit("tool.progress", { tool_name: "_thinking", delta: "First " });
-    emit("reasoning.delta", { delta: "second" });
+    emit("reasoning", { delta: "First " });
+    emit("reasoning", { delta: "second" });
     expect(turn.blocks).toHaveLength(1);
     expect(turn.blocks[0]).toMatchObject({ content: "First second", complete: false });
-    emit("assistant.delta", { delta: "Answer" });
+    emit("text", { delta: "Answer" });
     expect(turn.blocks[0]).toMatchObject({ kind: "thinking", complete: true });
     expect(turn.blocks[1]).toMatchObject({ kind: "text", content: "Answer" });
   });
   it("keeps multiple reasoning phases, tools, and commentary in arrival order", () => {
     const { turn, emit } = setup();
-    emit("reasoning.delta", { delta: "Locate files" });
+    emit("reasoning", { delta: "Locate files" });
     emit("tool.started", {
       tool_call_id: "a",
       tool_name: "file_search",
       args: { query: "config" },
     });
     emit("tool.completed", { tool_call_id: "a", output: "config.yaml", duration_s: 1.8 });
-    emit("reasoning.available", { text: "Read the file" });
-    emit("assistant.commentary", { text: "Checking configuration" });
+    emit("reasoning", { text: "Read the file" });
+    emit("text", { text: "Checking configuration" });
     emit("tool.started", { tool_call_id: "b", tool_name: "read_file" });
     emit("tool.completed", { tool_call_id: "b", output: "contents" });
-    emit("reasoning.delta", { delta: "Now explain" });
-    emit("assistant.delta", { delta: "Answer" });
+    emit("reasoning", { delta: "Now explain" });
+    emit("text", { delta: "Answer" });
     expect(turn.blocks.map((block) => block.kind)).toEqual([
       "thinking",
       "tool",
@@ -76,14 +68,14 @@ describe("Hermes event normalization and ordered assistant turns", () => {
     const { turn, emit } = setup();
     emit("tool.started", { tool_call_id: "a", tool_name: "terminal" });
     emit("tool.started", { tool_call_id: "b", tool_name: "terminal" });
-    emit("tool.progress", { tool_call_id: "a", delta: "A" });
-    emit("assistant.delta", { delta: "Writing" });
+    emit("tool.updated", { tool_call_id: "a", delta: "A" });
+    emit("text", { delta: "Writing" });
     emit("tool.completed", { tool_call_id: "b", output: "B" });
     expect(turn.blocks[0]).toMatchObject({ id: "a", state: "running", output: "A" });
     expect(turn.blocks[1]).toMatchObject({ id: "b", complete: true, output: "B" });
     expect(turn.blocks[2]?.kind).toBe("text");
   });
-  it("matches sequential REST tools without native call IDs", () => {
+  it("matches sequential history tools without call IDs", () => {
     const { turn, emit } = setup();
     for (let i = 0; i < 3; i++) {
       emit("tool.started", { tool_name: "terminal", args: { command: `echo ${i}` } });
@@ -106,12 +98,12 @@ describe("Hermes event normalization and ordered assistant turns", () => {
   });
   it("deduplicates sequenced replay during a tool and during assistant text", () => {
     const { turn, emit } = setup();
-    const start = { seq: 1, run_id: "run", tool_call_id: "a", tool_name: "terminal" };
-    emit("tool.started", start);
-    emit("assistant.delta", { seq: 2, run_id: "run", delta: "Hello" });
+    const start = { tool_call_id: "a", tool_name: "terminal" };
     emit("tool.started", start, "1");
-    emit("assistant.delta", { seq: 2, run_id: "run", delta: "Hello" }, "2");
-    emit("tool.completed", { seq: 3, run_id: "run", tool_call_id: "a", output: "done" });
+    emit("text", { delta: "Hello" }, "2");
+    emit("tool.started", start, "1");
+    emit("text", { delta: "Hello" }, "2");
+    emit("tool.completed", { tool_call_id: "a", output: "done" });
     expect(turn.blocks).toHaveLength(2);
     expect(turn.blocks[1]?.content).toBe("Hello");
     expect(turn.blocks[0]).toMatchObject({ complete: true, output: "done" });
@@ -119,36 +111,35 @@ describe("Hermes event normalization and ordered assistant turns", () => {
   it("merges native resume snapshots without duplicating text or losing activities", () => {
     const { turn, emit } = setup();
     emit("tool.started", { tool_call_id: "a", tool_name: "terminal" });
-    emit("assistant.delta", { delta: "Hello" });
-    emit("assistant.snapshot", { text: "Hello world" });
-    emit("assistant.snapshot", { text: "Hello world" });
-    emit("assistant.delta", { delta: "!" });
+    emit("text", { delta: "Hello" });
+    emit("text.snapshot", { text: "Hello world" });
+    emit("text.snapshot", { text: "Hello world" });
+    emit("text", { delta: "!" });
     expect(turn.blocks).toHaveLength(2);
     expect(turn.blocks[1]?.content).toBe("Hello world!");
     expect(turn.blocks[0]).toMatchObject({ id: "a", state: "running" });
   });
   it("uses the final text snapshot for its phase and retains earlier commentary", () => {
     const { turn, emit } = setup();
-    emit("assistant.delta", { delta: "Checking" });
-    emit("assistant.commentary", { text: "Checking", already_streamed: true });
+    emit("text", { delta: "Checking" });
     emit("tool.started", { tool_call_id: "a" });
     emit("tool.completed", { tool_call_id: "a" });
-    emit("assistant.delta", { delta: "Answ" });
-    emit("assistant.completed", { content: "Answer" });
-    emit("run.completed");
+    emit("text", { delta: "Answ" });
+    emit("text.completed", { content: "Answer" });
+    emit("completed");
     expect(
       turn.blocks.filter((block) => block.kind === "text").map((block) => block.content),
     ).toEqual(["Checking", "Answer"]);
   });
-  it.each(["reasoning.delta", "tool.started"])(
+  it.each(["reasoning", "tool.started"] as const)(
     "does not repeat completed text after trailing %s",
     (activity) => {
       const { turn, emit } = setup();
-      emit("assistant.delta", { delta: "Final " });
-      emit("assistant.delta", { delta: "answer" });
+      emit("text", { delta: "Final " });
+      emit("text", { delta: "answer" });
       emit(activity, { delta: "Finishing", tool_call_id: "a" });
-      emit("assistant.completed", { content: "Final answer" });
-      emit("run.completed");
+      emit("text.completed", { content: "Final answer" });
+      emit("completed");
       expect(turn.blocks).toHaveLength(2);
       expect(turn.blocks[0]).toMatchObject({ kind: "text", content: "Final answer" });
       expect(turn.blocks[1]).toMatchObject({ complete: true, state: "completed" });
@@ -159,10 +150,10 @@ describe("Hermes event normalization and ordered assistant turns", () => {
     ["Final", "Final answer"],
   ])("keeps distinct phases across a tool: %s → %s", (interim, final) => {
     const { turn, emit } = setup();
-    emit("assistant.delta", { delta: interim });
+    emit("text", { delta: interim });
     emit("tool.started", { tool_call_id: "a" });
     emit("tool.completed", { tool_call_id: "a" });
-    emit("assistant.completed", { content: final });
+    emit("text.completed", { content: final });
     expect(turn.blocks.map((block) => block.kind)).toEqual(["text", "tool", "text"]);
     expect(
       turn.blocks.filter((block) => block.kind === "text").map((block) => block.content),
@@ -170,11 +161,11 @@ describe("Hermes event normalization and ordered assistant turns", () => {
   });
   it("compares a repeated completion only with the latest text phase", () => {
     const { turn, emit } = setup();
-    emit("assistant.delta", { delta: "Answer" });
+    emit("text", { delta: "Answer" });
     emit("tool.started", { tool_call_id: "a" });
-    emit("assistant.delta", { delta: "Checking" });
+    emit("text", { delta: "Checking" });
     emit("tool.started", { tool_call_id: "b" });
-    emit("assistant.completed", { content: "Answer" });
+    emit("text.completed", { content: "Answer" });
     expect(turn.blocks.map((block) => block.kind)).toEqual([
       "text",
       "tool",
@@ -211,18 +202,10 @@ describe("Hermes event normalization and ordered assistant turns", () => {
       complete: true,
     });
   });
-  it("ignores unknown and malformed events", () => {
-    expect(normalizeEvent(frame("new.protocol.event", { raw: "hidden" }))).toBeUndefined();
-    const { turn, emit } = setup();
-    emit("new.protocol.event");
-    emit("assistant.delta", { delta: "OK" });
-    expect(turn.blocks).toHaveLength(1);
-    expect(normalizeEvent({ event: "unknown", data: "{" })).toBeUndefined();
-  });
   it("marks unfinished tools failed when the response fails", () => {
     const { turn, emit } = setup();
     emit("tool.started", { tool_call_id: "a" });
-    emit("run.failed");
+    emit("failed");
     expect(turn.blocks[0]).toMatchObject({ complete: true, state: "failed" });
   });
 });
@@ -232,10 +215,10 @@ describe("persisted turn recovery", () => {
     "does not match an intermediate text prefix across a tool boundary (active: %s)",
     (active) => {
       const { turn, emit } = setup();
-      emit("assistant.delta", { delta: "Checking" });
+      emit("text", { delta: "Checking" });
       emit("tool.started", { tool_call_id: "a" });
       emit("tool.started", { tool_call_id: "b" });
-      emit("assistant.delta", { delta: "Final" });
+      emit("text", { delta: "Final" });
       const restored = historyBlocks([
         { role: "assistant", content: "Checking", tool_calls: [{ id: "a" }] },
         { role: "tool", tool_call_id: "a", content: "first" },
@@ -644,10 +627,6 @@ it.each(["response_previewed", "response_transformed"])(
 );
 
 describe("event identity validation", () => {
-  it("uses only string run IDs when constructing replay keys", () => {
-    expect(normalizeEvent(frame("message.delta", { run_id: "run", seq: 2 }))?.key).toBe("run:2");
-    expect(normalizeEvent(frame("message.delta", { run_id: {}, seq: 2 }))?.key).toBe(":2");
-  });
   it("resolves native child IDs consistently and rejects malformed delegation identities", () => {
     expect(nativeSubagentId({ subagent_id: "child", delegation_id: "batch", task_index: 0 })).toBe(
       "child",

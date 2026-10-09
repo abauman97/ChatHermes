@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { api, ApiError, eventPayload, messageText } from "./lib/hermes-api";
-import { toolTitle } from "./lib/assistant-turn";
+import { api, ApiError } from "./lib/hermes-api";
 import { useNativeSession } from "./lib/native-session";
-import type { SSEEvent } from "./lib/sse";
 import type {
-  Activity,
   Attachment,
   Capabilities,
   Message,
@@ -15,13 +12,6 @@ import type {
   Project,
   ProjectAction,
 } from "./types/hermes";
-import {
-  activeRunFor,
-  idempotencyKeyFor,
-  rememberIdempotencyKey,
-  rememberRun,
-  forgetRun,
-} from "./lib/active-runs";
 import { projectRoot, projectSessions } from "./lib/projects";
 import ScheduledPage from "./components/ScheduledPage.vue";
 import ProjectsPage from "./components/ProjectsPage.vue";
@@ -75,10 +65,7 @@ function subscribeProjectEvents() {
   closeProjectEvents?.();
   closeProjectEvents = undefined;
   if (typeof EventSource === "undefined") return;
-  closeProjectEvents =
-    !api.isNative(profile.value) && api.isWorkspace(profile.value, session.value)
-      ? api.projectEvents(profile.value, refreshProjects, session.value)
-      : api.projectEvents(profile.value, refreshProjects);
+  closeProjectEvents = api.projectEvents(profile.value, refreshProjects);
 }
 function refreshProjects() {
   clearTimeout(refreshTimer);
@@ -97,22 +84,10 @@ const capabilities = ref<Capabilities>({}),
   hasMore = ref(false),
   loading = ref(false),
   chatLoading = ref(false),
-  sending = ref(false),
-  approvalPending = ref(false),
   offline = ref(!navigator.onLine);
 const error = ref(""),
   chatError = ref(""),
-  draft = ref(""),
-  progress = ref<Activity[]>([]),
   drawer = ref(false);
-const sentContent = new Map<string, unknown>();
-const optimisticMessage = ref<Message>(),
-  priorUserCount = ref(0);
-// Render-only IDs need uniqueness within this mount, not secure-context APIs.
-let localSequence = 0;
-function localId() {
-  return `chathermes-ui-${++localSequence}`;
-}
 const profiles = ref<{ name: string }[]>([]),
   models = ref<ModelOption[]>([]),
   model = ref(""),
@@ -121,36 +96,20 @@ const profiles = ref<{ name: string }[]>([]),
 const providers = ref<ProviderOption[]>([]),
   provider = ref(""),
   modelsLoading = ref(false);
-const thinking = ref(false),
-  activeRun = ref(""),
-  embedded = ref(false),
+const embedded = ref(false),
   suggestedPrompt = ref("");
 const menuButton = ref<HTMLButtonElement | null>(null),
   closeButton = ref<HTMLButtonElement | null>(null),
   screenMenuButton = ref<HTMLButtonElement | null>(null),
   screenMenu = ref(false),
   screenMenuWrap = ref<HTMLElement | null>(null);
-const canStream = computed(() =>
-  capabilities.value.features?.native_chat === true ||
-  api.isWorkspace(profile.value, session.value) ||
-  projectId.value
-    ? capabilities.value.features?.session_chat_streaming === true
-    : capabilities.value.endpoints?.runs?.method === "POST" &&
-      capabilities.value.endpoints.runs.path === "/v1/runs" &&
-      capabilities.value.features?.run_events_sse === true,
-);
+const canStream = computed(() => capabilities.value.features?.native_chat === true);
 let listAbort: AbortController | undefined,
   chatAbort: AbortController | undefined,
-  streamAbort: AbortController | undefined,
   generation = 0,
-  profileGeneration = 0,
-  streamGeneration = 0,
-  historyGeneration = 0;
-let visibilityAbort: AbortController | undefined;
-const unavailableRun = ref(false);
+  profileGeneration = 0;
 const clarificationAnswers = ref<Record<string, string | string[]>>({}),
   customClarification = ref<Record<string, string>>({});
-const nativeStatus = ref("");
 const pushState = ref<push.PushState>({
   supported: false,
   permission: "unsupported",
@@ -179,35 +138,19 @@ const native = useNativeSession(() => {
   refreshProjects();
   void loadSessions();
 });
-const nativeMode = computed(
-  () =>
-    capabilities.value.features?.native_chat === true &&
-    (!activeRun.value || activeRun.value.startsWith("workspace-")),
-);
+const nativeMode = canStream;
 const viewMessages = computed(() => (nativeMode.value ? native.messages.value : messages.value));
-const viewBusy = computed(() =>
-  nativeMode.value ? native.busy.value || native.uncertain.value : sending.value,
-);
+const viewBusy = computed(() => native.busy.value || native.uncertain.value);
 const viewLoading = computed(() => (nativeMode.value ? native.loading.value : chatLoading.value));
 const viewError = computed(() => (nativeMode.value ? native.error.value : chatError.value));
-const viewApproval = computed(() => (nativeMode.value ? native.approval.value : approval.value));
-const viewApprovalPending = computed(() =>
-  nativeMode.value ? !!native.approval.value : approvalPending.value,
+const viewApproval = native.approval;
+const viewApprovalPending = computed(() => !!native.approval.value);
+const viewReconnect = computed(
+  () => nativeMode.value && !!session.value && native.connection.value !== "ready",
 );
-const viewReconnect = computed(() =>
-  nativeMode.value ? !!session.value && native.connection.value !== "ready" : reconnectNotice.value,
-);
-const viewUnavailable = computed(() =>
-  nativeMode.value ? native.uncertain.value : unavailableRun.value,
-);
-const viewStatus = computed(() => (nativeMode.value ? native.status.value : nativeStatus.value));
-const viewActive = computed(() => (nativeMode.value ? native.busy.value : !!activeRun.value));
-const reconnectNotice = ref(false),
-  runStatus = ref(""),
-  approval = ref<Record<string, unknown>>(),
-  actionBusy = ref(false);
-const eventStreamExpired = ref(false);
-let lastSeq = -1;
+const viewUnavailable = native.uncertain;
+const viewStatus = native.status;
+const viewActive = native.busy;
 function urlState() {
   const params = new URLSearchParams(location.search);
   return {
@@ -280,26 +223,9 @@ async function discussScheduled(text: string) {
 }
 function cancelChat() {
   native.close();
-  sentContent.clear();
-  optimisticMessage.value = undefined;
   generation++;
-  streamGeneration++;
-  historyGeneration++;
-  visibilityAbort?.abort();
-  activeRun.value = "";
-  reconnectNotice.value = false;
-  eventStreamExpired.value = false;
-  unavailableRun.value = false;
-  runStatus.value = "";
-  nativeStatus.value = "";
-  approval.value = undefined;
-  lastSeq = -1;
-  thinking.value = false;
   chatAbort?.abort();
-  streamAbort?.abort();
   chatLoading.value = false;
-  sending.value = false;
-  approvalPending.value = false;
 }
 function cancel() {
   cancelChat();
@@ -519,62 +445,29 @@ async function loadSessions(more = false) {
     }
   }
 }
-function reconcileHistory(result: Message[]) {
-  if (
-    optimisticMessage.value &&
-    result.filter((item) => item.role === "user").length <= priorUserCount.value
-  )
-    return [
-      ...result.map((item) =>
-        item.id && sentContent.has(item.id) ? { ...item, content: sentContent.get(item.id) } : item,
-      ),
-      optimisticMessage.value,
-    ];
-  if (optimisticMessage.value) {
-    const user = result.filter((item) => item.role === "user")[priorUserCount.value];
-    if (user?.id) sentContent.set(user.id, optimisticMessage.value.content);
-  }
-  optimisticMessage.value = undefined;
-  return result.map((item) =>
-    item.id && sentContent.has(item.id) ? { ...item, content: sentContent.get(item.id) } : item,
-  );
-}
 async function loadMessages() {
   if (!session.value) return false;
   if (nativeMode.value) {
     await native.hydrate();
     return true;
   }
-  historyGeneration++;
-  visibilityAbort?.abort();
   chatAbort?.abort();
   const controller = new AbortController();
   chatAbort = controller;
-  const current = generation,
-    p = profile.value,
-    s = session.value;
+  const current = generation;
   chatLoading.value = true;
   chatError.value = "";
   try {
-    const result = await api.messages(p, s, controller.signal);
+    const result = await api.messages(profile.value, session.value, controller.signal);
     if (current === generation && controller === chatAbort) {
-      updateActivityOutputs(result);
-      const restored = reconcileHistory(result);
-      const last = restored.reduce((index, item, i) => (item.role === "user" ? i : index), -1);
-      messages.value =
-        activeRun.value && !terminalStatuses.includes(runStatus.value) && last >= 0
-          ? restored.slice(0, last + 1)
-          : restored;
+      messages.value = result;
       return true;
     }
   } catch (cause) {
-    if (current === generation && controller === chatAbort && !controller.signal.aborted)
+    if (current === generation && !controller.signal.aborted)
       chatError.value = cause instanceof Error ? cause.message : "Could not load messages";
   } finally {
-    if (controller === chatAbort) {
-      chatLoading.value = false;
-      chatAbort = undefined;
-    }
+    if (controller === chatAbort) chatLoading.value = false;
   }
   return false;
 }
@@ -619,8 +512,6 @@ async function chooseProfile(id: string, fromHistory = false) {
   model.value = "";
   defaultModel.value = "";
   modelsLoading.value = true;
-  draft.value = "";
-  progress.value = [];
   error.value = "";
   chatError.value = "";
   offset.value = 0;
@@ -671,8 +562,6 @@ async function chooseSession(id: string, fromHistory = false) {
   cancelChat();
   session.value = id;
   messages.value = [];
-  draft.value = "";
-  progress.value = [];
   chatError.value = "";
   drawer.value = false;
   if (!fromHistory) setUrl();
@@ -687,18 +576,8 @@ async function chooseSession(id: string, fromHistory = false) {
     if (current !== generation || p !== profile.value) return;
   }
   subscribeProjectEvents();
-  const run = activeRunFor(p, id);
-  if (api.isNative(p) && (!run || run.startsWith("workspace-"))) {
-    await native.attach(p, id);
-    return;
-  }
-  if (run) activeRun.value = run;
-  await loadMessages();
-  if (current === generation && p === profile.value && run) {
-    activeRun.value = run;
-    sending.value = true;
-    void followRun(current, p, id, run, true);
-  }
+  if (nativeMode.value) await native.attach(p, id);
+  else await loadMessages();
 }
 async function createSession() {
   if (offline.value || creating.value || (projectId.value && selectedProject.value?.archived))
@@ -762,214 +641,6 @@ async function rename(id: string, title: string) {
       error.value = cause instanceof Error ? cause.message : "Could not rename session";
   }
 }
-function updateActivityOutputs(history: Message[]) {
-  if (
-    !progress.value.length ||
-    history.filter((item) => item.role === "user").length <= priorUserCount.value
-  )
-    return;
-  const last = history.reduce(
-    (index, item, current) => (item.role === "user" ? current : index),
-    -1,
-  );
-  const tools = progress.value.filter((item) => item.kind === "tool");
-  history
-    .slice(last + 1)
-    .filter((item) => item.role === "tool")
-    .forEach((message, index) => {
-      const output = messageText(message.content);
-      if (tools[index] && output) tools[index]!.output = output;
-    });
-}
-function finishActivities() {
-  progress.value.forEach((item) => {
-    item.complete = true;
-  });
-  thinking.value = false;
-}
-function activity(kind: "thinking" | "tool", title: string, id?: string) {
-  const found = [...progress.value]
-    .reverse()
-    .find(
-      (item) =>
-        !item.complete && item.kind === kind && (id ? item.id === id : item.title === title),
-    );
-  if (found) return found;
-  const item: Activity = { id: id || localId(), kind, title, content: "", complete: false };
-  progress.value.push(item);
-  return progress.value[progress.value.length - 1]!;
-}
-function reduceFrame(frame: SSEEvent): "completed" | undefined {
-  const data = eventPayload(frame);
-  // A foreign frame must not advance this run's applied cursor.
-  if (typeof data.run_id === "string" && activeRun.value && data.run_id !== activeRun.value) return;
-  const seq =
-    typeof data.seq === "number" ? data.seq : frame.id !== undefined ? Number(frame.id) : undefined;
-  if (seq !== undefined && Number.isSafeInteger(seq) && seq >= 0) {
-    if (seq <= lastSeq) return;
-    lastSeq = seq;
-  }
-  if (!activeRun.value && typeof data.run_id === "string") {
-    activeRun.value = data.run_id;
-    rememberRun(profile.value, session.value, data.run_id);
-  }
-  if (
-    [
-      "message.delta",
-      "message.interim",
-      "assistant.delta",
-      "tool.started",
-      "reasoning.available",
-      "run.steered",
-    ].includes(frame.event) &&
-    !approvalPending.value
-  )
-    runStatus.value = "running";
-  const delta =
-    typeof data.delta === "string" ? data.delta : typeof data.text === "string" ? data.text : "";
-  const callId = typeof data.tool_call_id === "string" ? data.tool_call_id : undefined;
-  const name =
-    typeof data.tool_name === "string"
-      ? data.tool_name
-      : typeof data.tool === "string"
-        ? data.tool
-        : progress.value.find((item) => item.kind === "tool" && callId && item.id === callId)
-            ?.toolName || "Tool call";
-  if (frame.event === "assistant.delta" || frame.event === "message.delta") {
-    finishActivities();
-    draft.value += delta;
-  } else if (frame.event === "assistant.snapshot") {
-    draft.value = typeof data.text === "string" ? data.text : "";
-  } else if (frame.event === "status.update") {
-    nativeStatus.value = String(data.text || "");
-  } else if (frame.event === "native.notice") {
-    chatError.value = String(data.text || "Native recovery is bounded.");
-  } else if (frame.event === "assistant.completed" && typeof data.content === "string") {
-    finishActivities();
-    draft.value = data.content;
-  } else if (
-    ["assistant.commentary", "message.interim"].includes(frame.event) &&
-    !data.already_streamed &&
-    typeof data.text === "string"
-  )
-    draft.value += data.text + "\n\n";
-  else if (frame.event === "tool.started") {
-    progress.value
-      .filter((item) => item.kind === "thinking")
-      .forEach((item) => {
-        item.complete = true;
-      });
-    thinking.value = false;
-    const pending = [...progress.value]
-      .reverse()
-      .find(
-        (item) =>
-          item.kind === "tool" &&
-          !item.complete &&
-          item.state === "running" &&
-          item.toolName === name &&
-          (!callId || item.id === callId),
-      );
-    const item = pending || activity("tool", toolTitle(name), callId || localId());
-    item.toolName = name;
-    item.state = "running";
-    const startContent = data.args
-      ? JSON.stringify(data.args, null, 2)
-      : typeof data.preview === "string"
-        ? data.preview
-        : "";
-    item.content = pending
-      ? [startContent, item.content].filter(Boolean).join("\n\n")
-      : startContent;
-  } else if (
-    [
-      "thinking.delta",
-      "reasoning.delta",
-      "reasoning.available",
-      "tool.progress",
-      "tool.delta",
-    ].includes(frame.event)
-  ) {
-    const isThinking =
-      frame.event.startsWith("thinking") ||
-      frame.event.startsWith("reasoning") ||
-      name === "_thinking";
-    const emptyThinking = isThinking
-      ? progress.value.find((item) => item.kind === "thinking" && !item.complete && !item.content)
-      : undefined;
-    const item =
-      emptyThinking ||
-      (!isThinking
-        ? [...progress.value]
-            .reverse()
-            .find((item) => item.kind === "tool" && !item.complete && item.toolName === name)
-        : undefined) ||
-      activity(
-        isThinking ? "thinking" : "tool",
-        isThinking ? "Thinking…" : toolTitle(name),
-        callId,
-      );
-    if (!isThinking) {
-      item.toolName = name;
-      item.state = "running";
-    }
-    item.content += delta || (typeof data.preview === "string" ? data.preview : "");
-    thinking.value = isThinking;
-  } else if (frame.event === "tool.completed" || frame.event === "tool.failed") {
-    const item = [...progress.value]
-      .reverse()
-      .find(
-        (item) =>
-          item.kind === "tool" &&
-          !item.complete &&
-          ((callId && item.id === callId) || item.toolName === name || item.title === name),
-      );
-    if (item) {
-      const failed =
-        frame.event === "tool.failed" ||
-        data.is_error === true ||
-        data.error === true ||
-        (typeof data.error === "string" && !!data.error);
-      item.complete = true;
-      item.state = failed ? "failed" : "completed";
-      item.title = toolTitle(item.toolName || name, true);
-      const output =
-        data.output ?? data.result ?? (typeof data.error === "string" ? data.error : data.preview);
-      if (output !== undefined)
-        item.output = typeof output === "string" ? output : JSON.stringify(output, null, 2);
-      if (typeof data.duration_s === "number") item.duration = data.duration_s;
-    }
-  } else if (frame.event === "approval.request") {
-    finishActivities();
-    approvalPending.value = true;
-    approval.value = data;
-    runStatus.value = "waiting_for_approval";
-  } else if (frame.event === "approval.responded") {
-    approvalPending.value = false;
-    approval.value = undefined;
-    runStatus.value = "running";
-  } else if (frame.event === "replay.truncated") {
-    chatError.value =
-      "Some earlier run events expired. Saved history will be restored when the run finishes.";
-  } else if (
-    ["run.completed", "run.failed", "run.cancelled", "run.interrupted", "error"].includes(
-      frame.event,
-    )
-  ) {
-    refreshProjects();
-    finishActivities();
-    approvalPending.value = false;
-    approval.value = undefined;
-    runStatus.value = frame.event.slice(4);
-    if (typeof data.output === "string") draft.value = data.output;
-    if (frame.event !== "run.completed")
-      chatError.value = `Run ${runStatus.value}. Check conversation history before retrying.`;
-    return "completed";
-  }
-}
-function createIdempotencyKey(): string {
-  return "turn-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
-}
 async function sendNative(text: string, attachments: Attachment[]) {
   if (
     scheduledPage.value ||
@@ -1022,338 +693,9 @@ async function sendNative(text: string, attachments: Attachment[]) {
   }
 }
 async function send(text: string, attachments: Attachment[] = []) {
-  if (nativeMode.value) {
-    await sendNative(text, attachments);
-    return;
-  }
-  if (
-    scheduledPage.value ||
-    sending.value ||
-    creating.value ||
-    approvalPending.value ||
-    offline.value ||
-    !canStream.value ||
-    modelsLoading.value
-  )
-    return;
-  if ((projectView.value || !session.value) && !(await createSession())) return;
-  if (sending.value || approvalPending.value) return;
-  historyGeneration++;
-  visibilityAbort?.abort();
-  sending.value = true;
-  thinking.value = true;
-  activeRun.value = "";
-  lastSeq = -1;
-  runStatus.value = "";
-  nativeStatus.value = "";
-  approval.value = undefined;
-  reconnectNotice.value = false;
-  chatError.value = "";
-  draft.value = "";
-  progress.value = [];
-  activity("thinking", "Thinking…");
-  priorUserCount.value = messages.value.filter((item) => item.role === "user").length;
-  optimisticMessage.value = {
-    id: "pending-" + localId(),
-    role: "user",
-    content: [
-      { type: "text", text },
-      ...attachments.map((file) =>
-        file.type.startsWith("image/")
-          ? { type: "image_url", image_url: { url: file.data } }
-          : { type: "text", text: "📎 " + file.name },
-      ),
-    ],
-  };
-  messages.value.push(optimisticMessage.value);
-  streamAbort = new AbortController();
-  const current = generation,
-    streamCurrent = ++streamGeneration,
-    p = profile.value,
-    s = session.value;
-  let completed = false;
-  try {
-    const parts: unknown[] = [{ type: "text", text: text || "Please examine the attached files." }];
-    for (const file of attachments) {
-      if (file.type.startsWith("image/"))
-        parts.push({ type: "image_url", image_url: { url: file.data } });
-      else {
-        const uploaded = await api.upload(p, file);
-        if (current !== generation) return;
-        parts.push({ type: "text", text: `Attached file ${file.name}: ${uploaded.path}` });
-      }
-    }
-    if (!api.isWorkspace(p, s)) {
-      const requestKey = idempotencyKeyFor(p, s) || createIdempotencyKey();
-      rememberIdempotencyKey(p, s, requestKey);
-      const makeRequest = () =>
-        api.startRun(
-          p,
-          s,
-          attachments.length ? parts : text,
-          model.value || defaultModel.value,
-          provider.value,
-          requestKey,
-        );
-      let made;
-      try {
-        made = await makeRequest();
-      } catch (cause) {
-        if (cause instanceof ApiError && cause.status < 500) throw cause;
-        made = await makeRequest();
-      }
-      rememberRun(p, s, made.run_id);
-      if (current !== generation) return;
-      activeRun.value = made.run_id;
-      await followRun(current, p, s, made.run_id, false);
-      return;
-    }
-    for await (const frame of api.stream(
-      p,
-      s,
-      attachments.length ? parts : text,
-      streamAbort.signal,
-      model.value || defaultModel.value,
-      provider.value,
-    )) {
-      if (current !== generation || streamCurrent !== streamGeneration) return;
-      const outcome = reduceFrame(frame);
-      if (outcome === "completed") {
-        completed = true;
-        break;
-      }
-    }
-    if (current !== generation || streamCurrent !== streamGeneration) return;
-    if (!completed && activeRun.value) {
-      await followRun(current, p, s, activeRun.value, false);
-      return;
-    }
-    if (!completed)
-      throw new Error("Stream ended without a run ID. Check session history before retrying.");
-    await finishRun(current, p, s, activeRun.value);
-  } catch (cause) {
-    if (current === generation) {
-      if (cause instanceof ApiError && cause.status >= 500) {
-        try {
-          await loadMessages();
-        } catch {
-          /* Preserve current history on refresh failure. */
-        }
-      }
-      chatError.value =
-        cause instanceof Error
-          ? cause.message
-          : "Send failed. Check session history before retrying.";
-    }
-  } finally {
-    if (current === generation && !activeRun.value) {
-      sending.value = false;
-      finishActivities();
-    }
-  }
+  if (nativeMode.value) await sendNative(text, attachments);
 }
-const terminalStatuses = ["completed", "failed", "cancelled", "interrupted", "stopped"];
-async function finishRun(current: number, p: string, s: string, run: string) {
-  if (current !== generation) return;
-  finishActivities();
-  approvalPending.value = false;
-  approval.value = undefined;
-  if (!(await loadMessages())) {
-    reconnectNotice.value = true;
-    throw new Error(
-      "Run ended, but history could not be loaded. Retry loading history before starting another turn.",
-    );
-  }
-  if (current !== generation) return;
-  draft.value = "";
-  lastSeq = -1;
-  forgetRun(p, s, run);
-  activeRun.value = "";
-  sending.value = false;
-  reconnectNotice.value = false;
-  eventStreamExpired.value = false;
-  if (api.isNative(p)) await native.attach(p, s);
-  void loadSessions();
-}
-function retryDelay(signal: AbortSignal) {
-  return new Promise<void>((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", done);
-      resolve();
-    };
-    const timer = setTimeout(done, 1000);
-    signal.addEventListener("abort", done, { once: true });
-    if (signal.aborted) done();
-  });
-}
-async function followRun(current: number, p: string, s: string, run: string, restore: boolean) {
-  if (current !== generation || eventStreamExpired.value) return;
-  streamAbort?.abort();
-  const controller = new AbortController();
-  streamAbort = controller;
-  const viewer = ++streamGeneration;
-  sending.value = true;
-  reconnectNotice.value = restore;
-  while (current === generation && viewer === streamGeneration && !controller.signal.aborted) {
-    try {
-      // Recheck authoritative status after both a closed stream and a failed GET.
-      const state = await api.runStatus(p, run, controller.signal);
-      if (current !== generation || controller.signal.aborted || viewer !== streamGeneration)
-        return;
-      const status = state.status || state.run?.status || "";
-      runStatus.value = status;
-      if (terminalStatuses.includes(status)) {
-        if (typeof state.output === "string") draft.value = state.output;
-        if (status !== "completed") chatError.value = `Run ${status}.`;
-        await finishRun(current, p, s, run);
-        return;
-      }
-      approvalPending.value = status === "waiting_for_approval";
-      approval.value = state.approval;
-      if (restore) {
-        // A new viewer has no live transcript: rebuild only the active turn.
-        const last = messages.value.reduce(
-          (index, item, i) => (item.role === "user" ? i : index),
-          -1,
-        );
-        if (last >= 0) messages.value = messages.value.slice(0, last + 1);
-        draft.value = "";
-        progress.value = [];
-        lastSeq = -1;
-        restore = false;
-      }
-      reconnectNotice.value = false;
-      let ended = false;
-      for await (const frame of api.runEvents(p, run, controller.signal, lastSeq)) {
-        if (current !== generation || viewer !== streamGeneration || controller.signal.aborted)
-          return;
-        if (reduceFrame(frame) === "completed") {
-          ended = true;
-          break;
-        }
-      }
-      if (ended) {
-        await finishRun(current, p, s, run);
-        return;
-      }
-      reconnectNotice.value = true;
-    } catch (cause) {
-      if (current !== generation || controller.signal.aborted || viewer !== streamGeneration)
-        return;
-      reconnectNotice.value = true;
-      if (cause instanceof ApiError && cause.status === 403) {
-        chatError.value =
-          "Hermes denied access to this run. Check the selected profile and permissions.";
-        return;
-      }
-      if (cause instanceof ApiError && cause.status === 404) {
-        // An expired event buffer is distinct from a missing run. Verify status
-        // before declaring the turn unavailable.
-        try {
-          const state = await api.runStatus(p, run, controller.signal);
-          if (current !== generation || controller.signal.aborted || viewer !== streamGeneration)
-            return;
-          const status = state.status || state.run?.status || "";
-          runStatus.value = status;
-          if (terminalStatuses.includes(status)) {
-            await finishRun(current, p, s, run);
-            return;
-          }
-          // The run is still executing, but Hermes has discarded this run's
-          // live event transport. Poll status instead of retrying an endpoint
-          // that can no longer attach; history is authoritative after completion.
-          eventStreamExpired.value = true;
-          reconnectNotice.value = false;
-          chatError.value =
-            "The live stream expired, so new progress cannot reconnect. Hermes is still working; you can refresh session history at any time.";
-          while (
-            current === generation &&
-            viewer === streamGeneration &&
-            !controller.signal.aborted
-          ) {
-            await retryDelay(controller.signal);
-            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted)
-              return;
-            const polled = await api.runStatus(p, run, controller.signal);
-            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted)
-              return;
-            const polledStatus = polled.status || polled.run?.status || "";
-            runStatus.value = polledStatus;
-            approvalPending.value = polledStatus === "waiting_for_approval";
-            approval.value = polled.approval;
-            if (!terminalStatuses.includes(polledStatus)) continue;
-            if (typeof polled.output === "string") draft.value = polled.output;
-            if (polledStatus !== "completed") chatError.value = `Run ${polledStatus}.`;
-            await finishRun(current, p, s, run);
-            return;
-          }
-          return;
-        } catch (statusError) {
-          if (current !== generation || controller.signal.aborted || viewer !== streamGeneration)
-            return;
-          if (statusError instanceof ApiError && statusError.status === 403) {
-            chatError.value =
-              "Hermes denied access to this run. Check the selected profile and permissions.";
-            return;
-          }
-          if (statusError instanceof ApiError && statusError.status === 404) {
-            unavailableRun.value = true;
-            chatError.value =
-              "Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.";
-            return;
-          }
-          chatError.value =
-            "Could not verify run status. Retrying status checks; the event stream cannot be reattached.";
-          eventStreamExpired.value = true;
-          reconnectNotice.value = false;
-          while (
-            current === generation &&
-            viewer === streamGeneration &&
-            !controller.signal.aborted
-          ) {
-            await retryDelay(controller.signal);
-            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted)
-              return;
-            let polled: Awaited<ReturnType<typeof api.runStatus>>;
-            try {
-              polled = await api.runStatus(p, run, controller.signal);
-            } catch (pollError) {
-              if (
-                pollError instanceof ApiError &&
-                (pollError.status === 403 || pollError.status === 404)
-              ) {
-                if (pollError.status === 404) {
-                  unavailableRun.value = true;
-                  chatError.value =
-                    "Run state is unavailable. Refresh history and verify the turn in Hermes before starting another.";
-                } else
-                  chatError.value =
-                    "Hermes denied access to this run. Check the selected profile and permissions.";
-                return;
-              }
-              continue;
-            }
-            if (current !== generation || viewer !== streamGeneration || controller.signal.aborted)
-              return;
-            const polledStatus = polled.status || polled.run?.status || "";
-            runStatus.value = polledStatus;
-            approvalPending.value = polledStatus === "waiting_for_approval";
-            approval.value = polled.approval;
-            if (!terminalStatuses.includes(polledStatus)) continue;
-            if (typeof polled.output === "string") draft.value = polled.output;
-            if (polledStatus !== "completed") chatError.value = `Run ${polledStatus}.`;
-            await finishRun(current, p, s, run);
-            return;
-          }
-          return;
-        }
-      }
-    }
-    await retryDelay(controller.signal);
-  }
-}
-async function stopRun() {
+async function stopResponse() {
   if (nativeMode.value) {
     try {
       await native.stop();
@@ -1362,21 +704,8 @@ async function stopRun() {
     }
     return;
   }
-  const p = profile.value,
-    run = activeRun.value,
-    current = generation;
-  if (!run || actionBusy.value) return;
-  actionBusy.value = true;
-  try {
-    await api.stop(p, run);
-    if (current === generation && run === activeRun.value) runStatus.value = "stopping";
-  } catch {
-    if (current === generation) chatError.value = "Could not stop the run. Retry.";
-  } finally {
-    actionBusy.value = false;
-  }
 }
-async function approveRun(choice: string) {
+async function approveResponse(choice: string) {
   if (nativeMode.value) {
     const id = native.approval.value?.request_id;
     if (typeof id === "string") {
@@ -1387,25 +716,6 @@ async function approveRun(choice: string) {
       }
     }
     return;
-  }
-  const p = profile.value,
-    run = activeRun.value,
-    current = generation,
-    request = approval.value?.request_id;
-  if (!run || actionBusy.value) return;
-  actionBusy.value = true;
-  try {
-    await api.approve(p, run, choice, typeof request === "string" ? request : undefined);
-    if (current === generation) {
-      approvalPending.value = false;
-      approval.value = undefined;
-      runStatus.value = "running";
-    }
-  } catch {
-    if (current === generation)
-      chatError.value = "Could not resolve approval. Refresh run state and retry.";
-  } finally {
-    actionBusy.value = false;
   }
 }
 async function answerClarification() {
@@ -1430,7 +740,7 @@ async function answerClarification() {
     return;
   }
 }
-async function steerRun(text: string) {
+async function steerResponse(text: string) {
   if (nativeMode.value) {
     try {
       await native.steer(text);
@@ -1439,97 +749,14 @@ async function steerRun(text: string) {
     }
     return;
   }
-  const p = profile.value,
-    run = activeRun.value,
-    current = generation;
-  if (!text.trim() || actionBusy.value || !run) return;
-  actionBusy.value = true;
-  try {
-    await api.steer(p, run, text.trim());
-  } catch {
-    if (current === generation)
-      chatError.value = "Run did not accept guidance. Refresh run state and retry.";
-  } finally {
-    actionBusy.value = false;
-  }
 }
 
 async function visibilityChange() {
-  const recovery = native.availability(document.visibilityState === "visible", navigator.onLine);
-  if (nativeMode.value) {
-    await recovery;
-    return;
-  }
-  if (document.visibilityState !== "visible") return;
-  refreshProjects();
-  if (activeRun.value && !eventStreamExpired.value) {
-    void followRun(generation, profile.value, session.value, activeRun.value, false);
-    return;
-  }
-  if (!session.value) return;
-  if (eventStreamExpired.value && activeRun.value) {
-    try {
-      if (!(await loadMessages())) throw new Error("history");
-      chatError.value =
-        "Session history refreshed. Live progress cannot reconnect; another turn will be available after this run finishes.";
-    } catch {
-      chatError.value =
-        "Could not refresh session history. Retry history; the current run is still locked.";
-    }
-    return;
-  }
-  visibilityAbort?.abort();
-  const controller = new AbortController();
-  visibilityAbort = controller;
-  const current = generation,
-    historyCurrent = ++historyGeneration,
-    p = profile.value,
-    s = session.value,
-    pendingHistory = chatAbort;
-  try {
-    const result = await api.messages(p, s, controller.signal);
-    if (
-      current === generation &&
-      historyCurrent === historyGeneration &&
-      !controller.signal.aborted &&
-      !pendingHistory
-    ) {
-      updateActivityOutputs(result);
-      messages.value = reconcileHistory(result);
-    }
-  } catch {
-    /* Preserve existing history when a visibility refresh fails. */
-  } finally {
-    if (visibilityAbort === controller) visibilityAbort = undefined;
-  }
+  await native.availability(document.visibilityState === "visible", navigator.onLine);
+  if (document.visibilityState === "visible") refreshProjects();
 }
-async function releaseUnavailableRun() {
-  if (nativeMode.value) {
-    await native.resolveUncertainty();
-    return;
-  }
-  const current = generation,
-    p = profile.value,
-    s = session.value,
-    run = activeRun.value;
-  if (!unavailableRun.value) return;
-  const previousStatus = runStatus.value;
-  runStatus.value = "stopped";
-  if (!(await loadMessages()) || current !== generation) {
-    if (current === generation) runStatus.value = previousStatus;
-    return;
-  }
-  lastSeq = -1;
-  forgetRun(p, s, run);
-  streamAbort?.abort();
-  activeRun.value = "";
-  sending.value = false;
-  unavailableRun.value = false;
-  reconnectNotice.value = false;
-  eventStreamExpired.value = false;
-  approvalPending.value = false;
-  draft.value = "";
-  progress.value = [];
+async function resolveUncertainty() {
+  await native.resolveUncertainty();
 }
 function exitPlugin() {
   location.href = "/";
@@ -2103,13 +1330,9 @@ onUnmounted(() => {
         role="status"
       >
         {{
-          nativeMode
-            ? native.connection.value === "reconnecting"
-              ? "Reconnecting…"
-              : "Session is read-only until reconnected."
-            : eventStreamExpired
-              ? "Live progress is unavailable; checking run status…"
-              : "Reconnecting to the live response…"
+          native.connection.value === "reconnecting"
+            ? "Reconnecting…"
+            : "Session is read-only until reconnected."
         }}
         <button
           v-if="nativeMode && native.connection.value === 'stale' && !offline"
@@ -2120,13 +1343,6 @@ onUnmounted(() => {
         </button>
       </div>
       <div
-        v-if="!settingsPage && !scheduledPage && !activeRun && terminalStatuses.includes(runStatus)"
-        class="px-5 py-2 text-sm text-[#b4b4b4]"
-        role="status"
-      >
-        Run {{ runStatus }}.
-      </div>
-      <div
         v-if="!settingsPage && !scheduledPage && viewError"
         class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]"
         role="alert"
@@ -2135,24 +1351,12 @@ onUnmounted(() => {
         <button
           v-if="session"
           class="underline"
-          @click="
-            nativeMode && viewReconnect
-              ? native.reconnect()
-              : eventStreamExpired && activeRun
-                ? visibilityChange()
-                : loadMessages()
-          "
+          @click="viewReconnect ? native.reconnect() : loadMessages()"
         >
-          {{
-            nativeMode && viewReconnect
-              ? "Retry connection"
-              : eventStreamExpired && activeRun
-                ? "Refresh session history"
-                : "Refresh history"
-          }}
+          {{ viewReconnect ? "Retry connection" : "Refresh history" }}
         </button>
-        <button v-if="viewUnavailable" class="ml-3 underline" @click="releaseUnavailableRun">
-          I verified the run ended
+        <button v-if="viewUnavailable" class="ml-3 underline" @click="resolveUncertainty">
+          Resolve uncertain submission
         </button>
       </div>
       <SettingsPage
@@ -2267,10 +1471,10 @@ onUnmounted(() => {
         v-else
         :profile="profile"
         :messages="viewMessages"
-        :draft="nativeMode ? '' : draft"
+        :draft="''"
         :loading="viewLoading"
-        :progress="nativeMode ? [] : progress"
-        :thinking="nativeMode ? viewBusy : thinking"
+        :progress="[]"
+        :thinking="viewBusy"
         :working="viewBusy || viewApprovalPending"
         :approval-pending="viewApprovalPending"
         :status-label="
@@ -2278,11 +1482,9 @@ onUnmounted(() => {
             ? viewApproval?.kind === 'clarify'
               ? 'Waiting for your answers'
               : 'Waiting for approval'
-            : runStatus === 'stopping'
-              ? 'Stopping…'
-              : viewStatus !== 'Working…'
-                ? viewStatus
-                : ''
+            : viewStatus !== 'Working…'
+              ? viewStatus
+              : ''
         "
         :home="!session"
         @suggest="suggest"
@@ -2292,19 +1494,13 @@ onUnmounted(() => {
             <p v-if="viewApproval?.kind !== 'clarify'">
               Approval required{{ viewApproval?.command ? ": " + viewApproval.command : "" }}
             </p>
-            <template
-              v-if="
-                viewActive &&
-                (api.isNative(profile) || !activeRun.startsWith('workspace-')) &&
-                viewApproval?.kind !== 'clarify'
-              "
-            >
+            <template v-if="viewActive && viewApproval?.kind !== 'clarify'">
               <button
                 v-for="choice in Array.isArray(viewApproval?.choices) ? viewApproval.choices : []"
                 :key="String(choice)"
                 class="mr-3 rounded-lg bg-[#303030] px-3 py-2 text-base disabled:opacity-55"
-                :disabled="actionBusy || (nativeMode && viewReconnect)"
-                @click="approveRun(String(choice))"
+                :disabled="viewReconnect"
+                @click="approveResponse(String(choice))"
               >
                 {{
                   choice === "once"
@@ -2354,32 +1550,13 @@ onUnmounted(() => {
                   class="mt-2 block w-full rounded-lg bg-[#303030] p-2 text-base"
                 />
               </label>
-              <button
-                :disabled="actionBusy || (nativeMode && viewReconnect)"
-                class="rounded-lg bg-[#303030] p-2 text-base"
-              >
+              <button :disabled="viewReconnect" class="rounded-lg bg-[#303030] p-2 text-base">
                 Submit answers
               </button>
             </form>
-            <p v-else-if="!api.isNative(profile) && activeRun.startsWith('workspace-')">
-              Resolve this workspace approval in Hermes.
-            </p>
           </div>
         </template>
       </ChatTranscript>
-      <div
-        v-if="
-          !settingsPage &&
-          !scheduledPage &&
-          viewActive &&
-          !viewReconnect &&
-          runStatus === 'stopping'
-        "
-        class="px-5 py-2 text-sm text-[#b4b4b4]"
-        role="status"
-      >
-        Stopping…
-      </div>
       <ChatComposer
         v-show="!settingsPage"
         :project-name="
@@ -2405,16 +1582,14 @@ onUnmounted(() => {
           viewReconnect ||
           !canStream
         "
-        :models="
-          !api.isNative(profile) && (projectId || api.isWorkspace(profile, session)) ? [] : models
-        "
+        :models="models"
         :providers="providers"
         :models-loading="modelsLoading"
         v-model:provider="provider"
         :default-model="defaultModel"
         v-model:model="model"
         :sending="viewBusy"
-        :stoppable="viewActive && !actionBusy && !(nativeMode && viewReconnect)"
+        :stoppable="viewActive && !viewReconnect"
         :suggested-prompt="suggestedPrompt"
         :reason="
           scheduledPage
@@ -2436,8 +1611,8 @@ onUnmounted(() => {
                         ? 'Streaming turns are unavailable for this profile.'
                         : undefined
         "
-        @stop="stopRun"
-        @steer="steerRun"
+        @stop="stopResponse"
+        @steer="steerResponse"
         @send="send"
       />
     </main>

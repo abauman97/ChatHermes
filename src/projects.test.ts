@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "./App.vue";
+import * as nativeSession from "./lib/native-session";
 import { api } from "./lib/hermes-api";
 import { projectRoot, projectSessions } from "./lib/projects";
 import type { Project, ProjectTree } from "./types/hermes";
+const nativeFactory = nativeSession.useNativeSession;
+let nativeOwner: ReturnType<typeof nativeFactory>;
+beforeEach(() => {
+  vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+    const owner = (nativeOwner = nativeFactory(callback));
+    owner.attach = vi.fn(async (profile, id) => {
+      owner.connection.value = "ready";
+      owner.messages.value = await api.messages(profile, id);
+    });
+    owner.submit = vi.fn();
+    return owner;
+  });
+});
 const a: Project = {
   id: "p_a",
   label: "Project A",
@@ -74,17 +88,13 @@ function setup(
       return detail(new URL(url, "http://dashboard.test").searchParams.get("project_id")!);
     if (url.includes("/capabilities"))
       return json({
-        features: { session_chat_streaming: true },
-        endpoints: {
-          session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" },
-        },
+        features: { native_chat: true },
       });
     if (url.includes("/v1/models")) return json({ data: [] });
     if (url.includes("/model/options")) return json({ providers: [] });
     if (url.includes("/api/sessions/project_created/messages")) return json({}, 404);
     if (url.includes("/messages"))
       return json({ messages: [{ role: "assistant", content: "Native chat history" }] });
-    if (url.includes("/chat/stream")) return new Response("event: run.completed\ndata: {}\n\n");
     if (init?.method === "POST") return json({ session: { id: "other_created" } }, 201);
     // Deliberately same cwd as A but not claimed by the tree: frontend must not classify it.
     return json({
@@ -102,7 +112,7 @@ describe("authoritative gateway Projects", () => {
   it.each(["hierarchy", "summary"])(
     "resumes a drawer session in its owning Project using %s membership",
     async (shape) => {
-      const fetch = setup();
+      setup();
       if (shape === "summary")
         vi.spyOn(api, "projects").mockResolvedValue({
           projects: [{ ...a, repos: [], previewSessions: [], sessionIds: ["project_s1"] }, b, home],
@@ -128,11 +138,12 @@ describe("authoritative gateway Projects", () => {
       await wrapper.get("textarea").setValue("Continue in this project");
       await wrapper.get("form").trigger("submit");
       await flushPromises();
-      expect(
-        fetch.mock.calls.some(([url]) =>
-          url.includes("/workspace/sessions/project_s1/chat/stream?profile=alpha"),
-        ),
-      ).toBe(true);
+      expect(nativeOwner.submit).toHaveBeenCalledWith(
+        "Continue in this project",
+        expect.any(Function),
+        expect.any(Object),
+        expect.any(Array),
+      );
       await wrapper.get(".session-select").trigger("click");
       await flushPromises();
       expect(location.search).not.toContain("project=");
@@ -422,11 +433,12 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get("textarea").setValue("Check this workspace");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
-    expect(
-      fetch.mock.calls.some(([url]) =>
-        url.includes("/workspace/sessions/project_created/chat/stream?profile=alpha"),
-      ),
-    ).toBe(true);
+    expect(nativeOwner.submit).toHaveBeenCalledWith(
+      "Check this workspace",
+      expect.any(Function),
+      expect.any(Object),
+      expect.any(Array),
+    );
     wrapper.unmount();
   });
   it.each(["", "&session=project_s1", "&view=project-edit", "&view=project-instructions"])(
@@ -545,7 +557,7 @@ describe("authoritative gateway Projects", () => {
     expect(new URLSearchParams(location.search).has("project")).toBe(false);
     wrapper.unmount();
   });
-  it("holds a native draft viewer through the existing event subscription", async () => {
+  it("attaches a native draft separately from the metadata event subscription", async () => {
     vi.stubGlobal("EventSource", class {});
     const close = vi.fn();
     const events = vi.spyOn(api, "projectEvents").mockReturnValue(close);
@@ -556,7 +568,8 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
     await wrapper.get('[role="menuitem"]').trigger("click");
     await flushPromises();
-    expect(events).toHaveBeenLastCalledWith("alpha", expect.any(Function), "project_created");
+    expect(events).toHaveBeenLastCalledWith("alpha", expect.any(Function));
+    expect(nativeOwner.attach).toHaveBeenCalledWith("alpha", "project_created");
     wrapper.unmount();
     expect(close).toHaveBeenCalled();
   });
