@@ -20,21 +20,12 @@ const json = (value: unknown) =>
     headers: { "content-type": "application/json" },
   });
 function mockFetch(fake: (input: string, init?: RequestInit) => Promise<Response>) {
-  const streams = new Map<string, Response>();
   vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
     if (input.endsWith("/profiles"))
       return json({ profiles: [{ name: "alpha" }, { name: "beta" }] });
     if (/\/projects(?:\?|$)/.test(input)) return json({ projects: [] });
     if (input.includes("/v1/models")) return json({ data: [{ id: "Instant" }] });
-    const profile = new URL(input, location.origin).searchParams.get("profile") || "";
-    if (input.includes("/v1/runs/run-1/events")) return streams.get(profile) || new Response("");
-    if (input.includes("/v1/runs/run-1")) return json({ run_id: "run-1", status: "running" });
-    const response = await fake(input, init);
-    if (input.includes("/v1/runs") && init?.method === "POST") {
-      streams.set(profile, response);
-      return json({ run_id: "run-1", status: "started", replayed: false });
-    }
-    return response;
+    return fake(input, init);
   });
 }
 function deferred<T>() {
@@ -45,13 +36,7 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const streaming = {
-  features: { run_events_sse: true, session_chat_streaming: true },
-  endpoints: {
-    runs: { method: "POST", path: "/v1/runs" },
-    session_chat_stream: { method: "POST", path: "/api/sessions/{session_id}/chat/stream" },
-  },
-};
+const streaming = { features: { native_chat: true } };
 describe("settings page", () => {
   it("reports mounted native session and connection through home, views, profiles and unmount", async () => {
     const factory = nativeSession.useNativeSession;
@@ -558,59 +543,6 @@ describe("profile navigation", () => {
     expect(wrapper.text()).toContain("Second page");
     wrapper.unmount();
   });
-  it("shows Hermes envelopes and completed stream output in each profile", async () => {
-    const fake = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input.includes("/v1/capabilities")) return json(streaming);
-      const profile = input.includes("profile=alpha") ? "alpha" : "beta";
-      if (input.includes("/v1/runs"))
-        return new Response(
-          'event: assistant.delta\ndata: {"delta":"Working","run_id":"run-1"}\n\nevent: tool.started\ndata: {"tool_name":"search","run_id":"run-1"}\n\nevent: run.completed\ndata: {"session_id":"' +
-            profile +
-            '-new","message_id":"msg-1","messages":[],"usage":{},"runtime":{},"run_id":"run-1"}\n\nevent: done\ndata: {}\n\n',
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      if (input.includes("/messages"))
-        return json({
-          object: "list",
-          session_id: `${profile}-new`,
-          data: [
-            { id: `${profile}-user`, role: "user", content: "Question" },
-            { id: `${profile}-reply`, role: "assistant", content: `Answer from ${profile}` },
-          ],
-          pagination: { limit: 500, offset: 0, order: "oldest", returned: 2 },
-        });
-      if (init?.method === "POST")
-        return json({ object: "hermes.session", session: { id: `${profile}-new` } });
-      if (input.includes("/api/sessions?"))
-        return json({
-          object: "list",
-          data: [{ id: `${profile}-new`, title: `${profile} conversation` }],
-          limit: 30,
-          offset: 0,
-          has_more: false,
-        });
-      return json({});
-    });
-    mockFetch(fake);
-    const wrapper = mount(App);
-    await flushPromises();
-    for (const profile of ["alpha", "beta"]) {
-      if (profile === "beta") await wrapper.get(".profile-field").setValue("beta");
-      await flushPromises();
-      expect(wrapper.text()).toContain(`${profile} conversation`);
-      wrapper.findComponent(SessionSidebar).vm.$emit("create");
-      await flushPromises();
-      expect(location.search).toBe(`?profile=${profile}&session=${profile}-new`);
-      expect(wrapper.text()).toContain(`Answer from ${profile}`);
-      await wrapper.get(".composer textarea").setValue("Question");
-      await wrapper.get(".composer").trigger("submit");
-      await flushPromises();
-      expect(wrapper.text()).toContain(`Answer from ${profile}`);
-      expect(wrapper.text()).not.toContain("Working…");
-      expect(wrapper.text()).not.toContain("Stream ended without confirmation");
-    }
-    wrapper.unmount();
-  });
   it("clears the previous profile sessions when switching", async () => {
     const fake = vi.fn(async (input: string) => {
       const value = input.includes("/v1/capabilities")
@@ -843,191 +775,29 @@ describe("profile navigation", () => {
     expect(location.search).toBe("?profile=alpha&session=new");
     wrapper.unmount();
   });
-  it("locks sending until the documented streaming capability and endpoint are confirmed", async () => {
-    const capabilities = deferred<Response>();
-    const fake = vi.fn((input: string) =>
-      input.includes("/v1/capabilities?profile=alpha")
-        ? capabilities.promise
-        : input.includes("/v1/capabilities?profile=beta")
-          ? Promise.resolve(json({ features: { session_chat_streaming: true } }))
-          : input.includes("/messages")
-            ? Promise.resolve(json([]))
-            : input.includes("/api/sessions?")
-              ? Promise.resolve(json({ sessions: [], total: 0 }))
-              : input.includes("/v1/runs")
-                ? Promise.resolve(
-                    new Response("event: run.completed\ndata: {}\n\n", {
-                      headers: { "content-type": "text/event-stream" },
-                    }),
-                  )
-                : Promise.resolve(json({})),
-    );
-    mockFetch(fake);
-    const wrapper = mount(App);
-    await flushPromises();
-    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-    await flushPromises();
-    expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
-    capabilities.resolve(json(streaming));
-    await flushPromises();
-    expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
-    await wrapper.get(".composer textarea").setValue("hello");
-    await wrapper.get(".composer").trigger("submit");
-    await flushPromises();
-    expect(fake.mock.calls.some(([input]) => String(input).includes("/v1/runs"))).toBe(true);
-    await wrapper.get(".profile-field").setValue("beta");
-    wrapper.findComponent(SessionSidebar).vm.$emit("select", "two");
-    await flushPromises();
-    expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
-    wrapper.unmount();
-  });
-});
-
-describe("live turn presentation", () => {
-  it.each(["tool.progress", "tool.delta"])(
-    "merges %s before start without call IDs and closes the same activity on completion",
-    async (event) => {
-      let controller!: ReadableStreamDefaultController<Uint8Array>;
-      const body = new ReadableStream<Uint8Array>({
-        start(value) {
-          controller = value;
-        },
-      });
-      const encoder = new TextEncoder();
-      const frame = async (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        await flushPromises();
-      };
-      mockFetch(
-        vi.fn(async (input: string) =>
-          input.includes("/v1/capabilities")
-            ? json(streaming)
-            : input.includes("/messages")
-              ? json([])
-              : input.includes("/v1/runs")
-                ? new Response(body, { headers: { "content-type": "text/event-stream" } })
-                : json({ sessions: [], total: 0 }),
-        ),
-      );
-      const wrapper = mount(App);
-      await flushPromises();
-      wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-      await flushPromises();
-      await wrapper.get("textarea").setValue("Search");
-      await wrapper.get(".composer").trigger("submit");
-      await flushPromises();
-      await frame(event, { tool_name: "search", delta: "Early progress" });
-      const tool = wrapper.get(".work-summary .working-shimmer-tool");
-      expect(tool.text()).toBe("Using tool: search");
-      await frame("tool.started", { tool_name: "search", args: { query: "example" } });
-      expect(wrapper.findAll(".activity")).toHaveLength(1); // Tool stays inline until completed.
-      expect(wrapper.get(".work-summary .working-shimmer-tool").element).toBe(tool.element);
-      expect(tool.text()).toBe("Using tool: search");
-      await frame("tool.progress", { tool_name: "search", delta: "Later progress" });
-      expect(tool.text()).toBe("Using tool: search");
-      await frame("tool.completed", { tool_name: "search", output: "Search result" });
-      expect(wrapper.findAll(".activity")).toHaveLength(2);
-      expect(wrapper.find(".current-activity").exists()).toBe(false);
-      expect(wrapper.get(".work-summary").text()).toContain("Working…");
-      const completedTool = wrapper.findAll(".activity")[1]!;
-      expect(completedTool.attributes("open")).toBeUndefined();
-      await wrapper.get(".work-summary").trigger("click");
-      expect(completedTool.isVisible()).toBe(true);
-      expect(completedTool.text()).toContain("Search result");
-      expect(completedTool.text()).toContain("example");
-      wrapper.unmount();
-    },
-  );
-
-  it("shows sent/thinking/tool activity without secure-context crypto APIs, then collapses completed activity", async () => {
-    vi.stubGlobal("crypto", {}); // LAN HTTP dashboards do not expose randomUUID.
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    const body = new ReadableStream<Uint8Array>({
-      start(value) {
-        controller = value;
-      },
-    });
-    const encoder = new TextEncoder();
-    const frame = (event: string, data: unknown) =>
-      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-    const fake = vi.fn(async (input: string) =>
-      input.includes("/v1/capabilities")
-        ? json(streaming)
-        : input.includes("/messages")
-          ? json([])
-          : input.includes("/v1/runs")
-            ? new Response(body, { headers: { "content-type": "text/event-stream" } })
-            : json({ sessions: [], total: 0 }),
-    );
-    mockFetch(fake);
-    const wrapper = mount(App);
-    await flushPromises();
-    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-    await flushPromises();
-    await wrapper.get("textarea").setValue("Show this immediately");
-    await wrapper.get(".composer").trigger("submit");
-    expect(wrapper.get(".message.user").text()).toBe("Show this immediately");
-    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
-    expect(wrapper.get(".activity").text()).toContain("Thinking");
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await flushPromises();
-    expect(wrapper.get(".message.user").text()).toBe("Show this immediately");
-    frame("tool.started", { tool_name: "search", args: { query: "example" } });
-    await flushPromises();
-    expect(wrapper.findAll(".activity")[0]!.element.hasAttribute("open")).toBe(false);
-    expect(wrapper.get(".work-summary .working-shimmer-tool").text()).toBe("Using tool: search");
-    expect(wrapper.text()).not.toContain("example");
-    frame("tool.progress", { tool_name: "search", delta: "Partial search output" });
-    await flushPromises();
-    expect(wrapper.get(".work-summary .working-shimmer-tool").text()).toBe("Using tool: search");
-    expect(wrapper.text()).not.toContain("Partial search output");
-    frame("tool.completed", { tool_name: "search" });
-    await flushPromises();
-    expect(wrapper.findAll(".activity")[1]!.attributes("open")).toBeUndefined();
-    frame("tool.started", { tool_call_id: "failed-call", tool_name: "terminal" });
-    await flushPromises();
-    frame("tool.completed", { tool_call_id: "failed-call", error: "command failed" });
-    await flushPromises();
-    expect(wrapper.findAll(".activity").at(-1)!.classes()).toContain("activity-failed");
-    expect(wrapper.findAll(".activity").at(-1)!.text()).toContain("Failed");
-    frame("run.completed", {});
-    controller.close();
-    await flushPromises();
-    wrapper.unmount();
-  });
-
-  it("creates a session on the first home-screen send", async () => {
-    history.replaceState({}, "", "/chathermes");
-    const fake = vi.fn(async (input: string, init?: RequestInit) =>
-      input.includes("/v1/capabilities")
-        ? json(streaming)
-        : input.includes("/messages")
-          ? json([])
-          : input.includes("/v1/runs")
-            ? new Response("event: run.completed\ndata: {}\n\n")
-            : init?.method === "POST"
-              ? json({ session: { id: "auto-created" } })
-              : json({ sessions: [], total: 0 }),
-    );
-    mockFetch(fake);
-    const wrapper = mount(App);
-    await flushPromises();
-    expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
-    await wrapper.get("textarea").setValue("Start here");
-    await wrapper.get(".composer").trigger("submit");
-    await flushPromises();
-    expect(location.search).toBe("?session=auto-created");
-    expect(fake.mock.calls.find(([input]) => input.includes("/v1/runs"))?.[1]?.body).toBe(
-      JSON.stringify({ session_id: "auto-created", input: "Start here" }),
-    );
-    wrapper.unmount();
-  });
 });
 
 describe("profile model inventory", () => {
   it("defaults to each profile provider and sends provider/model changes to the runtime", async () => {
     const turns: { profile: string; body: Record<string, unknown> }[] = [];
+    const factory = nativeSession.useNativeSession;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      const owner = factory(callback);
+      let profile = "",
+        session = "";
+      owner.attach = vi.fn(async (p, id) => {
+        profile = p;
+        session = id;
+        owner.connection.value = "ready";
+      });
+      owner.submit = vi.fn(async (_text, prepare, selection) => {
+        turns.push({
+          profile,
+          body: { session_id: session, input: await prepare(), ...selection },
+        });
+      });
+      return owner;
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -1056,13 +826,6 @@ describe("profile model inventory", () => {
             ],
           });
         if (input.includes("/v1/capabilities")) return json(streaming);
-        if (input.includes("/v1/runs/provider-run/events"))
-          return new Response("event: run.completed\ndata: {}\n\n");
-        if (input.includes("/v1/runs/provider-run")) return json({ status: "running" });
-        if (input.includes("/v1/runs")) {
-          turns.push({ profile, body: await new Response(init?.body).json() });
-          return json({ run_id: "provider-run", status: "started" });
-        }
         if (input.includes("/messages")) return json({ data: [] });
         if (init?.method === "POST") return json({ session: { id: `${profile}-session` } });
         return json({ data: [], has_more: false });
@@ -1088,7 +851,6 @@ describe("profile model inventory", () => {
         input: "default turn",
         model: "alpha-default",
         provider: "alpha",
-        require_model_lock: true,
       },
     });
     await wrapper.get(".model-pill").trigger("click");
@@ -1100,7 +862,6 @@ describe("profile model inventory", () => {
     expect(turns[1]?.body).toMatchObject({
       model: "shared-model",
       provider: "custom:other",
-      require_model_lock: true,
     });
     await wrapper.get(".model-pill").trigger("click");
     await wrapper.get('[data-provider=""]').trigger("click");
@@ -1113,7 +874,6 @@ describe("profile model inventory", () => {
       session_id: "alpha-session",
       input: "route turn",
       model: "Instant",
-      require_model_lock: true,
     });
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
@@ -1135,7 +895,6 @@ describe("profile model inventory", () => {
         input: "beta turn",
         model: "beta-extra",
         provider: "beta",
-        require_model_lock: true,
       },
     });
     wrapper.unmount();
@@ -1191,218 +950,60 @@ describe("profile model inventory", () => {
   });
 });
 
-describe("assistant turn recovery", () => {
-  for (const phase of ["tool", "text", "missed-tool"])
-    it(`preserves the turn when resuming during ${phase} streaming`, async () => {
-      let controller!: ReadableStreamDefaultController<Uint8Array>;
-      const body = new ReadableStream<Uint8Array>({
-        start(value) {
-          controller = value;
-        },
+describe("TUI-only chat execution", () => {
+  it.each([true, false])("ignores saved REST turns with native capability %s", async (enabled) => {
+    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    const pointer = 'chathermes.run.v1:["alpha","s1"]';
+    const idempotency = 'chathermes.run-idempotency.v1:["alpha","s1"]';
+    localStorage.setItem(pointer, "legacy-run");
+    localStorage.setItem(idempotency, "legacy-attempt");
+    const factory = nativeSession.useNativeSession;
+    let owner!: ReturnType<typeof factory>;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+      owner = factory(callback);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
       });
-      const encoder = new TextEncoder();
-      const emit = (event: string, data: unknown) =>
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      let final = false;
-      mockFetch(
-        vi.fn(async (input: string) => {
-          if (input.includes("/v1/capabilities")) return json(streaming);
-          if (input.includes("/messages"))
-            return json(
-              final
-                ? [
-                    { id: "user", role: "user", content: "Question" },
-                    {
-                      role: "assistant",
-                      content: "",
-                      reasoning_content: "Plan",
-                      tool_calls: [{ id: "call", function: { name: "terminal" } }],
-                    },
-                    {
-                      role: "tool",
-                      tool_call_id: "call",
-                      tool_name: "terminal",
-                      content: "result",
-                    },
-                    ...(phase === "missed-tool"
-                      ? [
-                          {
-                            role: "assistant",
-                            content: "",
-                            reasoning_content: "Another plan",
-                            tool_calls: [{ id: "missed", function: { name: "read_file" } }],
-                          },
-                          {
-                            role: "tool",
-                            tool_call_id: "missed",
-                            tool_name: "read_file",
-                            content: "file content",
-                          },
-                        ]
-                      : []),
-                    { role: "assistant", content: "Hello world" },
-                  ]
-                : [],
-            );
-          if (input.includes("/chat/stream"))
-            return new Response(body, { headers: { "content-type": "text/event-stream" } });
-          if (input.includes("/events")) {
-            final = true;
-            return new Response(
-              'event: assistant.snapshot\ndata: {"text":"Hello world"}\n\nevent: tool.completed\ndata: {"tool_call_id":"call","output":"result"}\n\nevent: run.completed\ndata: {}\n\n',
-              { headers: { "content-type": "text/event-stream" } },
-            );
-          }
-          if (input.includes("/runs/")) return json({ status: "running" });
-          if (input.includes("/api/sessions/one")) return json({ id: "one", source: "desktop" });
-          return json({ sessions: [{ id: "one" }], total: 1 });
-        }),
+      owner.submit = vi.fn(async () => {});
+      return owner;
+    });
+    const fetch = vi.fn(async (url: string) =>
+      json(
+        url.includes("/capabilities")
+          ? {
+              features: { native_chat: enabled },
+            }
+          : url.includes("/messages")
+            ? { messages: [{ role: "assistant", content: "Saved history" }] }
+            : { sessions: [{ id: "s1" }], total: 1 },
+      ),
+    );
+    mockFetch(fetch);
+    const wrapper = mount(App);
+    await flushPromises();
+    const prompt = wrapper.get("textarea");
+    expect(prompt.attributes("disabled")).toBeUndefined();
+    await prompt.setValue("Continue");
+    const send = wrapper.get('[aria-label="Send message"]');
+    if (enabled) {
+      expect(owner.attach).toHaveBeenCalledExactlyOnceWith("alpha", "s1");
+      await send.trigger("click");
+      await flushPromises();
+      expect(owner.submit).toHaveBeenCalledWith(
+        "Continue",
+        expect.any(Function),
+        expect.any(Object),
+        expect.any(Array),
       );
-      const wrapper = mount(App);
-      await flushPromises();
-      wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-      await flushPromises();
-      await wrapper.get("textarea").setValue("Question");
-      await wrapper.get(".composer").trigger("submit");
-      emit("run.started", { run_id: "workspace-one" });
-      emit("reasoning.delta", { delta: "Plan" });
-      emit("tool.started", { tool_call_id: "call", tool_name: "terminal" });
-      if (phase === "text") {
-        emit("tool.completed", { tool_call_id: "call", output: "result" });
-        emit("assistant.delta", { delta: "Hello" });
-      }
-      await flushPromises();
-      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-      document.dispatchEvent(new Event("visibilitychange"));
-      await flushPromises();
-      expect(wrapper.findAll(".activity")).toHaveLength(phase === "missed-tool" ? 4 : 2);
-      expect(wrapper.findAll(".assistant-turn > *").at(-1)?.classes()).toContain("assistant");
-      expect(wrapper.findAll(".activity[open]")).toHaveLength(0);
-      expect(wrapper.findAll(".message.assistant")).toHaveLength(1);
-      expect(wrapper.get(".message.assistant").text()).toBe("Hello world");
-      expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
-      expect(wrapper.text()).toContain("result");
-      wrapper.unmount();
-    });
-});
-
-describe("cached turn history isolation", () => {
-  it("recovers the sent turn rather than a later turn appended by another client", async () => {
-    let saved = false;
-    mockFetch(async (input: string) => {
-      if (input.includes("/v1/capabilities")) return json(streaming);
-      if (input.includes("/messages"))
-        return json(
-          saved
-            ? [
-                { id: "first", role: "user", content: "Question" },
-                { role: "assistant", content: "Checking", tool_calls: [{ id: "a" }] },
-                { role: "tool", tool_call_id: "a", content: "result" },
-                { role: "assistant", content: "Intermediate", tool_calls: [{ id: "b" }] },
-                { role: "tool", tool_call_id: "b", content: "second result" },
-                { role: "assistant", content: "First answer" },
-                { id: "second", role: "user", content: "Other question" },
-                { role: "assistant", content: "Other answer" },
-              ]
-            : [],
-        );
-      if (input.includes("/v1/runs") || input.includes("/chat/stream")) {
-        saved = true;
-        return new Response(
-          'event: assistant.delta\ndata: {"delta":"Checking"}\n\nevent: tool.started\ndata: {"tool_call_id":"a"}\n\nevent: tool.completed\ndata: {"tool_call_id":"a","output":"result"}\n\nevent: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n',
-        );
-      }
-      return json({ sessions: [{ id: "one" }], total: 1 });
-    });
-    const wrapper = mount(App);
-    await flushPromises();
-    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-    await flushPromises();
-    await wrapper.get("textarea").setValue("Question");
-    await wrapper.get(".composer").trigger("submit");
-    await flushPromises();
-    const turns = wrapper.findAll(".assistant-turn");
-    expect(turns).toHaveLength(2);
-    expect(turns[0]!.findAll(".message.assistant").map((item) => item.text())).toEqual([
-      "Checking",
-      "Intermediate",
-      "First answer",
-    ]);
-    expect(turns[0]!.text()).not.toContain("Other answer");
-    expect(turns[1]!.text()).toBe("Other answer");
-    expect(wrapper.findAll(".message.user").map((item) => item.text())).toEqual([
-      "Question",
-      "Other question",
-    ]);
-    wrapper.unmount();
-  });
-
-  it("ignores a visibility history request that resolves after a new send starts", async () => {
-    const stale = deferred<Response>();
-    let reads = 0,
-      sends = 0;
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    mockFetch(async (input: string) => {
-      if (input.includes("/v1/capabilities")) return json(streaming);
-      if (input.includes("/messages")) {
-        reads++;
-        if (reads === 4) return stale.promise;
-        return json(
-          reads === 1
-            ? []
-            : [
-                { id: "first", role: "user", content: "First" },
-                { role: "assistant", content: "First answer" },
-              ],
-        );
-      }
-      if (input.includes("/v1/runs") || input.includes("/chat/stream")) {
-        if (++sends === 1)
-          return new Response(
-            'event: assistant.delta\ndata: {"delta":"First answer"}\n\nevent: run.completed\ndata: {}\n\n',
-          );
-        return new Response(
-          new ReadableStream<Uint8Array>({
-            start(value) {
-              controller = value;
-            },
-          }),
-        );
-      }
-      return json({ sessions: [{ id: "one" }], total: 1 });
-    });
-    const wrapper = mount(App);
-    await flushPromises();
-    wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
-    await flushPromises();
-    await wrapper.get("textarea").setValue("First");
-    await wrapper.get(".composer").trigger("submit");
-    await flushPromises();
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await flushPromises();
-    expect(reads).toBeGreaterThanOrEqual(3);
-    await wrapper.get("textarea").setValue("Second");
-    await wrapper.get(".composer").trigger("submit");
-    controller.enqueue(
-      new TextEncoder().encode('event: assistant.delta\ndata: {"delta":"Second live answer"}\n\n'),
-    );
-    await flushPromises();
-    stale.resolve(
-      json([
-        { id: "first", role: "user", content: "First" },
-        { role: "assistant", content: "Stale first answer" },
-      ]),
-    );
-    await flushPromises();
-    expect(wrapper.findAll(".message.assistant").map((item) => item.text())).toEqual([
-      "First answer",
-      "Second live answer",
-    ]);
-    expect(wrapper.findAll(".message.user").map((item) => item.text())).toEqual([
-      "First",
-      "Second",
-    ]);
+    } else {
+      expect(send.attributes("disabled")).toBeDefined();
+      expect(owner.attach).not.toHaveBeenCalled();
+      expect(owner.submit).not.toHaveBeenCalled();
+      expect(wrapper.text()).toContain("Saved history");
+    }
+    expect(fetch.mock.calls.some(([url]) => /\/runs|\/chat\/stream/.test(url))).toBe(false);
+    expect(localStorage.getItem(pointer)).toBe("legacy-run");
+    expect(localStorage.getItem(idempotency)).toBe("legacy-attempt");
     wrapper.unmount();
   });
 });

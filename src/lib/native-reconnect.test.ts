@@ -73,7 +73,7 @@ describe("interrupted attachment draft recovery", () => {
         const value = input.endsWith("/profiles")
           ? { profiles: [{ name: "attachment-test" }] }
           : input.includes("/capabilities")
-            ? { features: { native_chat: true, session_chat_streaming: true } }
+            ? { features: { native_chat: true } }
             : input.includes("/models")
               ? { data: [{ id: "Instant" }] }
               : input.includes("/projects")

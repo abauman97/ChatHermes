@@ -1,5 +1,8 @@
 # ChatHermes as a Hermes Dashboard Plugin — Implementation Spec
 
+Historical plan: REST Runs chat execution, its drain adapter and chat SSE routes
+were removed on 2026-10-09. The current [API contract](../api-contract.md)
+supersedes transport and recovery guidance below. Scheduled-job history is retained.
 Date: 2026-09-30 · Status: PROPOSED (awaiting approval) · Supersedes: Bearer-key/localStorage auth (PR #1) and the PR #2 standalone-PWA direction for auth.
 
 ## 1. Goal

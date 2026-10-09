@@ -1,6 +1,5 @@
 import type { Activity, Message, TurnBlock } from "../types/hermes";
-import type { SSEEvent } from "./sse";
-import { eventPayload, messageText } from "./hermes-api";
+import { messageText } from "./hermes-api";
 
 type Data = Record<string, unknown>;
 const string = (value: unknown) => (typeof value === "string" ? value : "");
@@ -46,40 +45,6 @@ export interface TurnEvent {
     | "approval";
   data: Data;
   key?: string;
-}
-export function normalizeEvent(frame: SSEEvent): TurnEvent | undefined {
-  const data = eventPayload(frame),
-    name = frame.event;
-  const sequence = typeof data.seq === "number" ? String(data.seq) : frame.id;
-  const key = sequence === undefined ? undefined : `${string(data.run_id)}:${sequence}`;
-  let type: TurnEvent["type"] | undefined;
-  if (["assistant.delta", "message.delta"].includes(name)) type = "text";
-  else if (name === "assistant.snapshot") type = "text.snapshot";
-  else if (name === "assistant.completed") type = "text.completed";
-  else if (name === "assistant.commentary" && !data.already_streamed) type = "text";
-  else if (
-    [
-      "reasoning.delta",
-      "thinking.delta",
-      "reasoning.available",
-      "reasoning.started",
-      "thinking.started",
-    ].includes(name) ||
-    (name === "tool.progress" && data.tool_name === "_thinking")
-  )
-    type = "reasoning";
-  else if (["reasoning.completed", "thinking.completed"].includes(name))
-    type = "reasoning.completed";
-  else if (name === "tool.started" || name === "tool.start") type = "tool.started";
-  else if (["tool.progress", "tool.delta", "tool.updated"].includes(name)) type = "tool.updated";
-  else if (name === "tool.completed" || name === "tool.complete")
-    type = data.is_error ? "tool.failed" : "tool.completed";
-  else if (name === "tool.failed") type = "tool.failed";
-  else if (["run.status", "run.progress", "status", "progress"].includes(name)) type = "status";
-  else if (name === "run.completed") type = "completed";
-  else if (["run.failed", "run.cancelled", "error"].includes(name)) type = "failed";
-  else if (name === "approval.request") type = "approval";
-  return type ? { type, data, key } : undefined;
 }
 interface NativeTurnState {
   boundary: number;

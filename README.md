@@ -46,7 +46,7 @@ Open the `/chathermes` URL printed by `npm run live` in the isolated dashboard. 
 
 Rebuild with `npm run build` after UI changes. Restart the service after Python route changes by rerunning `npm run live`. Run `npm run live:stop` to remove the launcher's containers; its named test volume and network are preserved. Remove a disposable test volume only after confirming its exact name with `docker volume ls`.
 
-The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Existing REST run pointers drain through their original adapter. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
+The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
 See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
 
@@ -74,7 +74,7 @@ its workspace. Existing sessions always resume with their own saved cwd. Native
 shared Hermes request correlation/heartbeat, server-retained execution and paged
 recovery frames. Reload restores activity before completion without native status
 polling. Models apply to the native runtime; uploads stay authenticated and profile
-scoped. Existing REST run pointers retain their legacy drainage path.
+scoped. Legacy REST chat execution and its drainage adapter have been removed.
 Hermes discovers context files normally; the plugin injects no Project prompt.
 
 Project/session change events, reconnect, foregrounding, completion and profile

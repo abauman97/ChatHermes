@@ -67,8 +67,7 @@ async def test_bearer_profile_and_forwarded_params(app, monkeypatch):
         for method, path in [("GET", "/v1/capabilities"), ("GET", "/api/sessions?limit=30&offset=4"),
                              ("POST", "/api/sessions"), ("GET", "/api/sessions/s1"),
                              ("PATCH", "/api/sessions/s1"), ("DELETE", "/api/sessions/s1"),
-                             ("GET", "/api/sessions/s1/messages?order=oldest&inline_images=false"),
-                             ("POST", "/v1/runs/r1/stop")]:
+                             ("GET", "/api/sessions/s1/messages?order=oldest&inline_images=false")]:
             separator = "&" if "?" in path else "?"
             response = await client.request(method, "/api/plugins/chathermes" + path + separator + "profile=alpha", json={} if method in ("POST", "PATCH") else None)
             assert response.status_code == 200
@@ -168,27 +167,12 @@ async def test_push_subscription_routes_validate_scope_and_never_echo_key_materi
 
 
 @run_async
-async def test_sse_frames_pass_through(app, monkeypatch):
-    frames = b'event: assistant.delta\ndata: {"delta":"hello"}\n\nevent: run.completed\ndata: {}\n\n'
-    def gateway(request):
-        assert request.headers["authorization"] == f"Bearer {KEY}"
-        assert request.url.path == "/p/beta/api/sessions/s1/chat/stream"
-        return httpx.Response(200, content=frames, headers={"content-type": "text/event-stream"})
-    monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test") as client:
-        response = await client.post("/api/plugins/chathermes/sessions/s1/chat/stream?profile=beta", json={"input": "hi"})
-    assert response.status_code == 200
-    assert response.content == frames
-    assert KEY not in response.text and KEY not in str(response.headers)
-
-
-@run_async
 @pytest.mark.parametrize("gateway_status", [401, 403])
 async def test_gateway_auth_failure_is_safe(app, monkeypatch, gateway_status):
     monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
         lambda request: httpx.Response(gateway_status, text=KEY))))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test") as client:
-        for method, route in (("get", "/sessions"), ("post", "/sessions/s1/chat/stream")):
+        for method, route in (("get", "/sessions"), ("get", "/sessions/s1/messages")):
             response = await getattr(client, method)("/api/plugins/chathermes" + route)
             assert response.status_code == 503
             assert "platforms.api_server.key" in response.text
@@ -211,7 +195,7 @@ async def test_gateway_unreachable_and_reflection_are_safe(app, monkeypatch):
         assert response.status_code == 500
         assert KEY not in response.text and KEY not in str(response.headers)
 
-@pytest.mark.parametrize("route", ["/sessions", "/sessions/s1/chat/stream"])
+@pytest.mark.parametrize("route", ["/sessions", "/sessions/s1/messages"])
 @run_async
 async def test_missing_key_is_safe(app, monkeypatch, route):
     monkeypatch.setattr(plugin, "_gateway_settings", lambda: ("http://gateway.test", None))
@@ -219,45 +203,6 @@ async def test_missing_key_is_safe(app, monkeypatch, route):
         response = await client.request("POST" if route.endswith("stream") else "GET", "/api/plugins/chathermes" + route)
     assert response.status_code == 503
     assert "platforms.api_server.key" in response.text
-    assert KEY not in response.text and KEY not in str(response.headers)
-
-
-@run_async
-async def test_run_status_and_events_routes(app, monkeypatch):
-    status = []
-    def gateway(request):
-        status.append(request)
-        if request.url.path.endswith("/events"):
-            return httpx.Response(200, content=b'event: run.completed\ndata: {}\n\n', headers={"content-type": "text/event-stream"})
-        return httpx.Response(200, json={"state": "completed"})
-    monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test") as client:
-        response = await client.get("/api/plugins/chathermes/runs/r1", params={"profile": "gamma"})
-        assert response.status_code == 200
-        assert response.json() == {"state": "completed"}
-        assert KEY not in response.text and KEY not in str(response.headers)
-        stream = await client.get("/api/plugins/chathermes/v1/runs/r1/events", params={"profile": "gamma"})
-        assert stream.status_code == 200
-        assert stream.content == b'event: run.completed\ndata: {}\n\n'
-        assert KEY not in stream.text and KEY not in str(stream.headers)
-    assert all(request.headers["authorization"] == f"Bearer {KEY}" for request in status)
-    assert all(request.url.path.startswith("/p/gamma/") for request in status)
-    assert status[0].url.path == "/p/gamma/v1/runs/r1"
-    assert status[1].url.path == "/p/gamma/v1/runs/r1/events"
-
-
-@run_async
-async def test_stream_redacts_key_split_across_gateway_chunks(app, monkeypatch):
-    class SplitStream(httpx.AsyncByteStream):
-        async def __aiter__(self):
-            yield b"data: " + KEY[:8].encode()
-            yield KEY[8:].encode() + b"\n\n"
-    monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
-        lambda request: httpx.Response(200, stream=SplitStream(), headers={"content-type": "text/event-stream"}))))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test") as client:
-        response = await client.post("/api/plugins/chathermes/sessions/s1/chat/stream")
-    assert response.status_code == 200
-    assert response.content == b"data: [redacted]\n\n"
     assert KEY not in response.text and KEY not in str(response.headers)
 
 
@@ -365,7 +310,6 @@ async def test_project_creation_fails_closed_before_gateway_write(app, monkeypat
                 assert response.status_code == 422
                 assert 'Project session route' in response.text
     assert not seen  # Independent tabs cannot mutate global state or create fallback rows.
-
 
 
 @pytest.fixture
@@ -495,28 +439,6 @@ async def test_project_create_does_not_fallback_for_other_rpc_errors(app, rpc, t
 
 
 @run_async
-async def test_workspace_stream_resumes_stored_cwd_and_adapts_events_model_and_images(app, rpc):
-    calls, _, _ = rpc
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream?profile=alpha', json={
-            'input': [{'type': 'text', 'text': 'Actual user text'}, {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,iVBORw0KGgo='}}],
-            'model': 'native-model', 'provider': 'native-provider'})
-        assert response.status_code == 200
-        assert 'event: assistant.delta' in response.text
-        assert 'event: run.completed' in response.text
-        assert 'workspace-stored' in response.text
-        assert calls[0] == ('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})
-        assert ('config.set', {'profile': 'alpha', 'session_id': 'runtime', 'key': 'model', 'value': 'native-model --session --provider native-provider', 'scope': 'session'}) in calls
-        assert ('image.attach_bytes', {'profile': 'alpha', 'session_id': 'runtime', 'content_base64': 'iVBORw0KGgo='}) in calls
-        assert calls[-1] == ('prompt.submit', {'profile': 'alpha', 'session_id': 'runtime', 'text': 'Actual user text'})
-        response = await client.get('/api/plugins/chathermes/workspace/sessions/stored/messages?profile=alpha')
-        assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
-        response = await client.post('/api/plugins/chathermes/workspace/runs/stored/stop?profile=alpha')
-        assert response.status_code == 200
-        assert calls[-1] == ('session.interrupt', {'session_id': 'runtime', 'profile': 'alpha'})
-
-
-@run_async
 async def test_rpc_dispatch_errors_are_generic_and_transport_cleanup_is_safe(app, monkeypatch):
     import sys
     import types
@@ -528,28 +450,6 @@ async def test_rpc_dispatch_errors_are_generic_and_transport_cleanup_is_safe(app
         response = await client.get('/api/plugins/chathermes/projects')
         assert response.status_code == 409
         assert KEY not in response.text
-
-
-def test_workspace_event_adapter_preserves_order_ids_and_safe_failure():
-    def frame(kind, payload, sid='runtime'):
-        return {'method': 'event', 'params': {'type': kind, 'session_id': sid, 'payload': payload}}
-    assert plugin._workspace_frame(frame('message.delta', {'text': 'Text'}), 'runtime')[1]['delta'] == 'Text'
-    assert plugin._workspace_frame(frame('message.delta', {'text': 'Wrong'}, 'other'), 'runtime') is None
-    tool = plugin._workspace_frame(frame('tool.complete', {'name': 'terminal', 'tool_id': 'call', 'result': {'output': 'ok'}}), 'runtime')
-    assert tool[0] == 'tool.completed' and tool[1]['tool_call_id'] == 'call' and 'ok' in tool[1]['output']
-    assert KEY not in str(plugin._workspace_frame(frame('message.complete', {'status': 'error', 'error': KEY}), 'runtime'))
-
-
-@run_async
-async def test_model_flags_and_malformed_input_cannot_mutate_profile_config(app, rpc):
-    calls, _, _ = rpc
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        for body in ({'input': 'hello', 'model': 'model --global'}, {'input': 'hello', 'provider': 'bad provider', 'model': 'model'}, {'input': [None]}, {'input': [{'type': 'text', 'text': 7}]}):
-            response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream?profile=alpha', json=body)
-            assert response.status_code == 422
-        response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream', content='{bad')
-        assert response.status_code == 422
-    assert not any(method in ('config.set', 'prompt.submit') for method, _ in calls)
 
 
 @run_async
@@ -631,61 +531,6 @@ def test_workspace_history_preserves_reasoning_and_tool_identity():
     result = plugin._workspace_message({'role': 'tool', 'name': 'terminal', 'tool_call_id': 'call', 'content': {'output': 'ok'}})
     assert result['tool_call_id'] == 'call'
     assert 'ok' in result['content']
-
-
-def test_workspace_tool_error_retains_native_identity_and_details():
-    frame = {'method': 'event', 'params': {'type': 'tool.complete', 'session_id': 'runtime',
-             'payload': {'name': 'terminal', 'tool_id': 'call', 'is_error': True,
-                         'duration_s': 1.8, 'result': {'error': 'Command failed'}}}}
-    name, data = plugin._workspace_frame(frame, 'runtime', 'stored')
-    assert name == 'tool.failed'
-    assert data['tool_call_id'] == 'call'
-    assert data['duration_s'] == 1.8
-    assert 'Command failed' in data['output']
-
-
-@run_async
-async def test_workspace_resume_emits_text_snapshot_not_replayed_delta():
-    class Transport:
-        closed = False
-        def close(self):
-            self.closed = True
-    class Request:
-        async def is_disconnected(self):
-            return False
-    transport = Transport()
-    response = plugin._workspace_events(Request(), transport, 'runtime', 'stored',
-                                        {'running': False, 'inflight': {'assistant': 'Already received'}})
-    body = ''.join([part async for part in response.body_iterator])
-    assert 'event: assistant.snapshot' in body
-    assert '"text": "Already received"' in body
-    assert 'event: assistant.delta' not in body
-    assert 'event: run.completed' in body
-    assert transport.closed
-
-
-@run_async
-async def test_runs_admission_actions_and_replay_cursor(app, monkeypatch):
-    import json
-    bodies = [{"session_id": "s1", "input": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]},
-              {"choice": "once", "request_id": "req1"}, {"input": "guidance"}, None]
-    seen = []
-    def gateway(request):
-        seen.append(request)
-        assert request.headers["authorization"] == f"Bearer {KEY}"
-        return httpx.Response(202 if request.url.path.endswith('/runs') else 200,
-                              json={"run_id": "run_1", "status": "started"})
-    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        for path, body in zip(['/v1/runs', '/v1/runs/run_1/approval', '/v1/runs/run_1/steer', '/v1/runs/run_1/stop'], bodies):
-            response = await client.post('/api/plugins/chathermes' + path + '?profile=alpha', json=body)
-            assert response.status_code in (200, 202)
-            assert KEY not in response.text
-        response = await client.get('/api/plugins/chathermes/v1/runs/run_1/events?profile=alpha&last_seq=42')
-        assert response.status_code == 200
-    assert [json.loads(request.content) for request in seen[:3]] == bodies[:3]
-    assert all(request.url.path.startswith('/p/alpha/v1/runs') for request in seen)
-    assert seen[-1].url.query == b'last_seq=42'
 
 
 @pytest.fixture
@@ -981,10 +826,10 @@ async def test_all_workspace_content_is_validated_before_native_mutation(app, rp
         {'input': [valid_image] * 9}, {'input': 'hello', 'provider': 'litellm'},
         {'input': 'hello', 'profile': 'foreign'}, {'input': ''},
     ]
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        for body in bodies:
-            response = await client.post('/api/plugins/chathermes/workspace/sessions/stored/chat/stream', json=body)
-            assert response.status_code in (422, 413)
+    for body in bodies:
+        with pytest.raises(plugin.HTTPException) as failure:
+            plugin._validated_workspace_turn(body)
+        assert failure.value.status_code in (422, 413)
     assert calls == []
 
 
@@ -1716,3 +1561,48 @@ async def test_push_completion_uses_authoritative_redacted_text_without_logging_
             assert private not in caplog.text
     finally:
         owner.close()
+
+
+@run_async
+async def test_legacy_chat_routes_are_absent_and_capabilities_advertise_only_tui(app, monkeypatch):
+    seen = []
+    def gateway(request):
+        seen.append(request)
+        return httpx.Response(200, json={
+            'features': {'runs': True, 'run_status': True, 'run_stop': True, 'run_steer': True, 'run_events_sse': True, 'session_chat': True, 'session_chat_streaming': True, 'session_model_lock': True, 'sessions': True, 'scheduled_runs': True},
+            'endpoints': {'runs': {'method': 'POST', 'path': '/v1/runs'},
+                          'run_status': {'method': 'GET', 'path': '/v1/runs/{id}'},
+                          'session_chat_stream': {'path': '/api/sessions/{id}/chat/stream'},
+                          'legacy_follow': {'method': 'GET', 'path': '/runs/{id}/events'},
+                          'legacy_workspace': {'path': '/workspace/runs/{id}'},
+                          'legacy_chat': {'path': '/api/sessions/{id}/chat'},
+                          'models': {'method': 'GET', 'path': '/v1/models'},
+                          'scheduled_runs': {'method': 'GET', 'path': '/scheduled/runs'}}})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for method, path in [('POST', '/v1/runs'), ('GET', '/v1/runs/r1'),
+                             ('GET', '/runs/r1'), ('GET', '/runs/r1/events'),
+                             ('GET', '/v1/runs/r1/events'), ('POST', '/runs/r1/stop'),
+                             ('POST', '/v1/runs/r1/stop'), ('POST', '/v1/runs/r1/approval'),
+                             ('POST', '/v1/runs/r1/steer'), ('GET', '/workspace/runs/s1'),
+                             ('GET', '/workspace/runs/s1/events'), ('POST', '/workspace/runs/s1/stop'),
+                             ('POST', '/sessions/s1/chat/stream'), ('POST', '/api/sessions/s1/chat/stream'),
+                             ('POST', '/workspace/sessions/s1/chat/stream'),
+                             ('POST', '/sessions/s1/chat'), ('POST', '/api/sessions/s1/chat'),
+                             ('POST', '/workspace/sessions/s1/chat')]:
+            assert (await client.request(method, '/api/plugins/chathermes' + path)).status_code == 404
+        assert seen == []
+        result = (await client.get('/api/plugins/chathermes/v1/capabilities')).json()
+        assert result['features'] == {'native_chat': True, 'sessions': True, 'scheduled_runs': True}
+        assert result['endpoints'] == {'models': {'method': 'GET', 'path': '/v1/models'},
+                                       'scheduled_runs': {'method': 'GET', 'path': '/scheduled/runs'}}
+
+
+@run_async
+async def test_workspace_draft_history_remains_available(app, rpc):
+    calls, _, _ = rpc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.get('/api/plugins/chathermes/workspace/sessions/stored/messages?profile=alpha')
+    assert response.status_code == 200
+    assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
+    assert calls == [('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})]

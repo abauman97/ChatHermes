@@ -10,12 +10,10 @@ import type {
   Project,
   ProjectTree,
   ProjectAction,
-  RunState,
   ScheduledJob,
   ScheduledRunPage,
   ScheduledOutput,
 } from "../types/hermes";
-import { readSSE, type SSEEvent } from "./sse";
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -31,7 +29,7 @@ function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile))
     throw new Error("Invalid profile name");
   if (
-    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/(?:messages|chat\/stream)|workspace\/runs\/[A-Za-z0-9_-]+(?:\/(?:stop|events))?|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/chat\/stream)?|v1\/(?:capabilities|models)|v1\/runs(?:\/[A-Za-z0-9_-]+(?:\/(?:stop|events(?:\?last_seq=-?\d+)?|approval|steer))?)?)$/.test(
+    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*)?|v1\/(?:capabilities|models))$/.test(
       path,
     )
   )
@@ -196,12 +194,9 @@ export const api = {
     workspaceSessions.add(workspaceKey(profile, made.id));
     return made;
   },
-  projectEvents(profile: string, refresh: () => void, session?: string) {
+  projectEvents(profile: string, refresh: () => void) {
     const source = new EventSource(
-      ROOT +
-        "/project-events?profile=" +
-        encodeURIComponent(profile || "default") +
-        (session ? "&session=" + encodeURIComponent(session) : ""),
+      ROOT + "/project-events?profile=" + encodeURIComponent(profile || "default"),
       { withCredentials: true },
     );
     source.addEventListener("refresh", refresh);
@@ -235,13 +230,9 @@ export const api = {
     ),
   create: async (profile: string, signal?: AbortSignal) => {
     const made = unwrapSession(
-      await request<unknown>(
-        profile,
-        nativeProfiles.has(profile) ? "/chat/sessions" : "/api/sessions",
-        { method: "POST", body: "{}", signal },
-      ),
+      await request<unknown>(profile, "/chat/sessions", { method: "POST", body: "{}", signal }),
     );
-    if (nativeProfiles.has(profile)) workspaceSessions.add(workspaceKey(profile, made.id));
+    workspaceSessions.add(workspaceKey(profile, made.id));
     return made;
   },
   session: async (profile: string, id: string, signal?: AbortSignal) => {
@@ -299,104 +290,6 @@ export const api = {
       offset += page.messages.length;
     }
   },
-  async *stream(
-    profile: string,
-    session: string,
-    input: unknown,
-    signal?: AbortSignal,
-    model?: string,
-    provider?: string,
-  ): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(
-      profile,
-      `/${workspaceSessions.has(workspaceKey(profile, session)) ? "workspace" : "api"}/sessions/${encodeURIComponent(session)}/chat/stream`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          input,
-          ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}),
-        }),
-        signal,
-      },
-      "text/event-stream",
-    );
-    if (!response.ok) throw new ApiError(response.status, `Send failed (${response.status})`);
-    if (!response.body) throw new Error("Stream unavailable");
-    yield* readSSE(response.body, signal);
-  },
-  async startRun(
-    profile: string,
-    session: string,
-    input: unknown,
-    model?: string,
-    provider?: string,
-    idempotencyKey?: string,
-  ) {
-    const result = await request<{ run_id: string; status: string }>(profile, "/v1/runs", {
-      method: "POST",
-      body: JSON.stringify({
-        session_id: session,
-        input: typeof input === "string" ? input : [{ role: "user", content: input }],
-        ...(model ? { model, ...(provider ? { provider } : {}), require_model_lock: true } : {}),
-      }),
-      ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}),
-    });
-    if (!/^[A-Za-z0-9_-]+$/.test(result.run_id || ""))
-      throw new Error("Invalid Hermes run response");
-    return result;
-  },
-  approve: async (profile: string, run: string, choice: string, requestId?: string) => {
-    return request(profile, `/v1/runs/${encodeURIComponent(run)}/approval`, {
-      method: "POST",
-      body: JSON.stringify({ choice, ...(requestId ? { request_id: requestId } : {}) }),
-    });
-  },
-  steer: async (profile: string, run: string, input: string) => {
-    return request(profile, `/v1/runs/${encodeURIComponent(run)}/steer`, {
-      method: "POST",
-      body: JSON.stringify({ input }),
-    });
-  },
-  runStatus: async (profile: string, run: string, signal?: AbortSignal): Promise<RunState> => {
-    return request<RunState>(
-      profile,
-      run.startsWith("workspace-")
-        ? `/workspace/runs/${encodeURIComponent(run.slice(10))}`
-        : `/v1/runs/${encodeURIComponent(run)}`,
-      { signal },
-    );
-  },
-  async *runEvents(
-    profile: string,
-    run: string,
-    signal?: AbortSignal,
-    lastSeq = -1,
-  ): AsyncGenerator<SSEEvent> {
-    const response = await directFetch(
-      profile,
-      run.startsWith("workspace-")
-        ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/events`
-        : `/v1/runs/${encodeURIComponent(run)}/events?last_seq=${lastSeq}`,
-      { signal },
-      "text/event-stream",
-    );
-    if (!response.ok) throw new ApiError(response.status, `Run events failed (${response.status})`);
-    if (!response.body) throw new Error("Stream unavailable");
-    for await (const frame of readSSE(response.body, signal)) {
-      // Runs uses data-only SSE with the event name inside the JSON payload.
-      const payload = eventPayload(frame);
-      yield { ...frame, event: typeof payload.event === "string" ? payload.event : frame.event };
-    }
-  },
-  stop: async (profile: string, run: string) => {
-    return request<{ status: string }>(
-      profile,
-      run.startsWith("workspace-")
-        ? `/workspace/runs/${encodeURIComponent(run.slice(10))}/stop`
-        : `/v1/runs/${encodeURIComponent(run)}/stop`,
-      { method: "POST" },
-    );
-  },
 };
 export function messageText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -412,12 +305,4 @@ export function messageText(content: unknown): string {
       .filter(Boolean)
       .join("\n");
   return "";
-}
-export function eventPayload(frame: SSEEvent): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(frame.data);
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
 }

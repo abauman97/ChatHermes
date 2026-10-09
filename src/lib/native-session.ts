@@ -14,7 +14,7 @@ import { nativeOutcome, uncertainNativeOutcome, settleNativeOutcome } from "./na
 import type { Message } from "../types/hermes";
 import type { OpenRequestEntry, PersistedTurn } from "../vendor/hermes/gateway-contract.generated";
 
-/** One state owner for native chat; legacy Runs are deliberately outside it. */
+/** One state owner for TUI chat execution and recovery. */
 export function useNativeSession(onSettled: () => void) {
   const messages = ref<Message[]>([]),
     busy = ref(false),

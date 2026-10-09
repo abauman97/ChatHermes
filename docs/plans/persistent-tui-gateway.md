@@ -1,5 +1,9 @@
 > Recovered implementation plan and historical record from `7cda324`. Integration into `8362593` preserves Scheduled and the instance-scoped, provider-agnostic Docker launcher; no Compose workflow is used. See [current integration verification](../verification/2026-10-04-persistent-tui-integration.md).
 
+Historical plan: REST Runs chat execution, its drain adapter and chat SSE routes
+were removed on 2026-10-09. The current [API contract](../api-contract.md)
+supersedes transport and recovery guidance below. Scheduled-job history is retained.
+
 # Persistent TUI gateway chat refactor
 
 Status: bounded native migration implemented, 2026-10-04; final verification

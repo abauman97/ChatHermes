@@ -38,12 +38,8 @@ describe("dashboard plugin Hermes client", () => {
     expect(headers.has("authorization")).toBe(false);
     expect(JSON.stringify(fake.mock.calls)).not.toContain("Bearer");
   });
-  it("uses plugin routes for create, history, rename and fetch-based SSE", async () => {
+  it("uses plugin routes for native draft creation, history and rename", async () => {
     const fake = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input.includes("/chat/stream"))
-        return new Response('event: run.completed\ndata: {"run_id":"run-1"}\n\n', {
-          headers: { "content-type": "text/event-stream" },
-        });
       const value = input.includes("/messages")
         ? {
             data: [{ role: "assistant", content: "hello" }],
@@ -59,19 +55,8 @@ describe("dashboard plugin Hermes client", () => {
     expect((await api.create("alpha")).id).toBe("one");
     expect((await api.rename("alpha", "one", "Renamed")).title).toBe("Renamed");
     expect(await api.messages("alpha", "one")).toHaveLength(1);
-    const frames = [];
-    for await (const frame of api.stream("alpha", "one", "Hello")) frames.push(frame);
-    expect(frames[0]?.event).toBe("run.completed");
-    expect(fake.mock.calls.at(-1)?.[0]).toBe(
-      "/api/plugins/chathermes/api/sessions/one/chat/stream?profile=alpha",
-    );
-    expect(fake.mock.calls.at(-1)?.[1]).toMatchObject({
-      method: "POST",
-      credentials: "same-origin",
-    });
-    const headers = new Headers(fake.mock.calls.at(-1)?.[1]?.headers);
-    expect(headers.get("accept")).toBe("text/event-stream");
-    expect(headers.get("content-type")).toBe("application/json");
+    expect(fake.mock.calls[0]?.[0]).toBe("/api/plugins/chathermes/chat/sessions?profile=alpha");
+    expect(fake.mock.calls[0]?.[1]).toMatchObject({ method: "POST", credentials: "same-origin" });
   });
   it("uses durable tool history for workspace chats and falls back only for unpersisted drafts", async () => {
     const fake = vi.fn(async (url: string) =>
@@ -127,40 +112,4 @@ describe("dashboard plugin Hermes client", () => {
       "<script>fake</script>",
     );
   });
-});
-
-it("wraps Runs image parts in a user message and sends authenticated actions and replay cursor", async () => {
-  const fake = vi.fn(async (url: string, _init?: RequestInit) =>
-    url.includes("/events")
-      ? new Response('id: 43\ndata: {"event":"message.delta","seq":43,"delta":"hi"}\n\n')
-      : new Response(JSON.stringify({ run_id: "run_1", status: "started" })),
-  );
-  vi.stubGlobal("fetch", fake);
-  const parts = [
-    { type: "text", text: "Describe" },
-    { type: "image_url", image_url: { url: "data:image/png;base64,eA==" } },
-  ];
-  await api.startRun("alpha", "s1", parts, "test-model", "test-provider", "turn-test");
-  expect(await new Response(fake.mock.calls[0]?.[1]?.body).json()).toEqual({
-    session_id: "s1",
-    input: [{ role: "user", content: parts }],
-    model: "test-model",
-    provider: "test-provider",
-    require_model_lock: true,
-  });
-  const headers = new Headers(fake.mock.calls[0]?.[1]?.headers);
-  expect(headers.get("Idempotency-Key")).toBe("turn-test");
-  expect(headers.get("accept")).toBe("application/json");
-  expect(headers.get("content-type")).toBe("application/json");
-  await api.approve("alpha", "run_1", "deny", "req_1");
-  await api.steer("alpha", "run_1", "guidance");
-  await api.stop("alpha", "run_1");
-  const frames = [];
-  for await (const frame of api.runEvents("alpha", "run_1", undefined, 42)) frames.push(frame);
-  expect(fake.mock.calls.at(-1)?.[0]).toBe(
-    "/api/plugins/chathermes/v1/runs/run_1/events?last_seq=42&profile=alpha",
-  );
-  expect(frames[0]?.id).toBe("43");
-  expect(frames[0]?.event).toBe("message.delta");
-  expect(fake.mock.calls.every(([, init]) => init?.credentials === "same-origin")).toBe(true);
 });

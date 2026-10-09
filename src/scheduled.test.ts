@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "./App.vue";
+import * as nativeSession from "./lib/native-session";
 import { api } from "./lib/hermes-api";
 afterEach(() => {
   vi.restoreAllMocks();
@@ -28,8 +29,7 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
         value = { jobs: [{ id: "audit", name: "Security Audit", enabled: true }] };
       else if (url.includes("/capabilities"))
         value = {
-          features: { run_events_sse: true },
-          endpoints: { runs: { method: "POST", path: "/v1/runs" } },
+          features: { native_chat: true },
         };
       else if (url.includes("/v1/models")) value = { data: [] };
       else if (url.includes("/model/options")) value = { providers: [] };
@@ -39,7 +39,16 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
       return new Response(JSON.stringify(value));
     }),
   );
-  const send = vi.spyOn(api, "startRun");
+  const factory = nativeSession.useNativeSession;
+  const send = vi.fn(async () => {});
+  vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+    const owner = factory(callback);
+    owner.attach = vi.fn(async () => {
+      owner.connection.value = "ready";
+    });
+    owner.submit = send;
+    return owner;
+  });
   const wrapper = mount(App);
   await flushPromises();
   const nav = wrapper.get(".scheduled-nav");

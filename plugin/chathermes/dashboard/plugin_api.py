@@ -205,53 +205,6 @@ async def _proxy(request: Request, route: str):
     return _error_response(upstream, key)
 
 
-async def _stream(request: Request, route: str):
-    url, key, params = _target(request, route)
-    body = await request.body()
-    client = _client()
-    stream = client.stream(request.method, url, params=params, content=body if body else None,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": request.headers.get("content-type", "application/json"),
-                 "Accept": "text/event-stream"})
-    try:
-        upstream = await stream.__aenter__()
-    except httpx.RequestError:
-        await client.aclose()
-        raise HTTPException(502, "Hermes gateway is unreachable")
-    if upstream.status_code in (401, 403):
-        await stream.__aexit__(None, None, None)
-        await client.aclose()
-        raise HTTPException(503, _AUTH_ERROR)
-    if upstream.status_code >= 400:
-        try:
-            await upstream.aread()
-            return _error_response(upstream, key)
-        finally:
-            await stream.__aexit__(None, None, None)
-            await client.aclose()
-
-    async def frames():
-        # Hold a short suffix so a reflected key split across network chunks is redacted.
-        pending = b""
-        secret = key.encode()
-        try:
-            async for chunk in upstream.aiter_bytes():
-                if await request.is_disconnected():
-                    break
-                pending += chunk
-                safe = pending.replace(secret, b"[redacted]")
-                keep = max(len(secret) - 1, 0)
-                if len(safe) > keep:
-                    emit, pending = safe[:-keep] if keep else safe, safe[-keep:] if keep else b""
-                    yield emit
-            if pending:
-                yield pending.replace(secret, b"[redacted]")
-        finally:
-            await stream.__aexit__(None, None, None)
-            await client.aclose()
-
-    return StreamingResponse(frames(), status_code=upstream.status_code, media_type="text/event-stream")
-
-
 @router.get("/capabilities")
 @router.get("/v1/capabilities", include_in_schema=False)
 async def capabilities(request: Request):
@@ -259,7 +212,19 @@ async def capabilities(request: Request):
     if result.status_code == 200:
         import json
         body = json.loads(result.body)
-        body.setdefault('features', {})['native_chat'] = True
+        features = body.setdefault('features', {})
+        for name in list(features):
+            if name == 'runs' or name.startswith('run_') or name.startswith('session_chat') or name == 'session_model_lock':
+                features.pop(name)
+        features['native_chat'] = True
+        endpoints = body.setdefault('endpoints', {})
+        for name, endpoint in list(endpoints.items()):
+            path = endpoint.get('path', '') if isinstance(endpoint, dict) else ''
+            # Filter upstream advertisements; these paths are not plugin routes.
+            legacy_chat_path = re.fullmatch(
+                r'/(?:v1/)?runs(?:/.*)?|/workspace/runs(?:/.*)?|/(?:api/|workspace/)?sessions/[^/]+/chat(?:/stream)?', path)
+            if name == 'runs' or name.startswith('run_') or name.startswith('session_chat') or legacy_chat_path:
+                endpoints.pop(name)
         return body
     return result
 
@@ -302,45 +267,6 @@ async def session(request: Request, session_id: str):
 @router.get("/api/sessions/{session_id}/messages", include_in_schema=False)
 async def messages(request: Request, session_id: str):
     return await _proxy(request, "/api/sessions/" + quote(session_id, safe="") + "/messages")
-
-
-@router.post("/sessions/{session_id}/chat/stream")
-@router.post("/api/sessions/{session_id}/chat/stream", include_in_schema=False)
-async def chat_stream(request: Request, session_id: str):
-    return await _stream(request, "/api/sessions/" + quote(session_id, safe="") + "/chat/stream")
-
-
-@router.post("/v1/runs")
-async def create_run(request: Request):
-    return await _proxy(request, "/v1/runs")
-
-
-@router.post("/v1/runs/{run_id}/approval")
-async def approve_run(request: Request, run_id: str):
-    return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/approval")
-
-
-@router.post("/v1/runs/{run_id}/steer")
-async def steer_run(request: Request, run_id: str):
-    return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/steer")
-
-
-@router.post("/runs/{run_id}/stop")
-@router.post("/v1/runs/{run_id}/stop", include_in_schema=False)
-async def stop(request: Request, run_id: str):
-    return await _proxy(request, "/v1/runs/" + quote(run_id, safe="") + "/stop")
-
-
-@router.get("/runs/{run_id}")
-@router.get("/v1/runs/{run_id}", include_in_schema=False)
-async def run_status(request: Request, run_id: str):
-    return await _proxy(request, "/v1/runs/" + quote(run_id, safe=""))
-
-
-@router.get("/runs/{run_id}/events")
-@router.get("/v1/runs/{run_id}/events", include_in_schema=False)
-async def run_events(request: Request, run_id: str):
-    return await _stream(request, "/v1/runs/" + quote(run_id, safe="") + "/events")
 
 
 @router.get('/profiles')
@@ -787,13 +713,6 @@ async def project_events(request: Request):
     transport = _new_rpc_transport(request)
     server._ensure_skin_watcher()
     server.register_live_transport(transport)
-    stored_id = request.query_params.get('session', '')
-    if stored_id:
-        try:
-            await _workspace_resume(transport, profile, stored_id)
-        except BaseException:
-            transport.close()
-            raise
     async def frames():
         try:
             yield 'event: refresh\ndata: {}\n\n'
@@ -827,7 +746,7 @@ def _workspace_message(row):
     import json
     role = row.get('role', 'assistant')
     # Native tool rows use raw content; renderer prose rows use text. A null
-    # text field must not discard tool output when completed history replaces SSE.
+    # text field must not discard tool output when completed history replaces live state.
     content = row.get('content') if role == 'tool' else row.get('text') or row.get('content')
     if role == 'tool' and content is not None and not isinstance(content, str):
         content = json.dumps(content)
@@ -845,32 +764,6 @@ async def workspace_messages(request: Request, session_id: str):
         return {'messages': [_workspace_message(row) for row in result.get('messages', [])]}
     finally:
         transport.close()
-
-
-def _workspace_frame(frame, runtime_id, stored_id=None):
-    import json
-    event = frame.get('params') or {}
-    if event.get('session_id') != runtime_id:
-        return None
-    name = event.get('type')
-    payload = event.get('payload') or {}
-    data = {'run_id': 'workspace-' + (stored_id or runtime_id), **payload}
-    if name == 'error':
-        return 'run.failed', {'run_id': data['run_id']}
-    if name == 'message.delta':
-        return 'assistant.delta', {**data, 'delta': payload.get('text', '')}
-    if name == 'message.complete':
-        status = payload.get('status')
-        return ('run.completed' if status == 'complete' else 'run.cancelled' if status == 'interrupted' else 'run.failed'), data if status == 'complete' else {'run_id': data['run_id']}
-    if name in ('tool.start', 'tool.complete'):
-        return ('tool.started' if name == 'tool.start' else 'tool.failed' if payload.get('is_error') else 'tool.completed'), {
-            **data, 'tool_name': payload.get('name'), 'tool_call_id': payload.get('tool_id'), 'preview': payload.get('context', ''),
-            'output': payload.get('result_text') or (json.dumps(payload['result']) if payload.get('result') is not None else '')}
-    if name in ('reasoning.delta', 'thinking.delta', 'reasoning.available', 'tool.progress'):
-        return name, {**data, 'delta': payload.get('delta', payload.get('text', ''))}
-    if frame.get('method') in ('approval.request', 'clarify.request') or name == 'approval.request':
-        return 'approval.request', {'run_id': 'workspace-' + (stored_id or runtime_id)}
-    return None
 
 
 def _validated_workspace_turn(body):
@@ -931,116 +824,6 @@ def _validated_workspace_turn(body):
     if len(text.encode('utf-8')) > 1024 * 1024 or not text.strip() and not images:
         raise HTTPException(422, 'Invalid workspace text')
     return text, images
-
-
-@router.post('/workspace/sessions/{session_id}/chat/stream')
-async def workspace_stream(request: Request, session_id: str):
-    import asyncio
-    import json
-    profile = _rpc_profile(request)
-    raw = bytearray()
-    async for chunk in request.stream():
-        raw.extend(chunk)
-        if len(raw) > 29 * 1024 * 1024:
-            raise HTTPException(413, 'Workspace turn exceeds the content limit')
-    try:
-        body = json.loads(raw)
-    except ValueError:
-        raise HTTPException(422, 'Invalid workspace turn')
-    text, images = _validated_workspace_turn(body)
-    transport = _new_rpc_transport(request)
-    try:
-        resumed = await _workspace_resume(transport, profile, session_id)
-        runtime_id = resumed['session_id']
-        if resumed.get('running') or resumed.get('pending_approval'):
-            raise HTTPException(409, 'This session already has an active turn or approval')
-        params = {'profile': profile, 'session_id': runtime_id}
-        if body.get('model'):
-            model = body['model']
-            provider = body.get('provider')
-            if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,255}', model):
-                raise HTTPException(422, 'Invalid workspace model')
-            if provider and (not isinstance(provider, str) or not _PROFILE.fullmatch(provider)):
-                raise HTTPException(422, 'Invalid workspace provider')
-            # Hermes parses model switches as words, not shell quoting. Explicit
-            # --session prevents model.persist_switch_by_default from writing config.
-            selection = model + ' --session'
-            if provider:
-                selection += ' --provider ' + provider
-            switched = await transport.call('config.set', {**params, 'key': 'model', 'value': selection, 'scope': 'session'})
-            if switched.get('confirm_required') or switched.get('warning') or switched.get('deferred'):
-                raise HTTPException(409, 'Hermes could not apply the selected model')
-        for encoded in images:
-            await transport.call('image.attach_bytes', {**params, 'content_base64': encoded})
-        submitted = await transport.call('prompt.submit', {**params, 'text': text})
-        if submitted.get('status') != 'streaming':
-            raise HTTPException(409, 'Hermes did not start the turn')
-    except BaseException:
-        transport.close()
-        raise
-    return _workspace_events(request, transport, runtime_id, session_id)
-
-
-def _workspace_events(request, transport, runtime_id, stored_id, snapshot=None):
-    import asyncio
-    import json
-    async def frames():
-        try:
-            yield 'event: run.started\ndata: ' + json.dumps({'run_id': 'workspace-' + stored_id}) + '\n\n'
-            if snapshot and (snapshot.get('inflight') or {}).get('assistant'):
-                yield 'event: assistant.snapshot\ndata: ' + json.dumps({'text': snapshot['inflight']['assistant']}) + '\n\n'
-            if snapshot and not snapshot.get('running'):
-                yield 'event: run.completed\ndata: {}\n\n'
-                return
-            while not transport.closed and not await request.is_disconnected():
-                try:
-                    frame = await asyncio.wait_for(transport.events.get(), 15)
-                except asyncio.TimeoutError:
-                    yield ': keepalive\n\n'
-                    continue
-                mapped = _workspace_frame(frame, runtime_id, stored_id)
-                if mapped:
-                    name, data = mapped
-                    if name == 'run.completed' and isinstance(data.get('text'), str):
-                        yield 'event: assistant.completed\ndata: ' + json.dumps({'content': data['text']}) + '\n\n'
-                    yield 'event: ' + name + '\ndata: ' + json.dumps(data) + '\n\n'
-                    if name in ('run.completed', 'run.failed', 'run.cancelled', 'approval.request'):
-                        break
-        finally:
-            transport.close()
-    return StreamingResponse(frames(), media_type='text/event-stream')
-
-
-@router.get('/workspace/runs/{stored_id}')
-async def workspace_run(request: Request, stored_id: str):
-    transport = _new_rpc_transport(request)
-    try:
-        result = await _workspace_resume(transport, _rpc_profile(request), stored_id)
-        return {'status': 'running' if result.get('running') else 'completed'}
-    finally:
-        transport.close()
-
-
-@router.get('/workspace/runs/{stored_id}/events')
-async def workspace_run_events(request: Request, stored_id: str):
-    transport = _new_rpc_transport(request)
-    try:
-        result = await _workspace_resume(transport, _rpc_profile(request), stored_id)
-        return _workspace_events(request, transport, result['session_id'], stored_id, result)
-    except BaseException:
-        transport.close()
-        raise
-
-
-@router.post('/workspace/runs/{stored_id}/stop')
-async def workspace_stop(request: Request, stored_id: str):
-    transport = _new_rpc_transport(request)
-    try:
-        profile = _rpc_profile(request)
-        result = await _workspace_resume(transport, profile, stored_id)
-        return await transport.call('session.interrupt', {'profile': profile, 'session_id': result['session_id']})
-    finally:
-        transport.close()
 
 
 # Scheduled history uses the pinned dashboard's local cron/SessionDB contracts,
