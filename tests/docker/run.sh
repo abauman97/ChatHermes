@@ -1,213 +1,75 @@
 #!/bin/sh
-# Compose-equivalent launcher for daemons without Compose or host bind mounts.
+# One disposable container; Docker's anonymous data volume is removed with it.
 set -eu
 cd "$(dirname "$0")/../.."
-mode="${1:-fixture}"
+mode="${1:-real}"
 case "$mode" in
-  fixture|real|stop) ;;
-  *) echo 'Usage: sh tests/docker/run.sh [fixture|real|stop]' >&2; exit 2 ;;
+  real|stop) ;;
+  *) echo 'Usage: sh tests/docker/run.sh [real|stop]' >&2; exit 2 ;;
 esac
-# Only real mode reads provider settings; fixture and stop stay credential-free.
-if [ "$mode" = real ] && [ "${CHATHERMES_ENV_LOADED:-}" != 1 ]; then
-  exec python3 tests/docker/provider_env.py "$@"
+# start.py loads the repository dotenv file before passing settings to Docker.
+if [ "$mode" != stop ] && [ "${CHATHERMES_ENV_LOADED:-}" != 1 ]; then
+  exec python3 tests/docker/start.py --launch "$@"
 fi
-# This environment documents the numeric endpoint; its Docker CLI rejects the
-# hostname endpoint (sometimes injected with literal surrounding quotes).
-case "${DOCKER_HOST:-}" in
-  tcp://docker:2375|'"tcp://docker:2375"')
-    export DOCKER_HOST=tcp://172.25.0.2:2375
-    echo 'Using documented Docker endpoint tcp://172.25.0.2:2375' >&2 ;;
-esac
-if ! docker info >/dev/null 2>&1; then
-  echo 'Docker is unavailable. Check DOCKER_HOST; see tests/docker/README.md.' >&2
-  exit 1
-fi
-image=chathermes-test:ac28abc9
-default_instance="$(git rev-parse --short=8 HEAD 2>/dev/null || printf 'local')"
-instance="${CHATHERMES_INSTANCE:-${default_instance}-test}"
+instance="${CHATHERMES_INSTANCE:-$(git rev-parse --short=8 HEAD 2>/dev/null || printf local)-test}"
 case "$instance" in
-  ''|*[!a-zA-Z0-9_-]*) echo 'CHATHERMES_INSTANCE must contain only letters, numbers, underscores, or hyphens.' >&2; exit 2 ;;
+  ''|*[!a-zA-Z0-9_-]*) echo 'Invalid CHATHERMES_INSTANCE.' >&2; exit 2 ;;
 esac
-gateway="chathermes-$instance-hermes"
-model="chathermes-$instance-model"
-volume="chathermes-$instance-hermes-data"
-network="chathermes-$instance"
-relay="chathermes-$instance-browser"
-browser_network="chathermes-$instance-browser"
-shared_network="${CHATHERMES_INTERNAL_DOCKER_NETWORK:-}"
-internal_network="chathermes-$instance-internal"
-assert_owned() {
-  if docker container inspect "$1" >/dev/null 2>&1; then
-    if [ "$(docker inspect -f '{{index .Config.Labels "chathermes.live.instance"}}' "$1" 2>/dev/null || true)" != "$instance" ]; then
-      echo 'Container name is already in use by an unowned container; choose another CHATHERMES_INSTANCE.' >&2
-      exit 1
-    fi
-  fi
-}
-# Validate every target before removing any container, including during stop.
-assert_owned "$relay"
-assert_owned "$gateway"
-assert_owned "$model"
-remove_container() {
-  assert_owned "$1"
-  if docker container inspect "$1" >/dev/null 2>&1; then
-    docker rm -f "$1" >/dev/null
-  fi
+container="chathermes-$instance-hermes"
+# Never remove a container that was not created by this launcher.
+owned() {
+  [ "$(docker inspect -f '{{index .Config.Labels "chathermes.live.instance"}}' "$container" 2>/dev/null || true)" = "$instance" ]
 }
 if [ "$mode" = stop ]; then
-  remove_container "$relay"
-  remove_container "$gateway"
-  remove_container "$model"
-  echo 'Stopped isolated services; named data volume preserved.'
+  if owned; then docker rm -f -v "$container" >/dev/null; fi
+  echo "Stopped disposable container: $container"
   exit 0
 fi
-# Bind on every interface of the Docker daemon host so remote Docker clients
-# can reach the published dashboard. The synthetic credentials are test-only.
-bind="${CHATHERMES_BIND_ADDRESS:-0.0.0.0}"
+: "${TEST_LLM_API_BASE_URL:?Set TEST_LLM_API_BASE_URL reachable from inside Docker}"
+: "${TEST_LLM_API_KEY:?Set TEST_LLM_API_KEY}"
+: "${TEST_LLM_API_MODEL:?Set TEST_LLM_API_MODEL}"
+export TEST_LLM_API_BASE_URL TEST_LLM_API_KEY TEST_LLM_API_MODEL
 port="${CHATHERMES_DASHBOARD_PORT:-9119}"
 case "$port" in
-  ''|*[!0-9]*) echo 'CHATHERMES_DASHBOARD_PORT must be an integer from 1 to 65535.' >&2; exit 2 ;;
+  ''|*[!0-9]*) echo 'CHATHERMES_DASHBOARD_PORT must be 1 to 65535.' >&2; exit 2 ;;
 esac
 if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-  echo 'CHATHERMES_DASHBOARD_PORT must be an integer from 1 to 65535.' >&2; exit 2
+  echo 'CHATHERMES_DASHBOARD_PORT must be 1 to 65535.' >&2; exit 2
 fi
-valid_ipv4() {
-  case "$1" in ''|*[!0-9.]*|.*|*..*|*.) return 1 ;; esac
-  old_ifs=$IFS; IFS=.; set -- $1; IFS=$old_ifs
-  [ "$#" -eq 4 ] || return 1
-  for octet do
-    case "$octet" in ''|*[!0-9]*) return 1 ;; esac
-    [ "$octet" -le 255 ] || return 1
-  done
-}
-if ! valid_ipv4 "$bind"; then
-  echo 'CHATHERMES_BIND_ADDRESS must be an IPv4 address (default 0.0.0.0).' >&2; exit 2
-fi
-# The host-side publish address (0.0.0.0) is distinct from the daemon host's
-# routable address used by the readiness probe and printed browser URL.
+bind="${CHATHERMES_BIND_ADDRESS:-127.0.0.1}"
 url_host="${CHATHERMES_DASHBOARD_URL_HOST:-$bind}"
 if [ "$url_host" = 0.0.0.0 ]; then
-  url_host="${CHATHERMES_DAEMON_ADDRESS:-}"
-  if [ -z "$url_host" ]; then
-    case "${DOCKER_HOST:-}" in
-      tcp://*) url_host="${DOCKER_HOST#tcp://}"; url_host="${url_host%%:*}" ;;
-      *) url_host=127.0.0.1 ;;
-    esac
-  fi
+  case "${DOCKER_HOST:-}" in
+    tcp://*) url_host="${DOCKER_HOST#tcp://}"; url_host="${url_host%%:*}" ;;
+    *) url_host=127.0.0.1 ;;
+  esac
 fi
-if ! valid_ipv4 "$url_host"; then
-  echo 'Set CHATHERMES_DAEMON_ADDRESS to the Docker host IPv4 address (or CHATHERMES_DASHBOARD_URL_HOST).' >&2; exit 2
+if docker container inspect "$container" >/dev/null 2>&1; then
+  if ! owned; then echo 'Container name is already in use; choose another CHATHERMES_INSTANCE.' >&2; exit 1; fi
+  docker rm -f -v "$container" >/dev/null
 fi
-url="http://$url_host:$port"
-case "$mode" in
-  fixture)
-    export LLM_API_KEY=chathermes-model-fixture
-    export LLM_API_BASE_URL=http://model:4000/v1
-    export LLM_API_MODEL=fixture-model
-    export CHATHERMES_TEST_REAL=0 ;;
-  real)
-    : "${LLM_API_KEY:?Set LLM_API_KEY in your environment}"
-    : "${LLM_API_BASE_URL:?Set LLM_API_BASE_URL reachable from the container}"
-    : "${LLM_API_MODEL:?Set LLM_API_MODEL in your environment}"
-    export LLM_API_KEY LLM_API_BASE_URL LLM_API_MODEL
-    export CHATHERMES_TEST_REAL=1 ;;
-esac
-# Resolve environment-controlled YAML scalars without modifying tracked files.
-config_file="$(pwd)/.hermes/config.yaml"
-if [ "$mode" = real ]; then
-  config_file="${TMPDIR:-/tmp}/chathermes-$instance-config-$$.yaml"
-  if ! LLM_API_MODEL="$LLM_API_MODEL" CONFIG_OUTPUT="$config_file" python3 - <<'PY'
-import os
-from pathlib import Path
-import re
-import json
-source = Path('.hermes/config.yaml').read_text()
-model = os.environ['LLM_API_MODEL']
-if not re.fullmatch(r'[A-Za-z0-9._:/-]+', model):
-    raise SystemExit('LLM_API_MODEL may contain only letters, digits, dot, underscore, colon, slash or hyphen.')
-config = Path(os.environ['CONFIG_OUTPUT'])
-config.parent.mkdir(parents=True, exist_ok=True)
-config.write_text(source.replace('${LLM_API_MODEL:-fixture-model}', json.dumps(model)))
-PY
-  then
-    exit 2
-  fi
-fi
-if [ "$mode" = fixture ]; then
-  export CHATHERMES_TEST_CONFIG_B64="$(python3 - <<'PYCONFIG'
-from pathlib import Path
-import base64
-source = Path('.hermes/config.yaml').read_text().replace('${LLM_API_MODEL:-fixture-model}', 'fixture-model')
-source = source.replace('        context_length: 128000', '        context_length: 128000\n      fixture-model-2:\n        context_length: 128000')
-print(base64.b64encode(source.encode()).decode())
-PYCONFIG
-  )"
-elif [ "$mode" = real ]; then
-  export CHATHERMES_TEST_CONFIG_B64="$(base64 < "$config_file" | tr -d '\n')"
-fi
-startup_complete=0
-cleanup() {
-  if [ "$mode" = real ]; then rm -f "$config_file"; fi
-  if [ "$startup_complete" -ne 1 ]; then
-    remove_container "$relay"
-    remove_container "$gateway"
-    remove_container "$model"
-  fi
-}
-trap cleanup EXIT HUP INT TERM
-# Bake the current checkout into both services; never reuse stale fixture code.
-docker build -f tests/docker/Dockerfile -t "$image" .
-if [ "$mode" = fixture ]; then
-  # The selected shared network must be explicitly internal: never put a
-  # provider-free fixture on a network with external egress.
-  if [ -n "$shared_network" ]; then internal_network=$shared_network; fi
-  if ! docker network inspect "$internal_network" >/dev/null 2>&1; then docker network create --internal "$internal_network" >/dev/null; fi
-  if [ "$(docker network inspect --format '{{.Internal}}' "$internal_network")" != true ]; then
-    echo 'Fixture network must be internal; refusing a network with provider egress.' >&2
-    exit 1
-  fi
-  if ! docker network inspect "$browser_network" >/dev/null 2>&1; then
-    docker network create "$browser_network" >/dev/null
-  fi
-  network=$internal_network
-elif ! docker network inspect "$network" >/dev/null 2>&1; then
-  docker network create "$network" >/dev/null
-fi
-docker volume create "$volume" >/dev/null
-remove_container "$relay"
-remove_container "$gateway"
-remove_container "$model"
-if [ "$mode" = fixture ]; then
-  docker run -d --name "$model" --network "$network" --network-alias model \
-    --entrypoint /opt/hermes/.venv/bin/python --label "chathermes.live.instance=$instance" "$image" /test/model_fixture.py >/dev/null
-fi
-# Fixture mode publishes through a relay; real mode publishes the dashboard.
-set --
-if [ "$mode" = real ]; then set -- -p "$bind:$port:9119"; fi
-docker run -d --init --name "$gateway" \
-  --network "$network" --network-alias hermes "$@" -v "$volume:/opt/data" \
-  -e HERMES_UID=1000 -e HERMES_GID=1000 -e HERMES_DASHBOARD=1 \
-  -e HERMES_DASHBOARD_TUI=0 -e API_SERVER_ENABLED=true \
-  -e HERMES_DASHBOARD_BASIC_AUTH_USERNAME=tester \
-  -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test \
-  -e API_SERVER_KEY=chathermes-isolated-test-key-2026 \
-  -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
-  -e CHATHERMES_TEST_CONFIG_B64 --label "chathermes.live.instance=$instance" \
+image="chathermes-test:$instance"
+docker build --pull -f tests/docker/Dockerfile -t "$image" .
+# Do not use --init: the upstream s6 supervisor must own PID 1.
+docker run -d --rm --name "$container" \
+  --label "chathermes.live.instance=$instance" \
+  -p "$bind:$port:9119" \
+  -e TEST_LLM_API_BASE_URL -e TEST_LLM_API_KEY -e TEST_LLM_API_MODEL \
   "$image" >/dev/null
-if [ "$mode" = fixture ]; then
-  docker run -d --name "$relay" --network "$browser_network" -p "$bind:$port:9119" \
-    -e CHATHERMES_RELAY_UPSTREAM=http://hermes:9119 \
-    --entrypoint /opt/hermes/.venv/bin/python --label "chathermes.live.instance=$instance" "$image" /test/browser_relay.py >/dev/null
-  if [ "$network" != "$browser_network" ]; then docker network connect "$network" "$relay"; fi
-fi
+ready=0
+cleanup() {
+  if [ "$ready" -ne 1 ] && owned; then docker rm -f -v "$container" >/dev/null; fi
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 attempt=0
-until curl --noproxy '*' --connect-timeout 2 --max-time 5 -fsS "$url/api/auth/providers" >/dev/null 2>&1; do
+while [ "$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || true)" != healthy ]; do
   attempt=$((attempt + 1))
-  if [ "$attempt" -ge 90 ]; then
-    echo 'Dashboard did not become ready. Check the container and CHATHERMES_BIND_ADDRESS/CHATHERMES_DASHBOARD_PORT.' >&2
+  if [ "$attempt" -ge 180 ] || [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" != true ]; then
+    echo 'Hermes did not become healthy. Check provider settings and Docker connectivity.' >&2
     exit 1
   fi
-  sleep 1
+  sleep 2
 done
-printf 'Dashboard ready: %s/chathermes\nSign in: tester / chathermes-local-test (isolated test only)\n' "$url"
-startup_complete=1
+ready=1
+printf 'Dashboard ready: http://%s:%s/chathermes\nSign in: tester / chathermes-local-test (disposable test only)\nContainer: %s\n' "$url_host" "$port" "$container"

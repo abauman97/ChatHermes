@@ -1,0 +1,22 @@
+model:
+  provider: chathermes-test
+  key_env: TEST_LLM_API_KEY
+providers:
+  chathermes-test:
+    key_env: TEST_LLM_API_KEY
+    api_mode: chat_completions
+    request_timeout_seconds: 3600
+    stale_timeout_seconds: 1800
+toolsets:
+  - hermes-cli
+  - browser
+platforms:
+  api_server:
+    enabled: true
+    host: 127.0.0.1
+plugins:
+  enabled:
+    - chathermes
+    - dashboard_auth/basic
+gateway:
+  multiplex_profiles: false

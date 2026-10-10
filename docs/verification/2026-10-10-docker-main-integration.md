@@ -1,49 +1,58 @@
-# Docker changes integrated with main
+# Disposable Docker workflow with main's plugin
 
-Base: `origin/main` at `4ba5edd`. Source branch: `cleanup-chores` at `a6f74c2`.
+Base: `origin/main` at `4ba5edd`. Docker source: `cleanup-chores` at `a6f74c2`.
 
 ## Scope
 
-Ported the test-provider dotenv parser and container ownership checks. Real mode
-loads repository `.env` settings without executing shell expressions. Exported
-`TEST_LLM_API_*` settings override dotenv settings and legacy `LLM_API_*` exports;
-the legacy runtime names remain the pinned Hermes environment contract. Provider
-URLs containing credentials, queries or fragments fail without printing values.
-Fixture mode and stop do not load dotenv settings. Each launcher container is
-labeled, and all targets are checked before any removal. Named volumes survive
-stop and failed startup. Older unlabeled containers require an explicit instance
-change or manual inspection and cleanup.
+The Docker configuration restores the pre-merge branch's workflow:
 
-Retained main's pinned Docker image/source, default fixture mode, isolated
-networks, named volumes, profile/Project/cron seeding, model fixture, browser
-relay, native test runner, frontend architecture, documentation and committed UI
-assets. The source branch's latest-image replacement and fixture/helper deletions
-would change the tested runtime contract and break the default browser workflow;
-they were not ported. Its general documentation removals, Git normalization and
-UI asset changes are outside this Docker integration.
+- Extend `nousresearch/hermes-agent:latest` and install the plugin's declared
+  Python dependencies into the dashboard interpreter.
+- Launch one real-provider container, with the upstream supervisor owning PID 1.
+- Load only `TEST_LLM_API_BASE_URL`, `TEST_LLM_API_KEY`, and `TEST_LLM_API_MODEL`
+  from repository `.env`, as data. Exported values take precedence.
+- Generate the internal gateway credential server-side, enable authenticated
+  dashboard access, and check both dashboard and gateway health.
+- Publish on loopback by default. Do not mount personal state or create named
+  networks/volumes. Owned-container cleanup removes anonymous data on stop,
+  restart, and failed readiness. Older fixture named volumes remain untouched.
+- Remove the old model fixture, browser relay, seeding and native fixture runner.
+  `npm run live` and `npm run live:real` use the same disposable workflow.
+
+Main's `src/`, Python plugin implementation, committed dashboard assets,
+frontend architecture and unrelated documentation are unchanged. The Docker
+runtime files match the pre-merge source branch. Additional launcher tests cover
+resource ownership, single-container launch, secret-free command arguments,
+invalid settings and failed-readiness cleanup.
+
+Default Playwright verification now targets this empty real-provider dashboard.
+It checks native responses and terminal tools without deterministic reply strings
+or seeded profiles. Existing fixture-dependent suites remain explicitly available
+through `npm run test:visual:legacy` with a separately supplied seeded dashboard.
 
 ## Validation
 
-- `npm run test:docker`: 35 passed, including dotenv parsing, provider precedence,
-  URL credential rejection, foreign-container preservation and owned cleanup.
+- `npm run test:docker`: 10 passed.
 - `npm test`: 351 passed across 23 files.
-- `npm run test:api`: 96 passed with dependencies in a disposable `/tmp` venv.
-- `npm run build`: passed; no frontend source changed, so main's committed assets
-  were retained instead of introducing a build-path-dependent asset rename.
-- `vp lint`: passed.
-- `vp fmt`: run; unrelated line-ending churn was reverted. Repository-wide
-  `vp fmt --check` flags main's existing CRLF files. Changed Markdown files were
-  checked separately.
-- Actual pinned Hermes dashboard launched with `npm run live`, instance
-  `docker-main-integration`, loopback port 9127, without personal state mounts.
-- Playwright dashboard and composer suites: four passed, desktop and mobile.
-  Checked focus, 16px input size, eight-row and short-viewport scrolling, model
-  and profile selection, authenticated file/camera attachment flow, arriving
-  activity, completed disclosure collapse and reopening, and send recovery.
-- Inspected desktop/mobile completed-turn screenshots and the mobile focused
-  short-viewport screenshot. The UI remains readable with a visible composer.
+- `npm run test:api`: 96 passed using the existing temporary Python environment
+  in the clean worktree; its unchanged API test and plugin files match this PR.
+- `npm run build`: passed. Unrelated regenerated asset changes were discarded;
+  the final image was rebuilt using main's unchanged committed assets.
+- `vp lint`: passed. Changed supported files were formatted with `vp fmt`.
+- `git diff origin/main -- src`: empty.
+- Latest image tested: digest
+  `sha256:9774f4f39a9bb8c2f68ce728ed5e99ddbad282163be56764afacf88ed952b784`.
+- Actual dashboard launched as `real-main-integration` on loopback port 9128,
+  using repository `.env` provider settings without printing credentials.
 
-Real-provider calls were not made; provider configuration and secret handling
-were exercised with synthetic values. Browser verification used Chromium with
-mobile emulation, not physical iOS hardware. Test containers were stopped with
-`npm run live:stop`; the disposable named test volume was preserved.
+Desktop and mobile browser checks passed (desktop in the combined run; mobile
+after correcting the test for automatic drawer closure on profile selection).
+Inspected completed-turn screenshots at both sizes, plus the mobile attachment
+and short viewport. Browser verification covers composer focus and
+scrolling, short mobile viewport, default profile select, model picker, file
+upload, camera preview, a real native terminal call and completed tool disclosure
+reopening. Physical iOS and real camera capture are not exercised. The legacy
+fixture-dependent browser suites are not run against this empty dashboard.
+
+The owned test container was stopped with `npm run live:stop`; its anonymous data
+volume was verified removed.
