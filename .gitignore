@@ -14,7 +14,8 @@ dist-ssr
 
 # The dashboard plugin ships pre-built assets so `hermes plugins install <repo>#plugin/chathermes`
 # works from a bare clone without an npm build step.
-!plugin/chathermes/dashboard/dist/
+# UPDATE: this builds in GitHub actions now
+# !plugin/chathermes/dashboard/dist/
 
 # Editor directories and files
 .vscode/*
