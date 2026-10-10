@@ -69,7 +69,7 @@ jobs:
             test -s "$DIST/icons/icon-512.png"
             compgen -G "$DIST/assets/app-*.js" > /dev/null
 
-            git add -A -- "$DIST"
+            git add -A -f -- "$DIST"
             git fetch origin +refs/heads/main:refs/remotes/origin/main
             if [ "$BUILD_SHA" != "$(git rev-parse origin/main)" ]; then
               echo "main advanced during build; rebuilding (attempt $attempt/3)."
