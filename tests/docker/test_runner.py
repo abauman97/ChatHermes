@@ -20,7 +20,8 @@ case "$*" in
   info)
     if [ -n "${EXPECTED_HOST:-}" ] && [ "${DOCKER_HOST:-}" != "$EXPECTED_HOST" ]; then exit 1; fi
     exit "${INFO_EXIT:-0}" ;;
-  'container inspect '*) exit 1 ;;
+  'container inspect '*) [ "${EXISTING_CONTAINER:-}" = 1 ]; exit $? ;;
+  'inspect -f '*) echo "${OWNER_LABEL:-foreign}"; exit 0 ;;
   'network inspect --format {{.Internal}} '*) echo "${INTERNAL_NETWORK:-true}"; exit 0 ;;
   'network inspect '*)
     if { [ -n "${EXISTING_NETWORK:-}" ] && [ "$*" = "network inspect $EXISTING_NETWORK" ]; } || [ "$*" = 'network inspect chathermes-test-internal' ] || [ "$*" = 'network inspect chathermes-issue30-internal' ]; then exit 0; fi
@@ -42,6 +43,7 @@ exit 0
                    'CHATHERMES_DAEMON_ADDRESS': '172.25.0.2',
                    'CHATHERMES_DASHBOARD_PORT': '9119',
                    'LLM_API_KEY': '', 'LLM_API_BASE_URL': '', 'LLM_API_MODEL': '',
+                   'TEST_LLM_API_KEY': '', 'TEST_LLM_API_BASE_URL': '', 'TEST_LLM_API_MODEL': '',
                    'EXPECTED_HOST': expected_host, 'CHATHERMES_INSTANCE': 'test', **extra_environment}
             result = subprocess.run(['sh', str(RUNNER), mode], env=env, capture_output=True, text=True)
             calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
@@ -51,6 +53,38 @@ exit 0
                 captured = root / 'config.b64'
                 config = base64.b64decode(captured.read_text()).decode() if captured.exists() else ''
             return result, calls, config
+
+    def test_test_provider_names_override_legacy_runtime_names(self):
+        result, calls, config = self.run_launcher('real', inspect_config=True,
+            TEST_LLM_API_KEY='synthetic-new-secret', TEST_LLM_API_BASE_URL='https://provider.example/v1',
+            TEST_LLM_API_MODEL='new-model', LLM_API_MODEL='legacy-model')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('default: "new-model"', config)
+        self.assertNotIn('synthetic-new-secret', calls + result.stdout + result.stderr + config)
+
+    def test_credential_urls_fail_before_docker_mutations(self):
+        for url in ('https://user:private@provider.example/v1', 'https://provider.example/v1?key=private'):
+            result, calls, _ = self.run_launcher('real', TEST_LLM_API_KEY='synthetic-key',
+                TEST_LLM_API_BASE_URL=url, TEST_LLM_API_MODEL='model')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('private', result.stdout + result.stderr)
+            self.assertNotIn('build ', calls)
+            self.assertNotIn('rm ', calls)
+
+    def test_foreign_containers_are_preserved_on_launch_and_stop(self):
+        for mode in ('fixture', 'stop'):
+            result, calls, _ = self.run_launcher(mode, EXISTING_CONTAINER='1')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('unowned container', result.stderr)
+            self.assertNotIn('rm ', calls)
+            self.assertNotIn('build ', calls)
+
+    def test_owned_containers_can_stop_without_removing_the_volume(self):
+        result, calls, _ = self.run_launcher('stop', EXISTING_CONTAINER='1', OWNER_LABEL='test')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('rm -f chathermes-test-hermes', calls)
+        self.assertNotIn('volume ', calls)
+        self.assertNotIn('rm -f -v', calls)
 
     def test_fixture_builds_current_checkout_and_keeps_services_private(self):
         result, calls, _ = self.run_launcher()

@@ -7,6 +7,10 @@ case "$mode" in
   fixture|real|stop) ;;
   *) echo 'Usage: sh tests/docker/run.sh [fixture|real|stop]' >&2; exit 2 ;;
 esac
+# Only real mode reads provider settings; fixture and stop stay credential-free.
+if [ "$mode" = real ] && [ "${CHATHERMES_ENV_LOADED:-}" != 1 ]; then
+  exec python3 tests/docker/provider_env.py "$@"
+fi
 # This environment documents the numeric endpoint; its Docker CLI rejects the
 # hostname endpoint (sometimes injected with literal surrounding quotes).
 case "${DOCKER_HOST:-}" in
@@ -32,7 +36,20 @@ relay="chathermes-$instance-browser"
 browser_network="chathermes-$instance-browser"
 shared_network="${CHATHERMES_INTERNAL_DOCKER_NETWORK:-}"
 internal_network="chathermes-$instance-internal"
+assert_owned() {
+  if docker container inspect "$1" >/dev/null 2>&1; then
+    if [ "$(docker inspect -f '{{index .Config.Labels "chathermes.live.instance"}}' "$1" 2>/dev/null || true)" != "$instance" ]; then
+      echo 'Container name is already in use by an unowned container; choose another CHATHERMES_INSTANCE.' >&2
+      exit 1
+    fi
+  fi
+}
+# Validate every target before removing any container, including during stop.
+assert_owned "$relay"
+assert_owned "$gateway"
+assert_owned "$model"
 remove_container() {
+  assert_owned "$1"
   if docker container inspect "$1" >/dev/null 2>&1; then
     docker rm -f "$1" >/dev/null
   fi
@@ -162,7 +179,7 @@ remove_container "$gateway"
 remove_container "$model"
 if [ "$mode" = fixture ]; then
   docker run -d --name "$model" --network "$network" --network-alias model \
-    --entrypoint /opt/hermes/.venv/bin/python "$image" /test/model_fixture.py >/dev/null
+    --entrypoint /opt/hermes/.venv/bin/python --label "chathermes.live.instance=$instance" "$image" /test/model_fixture.py >/dev/null
 fi
 # Fixture mode publishes through a relay; real mode publishes the dashboard.
 set --
@@ -175,12 +192,12 @@ docker run -d --init --name "$gateway" \
   -e HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=chathermes-local-test \
   -e API_SERVER_KEY=chathermes-isolated-test-key-2026 \
   -e LLM_API_KEY -e LLM_API_BASE_URL -e LLM_API_MODEL -e CHATHERMES_TEST_REAL \
-  -e CHATHERMES_TEST_CONFIG_B64 \
+  -e CHATHERMES_TEST_CONFIG_B64 --label "chathermes.live.instance=$instance" \
   "$image" >/dev/null
 if [ "$mode" = fixture ]; then
   docker run -d --name "$relay" --network "$browser_network" -p "$bind:$port:9119" \
     -e CHATHERMES_RELAY_UPSTREAM=http://hermes:9119 \
-    --entrypoint /opt/hermes/.venv/bin/python "$image" /test/browser_relay.py >/dev/null
+    --entrypoint /opt/hermes/.venv/bin/python --label "chathermes.live.instance=$instance" "$image" /test/browser_relay.py >/dev/null
   if [ "$network" != "$browser_network" ]; then docker network connect "$network" "$relay"; fi
 fi
 attempt=0

@@ -14,8 +14,15 @@ and enabled, not a standalone preview. The default `litellm` model is
 `fixture-model`; deterministic fixture mode provides repeatable responses without
 a real provider key. The LLM interface is generic: `LLM_API_BASE_URL`,
 `LLM_API_KEY`, and `LLM_API_MODEL` configure any OpenAI-compatible provider.
-`npm run live:real` passes these environment settings into Hermes without writing
-credentials to repository files or logging them.
+`npm run live:real` loads `TEST_LLM_API_BASE_URL`, `TEST_LLM_API_KEY`, and
+`TEST_LLM_API_MODEL` from the repository root `.env` file as data, without
+executing shell expressions. Exported test variables override `.env` values;
+legacy exported `LLM_API_*` variables remain supported. Test variables take
+precedence over legacy variables. The launcher maps these settings to the
+pinned Hermes runtime's `LLM_API_*` environment contract, without copying
+provider secrets into the image, generated configuration, or logs. Keep `.env`
+untracked. The provider base URL must not contain credentials, a query, or a
+fragment. Fixture mode and `live:stop` never load `.env`.
 
 `npm run live` builds plugin assets and the Docker image, recreates only its
 revision-scoped Hermes, model and browser relay containers, then waits for the dashboard's
@@ -191,3 +198,16 @@ The native script rejects a different image, volume or real-provider mode.
 Fixture-only `fixture-model-2` tests session model selection without changing
 the tracked provider-agnostic configuration. Both launch modes keep the
 documented `LLM_API_KEY`, `LLM_API_BASE_URL`, and `LLM_API_MODEL` names.
+
+## Container ownership
+
+New containers carry a `chathermes.live.instance` label. Launch and stop verify
+all target containers before removing any; a matching name alone does not grant
+ownership. If an older unlabeled test container occupies the name, select a new
+`CHATHERMES_INSTANCE` or inspect and stop that disposable container explicitly.
+Named data volumes remain preserved, including on failed startup and stop.
+
+The fixture, profile and native test helpers remain available. Both fixture and
+real modes use the pinned Dockerfile and source, so runtime behavior matches the
+plugin's tested API contract. `npm run live` continues to run the deterministic
+fixture; real-provider testing remains opt-in through `npm run live:real`.
