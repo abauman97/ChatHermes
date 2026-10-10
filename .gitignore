@@ -12,10 +12,10 @@ dist
 dist-ssr
 *.local
 
-# The dashboard plugin ships pre-built assets so `hermes plugins install <repo>#plugin/chathermes`
-# works from a bare clone without an npm build step.
-# UPDATE: this builds in GitHub actions now
-# !plugin/chathermes/dashboard/dist/
+# Generated dashboard bundles are built by CI and must not be tracked.
+plugin/chathermes/dashboard/dist/
+
+# The dashboard plugin's generated assets are built in GitHub Actions.
 
 # Editor directories and files
 .vscode/*
