@@ -1,19 +1,19 @@
 model:
   provider: litellm
-  default: ${LLM_API_MODEL:-fixture-model}
+  default: ${TEST_LLM_API_MODEL:-fixture-model}
   context_length: 128000
-  key_env: LLM_API_KEY
-  base_url: ${LLM_API_BASE_URL}
+  key_env: TEST_LLM_API_KEY
+  base_url: ${TEST_LLM_API_BASE_URL}
 providers:
   litellm:
-    base_url: ${LLM_API_BASE_URL}
-    key_env: LLM_API_KEY
+    base_url: ${TEST_LLM_API_BASE_URL}
+    key_env: TEST_LLM_API_KEY
     api_mode: chat_completions
     request_timeout_seconds: 3600
     stale_timeout_seconds: 1800
-    default_model: ${LLM_API_MODEL:-fixture-model}
+    default_model: ${TEST_LLM_API_MODEL:-fixture-model}
     models:
-      ${LLM_API_MODEL:-fixture-model}:
+      ${TEST_LLM_API_MODEL:-fixture-model}:
         context_length: 128000
 toolsets:
   - hermes-cli
@@ -26,10 +26,10 @@ platforms:
     key: chathermes-isolated-test-key-2026
     model_routes:
       Instant:
-        model: ${LLM_API_MODEL:-fixture-model}
+        model: ${TEST_LLM_API_MODEL:-fixture-model}
         provider: litellm
-        base_url: ${LLM_API_BASE_URL}
-        api_key: ${LLM_API_KEY}
+        base_url: ${TEST_LLM_API_BASE_URL}
+        api_key: ${TEST_LLM_API_KEY}
 plugins:
   enabled:
     - chathermes

@@ -1,7 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/visual",
+  testMatch:
+    process.env.CHATHERMES_TEST_SUITE === "legacy" ? "**/*.spec.ts" : "**/live-real.spec.ts",
   outputDir: "./tests/visual-output",
+  testIgnore: process.env.CHATHERMES_TEST_SUITE === "legacy" ? "**/live-real.spec.ts" : [],
   timeout: 90_000,
   workers: 1,
   use: {

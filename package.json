@@ -10,11 +10,11 @@
     "install:plugin": "node scripts/install-plugin.mjs",
     "test:api": "python3 -m pytest tests/plugin_api.test.py",
     "test:visual": "playwright test",
-    "live": "npm run build && sh tests/docker/run.sh fixture",
+    "test:visual:legacy": "CHATHERMES_TEST_SUITE=legacy playwright test",
+    "live": "npm run build && sh tests/docker/run.sh real",
     "live:real": "npm run build && sh tests/docker/run.sh real",
     "live:stop": "sh tests/docker/run.sh stop",
     "live:visual": "npm run live && npm run test:visual",
-    "test:native": "sh tests/docker/native-tests.sh",
     "test:docker": "python3 -m unittest discover -s tests/docker -p \"test_*.py\"",
     "prepare": "vp config"
   },
