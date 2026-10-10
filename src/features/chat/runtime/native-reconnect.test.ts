@@ -1,7 +1,8 @@
+import { api } from "../../../services/hermes-api";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useNativeSession } from "./native-session";
-import { api } from "../../../services/hermes-api";
+import { artifacts, type Artifact } from "../../artifacts/service";
 import type { NativeHooks, NativeSnapshot } from "./native-chat";
 import { NativeError } from "./native-chat";
 import { nativeOutcome, uncertainNativeOutcome } from "./native-admission";
@@ -62,29 +63,33 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("interrupted attachment draft recovery", () => {
+describe("attachment staging isolation", () => {
   it.each(["background", "offline", "navigation"])(
-    "recovers rejected text only in the original selection after %s",
+    "does not submit staged attachments after %s",
     async (interruption) => {
       history.replaceState({}, "", "/chathermes?profile=attachment-test");
       vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
       vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-      vi.stubGlobal("fetch", async (input: string) => {
-        const value = input.endsWith("/profiles")
-          ? { profiles: [{ name: "attachment-test" }] }
-          : input.includes("/capabilities")
-            ? { features: { native_chat: true } }
-            : input.includes("/models")
-              ? { data: [{ id: "Instant" }] }
-              : input.includes("/projects")
-                ? { projects: [] }
-                : { sessions: [{ id: "one" }, { id: "two" }], total: 2 };
-        return new Response(JSON.stringify(value), {
-          headers: { "content-type": "application/json" },
-        });
-      });
-      let finish!: (value: { path: string }) => void;
-      const upload = vi.spyOn(api, "upload").mockReturnValue(
+      vi.stubGlobal(
+        "fetch",
+        async (input: string) =>
+          new Response(
+            JSON.stringify(
+              input.endsWith("/profiles")
+                ? { profiles: [{ name: "attachment-test" }] }
+                : input.includes("/capabilities")
+                  ? { features: { native_chat: true } }
+                  : input.includes("/models")
+                    ? { data: [] }
+                    : input.includes("/projects")
+                      ? { projects: [] }
+                      : { sessions: [{ id: "one" }, { id: "two" }], total: 2 },
+            ),
+            { headers: { "content-type": "application/json" } },
+          ),
+      );
+      let finish!: (value: Artifact) => void;
+      const upload = vi.spyOn(artifacts, "stage").mockReturnValue(
         new Promise((resolve) => {
           finish = resolve;
         }),
@@ -94,21 +99,22 @@ describe("interrupted attachment draft recovery", () => {
         await flushPromises();
         wrapper.findComponent(SessionSidebar).vm.$emit("select", "one");
         await flushPromises();
-        const original = latest();
-        ready(original, "Saved");
+        ready(latest(), "Saved");
         await flushPromises();
-        await wrapper.get("textarea").setValue("Recover this draft");
-        // Model the composer send event and its immediate draft clearing.
-        // Recovery must repopulate the mounted composer via suggestedPrompt.
-        wrapper
-          .findComponent(ChatComposer)
-          .vm.$emit("send", "Recover this draft", [
-            { name: "note.txt", type: "text/plain", data: "data:text/plain;base64,aGk=", size: 2 },
-          ]);
-        await wrapper.get("textarea").setValue("");
-        await flushPromises();
-        expect(upload).toHaveBeenCalledOnce();
-        expect(wrapper.get(".message.user").text()).toContain("Recover this draft");
+        await wrapper.get("textarea").setValue("Keep this draft");
+        const stageFile = wrapper.findComponent(ChatComposer).props("stageAttachment") as (
+          file: import("../../../types/hermes").Attachment,
+        ) => Promise<import("../../../types/hermes").Attachment>;
+        const stage = stageFile({
+          name: "note.txt",
+          type: "text/plain",
+          data: "data:text/plain;base64,aGk=",
+          size: 2,
+        });
+        const outcome = stage.then(
+          () => "staged",
+          () => "stale",
+        );
         if (interruption === "navigation") {
           wrapper.findComponent(SessionSidebar).vm.$emit("select", "two");
           await flushPromises();
@@ -122,38 +128,23 @@ describe("interrupted attachment draft recovery", () => {
           vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
           window.dispatchEvent(new Event("offline"));
         }
-        finish({ path: "/uploads/note.txt" });
+        finish({ id: "a".repeat(64), reference: "/attachments/note.txt" } as Artifact);
+        await outcome;
         await flushPromises();
         expect(wrapper.findAll(".message.user")).toHaveLength(0);
         expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
-          interruption === "navigation" ? "New session draft" : "Recover this draft",
+          interruption === "navigation" ? "New session draft" : "Keep this draft",
         );
         expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
-        if (interruption !== "navigation") {
-          expect(wrapper.text()).toContain("Viewer detached before submission");
-          expect(nativeOutcome("attachment-test", "one")).toBe(false);
-          vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-          vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
-          window.dispatchEvent(new Event("online"));
-          await flushPromises();
-          ready(latest(), "Saved");
-          await flushPromises();
-          expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
-            "Recover this draft",
-          );
-        } else {
-          expect(wrapper.text()).toContain("Selected session");
-          expect(wrapper.text()).not.toContain("Viewer detached before submission");
-        }
         for (const viewer of fake.viewers)
           expect(viewer.rpc).not.toHaveBeenCalledWith("chat.submit", expect.anything());
       } finally {
+        upload.mockRestore();
         wrapper.unmount();
       }
     },
   );
 });
-
 describe("selected native session reconstruction", () => {
   it("validates event text before projecting native status and errors", async () => {
     const session = useNativeSession(vi.fn());

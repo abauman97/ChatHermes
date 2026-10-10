@@ -1,5 +1,5 @@
+import { artifacts } from "../../artifacts/service";
 import { computed, type Ref } from "vue";
-import { api } from "../../../services/hermes-api";
 import { projectRoot } from "../../projects/utils/projects";
 import type {
   Attachment,
@@ -86,8 +86,7 @@ export function useChatController(
     )
       return;
     if ((projectView.value || !session.value) && !(await scope.createSession())) return;
-    const current = scope.generation(),
-      p = profile.value;
+    const current = scope.generation();
     const preview = [
       { type: "text", text },
       ...attachments.map((file) =>
@@ -95,39 +94,40 @@ export function useChatController(
           ? { type: "image_url", image_url: { url: file.data } }
           : { type: "text", text: "📎 " + file.name },
       ),
+      ...attachments.map((file) => ({ type: "attachment", id: file.artifactId })),
     ];
     try {
       await native.submit(
         text,
         async () => {
-          const parts: unknown[] = [
-            { type: "text", text: text || "Please examine the attached files." },
-          ];
           for (const file of attachments) {
-            const uploaded = await api.upload(p, file);
+            if (!file.artifactId) throw new Error("Wait for attachments to finish uploading.");
             if (current !== scope.generation())
               throw new Error("Session changed before submission");
-            parts.push({
-              type: "text",
-              text: `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${uploaded.path}`,
-            });
-            if (file.type.startsWith("image/"))
-              parts.push({ type: "image_url", image_url: { url: file.data } });
           }
-          return attachments.length ? parts : text;
+          return attachments.length ? text || "Please examine the attached files." : text;
         },
-        { model: model.value || defaultModel.value, provider: provider.value || undefined },
+        {
+          model: model.value || defaultModel.value,
+          provider: provider.value || undefined,
+          ...(attachments.length
+            ? { attachment_ids: attachments.map((file) => file.artifactId!) }
+            : {}),
+        },
         preview,
       );
+      return true;
     } catch (cause) {
       if (current === scope.generation() && !native.uncertain.value) {
         native.error.value = cause instanceof Error ? cause.message : "Message not submitted";
         suggestedPrompt.value = text;
       }
+      return native.uncertain.value;
     }
   }
   async function send(text: string, attachments: Attachment[] = []) {
-    if (nativeMode.value) await sendNative(text, attachments);
+    if (nativeMode.value) return await sendNative(text, attachments);
+    return false;
   }
   async function stopResponse() {
     if (nativeMode.value) {
@@ -216,6 +216,24 @@ export function useChatController(
   }));
   const actions = {
     send,
+    stage: async (file: Attachment) => {
+      if (viewBusy.value || creating.value || offline.value || !canStream.value)
+        throw new Error("Attachments are unavailable right now.");
+      if ((projectView.value || !session.value) && !(await scope.createSession()))
+        throw new Error("Could not create a conversation.");
+      const p = profile.value,
+        id = session.value,
+        current = scope.generation();
+      const result = await artifacts.stage(p, id, file);
+      if (p !== profile.value || id !== session.value || current !== scope.generation())
+        throw new Error("Conversation changed while uploading.");
+      return {
+        ...file,
+        artifactId: result.id,
+        reference: result.reference,
+        refText: result.ref_text,
+      };
+    },
     stop: stopResponse,
     steer: steerResponse,
     answerFor: (id: string) => {

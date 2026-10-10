@@ -9,19 +9,10 @@ const toolLabel = computed(() => {
   const name = (props.activity.toolName || "tool").replace(/[_\s]+/g, " ").trim() || "tool";
   return name.charAt(0).toUpperCase() + name.slice(1);
 });
-const expanded = ref(!props.activity.complete);
-watch(
-  () => [props.activity.complete, props.turnComplete],
-  ([complete, turnComplete]) => {
-    expanded.value = !complete && !turnComplete;
-  },
-);
-watch(
-  () => props.turnComplete,
-  (complete) => {
-    if (complete) expanded.value = false;
-  },
-);
+const expanded = ref(!props.activity.complete && !props.turnComplete);
+watch([() => props.activity.complete, () => props.turnComplete], ([complete, turnComplete]) => {
+  expanded.value = !complete && !turnComplete;
+});
 function toggle(event: Event) {
   expanded.value = (event.target as HTMLDetailsElement).open;
 }

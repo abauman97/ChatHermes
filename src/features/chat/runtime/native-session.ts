@@ -354,7 +354,7 @@ export function useNativeSession(onSettled: () => void) {
   async function submit(
     text: string,
     content: unknown,
-    selection: { model?: string; provider?: string },
+    selection: { model?: string; provider?: string; attachment_ids?: string[] },
     preview?: unknown,
   ) {
     if (!viewer || busy.value || uncertain.value || loading.value || connection.value !== "ready")

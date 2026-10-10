@@ -1,0 +1,3 @@
+Icons from dmhendricks/file-icon-vectors
+https://github.com/dmhendricks/file-icon-vectors
+Vivid SVG subset in vivid/. Licensed under MIT; see LICENSE.

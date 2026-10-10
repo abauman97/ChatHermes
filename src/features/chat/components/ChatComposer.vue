@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import type { Attachment, ModelOption, ProviderOption } from "../../../types/hermes";
+import { readAttachment } from "../../artifacts/service";
 const props = withDefaults(
   defineProps<{
+    contextKey?: string;
+    stageAttachment?: (file: Attachment) => Promise<Attachment>;
+    submitMessage?: (text: string, files: Attachment[]) => Promise<boolean | undefined>;
     disabled: boolean;
     sending: boolean;
     projectName?: string;
@@ -190,7 +194,7 @@ const buttonDisabled = computed(() =>
       imageGated.value ||
       (!value.value.trim() && !attachments.value.length),
 );
-function send() {
+async function send() {
   if (buttonDisabled.value) return;
   if (props.sending && value.value.trim()) {
     emit("steer", value.value.trim());
@@ -200,66 +204,69 @@ function send() {
   if (props.disabled || props.sending || reading.value || imageGated.value) return;
   const text = value.value.trim();
   if (text || attachments.value.length) {
-    emit("send", text, [...attachments.value]);
-    value.value = "";
-    attachments.value = [];
+    const pending = [...attachments.value];
+    if (props.submitMessage) {
+      try {
+        const accepted = await props.submitMessage(text, pending);
+        if (!accepted) return;
+      } catch (cause) {
+        attachmentError.value =
+          cause instanceof Error ? cause.message : "Message not submitted. Your draft is kept.";
+        return;
+      }
+    } else emit("send", text, pending);
+    if (value.value.trim() === text) value.value = "";
+    attachments.value = attachments.value.filter((file) => !pending.includes(file));
     attachmentsOpen.value = false;
   }
 }
-async function fitImage(data: string): Promise<string> {
-  if (data.length <= 1_398_104) return data; // roughly 1 MB of decoded image data
-  const image = new Image();
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Could not open this image. Try a JPEG or PNG."));
-    image.src = data;
-  });
-  let edge = 2048;
-  while (edge >= 512) {
-    const ratio = Math.min(1, edge / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Could not prepare this photo.");
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const resized = canvas.toDataURL("image/jpeg", 0.8);
-    if (resized.length <= 1_398_104) return resized;
-    edge /= 2;
-  }
-  throw new Error("This image is too large to send.");
-}
-async function attach(event: Event) {
-  const input = event.target as HTMLInputElement;
+const uploadState = ref("");
+let attachmentGeneration = 0;
+watch(
+  () => props.contextKey,
+  (next, previous) => {
+    // Creating the first session during staging keeps the home-screen draft.
+    if (reading.value && !previous) return;
+    if (next === previous) return;
+    attachmentGeneration++;
+    attachments.value = [];
+    value.value = "";
+    attachmentError.value = "";
+    reading.value = false;
+  },
+);
+async function addFiles(selected: File[]) {
+  if (reading.value || props.sending || props.disabled) return;
   reading.value = true;
   attachmentError.value = "";
   attachmentsOpen.value = false;
-  try {
-    for (const file of Array.from(input.files || [])) {
-      if (file.size > 20 * 1024 * 1024) throw new Error("Each file must be 20 MB or smaller.");
+  const generation = attachmentGeneration;
+  for (const file of selected) {
+    try {
       if (attachments.value.length >= 5) throw new Error("Attach up to five files per message.");
-      let data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("Could not read file."));
-        reader.onabort = () => reject(new Error("File reading was cancelled. Try again."));
-        reader.readAsDataURL(file);
-      });
-      if (file.type.startsWith("image/")) data = await fitImage(data);
-      const type = file.type.startsWith("image/")
-        ? data.slice(5, data.indexOf(";"))
-        : file.type || "application/octet-stream";
-      attachments.value.push({ name: file.name, type, data, size: file.size });
+      let attachment = await readAttachment(file, (state) => (uploadState.value = state));
+      uploadState.value = "Uploading " + file.name + "…";
+      if (props.stageAttachment) attachment = await props.stageAttachment(attachment);
+      if (generation !== attachmentGeneration) return;
+      attachments.value.push(attachment);
+    } catch (cause) {
+      if (generation !== attachmentGeneration) return;
+      attachmentError.value =
+        (cause instanceof Error ? cause.message : "Could not upload file.") +
+        " Other attachments and your draft are kept.";
     }
-  } catch (cause) {
-    attachmentError.value = cause instanceof Error ? cause.message : "Could not read file.";
-  } finally {
+  }
+  if (generation === attachmentGeneration) {
     reading.value = false;
-    input.value = "";
+    uploadState.value = "";
   }
 }
+async function attach(event: Event) {
+  const input = event.target as HTMLInputElement;
+  await addFiles(Array.from(input.files || []));
+  input.value = "";
+}
+defineExpose({ addFiles });
 </script>
 <template>
   <form
@@ -326,7 +333,7 @@ async function attach(event: Event) {
           type="button"
           aria-label="Attachment options"
           :aria-expanded="attachmentsOpen"
-          :disabled="sending || reading"
+          :disabled="sending || reading || disabled"
           @click="
             closePicker();
             attachmentsOpen = !attachmentsOpen;
@@ -335,7 +342,7 @@ async function attach(event: Event) {
           +
         </button>
         <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">
-          {{ reading ? "Reading files…" : reason || "" }}
+          {{ reading ? uploadState : reason || "" }}
         </p>
         <button
           ref="pill"

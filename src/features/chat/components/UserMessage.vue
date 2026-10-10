@@ -1,8 +1,20 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import ArtifactAttachment from "../../artifacts/ArtifactAttachment.vue";
+import { hasReference, cleanFileText, type Artifact } from "../../artifacts/service";
+import InlineImage from "../../artifacts/InlineImage.vue";
 import type { Message } from "../../../types/hermes";
 import { renderMarkdown } from "../../../utils/markdown";
 import { images, displayText } from "../utils/user-message";
-defineProps<{ message: Message; profile?: string }>();
+const props = defineProps<{ message: Message; profile?: string; artifacts?: Artifact[] }>();
+const files = computed(() =>
+  (props.artifacts || []).filter(
+    (file) =>
+      file.mime !== "application/octet-stream" &&
+      file.direction === "uploaded" &&
+      hasReference(props.message.content, file),
+  ),
+);
 const emit = defineEmits<{ imageLoad: [] }>();
 </script>
 <template>
@@ -11,14 +23,23 @@ const emit = defineEmits<{ imageLoad: [] }>();
   >
     <div
       class="message-content markdown-content break-words text-base leading-7"
-      v-html="renderMarkdown(displayText(message))"
+      v-html="renderMarkdown(cleanFileText(displayText(message), files))"
     />
-    <img
-      v-for="url in images(message.content, profile)"
+    <ArtifactAttachment
+      v-for="file in files"
+      :key="file.id"
+      :artifact="file"
+      :profile="profile || ''"
+      @image-load="emit('imageLoad')"
+    />
+    <InlineImage
+      v-for="url in files.some((file) => file.mime.startsWith('image/'))
+        ? []
+        : images(message.content, profile)"
       :key="url"
       :src="url"
       alt="Attached image"
-      @load="emit('imageLoad')"
+      @image-load="emit('imageLoad')"
       class="mt-2 max-h-72 max-w-full rounded-xl object-contain"
     />
   </article>

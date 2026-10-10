@@ -6,9 +6,14 @@ import UserMessage from "../features/chat/components/UserMessage.vue";
 import AssistantTurn from "../features/chat/components/AssistantTurn.vue";
 import TurnWork from "./TurnWork.vue";
 import { renderMarkdown } from "../utils/markdown";
+import { sessionArtifacts, type Artifact } from "../features/artifacts/service";
+const artifactRows = ref<Artifact[]>([]);
+let artifactAbort: AbortController | undefined,
+  artifactTimer: ReturnType<typeof setTimeout> | undefined;
 const props = withDefaults(
   defineProps<{
     profile?: string;
+    session?: string;
     messages: Message[];
     draft: string;
     loading: boolean;
@@ -24,6 +29,40 @@ const props = withDefaults(
   }>(),
   { followInitially: true },
 );
+watch(
+  () => [props.profile, props.session, props.messages, props.working],
+  () => {
+    clearTimeout(artifactTimer);
+    artifactAbort?.abort();
+    if (!props.session) {
+      artifactRows.value = [];
+      return;
+    }
+    artifactTimer = setTimeout(
+      async () => {
+        const current = (artifactAbort = new AbortController());
+        try {
+          const rows = await sessionArtifacts(props.profile || "", props.session!, current.signal);
+          if (!current.signal.aborted) artifactRows.value = rows;
+        } catch {
+          /* Transcript remains readable if artifact discovery is unavailable. */
+        }
+      },
+      props.working ? 1000 : 100,
+    );
+  },
+  { deep: true, immediate: true },
+);
+watch(
+  () => [props.profile, props.session],
+  () => {
+    artifactRows.value = [];
+  },
+);
+onBeforeUnmount(() => {
+  clearTimeout(artifactTimer);
+  artifactAbort?.abort();
+});
 const emit = defineEmits<{ suggest: [text: string] }>();
 const visible = computed(() => props.messages.filter((message) => message.role !== "system"));
 const entries = computed(() => transcriptEntries(props));
@@ -134,10 +173,17 @@ watch(
           <UserMessage
             v-if="entry.kind === 'user'"
             :message="entry.message"
+            :artifacts="artifactRows"
             :profile="profile"
             @image-load="disclosureChanged"
           />
-          <AssistantTurn v-else :entry="entry" @image-load="disclosureChanged" />
+          <AssistantTurn
+            v-else-if="entry.kind === 'turn'"
+            :entry="entry"
+            :profile="profile"
+            :artifacts="artifactRows"
+            @image-load="disclosureChanged"
+          />
         </template>
         <div
           v-if="working && !entries.some((entry) => entry.kind === 'turn' && entry.working)"

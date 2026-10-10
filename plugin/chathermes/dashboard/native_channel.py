@@ -86,14 +86,27 @@ class Channel:
             admission_id = params.get('admission_id')
             if admission_id is not None and (not isinstance(admission_id, str) or not re.fullmatch(r'[a-f0-9]{32}', admission_id)):
                 raise HTTPException(422, 'Invalid admission display identity')
-            text, images = self.api._validated_workspace_turn({k: v for k, v in params.items() if k not in ('queued', 'admission_id')})
+            text, images = self.api._validated_workspace_turn({k: v for k, v in params.items() if k not in ('queued', 'admission_id', 'attachment_ids')})
+            attachment_ids = params.get('attachment_ids', [])
+            if not isinstance(attachment_ids, list) or len(attachment_ids) > 5 or any(not isinstance(aid, str) or not re.fullmatch(r'[a-f0-9]{64}', aid) for aid in attachment_ids) or len(set(attachment_ids)) != len(attachment_ids):
+                raise HTTPException(422, 'Invalid attachments')
+            from starlette.concurrency import run_in_threadpool
+            def resolve():
+                from hermes_cli.web_server_profiles import _config_profile_scope
+                from hermes_constants import get_hermes_home
+                with _config_profile_scope(self.profile):
+                    store = self.api._artifacts.Store(get_hermes_home())
+                    return [store.get(aid, self.stored) for aid in attachment_ids]
+            attachments = await run_in_threadpool(resolve) if attachment_ids else []
             live = await self.transport.call('session.activate', scoped)
             initial = live
+            if attachments and (live.get('running') or live.get('queued')):
+                raise HTTPException(409, 'Wait for this response before submitting attachments')
             if live.get('running') and not queued:
                 raise HTTPException(409, 'This session is busy. Use guidance or explicitly queue a message.')
             # Multipart input is a pinned JsonValue prompt shape. The browser
             # uploads originals first and retains authenticated durable refs in
-            # text; no session-wide image.attach mutation is used.
+            # text. Durable staged images are resolved separately below.
             native_input = params['input'] if images else text
             if images:
                 from starlette.concurrency import run_in_threadpool
@@ -118,6 +131,23 @@ class Channel:
                 info = confirmed.get('info') or {}
                 if info.get('model') != model or provider and info.get('provider') != provider:
                     raise HTTPException(409, 'Selected runtime model was not applied; no prompt submitted')
+            # Preserve native file refs and durable names in authoritative history.
+            attached_paths = []
+            try:
+                for file in attachments:
+                    is_image = file['mime'] in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp')
+                    if is_image:
+                        await self.transport.call('image.attach', {**scoped, 'path': file['path']})
+                        attached_paths.append(file['path'])
+                    text += '\n' + f"Attached {'image' if is_image else 'file'} {file['name']}: {file['path']}"
+                    if file['ref_text']:
+                        text += '\n' + file['ref_text']
+                if attachments:
+                    native_input = text
+            except Exception:
+                for path in attached_paths:
+                    await self.transport.call('image.detach', {**scoped, 'path': path})
+                raise
             if self.owner:
                 self.owner.begin(initial, text, queued=queued and bool(initial.get('running')), admission_id=admission_id)
             self.submit_dispatched = True

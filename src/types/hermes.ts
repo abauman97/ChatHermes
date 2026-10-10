@@ -36,6 +36,9 @@ export interface Capabilities {
 }
 
 export interface Attachment {
+  artifactId?: string;
+  reference?: string;
+  refText?: string;
   name: string;
   type: string;
   data: string;
