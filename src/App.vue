@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { api, ApiError } from "./lib/hermes-api";
-import { useNativeSession } from "./lib/native-session";
+import { api, ApiError } from "./services/hermes-api";
+import { useNativeSession } from "./features/chat/runtime/native-session";
 import type {
-  Attachment,
   Capabilities,
   Message,
   ModelOption,
@@ -12,19 +11,18 @@ import type {
   Project,
   ProjectAction,
 } from "./types/hermes";
-import { projectRoot, projectSessions } from "./lib/projects";
-import ClarificationCard from "./components/ClarificationCard.vue";
-import type { ClarifyQuestion } from "./vendor/hermes/gateway-contract.generated";
-import ScheduledPage from "./components/ScheduledPage.vue";
-import ProjectsPage from "./components/ProjectsPage.vue";
-import SettingsPage from "./components/SettingsPage.vue";
-import ProjectSettings from "./components/ProjectSettings.vue";
-import ProjectInstructions from "./components/ProjectInstructions.vue";
-import * as push from "./lib/push";
-import { connectPushClient } from "./lib/push-client";
-import SessionSidebar from "./components/SessionSidebar.vue";
-import ChatTranscript from "./components/ChatTranscript.vue";
-import ChatComposer from "./components/ChatComposer.vue";
+import { projectRoot, projectSessions } from "./features/projects/utils/projects";
+import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
+import ProjectsPage from "./features/projects/components/ProjectsPage.vue";
+import SettingsPage from "./features/settings/components/SettingsPage.vue";
+import ProjectSettings from "./features/projects/components/ProjectSettings.vue";
+import ProjectInstructions from "./features/projects/components/ProjectInstructions.vue";
+import * as push from "./features/notifications/services/push";
+import { connectPushClient } from "./features/notifications/services/push-client";
+import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
+import ChatInterface from "./features/chat/components/ChatInterface.vue";
+import { useChatController } from "./features/chat/composables/useChatController";
+import { provideChat } from "./features/chat/context";
 const scheduledPage = ref(false),
   scheduledPageKey = ref(0),
   scheduledDiscussionError = ref("");
@@ -110,9 +108,6 @@ let listAbort: AbortController | undefined,
   chatAbort: AbortController | undefined,
   generation = 0,
   profileGeneration = 0;
-const clarificationSubmitting = ref(false);
-const secretAnswer = ref("");
-let secretRequestId = "";
 const pushState = ref<push.PushState>({
   supported: false,
   permission: "unsupported",
@@ -141,26 +136,35 @@ const native = useNativeSession(() => {
   refreshProjects();
   void loadSessions();
 });
-watch(
-  () => (native.approval.value?.kind === "secret" ? native.approval.value.request_id : undefined),
-  (id) => {
-    if (id !== secretRequestId) secretAnswer.value = "";
-    secretRequestId = typeof id === "string" ? id : "";
-  },
-);
+const chat = useChatController(native, {
+  profile,
+  session,
+  messages,
+  chatLoading,
+  chatError,
+  canStream,
+  scheduledPage,
+  projectView,
+  projectsPage,
+  projectPage,
+  settingsPage,
+  selectedProject,
+  creating,
+  offline,
+  models,
+  providers,
+  modelsLoading,
+  model,
+  provider,
+  defaultModel,
+  suggestedPrompt,
+  generation: () => generation,
+  createSession,
+  suggest,
+  retryHistory: loadMessages,
+});
+provideChat(chat);
 const nativeMode = canStream;
-const viewMessages = computed(() => (nativeMode.value ? native.messages.value : messages.value));
-const viewBusy = computed(() => native.busy.value || native.uncertain.value);
-const viewLoading = computed(() => (nativeMode.value ? native.loading.value : chatLoading.value));
-const viewError = computed(() => (nativeMode.value ? native.error.value : chatError.value));
-const viewApproval = native.approval;
-const viewApprovalPending = computed(() => !!native.approval.value);
-const viewReconnect = computed(
-  () => nativeMode.value && !!session.value && native.connection.value !== "ready",
-);
-const viewUnavailable = native.uncertain;
-const viewStatus = native.status;
-const viewActive = native.busy;
 function urlState() {
   const params = new URLSearchParams(location.search);
   return {
@@ -651,132 +655,9 @@ async function rename(id: string, title: string) {
       error.value = cause instanceof Error ? cause.message : "Could not rename session";
   }
 }
-async function sendNative(text: string, attachments: Attachment[]) {
-  if (
-    scheduledPage.value ||
-    viewBusy.value ||
-    creating.value ||
-    viewApprovalPending.value ||
-    offline.value ||
-    !canStream.value ||
-    modelsLoading.value
-  )
-    return;
-  if ((projectView.value || !session.value) && !(await createSession())) return;
-  const current = generation,
-    p = profile.value;
-  const preview = [
-    { type: "text", text },
-    ...attachments.map((file) =>
-      file.type.startsWith("image/")
-        ? { type: "image_url", image_url: { url: file.data } }
-        : { type: "text", text: "📎 " + file.name },
-    ),
-  ];
-  try {
-    await native.submit(
-      text,
-      async () => {
-        const parts: unknown[] = [
-          { type: "text", text: text || "Please examine the attached files." },
-        ];
-        for (const file of attachments) {
-          const uploaded = await api.upload(p, file);
-          if (current !== generation) throw new Error("Session changed before submission");
-          parts.push({
-            type: "text",
-            text: `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${uploaded.path}`,
-          });
-          if (file.type.startsWith("image/"))
-            parts.push({ type: "image_url", image_url: { url: file.data } });
-        }
-        return attachments.length ? parts : text;
-      },
-      { model: model.value || defaultModel.value, provider: provider.value || undefined },
-      preview,
-    );
-  } catch (cause) {
-    if (current === generation && !native.uncertain.value) {
-      native.error.value = cause instanceof Error ? cause.message : "Message not submitted";
-      suggestedPrompt.value = text;
-    }
-  }
-}
-async function send(text: string, attachments: Attachment[] = []) {
-  if (nativeMode.value) await sendNative(text, attachments);
-}
-async function stopResponse() {
-  if (nativeMode.value) {
-    try {
-      await native.stop();
-    } catch {
-      native.error.value = "Could not stop the response.";
-    }
-    return;
-  }
-}
-async function approveResponse(choice: string) {
-  if (nativeMode.value) {
-    const id = native.approval.value?.request_id;
-    if (typeof id === "string") {
-      try {
-        await native.answer(id, { choice });
-      } catch {
-        native.error.value = "Approval could not be settled.";
-      }
-    }
-    return;
-  }
-}
-async function answerClarification(answers: Record<string, string>) {
-  const id = native.approval.value?.request_id;
-  if (
-    !nativeMode.value ||
-    viewReconnect.value ||
-    clarificationSubmitting.value ||
-    typeof id !== "string"
-  )
-    return;
-  const current = generation;
-  clarificationSubmitting.value = true;
-  try {
-    await native.answer(id, { answers });
-  } catch {
-    if (current === generation) native.error.value = "Clarification could not be settled.";
-  } finally {
-    clarificationSubmitting.value = false;
-  }
-}
-async function answerSecret() {
-  const id =
-    native.approval.value?.kind === "secret" ? native.approval.value.request_id : undefined;
-  const value = secretAnswer.value;
-  secretAnswer.value = "";
-  secretRequestId = "";
-  if (typeof id !== "string" || !value) return;
-  try {
-    await native.answer(id, { value });
-  } catch {
-    native.error.value = "Secret request could not be settled.";
-  }
-}
-async function steerResponse(text: string) {
-  if (nativeMode.value) {
-    try {
-      await native.steer(text);
-    } catch {
-      native.error.value = "Response did not accept guidance.";
-    }
-    return;
-  }
-}
-
 async function visibilityChange() {
   await native.availability(document.visibilityState === "visible", navigator.onLine);
   if (document.visibilityState === "visible") refreshProjects();
-}
-async function resolveUncertainty() {
-  await native.resolveUncertainty();
 }
 function exitPlugin() {
   location.href = "/";
@@ -1337,306 +1218,121 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
-      <div
-        v-if="offline"
-        class="notice bg-[#303030] px-5 py-3 text-sm text-white dark:bg-[#303030] dark:text-white"
-        role="status"
+      <ChatInterface
+        :show-page="settingsPage || scheduledPage || projectsPage || !!projectPage || projectView"
       >
-        You are offline. Messages cannot be loaded or sent.
-      </div>
-      <div
-        v-if="!settingsPage && !scheduledPage && viewReconnect"
-        class="notice px-5 py-3 text-sm text-[#b4b4b4]"
-        role="status"
-      >
-        {{
-          native.connection.value === "reconnecting"
-            ? "Reconnecting…"
-            : "Session is read-only until reconnected."
-        }}
-        <button
-          v-if="nativeMode && native.connection.value === 'stale' && !offline"
-          class="ml-3 underline"
-          @click="native.reconnect()"
-        >
-          Reconnect
-        </button>
-      </div>
-      <div
-        v-if="!settingsPage && !scheduledPage && viewError"
-        class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]"
-        role="alert"
-      >
-        {{ viewError }}
-        <button
-          v-if="session"
-          class="underline"
-          @click="viewReconnect ? native.reconnect() : loadMessages()"
-        >
-          {{ viewReconnect ? "Retry connection" : "Refresh history" }}
-        </button>
-        <button v-if="viewUnavailable" class="ml-3 underline" @click="resolveUncertainty">
-          Resolve uncertain submission
-        </button>
-      </div>
-      <SettingsPage
-        v-if="settingsPage"
-        :profile="profile"
-        :profiles="profiles"
-        :push-state="pushState"
-        :push-busy="pushBusy"
-        :push-loading="pushLoading"
-        :push-message="pushMessage"
-        @profile="chooseProfile"
-        @toggle-push="togglePush"
-        @test-push="testPush"
-        @close="closeSettings()"
-      />
-      <ScheduledPage
-        v-else-if="scheduledPage"
-        :key="`${profile}:${scheduledPageKey}`"
-        :profile="profile"
-        :chat-busy="creating"
-        :offline="offline"
-        :discussion-error="scheduledDiscussionError"
-        @discuss="discussScheduled"
-      />
-      <ProjectsPage
-        v-else-if="projectsPage"
-        :key="profile"
-        :projects="projects"
-        :archived="archivedProjects"
-        :loading="projectsLoading"
-        :error="projectsError || manageError"
-        :busy="projectBusy"
-        :offline="offline"
-        @select="chooseProject"
-        @retry="loadProjects"
-        @manage="manageProject"
-      />
-      <section
-        v-else-if="projectPage && selectedProject"
-        class="page-content project-editor"
-        :aria-label="projectPage === 'edit' ? 'Edit project' : 'Edit Instructions'"
-      >
-        <button class="project-back" @click="chooseProject(projectId)">
-          ← {{ selectedProject.label }}
-        </button>
-        <h2 class="text-2xl font-semibold">
-          {{ projectPage === "edit" ? "Edit project" : "Edit Instructions" }}
-        </h2>
-        <ProjectSettings
-          v-if="projectPage === 'edit'"
-          :key="`${profile}:${selectedProject.id}`"
-          :project="selectedProject"
-          :busy="projectBusy"
-          :offline="offline"
-          :error="manageError"
-          @manage="manageProject"
-        />
-        <ProjectInstructions
-          v-else
-          :key="`${profile}:${selectedProject.id}`"
-          :profile="profile"
-          :project-id="selectedProject.id"
-          :offline="offline"
-        />
-      </section>
-      <section
-        v-else-if="projectView"
-        class="project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10"
-        aria-label="Selected Project"
-      >
-        <div class="project-home-content">
-          <button class="project-back" @click="showProjects(!!selectedProject?.archived)">
-            ← Projects
-          </button>
-          <p v-if="projectLoading" role="status">Loading Project…</p>
-          <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">
-            {{ projectError }} <button class="underline" @click="loadProject">Retry Project</button>
-          </p>
-          <template v-if="selectedProject">
-            <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
-            <p class="mb-4 break-all text-sm text-[#a3a3a3]">
-              {{
-                projectRoot(selectedProject)
-                  ? "Workspace: " + projectRoot(selectedProject)
-                  : selectedProject.isNoProject
-                    ? "No project workspace"
-                    : "No workspace configured"
-              }}
-            </p>
-            <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">
-              No conversations yet.
-            </p>
-            <nav class="project-chat-list" aria-label="Project chats">
-              <button
-                v-for="row in visibleSessions"
-                :key="row.id"
-                class="project-chat-row"
-                :aria-label="row.title || 'Untitled session'"
-                @click="chooseSession(row.id)"
-              >
-                <span class="project-chat-title">{{ row.title || "Untitled session" }}</span>
-                <span v-if="row.preview?.trim()" class="project-chat-preview">{{
-                  row.preview
-                }}</span>
-              </button>
-            </nav>
-            <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
-          </template>
-        </div>
-      </section>
-      <ChatTranscript
-        v-else
-        :profile="profile"
-        :messages="viewMessages"
-        :draft="''"
-        :loading="viewLoading"
-        :progress="[]"
-        :thinking="viewBusy"
-        :working="viewBusy || viewApprovalPending"
-        :approval-pending="viewApprovalPending"
-        :status-label="
-          viewApprovalPending
-            ? viewApproval?.kind === 'clarify'
-              ? 'Waiting for your answers'
-              : 'Waiting for approval'
-            : viewStatus !== 'Working…'
-              ? viewStatus
-              : ''
-        "
-        :home="!session"
-        @suggest="suggest"
-      >
-        <template #request>
-          <div
-            v-if="viewApprovalPending && viewApproval?.kind === 'secret'"
-            class="notice px-5 py-3 text-sm"
-            role="status"
+        <template #page>
+          <SettingsPage
+            v-if="settingsPage"
+            :profile="profile"
+            :profiles="profiles"
+            :push-state="pushState"
+            :push-busy="pushBusy"
+            :push-loading="pushLoading"
+            :push-message="pushMessage"
+            @profile="chooseProfile"
+            @toggle-push="togglePush"
+            @test-push="testPush"
+            @close="closeSettings()"
+          />
+          <ScheduledPage
+            v-else-if="scheduledPage"
+            :key="`${profile}:${scheduledPageKey}`"
+            :profile="profile"
+            :chat-busy="creating"
+            :offline="offline"
+            :discussion-error="scheduledDiscussionError"
+            @discuss="discussScheduled"
+          />
+          <ProjectsPage
+            v-else-if="projectsPage"
+            :key="profile"
+            :projects="projects"
+            :archived="archivedProjects"
+            :loading="projectsLoading"
+            :error="projectsError || manageError"
+            :busy="projectBusy"
+            :offline="offline"
+            @select="chooseProject"
+            @retry="loadProjects"
+            @manage="manageProject"
+          />
+          <section
+            v-else-if="projectPage && selectedProject"
+            class="page-content project-editor"
+            :aria-label="projectPage === 'edit' ? 'Edit project' : 'Edit Instructions'"
           >
-            <p>{{ viewApproval.prompt }}</p>
-            <form @submit.prevent="answerSecret">
-              <label class="block my-3"
-                >{{ viewApproval.env_var }}
-                <input
-                  v-model="secretAnswer"
-                  type="password"
-                  autocomplete="off"
-                  :aria-label="String(viewApproval.prompt || 'Secret')"
-                  :disabled="viewReconnect"
-                  class="block w-full rounded-lg bg-[#303030] p-2 text-base"
-                />
-              </label>
-              <button
-                type="submit"
-                :disabled="viewReconnect || !secretAnswer"
-                class="rounded-lg bg-[#303030] p-2 text-base"
-              >
-                Submit secret
-              </button>
-            </form>
-          </div>
-          <div
-            v-if="viewApprovalPending && viewApproval?.kind !== 'secret'"
-            class="notice px-5 py-3 text-sm"
-            role="status"
-          >
-            <p v-if="viewApproval?.kind !== 'clarify'">
-              Approval required{{ viewApproval?.command ? ": " + viewApproval.command : "" }}
-            </p>
-            <div
-              v-if="viewActive && viewApproval?.kind === 'approval'"
-              class="approval-choices grid grid-cols-1 gap-2 my-3"
-            >
-              <button
-                v-for="choice in Array.isArray(viewApproval?.choices) ? viewApproval.choices : []"
-                :key="String(choice)"
-                class="w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55"
-                :class="choice === 'deny' ? 'text-red-500' : ''"
-                :disabled="viewReconnect"
-                @mousedown.prevent
-                @click="approveResponse(String(choice))"
-              >
-                {{
-                  choice === "once"
-                    ? "Allow once"
-                    : choice === "deny"
-                      ? "Deny"
-                      : choice === "session"
-                        ? "Allow for session"
-                        : "Always allow"
-                }}
-              </button>
-            </div>
-            <ClarificationCard
-              v-if="viewApproval?.kind === 'clarify'"
-              :key="JSON.stringify([profile, session, viewApproval.request_id])"
-              :questions="viewApproval.questions as ClarifyQuestion[]"
-              :disabled="viewReconnect || clarificationSubmitting"
-              @answer="answerClarification"
+            <button class="project-back" @click="chooseProject(projectId)">
+              ← {{ selectedProject.label }}
+            </button>
+            <h2 class="text-2xl font-semibold">
+              {{ projectPage === "edit" ? "Edit project" : "Edit Instructions" }}
+            </h2>
+            <ProjectSettings
+              v-if="projectPage === 'edit'"
+              :key="`${profile}:${selectedProject.id}`"
+              :project="selectedProject"
+              :busy="projectBusy"
+              :offline="offline"
+              :error="manageError"
+              @manage="manageProject"
             />
-          </div>
+            <ProjectInstructions
+              v-else
+              :key="`${profile}:${selectedProject.id}`"
+              :profile="profile"
+              :project-id="selectedProject.id"
+              :offline="offline"
+            />
+          </section>
+          <section
+            v-else-if="projectView"
+            class="project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10"
+            aria-label="Selected Project"
+          >
+            <div class="project-home-content">
+              <button class="project-back" @click="showProjects(!!selectedProject?.archived)">
+                ← Projects
+              </button>
+              <p v-if="projectLoading" role="status">Loading Project…</p>
+              <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">
+                {{ projectError }}
+                <button class="underline" @click="loadProject">Retry Project</button>
+              </p>
+              <template v-if="selectedProject">
+                <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
+                <p class="mb-4 break-all text-sm text-[#a3a3a3]">
+                  {{
+                    projectRoot(selectedProject)
+                      ? "Workspace: " + projectRoot(selectedProject)
+                      : selectedProject.isNoProject
+                        ? "No project workspace"
+                        : "No workspace configured"
+                  }}
+                </p>
+                <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">
+                  No conversations yet.
+                </p>
+                <nav class="project-chat-list" aria-label="Project chats">
+                  <button
+                    v-for="row in visibleSessions"
+                    :key="row.id"
+                    class="project-chat-row"
+                    :aria-label="row.title || 'Untitled session'"
+                    @click="chooseSession(row.id)"
+                  >
+                    <span class="project-chat-title">{{ row.title || "Untitled session" }}</span>
+                    <span v-if="row.preview?.trim()" class="project-chat-preview">{{
+                      row.preview
+                    }}</span>
+                  </button>
+                </nav>
+                <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
+              </template>
+            </div>
+          </section>
         </template>
-      </ChatTranscript>
-      <ChatComposer
-        v-show="!settingsPage"
-        :project-name="
-          !scheduledPage && !projectsPage && !selectedProject?.isNoProject
-            ? selectedProject?.label
-            : undefined
-        "
-        :key="JSON.stringify([profile, session])"
-        :disabled="
-          !!projectPage ||
-          scheduledPage ||
-          projectsPage ||
-          (projectView && selectedProject?.archived) ||
-          (projectView &&
-            (!selectedProject ||
-              (!selectedProject.isNoProject && !projectRoot(selectedProject)))) ||
-          offline ||
-          creating ||
-          modelsLoading ||
-          viewLoading ||
-          viewApprovalPending ||
-          viewUnavailable ||
-          viewReconnect ||
-          !canStream
-        "
-        :models="models"
-        :providers="providers"
-        :models-loading="modelsLoading"
-        v-model:provider="provider"
-        :default-model="defaultModel"
-        v-model:model="model"
-        :sending="viewBusy"
-        :stoppable="viewActive && !viewReconnect"
-        :suggested-prompt="suggestedPrompt"
-        :reason="
-          scheduledPage
-            ? 'Open a chat to discuss a run.'
-            : projectsPage
-              ? 'Select a project or start a new chat.'
-              : projectView && selectedProject?.archived
-                ? 'Restore this project to start a new chat.'
-                : projectView &&
-                    selectedProject &&
-                    !selectedProject.isNoProject &&
-                    !projectRoot(selectedProject)
-                  ? 'This Project has no workspace.'
-                  : offline
-                    ? 'Offline · sending is unavailable.'
-                    : viewApprovalPending
-                      ? 'Approval is pending in Hermes.'
-                      : !canStream
-                        ? 'Streaming turns are unavailable for this profile.'
-                        : undefined
-        "
-        @stop="stopResponse"
-        @steer="steerResponse"
-        @send="send"
-      />
+      </ChatInterface>
     </main>
   </div>
 </template>

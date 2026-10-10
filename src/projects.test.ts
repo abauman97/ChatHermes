@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "./App.vue";
-import * as nativeSession from "./lib/native-session";
-import { api } from "./lib/hermes-api";
-import { projectRoot, projectSessions } from "./lib/projects";
+import * as nativeSession from "./features/chat/runtime/native-session";
+import { api } from "./services/hermes-api";
+import { projectRoot, projectSessions } from "./features/projects/utils/projects";
 import type { Project, ProjectTree } from "./types/hermes";
 const nativeFactory = nativeSession.useNativeSession;
 let nativeOwner: ReturnType<typeof nativeFactory>;

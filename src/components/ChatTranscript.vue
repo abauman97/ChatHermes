@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Activity, Message, TurnBlock } from "../types/hermes";
-import { historyBlocks } from "../lib/assistant-turn";
+import { transcriptEntries } from "../features/chat/utils/transcript-entries";
+import UserMessage from "../features/chat/components/UserMessage.vue";
+import AssistantTurn from "../features/chat/components/AssistantTurn.vue";
 import TurnWork from "./TurnWork.vue";
-import { renderMarkdown } from "../lib/markdown";
-import { messageText } from "../lib/hermes-api";
+import { renderMarkdown } from "../utils/markdown";
 const props = withDefaults(
   defineProps<{
     profile?: string;
@@ -25,51 +26,7 @@ const props = withDefaults(
 );
 const emit = defineEmits<{ suggest: [text: string] }>();
 const visible = computed(() => props.messages.filter((message) => message.role !== "system"));
-const entries = computed(() => {
-  const result: {
-    message?: Message;
-    blocks?: TurnBlock[];
-    working?: boolean;
-    approvalPending?: boolean;
-    key: string;
-  }[] = [];
-  let userCount = 0;
-  for (let index = 0; index < visible.value.length;) {
-    const message = visible.value[index]!;
-    if (message.role === "user") {
-      userCount++;
-      result.push({ message, key: message.id || `user-${index}` });
-      let end = index + 1;
-      while (end < visible.value.length && visible.value[end]!.role !== "user") end++;
-      const last = end === visible.value.length;
-      const blocks =
-        last && (!props.turnUserCount || props.turnUserCount === userCount) && props.blocks?.length
-          ? props.blocks
-          : message.blocks || historyBlocks(visible.value.slice(index + 1, end));
-      const turnBlocks = blocks.length ? blocks : last ? props.progress : [];
-      const working =
-        last &&
-        (props.working ?? turnBlocks.some((block) => block.kind !== "text" && !block.complete));
-      if (turnBlocks.length || working)
-        result.push({
-          blocks: turnBlocks,
-          working,
-          approvalPending: last && props.approvalPending,
-          key: `turn-${message.id || index}`,
-        });
-      index = end;
-    } else {
-      let end = index + 1;
-      while (end < visible.value.length && visible.value[end]!.role !== "user") end++;
-      result.push({
-        blocks: historyBlocks(visible.value.slice(index, end)),
-        key: `history-${index}`,
-      });
-      index = end;
-    }
-  }
-  return result;
-});
+const entries = computed(() => transcriptEntries(props));
 const transcript = ref<HTMLElement>();
 const content = ref<HTMLElement>();
 const following = ref(props.followInitially !== false);
@@ -110,41 +67,6 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => resizeObserver?.disconnect());
-function images(messageContent: unknown): string[] {
-  const inline = Array.isArray(messageContent)
-    ? messageContent.flatMap((part) => {
-        const url = part?.image_url?.url;
-        return typeof url === "string" && /^(data:image\/|https?:\/\/)/.test(url) ? [url] : [];
-      })
-    : [];
-  if (inline.length) return inline;
-  const text = messageText(messageContent);
-  return [
-    ...text.matchAll(
-      /Attached image [^\n]+: [^\n]*\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))/g,
-    ),
-  ].map(
-    (match) =>
-      "/api/plugins/chathermes/images/" +
-      match[1] +
-      (props.profile ? "?profile=" + encodeURIComponent(props.profile) : ""),
-  );
-}
-function displayText(message: Message) {
-  const text = messageText(message.content);
-  return message.role === "user"
-    ? text
-        .replace(
-          /Attached image ([^\n]+): [^\n]*\/uploads\/chathermes\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)/g,
-          "📷 $1",
-        )
-        .replace(
-          /Attached file ([^\n]+): [^\n]*\/uploads\/chathermes\/[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?/g,
-          "📎 $1",
-        )
-        .replace(/\[screenshot\]/g, "📷 Attached image")
-    : text;
-}
 watch(
   () => [
     props.loading,
@@ -209,51 +131,18 @@ watch(
           </div>
         </div>
         <template v-for="entry in entries" :key="entry.key">
-          <article
-            v-if="entry.message"
-            class="message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]"
-          >
-            <div
-              class="message-content markdown-content break-words text-base leading-7"
-              v-html="renderMarkdown(displayText(entry.message))"
-            />
-            <img
-              v-for="url in images(entry.message.content)"
-              :key="url"
-              :src="url"
-              alt="Attached image"
-              @load="disclosureChanged"
-              class="mt-2 max-h-72 max-w-full rounded-xl object-contain"
-            />
-          </article>
-          <div v-else class="assistant-turn grid min-w-0 gap-1">
-            <TurnWork
-              v-if="entry.working || entry.blocks?.some((block) => block.kind !== 'text')"
-              :activities="
-                (entry.blocks || []).filter((block): block is Activity => block.kind !== 'text')
-              "
-              :working="!!entry.working"
-              :approval-pending="entry.approvalPending"
-            />
-            <template v-for="block in entry.blocks" :key="block.id">
-              <article v-if="block.kind === 'text'" class="message assistant w-full self-start">
-                <div
-                  class="message-content markdown-content break-words text-base leading-7"
-                  v-html="renderMarkdown(block.content)"
-                />
-                <img
-                  v-for="url in block.images"
-                  :key="url"
-                  :src="url"
-                  alt="Attached image"
-                  @load="disclosureChanged"
-                  class="mt-2 max-h-72 max-w-full rounded-xl object-contain"
-                />
-              </article>
-            </template>
-          </div>
+          <UserMessage
+            v-if="entry.kind === 'user'"
+            :message="entry.message"
+            :profile="profile"
+            @image-load="disclosureChanged"
+          />
+          <AssistantTurn v-else :entry="entry" @image-load="disclosureChanged" />
         </template>
-        <div v-if="working && !entries.some((entry) => entry.working)" class="assistant-turn">
+        <div
+          v-if="working && !entries.some((entry) => entry.kind === 'turn' && entry.working)"
+          class="assistant-turn"
+        >
           <TurnWork :activities="progress" :working="true" :approval-pending="approvalPending" />
         </div>
         <slot name="request" />

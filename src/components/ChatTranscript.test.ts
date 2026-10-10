@@ -552,3 +552,93 @@ it("restores saved reasoning and tool calls as inspectable completed disclosures
   expect(wrapper.text()).toContain("pwd");
   expect(wrapper.text()).toContain("Full saved result");
 });
+
+it("keeps disclosure instances independent when two turns reuse a local block ID", async () => {
+  const wrapper = mount(ChatTranscript, {
+    props: {
+      loading: false,
+      progress: [],
+      draft: "",
+      working: true,
+      messages: [
+        {
+          id: "first",
+          role: "user",
+          content: "First",
+          blocks: [
+            {
+              id: "block-1",
+              kind: "thinking",
+              title: "Thought",
+              content: "Earlier reasoning",
+              complete: true,
+            },
+          ],
+        },
+        {
+          id: "second",
+          role: "user",
+          content: "Second",
+          blocks: [
+            {
+              id: "block-1",
+              kind: "thinking",
+              title: "Thinking…",
+              content: "Arriving reasoning",
+              complete: false,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const turns = wrapper.findAll(".assistant-turn");
+  const earlier = turns[0]!.get("details").element;
+  const arriving = turns[1]!.get("details").element;
+  expect(earlier.open).toBe(false);
+  expect(arriving.open).toBe(true);
+  await turns[0]!.get(".work-summary").trigger("click");
+  earlier.open = true;
+  await turns[0]!.get("details").trigger("toggle");
+  await wrapper.setProps({
+    messages: [
+      {
+        id: "first",
+        role: "user",
+        content: "First",
+        blocks: [
+          {
+            id: "block-1",
+            kind: "thinking",
+            title: "Thought",
+            content: "Late earlier result",
+            complete: true,
+          },
+        ],
+      },
+      {
+        id: "second",
+        role: "user",
+        content: "Second",
+        blocks: [
+          {
+            id: "block-1",
+            kind: "thinking",
+            title: "Thought",
+            content: "Final reasoning",
+            complete: true,
+          },
+        ],
+      },
+    ],
+    working: false,
+  });
+  expect(wrapper.findAll(".assistant-turn")[0]!.get("details").element).toBe(earlier);
+  expect(arriving.open).toBe(false);
+  earlier.open = true;
+  await wrapper.findAll(".assistant-turn")[0]!.get("details").trigger("toggle");
+  expect(earlier.open).toBe(true);
+  expect(arriving.open).toBe(false);
+  expect(turns[0]!.text()).toContain("Late earlier result");
+  expect(turns[1]!.text()).toContain("Final reasoning");
+});

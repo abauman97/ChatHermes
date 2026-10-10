@@ -48,7 +48,7 @@ Rebuild with `npm run build` after UI changes. Restart the service after Python 
 
 The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
-See [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
+See [frontend architecture](docs/architecture.md), [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
 
 ### Projects
 
