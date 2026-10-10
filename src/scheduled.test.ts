@@ -2,8 +2,8 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "./App.vue";
-import * as nativeSession from "./lib/native-session";
-import { api } from "./lib/hermes-api";
+import * as nativeSession from "./features/chat/runtime/native-session";
+import { api } from "./services/hermes-api";
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

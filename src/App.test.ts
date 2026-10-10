@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { mount, flushPromises } from "@vue/test-utils";
 import { computed, ref } from "vue";
 import App from "./App.vue";
-import SessionSidebar from "./components/SessionSidebar.vue";
-import * as push from "./lib/push";
-import * as nativeSession from "./lib/native-session";
+import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
+import * as push from "./features/notifications/services/push";
+import * as nativeSession from "./features/chat/runtime/native-session";
 beforeEach(() => {
   history.replaceState({}, "", "/chathermes?profile=alpha");
 });
