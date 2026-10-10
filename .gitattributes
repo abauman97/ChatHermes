@@ -1,1 +1,25 @@
-*.sh text eol=lf
+# Normalize text files to LF
+* text=auto
+
+# Source files always use LF
+*.sh    text eol=lf
+*.py    text eol=lf
+*.js    text eol=lf
+*.ts    text eol=lf
+*.vue   text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Windows-specific scripts
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary files
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary

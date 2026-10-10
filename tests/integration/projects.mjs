@@ -2,7 +2,7 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 const baseURL = process.env.CHATHERMES_TEST_URL || "http://127.0.0.1:9119";
-const model = process.env.LLM_API_MODEL || "fixture-model";
+const model = process.env.TEST_LLM_API_MODEL || "fixture-model";
 const output = "tests/integration-output/issue-7";
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHATHERMES_CHROMIUM });

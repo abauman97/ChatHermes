@@ -128,7 +128,7 @@ test("plugin composer, sent timeline, attachments, model and stream disclosures"
   await expect(profile).toContainText("test-profile");
   await profile.selectOption("test-profile");
   await expect(page.locator(".message.user")).toHaveCount(0);
-  await expect(pill).toContainText(process.env.LLM_API_MODEL || "fixture-model");
+  await expect(pill).toContainText(process.env.TEST_LLM_API_MODEL || "fixture-model");
   await textarea.fill("Message in the secondary profile");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {

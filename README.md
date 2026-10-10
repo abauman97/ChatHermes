@@ -34,17 +34,31 @@ npm run live
 npm run live:visual
 ```
 
-The launcher builds the pinned image and starts a real Hermes dashboard with ChatHermes
-installed and enabled, basic-auth login, and a deterministic model fixture. It needs
-Docker and curl, and supports remote daemons without Compose or bind mounts.
-`npm run live:stop` stops only its test containers and preserves the named volume.
-See [live dashboard workflow](tests/docker/README.md) for remote Docker and real models.
+The launcher builds from the latest official Hermes image and starts one disposable
+container with ChatHermes installed and enabled. Add `TEST_LLM_API_BASE_URL`,
+`TEST_LLM_API_KEY`, and `TEST_LLM_API_MODEL` to the repository root `.env` file,
+then run `npm run live` (or its alias
+`npm run live:real`). The provider URL must be reachable from inside Docker;
+`localhost` there refers to the container itself. No bind mounts or personal
+Hermes state are used. `npm run live:stop` removes the container and its anonymous
+data volume. Each new launch starts with an empty Hermes home.
 
-For browser tests, run `npx playwright install chromium` once, then `npm run live` followed by `npm run test:visual`. Screenshots and traces are saved to `tests/visual-output/`.
+Open the printed `/chathermes` URL and sign in with `tester` /
+`chathermes-local-test`. Use `CHATHERMES_INSTANCE` and
+`CHATHERMES_DASHBOARD_PORT` to run multiple containers. See the
+[live dashboard workflow](tests/docker/README.md) for direct Docker commands,
+remote Docker, and port settings.
 
-Open the `/chathermes` URL printed by `npm run live` in the isolated dashboard. The Dockerfile pins a Hermes base image and source revision because the published base image predates session chat streaming. Configuration is seeded from `.hermes/config.yaml` on every start, runtime data lives in a revision-scoped named volume, and plugin assets/config/test scripts are baked into the image. Sign in with the local-only credentials printed by the launcher. Both default to a generic `fixture-model`; the deterministic OpenAI-compatible fixture makes dashboard testing repeatable, while the actual Hermes agent handles sessions, streaming, and tools. Set `LLM_API_BASE_URL`, `LLM_API_KEY`, and `LLM_API_MODEL` for any OpenAI-compatible provider, then run `npm run live:real`. Both `default` and `test-profile` are created inside this isolated volume to exercise profile selection. The `Instant` option uses the same model via Hermes model routes. The test gateway key is deliberately local-only and must not be used for deployment.
+For browser tests, run `npx playwright install chromium` once, then point
+`CHATHERMES_TEST_URL` at the dashboard. Existing fixture-dependent visual tests
+require their synthetic data and deterministic replies; the real-provider
+container intentionally starts without those fixtures. Screenshots and traces
+are saved to `tests/visual-output/`.
 
-Rebuild with `npm run build` after UI changes. Restart the service after Python route changes by rerunning `npm run live`. Run `npm run live:stop` to remove the launcher's containers; its named test volume and network are preserved. Remove a disposable test volume only after confirming its exact name with `docker volume ls`.
+Rebuild with `npm run live` after plugin changes; the plugin is baked into the
+image. Provider credentials stay in the container environment and gateway
+credentials are generated server-side. Do not use the default test login for a
+public deployment.
 
 The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
