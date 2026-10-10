@@ -1,5 +1,4 @@
 name: Build Plugin Assets
-
 on:
   push:
     branches: [main]
