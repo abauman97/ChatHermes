@@ -47,7 +47,12 @@ function routeSession(value) {
 }
 
 function visibleSession(data) {
-  if (data?.type !== "chathermes.session" || data.visible !== true || typeof data.url !== "string")
+  if (
+    data?.type !== "chathermes.session" ||
+    data.connected !== true ||
+    data.visible !== true ||
+    typeof data.url !== "string"
+  )
     return null;
   const route = routeSession(data.url);
   return route && route.profile === data.profile && route.session === data.session ? route : null;
