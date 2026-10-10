@@ -1,0 +1,97 @@
+name: Build Plugin Assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "scripts/build-plugin.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.*"
+      - "tsconfig*.json"
+      - ".github/workflows/build-assets.yml"
+  workflow_dispatch:
+
+permissions:
+  # The push also requires main's rules to permit this token to write directly.
+  # contents: write does not bypass a rule requiring pull requests.
+  contents: write
+
+concurrency:
+  group: build-assets-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          check-latest: true
+          cache: npm
+
+      - name: Build, verify, and push plugin assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIST="plugin/chathermes/dashboard/dist"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for attempt in 1 2 3; do
+            # This is a disposable runner checkout. Rebuild rather than rebase
+            # generated assets onto sources they were not built from.
+            git fetch origin +refs/heads/main:refs/remotes/origin/main
+            git reset --hard origin/main
+            BUILD_SHA=$(git rev-parse HEAD)
+
+            npm ci
+            npm run build
+
+            test -s "$DIST/index.js"
+            test -s "$DIST/style.css"
+            test -s "$DIST/manifest.webmanifest"
+            test -s "$DIST/push-service-worker.js"
+            test -s "$DIST/apple-touch-icon.png"
+            test -s "$DIST/icons/icon-192.png"
+            test -s "$DIST/icons/icon-512.png"
+            compgen -G "$DIST/assets/app-*.js" > /dev/null
+
+            git add -A -- "$DIST"
+            git fetch origin +refs/heads/main:refs/remotes/origin/main
+            if [ "$BUILD_SHA" != "$(git rev-parse origin/main)" ]; then
+              echo "main advanced during build; rebuilding (attempt $attempt/3)."
+              continue
+            fi
+            if git diff --cached --quiet; then
+              echo "Build assets are unchanged."
+              exit 0
+            fi
+
+            git commit -m "chore(build): update compiled dashboard assets"
+            # A normal push rejects an update if main advances after the check.
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin +refs/heads/main:refs/remotes/origin/main
+            if [ "$BUILD_SHA" = "$(git rev-parse origin/main)" ]; then
+              echo "::error::Push rejected; check Actions write permissions and main branch rules."
+              exit 1
+            fi
+            echo "main advanced before push; rebuilding (attempt $attempt/3)."
+          done
+
+          echo "::error::main kept advancing; rerun the workflow to build the latest assets."
+          exit 1
