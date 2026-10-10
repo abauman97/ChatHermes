@@ -111,7 +111,7 @@ describe("visible session notifications", () => {
     },
   );
   it.each(["turn.complete", "approval", "clarify", "attention"])(
-    "suppresses %s and closes matching notifications while the visible session reconnects",
+    "delivers %s and retains matching notifications until the visible session reconnects",
     async (type) => {
       const h = harness();
       h.patch({ connected: false, visible: false });
@@ -119,9 +119,14 @@ describe("visible session notifications", () => {
       const existing = h.notifications[0];
       h.patch({ visible: true });
       await h.update();
-      expect(existing.close).toHaveBeenCalledOnce();
+      expect(existing.close).not.toHaveBeenCalled();
       await h.push({ type });
-      expect(h.show).toHaveBeenCalledOnce();
+      expect(h.show).toHaveBeenCalledTimes(2);
+      h.patch({ connected: true });
+      await h.update();
+      expect(h.notifications.every((notification) => notification.close.mock.calls.length === 1)).toBe(true);
+      await h.push({ type });
+      expect(h.show).toHaveBeenCalledTimes(2);
     },
   );
   it.each([
@@ -237,7 +242,7 @@ describe("visible session notifications", () => {
     expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 0 : 1);
     h.patch({ connected: false });
     await h.push();
-    expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 0 : 2);
+    expect(h.show).toHaveBeenCalledTimes(activity.visibilityState === "visible" ? 1 : 2);
   });
   it("suppresses and closes if any tab is visible, independently of another hidden tab", async () => {
     const h = harness();
