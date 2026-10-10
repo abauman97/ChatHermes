@@ -1606,3 +1606,264 @@ async def test_workspace_draft_history_remains_available(app, rpc):
     assert response.status_code == 200
     assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
     assert calls == [('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})]
+
+
+def test_artifact_index_reconstructs_uploads_and_tool_outputs_without_resurrection(tmp_path):
+    store = plugin._artifacts.Store(tmp_path)
+    staged = store.put('one', '/gateway/attachments/proposal.pdf', name='proposal.pdf',
+                       direction='uploaded', mime='application/pdf', size=1234, submitted=0)
+    assert store.rows() == []
+    class DB:
+        def get_session(self, session): return {'cwd': '/gateway'}
+        def get_messages(self, session, **kwargs):
+            assert kwargs['include_ancestors'] and kwargs['include_compacted']
+            return [
+                {'id': 10, 'role': 'user', 'content': 'Review this\nAttached file proposal.pdf: /gateway/attachments/proposal.pdf\n@file:attachments/proposal.pdf\nPlease generate MEDIA:/gateway/generated/chart.png', 'timestamp': 100},
+                {'id': 11, 'role': 'tool', 'tool_call_id': 'tool-one', 'content': 'MEDIA:/remote/generated/chart.png', 'timestamp': 101},
+                {'id': 12, 'role': 'assistant', 'content': 'MEDIA:/remote/generated/chart.png', 'timestamp': 102},
+            ]
+    store.discover(DB(), 'one')
+    rows = plugin._artifacts.Store(tmp_path).rows()
+    assert len(rows) == 2
+    upload = next(row for row in rows if row['direction'] == 'uploaded')
+    assert upload['size'] == 1234 and upload['message_id'] == '10'
+    generated = next(row for row in rows if row['direction'] == 'generated')
+    assert generated['tool_call_id'] == 'tool-one' and generated['mime'] == 'image/png'
+    with pytest.raises(plugin.HTTPException):
+        store.get(staged['id'], 'another-session')
+    store.deleted(generated['id'])
+    store.discover(DB(), 'one')
+    assert len(store.rows()) == 1
+    (tmp_path / 'another-profile').mkdir()
+    assert plugin._artifacts.Store(tmp_path / 'another-profile').rows() == []
+
+
+@pytest.mark.parametrize('content, expected', [
+    ('MEDIA:/workspace/report.custom', ['/workspace/report.custom']),
+    ('@file:`/workspace/a file.pdf`', []),
+    ('![Chart](/workspace/chart.png)', []),
+    ('{"output_path":"/remote/image.png"}', []),
+    ('{"_multimodal":true,"meta":{"output_file":"/remote/output.wav"}}', []),
+    ('Read /etc/passwd and visit https://example.test. [site](https://example.test)', []),
+    ('MEDIA:javascript:alert(1)', []),
+    ('Created /workspace/report.pdf successfully.', []),
+    ('MEDIA:`/workspace/a file.pdf` MEDIA:/workspace/no-extension', ['/workspace/a file.pdf', '/workspace/no-extension']),
+    ({'image_url': {'url': '/workspace/image.png'}}, []),
+    ({'output_path': '/workspace/a.pdf', 'result': 'MEDIA:/workspace/actual.pdf'}, ['/workspace/actual.pdf']),
+])
+def test_artifact_discovery_explicit_references(content, expected):
+    assert plugin._artifacts.references(content) == expected
+
+
+@pytest.mark.parametrize('content, expected', [
+    ('Attached file report.pdf: /workspace/report.pdf', ['/workspace/report.pdf']),
+    ('Attached image photo.png: /workspace/photo.png', ['/workspace/photo.png']),
+    ([{'type': 'text', 'text': 'Attached file report.pdf: report.pdf'}], ['report.pdf']),
+    ([{'type': 'image_url', 'image_url': {'url': '/workspace/photo.png'}}], ['/workspace/photo.png']),
+    ('MEDIA:/workspace/report.pdf', []),
+    ('@file:/workspace/report.pdf', []),
+    ('[report](/workspace/report.pdf) /workspace/report.pdf', []),
+    ({'file_path': '/workspace/report.pdf', 'image_url': '/workspace/photo.png'}, []),
+    ([{'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,abc'}}], []),
+])
+def test_artifact_discovery_only_explicit_user_uploads(content, expected):
+    assert plugin._artifacts.references(content, uploaded=True) == expected
+
+
+def test_artifact_discovery_revalidates_legacy_rows_and_preserves_staged_metadata(tmp_path):
+    store = plugin._artifacts.Store(tmp_path)
+    legacy = store.put('one', '/workspace/mentioned.pdf')
+    staged = store.put('one', '/workspace/upload.pdf', direction='uploaded', submitted=0, name='Original.pdf', size=42)
+    store.put('one', '/workspace/unsent.pdf', direction='uploaded', submitted=0)
+    store.put('two', '/workspace/other.pdf')
+    store.put('one', '/workspace/output.custom', message_id='old-mention', tool_call_id='not-a-transfer')
+    class DB:
+        def get_session(self, session): return {'cwd': '/workspace'}
+        def get_messages(self, session, **kwargs):
+            if kwargs['offset'] == 0:
+                return [{'id': i, 'role': 'user', 'content': 'MEDIA:/workspace/mentioned.pdf @file:/workspace/unsent.pdf'} for i in range(100)]
+            return [
+                {'id': 101, 'role': 'user', 'content': 'Attached file Original.pdf: /workspace/upload.pdf'},
+                {'id': 102, 'role': 'assistant', 'content': '[file](/workspace/mentioned.pdf)'},
+                {'id': 103, 'role': 'tool', 'content': {'saved_to': '/workspace/mentioned.pdf'}},
+                {'id': 104, 'role': 'tool', 'tool_call_id': 'transfer', 'content': 'MEDIA:output.custom'},
+            ]
+    store.discover(DB(), 'one')
+    assert {row['path'] for row in store.rows('one')} == {'/workspace/upload.pdf', '/workspace/output.custom'}
+    upload = store.get(staged['id'])
+    assert upload['size'] == 42 and upload['name'] == 'Original.pdf' and upload['message_id'] == '101'
+    generated = next(row for row in store.rows('one') if row['direction'] == 'generated')
+    assert generated['message_id'] == '104' and generated['tool_call_id'] == 'transfer'
+    assert not store.get(legacy['id'])['submitted']
+    assert len(store.rows('two')) == 1
+    store.discover(DB(), 'one')
+    assert len(store.rows('one')) == 2
+
+
+@run_async
+async def test_native_attachment_staging_uses_gateway_and_detaches_pending_images(app, monkeypatch, tmp_path):
+    import sys, types
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            if method == 'image.attach_bytes':
+                return {'path': '/remote/images/upload.png', 'attached': True}
+            if method == 'file.attach':
+                return {'path': '/remote/attachments/report.txt', 'ref_text': '@file:/remote/attachments/report.txt', 'attached': True}
+            return {}
+    class Owner:
+        lock = asyncio.Lock()
+        transport = Transport()
+        async def attach(self):
+            return {'session_id': 'native-runtime'}
+    async def acquire(*args): return Owner()
+    monkeypatch.setitem(sys.modules, plugin.__name__, plugin)
+    monkeypatch.setattr(plugin._native_owners, 'acquire', acquire)
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: tmp_path)
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda request: Transport())
+    import base64
+    image = base64.b64encode(b'\x89PNG\r\n\x1a\nimage-data').decode()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        uploaded = await client.post('/api/plugins/chathermes/chat/sessions/one/attachments?profile=alpha', json={'name': 'picture.png', 'data': 'data:image/png;base64,' + image, 'size': 1, 'type': 'image/png'})
+        assert uploaded.status_code == 201
+        assert uploaded.json()['mime'] == 'image/png'
+        assert [name for name, _ in calls] == ['session.activate', 'image.attach_bytes', 'image.detach']
+        assert all(params['profile'] == 'alpha' and params['session_id'] == 'native-runtime' for _, params in calls)
+        assert all(name != 'prompt.submit' for name, _ in calls)
+        calls.clear()
+        document = await client.post('/api/plugins/chathermes/chat/sessions/one/attachments', json={'name': 'report.txt', 'data': 'data:text/plain;base64,aGk=', 'type': 'text/plain', 'size': 2})
+        assert document.status_code == 201
+        assert document.json()['ref_text'] == '@file:/remote/attachments/report.txt'
+        assert [name for name, _ in calls] == ['session.activate', 'file.attach']
+        for invalid in (
+            {'name': '../config.yaml', 'data': 'data:text/plain;base64,aGk='},
+            {'name': 'fake.png', 'data': 'data:image/png;base64,aGk='},
+            {'name': 'empty.txt', 'data': 'data:text/plain;base64,'},
+        ):
+            response = await client.post('/api/plugins/chathermes/chat/sessions/one/attachments', json=invalid)
+            assert response.status_code in (422, 413)
+        assert plugin._artifacts.Store(tmp_path).rows() == []  # staging never submits
+
+
+@run_async
+async def test_artifact_actions_delegate_to_native_bridge_and_only_tombstone_after_delete(app, monkeypatch, tmp_path):
+    import sys, types
+    store = plugin._artifacts.Store(tmp_path)
+    row = store.put('one', '/remote/report.pdf', name='report.pdf', mime='application/pdf')
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: tmp_path)
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    calls = []
+    async def download(path, **kwargs):
+        calls.append((path, kwargs['profile'], kwargs['session_id']))
+        return plugin.Response(b'%PDF-native', media_type='application/pdf')
+    async def target(*args): return Path('/remote/report.pdf')
+    async def delete(payload, request):
+        calls.append(('delete', payload.path, payload.recursive))
+        return {'deleted': True}
+    files = types.SimpleNamespace(fs_download=download, _fs_backend=lambda profile: None,
+                                  _fs_download_path=target, _is_sensitive_path=lambda path: False,
+                                  _fs_regular_file=lambda path: (path, None), _refuse_live_database=lambda path: None, delete_managed_file=delete)
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers', types.SimpleNamespace(files=files))
+    class Delete:
+        def __init__(self, **kwargs): self.__dict__.update(kwargs)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_models', types.SimpleNamespace(ManagedFileDelete=Delete))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        content = await client.get(f'/api/plugins/chathermes/artifacts/{row["id"]}/content?profile=alpha&preview=1')
+        assert content.status_code == 200 and content.content == b'%PDF-native'
+        assert content.headers['content-disposition'].startswith('inline')
+        assert content.headers['content-security-policy'].startswith('sandbox')
+        assert calls[0] == ('/remote/report.pdf', 'alpha', 'one')
+        async def denied_download(path, **kwargs):
+            raise plugin.HTTPException(403, 'Path is outside the managed read boundary')
+        files.fs_download = denied_download
+        denied = await client.get(f'/api/plugins/chathermes/artifacts/{row["id"]}/content?profile=alpha&preview=1')
+        assert denied.status_code == 403
+        assert denied.json()['detail'] == 'Hermes could not access this artifact'
+        assert store.get(row['id'])  # Native denial does not erase the file card.
+        files._fs_backend = lambda profile: object()
+        refused = await client.delete(f'/api/plugins/chathermes/artifacts/{row["id"]}?profile=alpha')
+        assert refused.status_code == 501 and store.get(row['id'])
+        files._fs_backend = lambda profile: None
+        removed = await client.delete(f'/api/plugins/chathermes/artifacts/{row["id"]}?profile=alpha')
+        assert removed.status_code == 200 and removed.json()['scope'] == 'Hermes file'
+        assert calls[-1] == ('delete', '/remote/report.pdf', False)
+        assert store.rows() == []
+
+
+@run_async
+async def test_native_submit_reattaches_only_selected_images_and_keeps_file_prompt_refs(monkeypatch, tmp_path):
+    import sys, types, contextlib
+    @contextlib.contextmanager
+    def scope(profile): yield
+    monkeypatch.setitem(sys.modules, 'hermes_cli', types.ModuleType('hermes_cli'))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', types.SimpleNamespace(_config_profile_scope=scope))
+    monkeypatch.setitem(sys.modules, 'hermes_constants', types.SimpleNamespace(get_hermes_home=lambda: tmp_path))
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    store = plugin._artifacts.Store(tmp_path)
+    image = store.put('one', '/native/images/picture.png', direction='uploaded', mime='image/png', submitted=0)
+    document = store.put('one', '/native/attachments/report.pdf', direction='uploaded', mime='application/pdf', ref_text='@file:`attachments/report.pdf`', submitted=0)
+    unused = store.put('two', '/native/images/other.png', direction='uploaded', mime='image/png', submitted=0)
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            return {'running': False} if method == 'session.activate' else {'status': 'accepted'}
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'alpha')
+    channel.runtime, channel.stored = 'native-runtime', 'one'
+    result = await channel.operation('chat.submit', {'input': 'Review files', 'attachment_ids': [image['id'], document['id']]})
+    assert result['outcome'] == 'accepted'
+    assert [method for method, _ in calls] == ['session.activate', 'image.attach', 'prompt.submit']
+    submitted = calls[-1][1]
+    assert submitted['session_id'] == 'native-runtime' and submitted['profile'] == 'alpha'
+    assert '@file:`attachments/report.pdf`' in submitted['text']
+    assert 'Attached image picture.png: /native/images/picture.png' in submitted['text']
+    calls.clear()
+    result = await channel.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'chat.submit', 'params': {'input': 'bad', 'attachment_ids': [unused['id']]}})
+    assert result['error']['outcome'] == 'rejected' and calls == []
+    for ids in ([image['id'], image['id']], ['../unsafe'], 'not-a-list'):
+        rejected = await channel.handle({'jsonrpc': '2.0', 'id': 2, 'method': 'chat.submit', 'params': {'input': 'bad', 'attachment_ids': ids}})
+        assert rejected['error']['outcome'] == 'rejected' and calls == []
+
+
+@run_async
+async def test_artifact_global_and_project_views_share_authoritative_membership(app, monkeypatch, tmp_path):
+    store = plugin._artifacts.Store(tmp_path)
+    first = store.put('one', '/native/one.pdf')
+    second = store.put('two', '/native/two.pdf')
+    monkeypatch.setattr(plugin, '_upload_home', lambda request: tmp_path)
+    import sys, types
+    from contextlib import contextmanager
+    store.put('one', '/native/mentioned.pdf')
+    store.put('two', '/native/legacy.pdf')
+    class DB:
+        def get_session(self, sid): return {'id': sid, 'title': 'First' if sid == 'one' else 'Second'}
+        def list_sessions_rich(self, **kwargs): return [self.get_session('one')]  # two is cached from another page
+        def get_messages(self, sid, **kwargs):
+            return [{'id': 1, 'role': 'user', 'content': f'Attached file upload.pdf: /native/{sid}.pdf'},
+                    {'id': 2, 'role': 'assistant', 'content': '/native/mentioned.pdf [file](/native/legacy.pdf)'},
+                    {'id': 3, 'role': 'user', 'content': 'MEDIA:/native/mentioned.pdf'},
+                    {'id': 4, 'role': 'tool', 'content': {'output_path': '/native/legacy.pdf'}}]
+    @contextmanager
+    def profile_db(params): yield DB()
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=types.SimpleNamespace(_profile_db=profile_db)))
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', lambda *args: None)
+    async def rpc(request, method, params=None):
+        if method == 'projects.list': return {'projects': []}
+        assert method == 'projects.tree'
+        return {'projects': [{'id': 'project-one', 'label': 'First project', 'sessionIds': ['one'], 'repos': []}, {'id': 'project-two', 'label': 'Second project', 'repos': [{'groups': [{'sessions': [{'id': 'two'}]}]}]}]}
+    monkeypatch.setattr(plugin, '_rpc', rpc)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        global_rows = await client.get('/api/plugins/chathermes/artifacts')
+        assert {row['id'] for row in global_rows.json()['artifacts']} == {first['id'], second['id']}
+        project_rows = await client.get('/api/plugins/chathermes/artifacts?project_id=project-one')
+        assert len(project_rows.json()['artifacts']) == 1
+        assert project_rows.json()['artifacts'][0]['id'] == first['id']
+        assert project_rows.json()['artifacts'][0]['session_title'] == 'First'
+        assert project_rows.json()['artifacts'][0]['project_name'] == 'First project'
+        session_rows = await client.get('/api/plugins/chathermes/artifacts?session_id=one')
+        assert session_rows.json()['artifacts'] == project_rows.json()['artifacts']
+        invalid = await client.get('/api/plugins/chathermes/artifacts?profile=../alpha')
+        assert invalid.status_code == 422

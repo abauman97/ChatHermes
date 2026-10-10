@@ -12,6 +12,9 @@ import type {
   ProjectAction,
 } from "./types/hermes";
 import { projectRoot, projectSessions } from "./features/projects/utils/projects";
+import ArtifactBrowser from "./features/artifacts/ArtifactBrowser.vue";
+const artifactsPage = ref(false),
+  projectArtifacts = ref(false);
 import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
 import ProjectsPage from "./features/projects/components/ProjectsPage.vue";
 import SettingsPage from "./features/settings/components/SettingsPage.vue";
@@ -23,6 +26,7 @@ import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import { useChatController } from "./features/chat/composables/useChatController";
 import { provideChat } from "./features/chat/context";
+const chatInterfaceComponent = ref<InstanceType<typeof ChatInterface>>();
 const scheduledPage = ref(false),
   scheduledPageKey = ref(0),
   scheduledDiscussionError = ref("");
@@ -122,15 +126,19 @@ let pushGeneration = 0;
 const settingsPage = ref(false),
   settingsButton = ref<HTMLButtonElement | null>(null);
 function contentView() {
-  return scheduledPage.value
-    ? "scheduled"
-    : projectsPage.value
-      ? "projects"
-      : projectPage.value
-        ? "project-" + projectPage.value
-        : projectView.value
-          ? "project"
-          : "";
+  return artifactsPage.value
+    ? "artifacts"
+    : projectArtifacts.value
+      ? "project-artifacts"
+      : scheduledPage.value
+        ? "scheduled"
+        : projectsPage.value
+          ? "projects"
+          : projectPage.value
+            ? "project-" + projectPage.value
+            : projectView.value
+              ? "project"
+              : "";
 }
 const native = useNativeSession(() => {
   refreshProjects();
@@ -189,7 +197,10 @@ function setUrl(replace = false) {
   if (settingsPage.value) {
     url.searchParams.set("view", "settings");
     if (contentView()) url.searchParams.set("return_view", contentView());
-  } else if (scheduledPage.value) url.searchParams.set("view", "scheduled");
+  } else if (artifactsPage.value) url.searchParams.set("view", "artifacts");
+  else if (projectArtifacts.value && projectView.value)
+    url.searchParams.set("view", "project-artifacts");
+  else if (scheduledPage.value) url.searchParams.set("view", "scheduled");
   else if (projectsPage.value) {
     url.searchParams.set("view", "projects");
   } else if (projectPage.value) url.searchParams.set("view", "project-" + projectPage.value);
@@ -200,7 +211,28 @@ function setUrl(replace = false) {
   if (!scheduledPage.value && session.value) url.searchParams.set("session", session.value);
   history[replace ? "replaceState" : "pushState"]({}, "", url.pathname + url.search + url.hash);
 }
+function showArtifacts(fromHistory = false) {
+  settingsPage.value = false;
+  scheduledPage.value = false;
+  projectsPage.value = false;
+  projectPage.value = "";
+  projectView.value = false;
+  projectArtifacts.value = false;
+  artifactsPage.value = true;
+  drawer.value = false;
+  if (!fromHistory) setUrl();
+}
+async function artifactConversation(id: string, project?: string) {
+  if (project) await chooseProject(project);
+  else {
+    projectId.value = "";
+    selectedProject.value = undefined;
+  }
+  await chooseSession(id);
+}
 function showScheduled(fromHistory = false) {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
@@ -302,6 +334,8 @@ async function loadProject() {
   }
 }
 async function chooseProject(id: string, fromHistory = false) {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
@@ -319,6 +353,8 @@ async function chooseProject(id: string, fromHistory = false) {
   await loadProject();
 }
 function showProjects(archived = false, fromHistory = false) {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
@@ -354,6 +390,8 @@ async function recentSession(id: string) {
   await Promise.all([chooseSession(id), owner ? loadProject() : Promise.resolve()]);
 }
 async function newChat() {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   settingsPage.value = false;
   projectPage.value = "";
   projectConfirmation.value = undefined;
@@ -486,6 +524,8 @@ async function loadMessages() {
   return false;
 }
 async function chooseProfile(id: string, fromHistory = false) {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   if (fromHistory) settingsPage.value = false;
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
     error.value = "Invalid profile name";
@@ -560,6 +600,8 @@ async function chooseProfile(id: string, fromHistory = false) {
   }
 }
 async function chooseSession(id: string, fromHistory = false) {
+  artifactsPage.value = false;
+  projectArtifacts.value = false;
   settingsPage.value = false;
   scheduledPage.value = false;
   if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id);
@@ -677,12 +719,14 @@ async function restoreView(state: ReturnType<typeof urlState>) {
   let current = generation;
   await pending;
   if (current !== generation || profile.value !== state.profile) return;
-  if (view === "scheduled") showScheduled(true);
+  if (view === "artifacts") showArtifacts(true);
+  else if (view === "scheduled") showScheduled(true);
   else if (view === "projects") showProjects(state.archived, true);
   else if (state.project) {
     await chooseProject(state.project, true);
     if (current !== generation) return;
-    if (view === "project-edit" || view === "project-instructions")
+    if (view === "project-artifacts") projectArtifacts.value = true;
+    else if (view === "project-edit" || view === "project-instructions")
       openProjectPage(view === "project-edit" ? "edit" : "instructions", true);
     else if (state.session && view !== "project") {
       const selected = chooseSession(state.session, true);
@@ -816,6 +860,7 @@ const notificationSession = computed(() => ({
   session: session.value,
   chat:
     !settingsPage.value &&
+    !artifactsPage.value &&
     !scheduledPage.value &&
     !projectsPage.value &&
     !projectView.value &&
@@ -877,7 +922,13 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div class="app-shell flex min-h-dvh bg-black font-sans text-white dark:bg-black dark:text-white">
+  <div
+    class="app-shell flex min-h-dvh bg-black font-sans text-white dark:bg-black dark:text-white"
+    @dragenter="chatInterfaceComponent?.drag($event)"
+    @dragover="chatInterfaceComponent?.dragOver($event)"
+    @dragleave="chatInterfaceComponent?.leave()"
+    @drop="chatInterfaceComponent?.drop($event)"
+  >
     <aside
       class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-1 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white"
       :class="drawer ? 'translate-x-0' : '-translate-x-full'"
@@ -930,6 +981,7 @@ onUnmounted(() => {
           <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" /></svg
         >Projects
       </button>
+
       <button
         class="scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="scheduledPage ? 'page' : undefined"
@@ -953,6 +1005,13 @@ onUnmounted(() => {
         @click="exitPlugin"
       >
         ← Hermes Desktop
+      </button>
+      <button
+        class="artifacts-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        :aria-current="artifactsPage ? 'page' : undefined"
+        @click="showArtifacts()"
+      >
+        <span class="text-2xl" aria-hidden="true">▧</span>Artifacts
       </button>
       <SessionSidebar
         heading="Recents"
@@ -1044,17 +1103,19 @@ onUnmounted(() => {
             <path d="M3 6h18M3 13h12" />
           </svg>
         </button>
-        <div class="min-w-0 flex-1">
+        <div class="col-start-2 min-w-0 flex-1">
           <h1 class="header-title truncate text-base font-medium">
             {{
-              settingsPage
-                ? "Settings"
-                : scheduledPage
-                  ? "Scheduled"
-                  : projectsPage
-                    ? "Projects"
-                    : sessions.find((s) => s.id === session)?.title ||
-                      (session ? "Conversation" : selectedProject?.label || "ChatHermes")
+              artifactsPage
+                ? "Artifacts"
+                : settingsPage
+                  ? "Settings"
+                  : scheduledPage
+                    ? "Scheduled"
+                    : projectsPage
+                      ? "Projects"
+                      : sessions.find((s) => s.id === session)?.title ||
+                        (session ? "Conversation" : selectedProject?.label || "ChatHermes")
             }}
           </h1>
           <p
@@ -1219,7 +1280,16 @@ onUnmounted(() => {
         </div>
       </div>
       <ChatInterface
-        :show-page="settingsPage || scheduledPage || projectsPage || !!projectPage || projectView"
+        ref="chatInterfaceComponent"
+        :hide-composer="artifactsPage || projectArtifacts"
+        :show-page="
+          settingsPage ||
+          artifactsPage ||
+          scheduledPage ||
+          projectsPage ||
+          !!projectPage ||
+          projectView
+        "
       >
         <template #page>
           <SettingsPage
@@ -1234,6 +1304,12 @@ onUnmounted(() => {
             @toggle-push="togglePush"
             @test-push="testPush"
             @close="closeSettings()"
+          />
+          <ArtifactBrowser
+            v-else-if="artifactsPage"
+            :key="profile"
+            :profile="profile"
+            @conversation="artifactConversation"
           />
           <ScheduledPage
             v-else-if="scheduledPage"
@@ -1310,23 +1386,52 @@ onUnmounted(() => {
                         : "No workspace configured"
                   }}
                 </p>
-                <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">
-                  No conversations yet.
-                </p>
-                <nav class="project-chat-list" aria-label="Project chats">
+                <div class="mb-5 flex gap-3" aria-label="Project view">
                   <button
-                    v-for="row in visibleSessions"
-                    :key="row.id"
-                    class="project-chat-row"
-                    :aria-label="row.title || 'Untitled session'"
-                    @click="chooseSession(row.id)"
+                    class="rounded-xl bg-[#303030] px-4 py-3"
+                    :aria-pressed="!projectArtifacts"
+                    @click="
+                      projectArtifacts = false;
+                      setUrl();
+                    "
                   >
-                    <span class="project-chat-title">{{ row.title || "Untitled session" }}</span>
-                    <span v-if="row.preview?.trim()" class="project-chat-preview">{{
-                      row.preview
-                    }}</span>
+                    Sessions / Chat</button
+                  ><button
+                    class="rounded-xl bg-[#303030] px-4 py-3"
+                    :aria-pressed="projectArtifacts"
+                    @click="
+                      projectArtifacts = true;
+                      setUrl();
+                    "
+                  >
+                    Artifacts
                   </button>
-                </nav>
+                </div>
+                <ArtifactBrowser
+                  v-if="projectArtifacts"
+                  :profile="profile"
+                  :project-id="projectId"
+                  @conversation="artifactConversation"
+                />
+                <template v-else>
+                  <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">
+                    No conversations yet.
+                  </p>
+                  <nav class="project-chat-list" aria-label="Project chats">
+                    <button
+                      v-for="row in visibleSessions"
+                      :key="row.id"
+                      class="project-chat-row"
+                      :aria-label="row.title || 'Untitled session'"
+                      @click="chooseSession(row.id)"
+                    >
+                      <span class="project-chat-title">{{ row.title || "Untitled session" }}</span>
+                      <span v-if="row.preview?.trim()" class="project-chat-preview">{{
+                        row.preview
+                      }}</span>
+                    </button>
+                  </nav>
+                </template>
                 <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
               </template>
             </div>

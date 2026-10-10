@@ -69,6 +69,18 @@ describe("active tool presentation", () => {
     expect(wrapper.find(".active-tool, .working-shimmer").exists()).toBe(false);
   });
 
+  it("keeps manually opened completed details open when history refreshes the activity", async () => {
+    const completed = { ...tool, complete: true, state: "completed" as const };
+    const wrapper = mount(ActivityRow, { props: { activity: completed, turnComplete: true } });
+    const details = wrapper.get("details");
+    (details.element as HTMLDetailsElement).open = true;
+    await details.trigger("toggle");
+    await wrapper.setProps({ activity: { ...completed, output: "Refreshed saved result" } });
+    expect(details.attributes("open")).toBeDefined();
+    expect(wrapper.get("pre").text()).toContain("Refreshed saved result");
+    wrapper.unmount();
+  });
+
   it("keeps arriving reasoning in its open disclosure", () => {
     const wrapper = mount(ActivityRow, {
       props: { activity: { ...tool, kind: "thinking", title: "Thinking…" } },

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vite-plus/test";
 import { ref } from "vue";
-import { api } from "../../../services/hermes-api";
+import { artifacts, type Artifact } from "../../artifacts/service";
 import { useChatController } from "./useChatController";
 import { useNativeSession } from "../runtime/native-session";
 function setup() {
@@ -112,27 +112,30 @@ describe("live chat controller", () => {
     await second;
     expect(native.error.value).toBe("");
   });
-  it("discards a stale attachment upload without writing errors or restoring an old prompt", async () => {
+  it("rejects a stale staged attachment without changing the new draft", async () => {
     const { native, controller, switchScope } = setup();
-    let uploaded!: (value: { path: string }) => void;
-    const upload = vi.spyOn(api, "upload").mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          uploaded = resolve;
-        }),
+    let uploaded!: (value: Artifact) => void;
+    const upload = vi.spyOn(artifacts, "stage").mockReturnValue(
+      new Promise((resolve) => {
+        uploaded = resolve;
+      }),
     );
-    native.submit = vi.fn(async (_text, content) => {
-      await content();
+    const pending = controller.actions.stage({
+      name: "file.txt",
+      type: "text/plain",
+      size: 1,
+      data: "data:text/plain;base64,eA==",
     });
-    const pending = controller.actions.send("Old draft", [
-      { name: "file.txt", type: "text/plain", data: "data:text/plain;base64,QQ==", size: 1 },
-    ]);
     switchScope();
-    uploaded({ path: "/uploads/chathermes/synthetic.txt" });
-    await pending;
+    uploaded({ id: "a".repeat(64), reference: "/attachments/file.txt" } as Artifact);
+    await expect(pending).rejects.toThrow("Conversation changed");
     expect(native.error.value).toBe("");
     expect(controller.scope.suggestedPrompt.value).toBe("");
-    expect(upload).toHaveBeenCalledWith("alpha", expect.objectContaining({ name: "file.txt" }));
+    expect(upload).toHaveBeenCalledWith(
+      "alpha",
+      "one",
+      expect.objectContaining({ name: "file.txt" }),
+    );
     upload.mockRestore();
   });
 });

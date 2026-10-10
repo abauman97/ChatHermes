@@ -1022,3 +1022,174 @@ async def scheduled_runs(request: Request, job_id: str, offset: int = 0, limit: 
 @router.get('/scheduled/output')
 async def scheduled_output(request: Request, job_id: str, run_id: str):
     return await _scheduled_read(request, _scheduled_output_sync, job_id, run_id)
+
+
+_artifacts = _load_sibling('artifacts')
+
+
+def _artifact_store(request):
+    return _artifacts.Store(_upload_home(request))
+
+
+def _public_artifact(row):
+    return {key: row.get(key) for key in ('id', 'session_id', 'name', 'mime', 'size', 'direction', 'created_at', 'message_id', 'tool_call_id')} | {'reference': row['path'], 'ref_text': row['ref_text']}
+
+
+@router.post('/chat/sessions/{session_id}/attachments', status_code=201)
+async def stage_attachment(request: Request, session_id: str):
+    import sys
+    from starlette.concurrency import run_in_threadpool
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id):
+        raise HTTPException(422, 'Invalid conversation')
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 28 * 1024 * 1024:
+            raise HTTPException(413, 'Attachment is too large')
+    import json
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise HTTPException(422, 'Invalid attachment')
+    name, data, mime, size, image = _artifacts.validate_upload(body)
+    profile = _rpc_profile(request)
+    await run_in_threadpool(_native_channel.check_profile_session, profile, session_id)
+    store = _artifact_store(request)
+    transport = _new_rpc_transport(request)
+    owner = await _native_owners.acquire(sys.modules[__name__], transport, profile, session_id)
+    async with owner.lock:
+        snapshot = await owner.attach()
+        scoped = {'profile': profile, 'session_id': snapshot['session_id']}
+        live = await owner.transport.call('session.activate', {**scoped, 'omit_messages': True})
+        if live.get('running') or live.get('queued'):
+            raise HTTPException(409, 'Wait for the response before attaching files')
+        result = await owner.transport.call('image.attach_bytes' if image else 'file.attach',
+            {**scoped, **({'content_base64': data, 'filename': name} if image else {'data_url': data, 'name': name})})
+        if image:
+            await owner.transport.call('image.detach', {**scoped, 'path': result['path']})
+        row = await run_in_threadpool(store.put, session_id, result['path'], name=name, mime=mime, size=size,
+                                     direction='uploaded', submitted=0, ref_text=result.get('ref_text', ''))
+        return _public_artifact(row)
+
+
+def _discover_artifacts(request, session_id, offset):
+    from tui_gateway import server
+    store = _artifact_store(request)
+    with server._profile_db({'profile': _rpc_profile(request)}) as db:
+        if db is None:
+            return store.rows(session_id), [], False
+        sessions = ([db.get_session(session_id)] if session_id else
+                    db.list_sessions_rich(limit=30, offset=offset, order_by_last_active=True, include_archived=True))
+        sessions = [row for row in sessions if row]
+        for session in sessions:
+            store.discover(db, session['id'])
+        # Global pages also return previously indexed sessions. Revalidate those
+        # histories so legacy heuristic rows cannot leak through another page.
+        if not session_id:
+            scanned = {session['id'] for session in sessions}
+            for sid in {row['session_id'] for row in store.rows()} - scanned:
+                if db.get_session(sid) is not None:
+                    store.discover(db, sid)
+        rows = store.rows(session_id)
+        accessible = []
+        titles = {session['id']: session.get('title') or 'Untitled session' for session in sessions}
+        for row in rows:
+            stored = db.get_session(row['session_id'])
+            if stored is not None:
+                titles[row['session_id']] = stored.get('title') or 'Untitled session'
+                accessible.append(row)
+        for row in accessible:
+            row['session_title'] = titles[row['session_id']]
+    return accessible, sessions, not session_id and len(sessions) == 30
+
+
+@router.get('/artifacts')
+async def artifacts(request: Request, session_id: str = None, project_id: str = None, offset: int = 0):
+    from starlette.concurrency import run_in_threadpool
+    _rpc_profile(request)
+    if offset < 0:
+        raise HTTPException(422, 'Invalid artifact page')
+    if session_id:
+        await run_in_threadpool(_native_channel.check_profile_session, _rpc_profile(request), session_id)
+    rows, sessions, more = await run_in_threadpool(_discover_artifacts, request, session_id, offset)
+    tree = await _rpc(request, 'projects.tree', {'preview_limit': 0})
+    membership = {}
+    def visit(node, project):
+        for session in node.get('sessions', []) + node.get('previewSessions', []):
+            membership[session['id']] = project
+        for sid in node.get('sessionIds', []):
+            membership[sid] = project
+        for key in ('repos', 'groups'):
+            for child in node.get(key, []):
+                visit(child, project)
+    for project in tree.get('projects', []):
+        if not project.get('isNoProject'):
+            visit(project, project)
+    # Archived projects are absent from the active tree but their artifacts
+    # remain accessible. Resolve membership through the same native project API.
+    stored_projects = (await _rpc(request, 'projects.list')).get('projects', [])
+    known = {project['id'] for project in tree.get('projects', [])}
+    for project in stored_projects:
+        if project.get('archived') and project['id'] not in known and (not project_id or project_id == project['id']):
+            node = (await _rpc(request, 'projects.project_sessions', {'project_id': project['id']})).get('project')
+            if node:
+                visit(node, {'id': project['id'], 'label': project.get('name')})
+    titles = {session['id']: session.get('title') or 'Untitled session' for session in sessions}
+    result = []
+    for row in rows:
+        project = membership.get(row['session_id'], {})
+        if project_id and project.get('id') != project_id:
+            continue
+        result.append({**_public_artifact(row), 'session_title': row.get('session_title') or titles.get(row['session_id'], 'Conversation'),
+                       'project_id': project.get('id'), 'project_name': project.get('label'), 'can_delete': True})
+    return {'artifacts': result, 'has_more': more, 'next_offset': offset + len(sessions)}
+
+
+async def _artifact_file(request, artifact_id, delete=False):
+    from starlette.concurrency import run_in_threadpool
+    from hermes_cli.web_routers import files
+    store = _artifact_store(request)
+    row = await run_in_threadpool(store.get, artifact_id)
+    profile = _rpc_profile(request)
+    await run_in_threadpool(_native_channel.check_profile_session, profile, row['session_id'])
+    try:
+        if delete:
+            # The native managed-files delete API has no remote backend deletion.
+            if await run_in_threadpool(files._fs_backend, profile) is not None:
+                raise HTTPException(501, 'This Hermes backend does not support artifact deletion')
+            target = await files._fs_download_path(row['path'], profile, row['session_id'])
+            if files._is_sensitive_path(target):
+                raise HTTPException(403, 'Artifact deletion is not permitted')
+            # Use the same native regular-file and live-database guards as retrieval.
+            target, _info = await run_in_threadpool(files._fs_regular_file, target)
+            await run_in_threadpool(files._refuse_live_database, target)
+            from hermes_cli.web_models import ManagedFileDelete
+            await files.delete_managed_file(ManagedFileDelete(path=str(target), recursive=False), request)
+            await run_in_threadpool(store.deleted, artifact_id)
+            return {'deleted': True, 'scope': 'Hermes file'}
+        response = await files.fs_download(row['path'], request=request, profile=profile, session_id=row['session_id'])
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Content-Security-Policy'] = "sandbox; default-src 'none'"
+        # Native downloads can be previewed only for inert browser formats.
+        preview = request.query_params.get('preview') == '1'
+        mime = row['mime']
+        safe = mime in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'application/pdf', 'text/plain') or mime.startswith(('audio/', 'video/'))
+        response.headers['Content-Disposition'] = ('inline' if preview and safe else 'attachment') + "; filename*=UTF-8''" + quote(row['name'], safe='')
+        return response
+    except HTTPException as error:
+        if error.status_code == 501:
+            raise
+        raise HTTPException(error.status_code, 'Hermes could not access this artifact')
+    except Exception:
+        raise HTTPException(503, 'Hermes artifact access is unavailable')
+
+
+@router.get('/artifacts/{artifact_id}/content')
+async def artifact_content(request: Request, artifact_id: str):
+    return await _artifact_file(request, artifact_id)
+
+
+@router.delete('/artifacts/{artifact_id}')
+async def delete_artifact(request: Request, artifact_id: str):
+    return await _artifact_file(request, artifact_id, delete=True)
