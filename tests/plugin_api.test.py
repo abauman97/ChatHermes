@@ -1606,3 +1606,128 @@ async def test_workspace_draft_history_remains_available(app, rpc):
     assert response.status_code == 200
     assert response.json()['messages'] == [{'role': 'assistant', 'content': 'Native history'}]
     assert calls == [('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})]
+
+
+@run_async
+async def test_native_artifact_file_routes(app, monkeypatch):
+    import sys
+    from types import ModuleType
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+    files = ModuleType('hermes_cli.web_routers.files')
+    seen = []
+    async def preview(path, request, profile=None, session_id=None):
+        seen.append(('preview', path, profile, session_id))
+        if path == '/secret':
+            raise HTTPException(403, KEY)
+        return {'dataUrl': 'data:text/plain;base64,aGk='}
+    async def download(path, request, profile=None, session_id=None):
+        seen.append(('download', path, profile, session_id))
+        return Response(b'hi', media_type='text/plain')
+    files.fs_read_data_url = preview
+    files.fs_download = download
+    package = ModuleType('hermes_cli.web_routers')
+    package.files = files
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers', package)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.files', files)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        query = {'path': '/tmp/report.txt', 'profile': 'work', 'session_id': 'stored-1'}
+        response = await client.get('/api/plugins/chathermes/files/preview', params=query)
+        assert response.status_code == 200
+        assert response.json() == {'dataUrl': 'data:text/plain;base64,aGk='}
+        assert response.headers['cache-control'] == 'private, no-store'
+        response = await client.get('/api/plugins/chathermes/files/download', params={**query, 'name': 'report.txt\r\nInjected: bad'})
+        assert response.content == b'hi'
+        assert '\r' not in response.headers['content-disposition']
+        assert '\n' not in response.headers['content-disposition']
+        assert response.headers['x-content-type-options'] == 'nosniff'
+        response = await client.get('/api/plugins/chathermes/files/preview', params={**query, 'path': '/secret'})
+        assert response.status_code == 403 and KEY not in response.text
+        for changed in ({'profile': '../x'}, {'path': '\x00'}, {'session_id': '../s'}):
+            response = await client.get('/api/plugins/chathermes/files/preview', params={**query, **changed})
+            assert response.status_code == 422
+    assert seen[:2] == [('preview', '/tmp/report.txt', 'work', 'stored-1'), ('download', '/tmp/report.txt', 'work', 'stored-1')]
+
+
+@run_async
+async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(app, monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from fastapi import HTTPException
+    from fastapi.responses import Response
+    files = ModuleType('hermes_cli.web_routers.files')
+    deleted = []
+    async def download(path, request, profile=None, session_id=None):
+        if path == '/sensitive':
+            raise HTTPException(403, KEY)
+        return Response(b'')
+    async def remove(payload, request):
+        assert payload.recursive is False
+        deleted.append((payload.path, request.query_params['profile']))
+    files.fs_download = download
+    files.delete_managed_file = remove
+    files._fs_backend = lambda profile: None
+    package = ModuleType('hermes_cli.web_routers')
+    package.files = files
+    models = ModuleType('hermes_cli.web_models')
+    models.ManagedFileDelete = SimpleNamespace
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers', package)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_routers.files', files)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_models', models)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        query = {'path': '/opt/data/report.txt', 'profile': 'work', 'session_id': 'stored-1'}
+        response = await client.delete('/api/plugins/chathermes/files', params=query)
+        assert response.status_code == 200 and response.json() == {'ok': True}
+        assert deleted == [('/opt/data/report.txt', 'work')]
+        response = await client.delete('/api/plugins/chathermes/files', params={**query, 'path': '/sensitive'})
+        assert response.status_code == 403 and KEY not in response.text
+        files._fs_backend = lambda profile: object()
+        response = await client.delete('/api/plugins/chathermes/files', params=query)
+        assert response.status_code == 501
+        assert len(deleted) == 1
+
+
+@run_async
+async def test_native_file_staging_retains_upload_references_and_submits_native_context(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    verified, calls = [], []
+    monkeypatch.setattr(plugin._native_channel, 'verify_file_refs', lambda profile, refs: verified.append((profile, refs)))
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            if method == 'session.activate':
+                return {'running': False}
+            if method == 'file.attach':
+                return {'attached': True, 'ref_text': '@file:./attachments/report.txt'}
+            return {'status': 'accepted'}
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'work')
+    channel.runtime = 'runtime'
+    text = 'Review this\nAttached file report.txt: /uploads/original.txt'
+    result = await channel.operation('chat.submit', {'input': text})
+    assert result['outcome'] == 'accepted'
+    assert verified == [('work', ['/uploads/original.txt'])]
+    assert calls[1] == ('file.attach', {'profile': 'work', 'session_id': 'runtime', 'path': '/uploads/original.txt', 'name': 'report.txt'})
+    assert calls[-1] == ('prompt.submit', {'profile': 'work', 'session_id': 'runtime', 'text': text + '\n@file:./attachments/report.txt'})
+
+
+def test_native_general_file_refs_are_profile_bound_and_refuse_symlinks(monkeypatch, tmp_path):
+    import sys, types
+    from contextlib import nullcontext
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', types.SimpleNamespace(_config_profile_scope=lambda profile: nullcontext()))
+    monkeypatch.setitem(sys.modules, 'hermes_constants', types.SimpleNamespace(get_hermes_home=lambda: tmp_path))
+    root = tmp_path / 'uploads' / 'chathermes'
+    root.mkdir(parents=True)
+    original = root / ('a' * 32 + '.txt')
+    original.write_text('synthetic file')
+    plugin._native_channel.verify_file_refs('work', [str(original)])
+    foreign = tmp_path / 'another-profile' / ('b' * 32 + '.txt')
+    foreign.parent.mkdir()
+    foreign.write_text('foreign')
+    link = root / ('c' * 32 + '.txt')
+    link.symlink_to(foreign)
+    for path in (foreign, link, root / 'supplied-name.txt'):
+        with pytest.raises(plugin.HTTPException) as rejected:
+            plugin._native_channel.verify_file_refs('work', [str(path)])
+        assert rejected.value.status_code == 422
+        assert str(path) not in rejected.value.detail

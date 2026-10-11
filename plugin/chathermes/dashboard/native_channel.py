@@ -98,6 +98,26 @@ class Channel:
             if images:
                 from starlette.concurrency import run_in_threadpool
                 await run_in_threadpool(verify_image_refs, self.profile, text, images)
+            # Non-image files use Desktop's native session staging and @file
+            # expansion. Only authenticated uploads from this profile can be
+            # staged; client-supplied arbitrary host paths are never read here.
+            file_refs = re.findall(r'Attached file ([^\n]+?): ([^\n]+)', text)
+            if file_refs:
+                from starlette.concurrency import run_in_threadpool
+                await run_in_threadpool(verify_file_refs, self.profile, [path for _, path in file_refs])
+                references = []
+                for name, path in file_refs:
+                    attached = await self.transport.call('file.attach', {**scoped, 'path': path, 'name': name})
+                    if not attached.get('attached') or not isinstance(attached.get('ref_text'), str):
+                        raise HTTPException(409, 'Hermes could not stage this file; no prompt submitted')
+                    references.append(attached['ref_text'])
+                # Keep the original durable upload annotations for card names
+                # and retrieval. Native ref lines supply the runtime context.
+                suffix = '\n' + '\n'.join(references)
+                if isinstance(native_input, list):
+                    native_input = [*native_input, {'type': 'text', 'text': suffix}]
+                else:
+                    native_input += suffix
             if params.get('model'):
                 from starlette.concurrency import run_in_threadpool
                 model, provider = await run_in_threadpool(model_selection, self.profile, params['model'], params.get('provider'), self.transport)
@@ -218,6 +238,24 @@ def verify_image_refs(profile, text, images):
             data = base64.b64decode(encoded, validate=True)
             if path.stat().st_size != len(data) or path.read_bytes() != data:
                 raise HTTPException(422, 'Image reference does not match uploaded content')
+
+
+def verify_file_refs(profile, refs):
+    from pathlib import Path
+    from hermes_cli.web_server_profiles import _config_profile_scope
+    from hermes_constants import get_hermes_home
+    import re
+    if len(refs) > 5:
+        raise HTTPException(422, 'Attach up to five files per message')
+    with _config_profile_scope(profile):
+        root = Path(get_hermes_home()).resolve() / 'uploads' / 'chathermes'
+        if root.is_symlink() or root.parent.is_symlink():
+            raise HTTPException(422, 'File upload directory unavailable')
+        for ref in refs:
+            path = Path(ref)
+            if (not re.fullmatch(r'[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?', path.name)
+                    or path.is_symlink() or path.resolve().parent != root.resolve() or not path.is_file()):
+                raise HTTPException(422, 'File reference unavailable in this profile')
 
 
 def check_profile_session(profile, stored):

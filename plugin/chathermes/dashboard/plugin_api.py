@@ -497,6 +497,65 @@ def _project_node(stored, node=None):
                ('folders', 'description', 'icon', 'color', 'board_slug', 'archived')}}
 
 
+async def _native_file(request, operation, path, session_id=None, name=None):
+    """Use Desktop's native file handlers, including remote workspace adapters.
+
+    Host plugin authentication applies before these routes. Never reopen a
+    gateway path with dashboard-local filesystem calls or reflect native errors.
+    """
+    profile = _rpc_profile(request)
+    if not isinstance(path, str) or not path or len(path) > 4096 or '\x00' in path:
+        raise HTTPException(422, 'Invalid file reference')
+    if session_id and not re.fullmatch(r'[A-Za-z0-9_-]+', session_id):
+        raise HTTPException(422, 'Invalid session reference')
+    try:
+        from hermes_cli.web_routers import files
+        if operation == 'preview':
+            result = await files.fs_read_data_url(path, request=request, profile=profile, session_id=session_id)
+            return Response(__import__('json').dumps(result), media_type='application/json',
+                            headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+        if operation == 'download':
+            result = await files.fs_download(path, request=request, profile=profile, session_id=session_id)
+            if name:
+                safe_name = name.replace('\r', '').replace('\n', '').replace('\\', '/').rsplit('/', 1)[-1][:255]
+                result.headers['Content-Disposition'] = "attachment; filename*=UTF-8''" + quote(safe_name, safe='')
+            result.headers['Cache-Control'] = 'private, no-store'
+            result.headers['X-Content-Type-Options'] = 'nosniff'
+            return result
+        # Managed deletion is host-local; SSH reads must never turn into a
+        # deletion of a same-named file on the dashboard machine.
+        import asyncio
+        if await asyncio.to_thread(files._fs_backend, profile) is not None:
+            raise HTTPException(501, 'Remote workspace deletion is unsupported')
+        # Native managed deletion enforces the host's configured write policy.
+        # Validate a regular readable file without the preview size cap.
+        await files.fs_download(path, request=request, profile=profile, session_id=session_id)
+        from hermes_cli.web_models import ManagedFileDelete
+        await files.delete_managed_file(ManagedFileDelete(path=path, recursive=False), request)
+        return {'ok': True}
+    except HTTPException as exc:
+        raise HTTPException(exc.status_code, 'Hermes could not access this file')
+    except (ImportError, AttributeError):
+        raise HTTPException(501, 'This Hermes version does not support this file operation')
+    except Exception:
+        raise HTTPException(503, 'Hermes file operation is unavailable')
+
+
+@router.get('/files/preview')
+async def artifact_preview(request: Request, path: str, session_id: str = None):
+    return await _native_file(request, 'preview', path, session_id)
+
+
+@router.get('/files/download')
+async def artifact_download(request: Request, path: str, session_id: str = None, name: str = None):
+    return await _native_file(request, 'download', path, session_id, name)
+
+
+@router.delete('/files')
+async def artifact_delete(request: Request, path: str, session_id: str):
+    return await _native_file(request, 'delete', path, session_id)
+
+
 @router.get('/projects')
 async def projects(request: Request):
     tree = await _rpc(request, 'projects.tree', {'preview_limit': 3})
