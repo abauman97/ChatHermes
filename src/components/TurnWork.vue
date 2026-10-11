@@ -11,9 +11,11 @@ const props = defineProps<{
 const userOpen = ref<boolean | null>(null);
 const timelineId = useId();
 const active = (activity: Activity) => props.working && !activity.complete;
-const grouped = computed(() => props.activities.length > 1);
-const running = computed(() => props.activities.some(active));
-const expanded = computed(() => userOpen.value ?? running.value);
+// Summarize settled calls even while the next call is streaming. Keep the
+// keyed timeline intact so live updates never remount a row or lose its intent.
+const settled = computed(() => props.activities.filter((activity) => !active(activity)));
+const grouped = computed(() => props.activities.length > 1 && settled.value.length > 0);
+const expanded = computed(() => userOpen.value ?? false);
 const needsAttention = (activity: Activity) =>
   ["failed", "interrupted", "unknown"].includes(activity.state || "") ||
   (!props.working && !activity.complete);
@@ -22,7 +24,7 @@ const label = computed(() =>
     ? "Waiting for approval"
     : !props.activities.length
       ? "Working…"
-      : toolGroupLabel(props.activities, running.value),
+      : toolGroupLabel(settled.value, false),
 );
 </script>
 <template>
@@ -41,7 +43,7 @@ const label = computed(() =>
       <span
         class="activity-label"
         :class="{
-          'working-shimmer': running || (working && !activities.length && !approvalPending),
+          'working-shimmer': working && !activities.length && !approvalPending,
         }"
         :title="label"
         >{{ label }}</span
