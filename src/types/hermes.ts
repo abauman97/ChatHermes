@@ -50,7 +50,7 @@ export interface Activity {
   output?: string;
   complete: boolean;
   kind: "thinking" | "tool";
-  state?: "pending" | "running" | "completed" | "failed";
+  state?: "pending" | "running" | "completed" | "failed" | "interrupted" | "unknown";
   toolName?: string;
   startedAt?: number;
   duration?: number;

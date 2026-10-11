@@ -3,6 +3,8 @@ import { computed } from "vue";
 import ArtifactCard from "../../artifacts/components/ArtifactCard.vue";
 import { textArtifacts, toolArtifacts } from "../../artifacts/artifacts";
 import type { Activity } from "../../../types/hermes";
+import { activityRuns } from "../utils/activity-runs";
+import ActivityRow from "../../../components/ActivityRow.vue";
 import type { TranscriptEntry } from "../types/chat-ui";
 import TurnWork from "../../../components/TurnWork.vue";
 import AssistantTextBlock from "./AssistantTextBlock.vue";
@@ -16,40 +18,74 @@ const textPaths = computed(() =>
     block.kind === "text" ? textArtifacts(block.content).files.map((file) => file.path) : [],
   ),
 );
-const toolFiles = computed(() =>
-  props.entry.blocks
-    .flatMap(toolArtifacts)
-    .filter(
-      (file, index, all) =>
-        !textPaths.value.includes(file.path) &&
-        all.findIndex((item) => item.path === file.path) === index,
-    ),
-);
+const parts = computed(() => activityRuns(props.entry.blocks));
+const filesByTool = computed(() => {
+  const seen = new Set(textPaths.value);
+  const files = new Map<string, ReturnType<typeof toolArtifacts>>();
+  for (const block of props.entry.blocks) {
+    if (block.kind !== "tool") continue;
+    files.set(
+      block.id,
+      toolArtifacts(block).filter((file) => {
+        if (seen.has(file.path)) return false;
+        seen.add(file.path);
+        return true;
+      }),
+    );
+  }
+  return files;
+});
+const toolFiles = (activity: Activity) => filesByTool.value.get(activity.id) || [];
 const emit = defineEmits<{ imageLoad: [] }>();
 </script>
 <template>
   <div class="assistant-turn grid min-w-0 gap-1">
+    <template v-for="part in parts" :key="part.id">
+      <TurnWork
+        v-if="part.kind === 'tools'"
+        :activities="part.activities"
+        :working="!!entry.working"
+      >
+        <template #result="{ activity }">
+          <ArtifactCard
+            v-for="file in toolFiles(activity)"
+            :key="file.path"
+            :file="{ ...file, sessionId }"
+            :profile="profile"
+            @image-load="emit('imageLoad')"
+          />
+        </template>
+      </TurnWork>
+      <template v-else>
+        <AssistantTextBlock
+          v-if="part.block.kind === 'text'"
+          :block="part.block"
+          :profile="profile"
+          :session-id="sessionId"
+          @image-load="emit('imageLoad')"
+        />
+        <template v-else>
+          <ActivityRow
+            v-if="part.block.kind !== 'thinking' || part.block.content.trim()"
+            :activity="part.block"
+            :turn-complete="!entry.working"
+          />
+          <ArtifactCard
+            v-for="file in toolFiles(part.block)"
+            :key="file.path"
+            :file="{ ...file, sessionId }"
+            :profile="profile"
+            @image-load="emit('imageLoad')"
+          />
+        </template>
+      </template>
+    </template>
     <TurnWork
-      v-if="entry.working || entry.blocks?.some((block) => block.kind !== 'text')"
-      :activities="(entry.blocks || []).filter((block): block is Activity => block.kind !== 'text')"
-      :working="!!entry.working"
+      v-if="entry.working && (!entry.blocks.length || entry.approvalPending)"
+      :activities="[]"
+      :working="true"
       :approval-pending="entry.approvalPending"
     />
-    <template v-for="block in entry.blocks" :key="block.id">
-      <AssistantTextBlock
-        v-if="block.kind === 'text'"
-        :block="block"
-        :profile="profile"
-        :session-id="sessionId"
-        @image-load="emit('imageLoad')"
-      />
-    </template>
-    <ArtifactCard
-      v-for="file in toolFiles"
-      :key="file.path"
-      :file="{ ...file, sessionId }"
-      :profile="profile"
-      @image-load="emit('imageLoad')"
-    />
+    <slot name="request" />
   </div>
 </template>

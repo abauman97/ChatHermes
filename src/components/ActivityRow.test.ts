@@ -3,78 +3,100 @@ import { describe, expect, it } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ActivityRow from "./ActivityRow.vue";
 import type { Activity } from "../types/hermes";
-
 const tool: Activity = {
-  id: "search",
+  id: "a",
   kind: "tool",
   toolName: "session_search",
-  title: "Searching previous sessions",
-  content: '{"query":"previous discussion"}',
-  output: "Arriving search result",
+  title: "Searching sessions",
+  content: '{"query":"old chat"}',
+  output: "First result",
   complete: false,
-  state: "pending",
-  duration: 1.2,
+  state: "running",
 };
-
-describe("active tool presentation", () => {
-  it("shows only the tool name while pending, running and receiving output", async () => {
+describe("activity disclosures", () => {
+  it("streams arguments and output immediately and preserves manual collapse", async () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } });
-    for (const state of ["pending", "running"] as const) {
-      await wrapper.setProps({ activity: { ...tool, state, output: "More output\n".repeat(100) } });
-      expect(wrapper.text()).toBe("Using tool: Session search");
-      expect(wrapper.get('[role="status"]').text()).toBe("Using tool: Session search");
-      expect(wrapper.find(".working-shimmer, strong, b").exists()).toBe(false);
-      expect(wrapper.find("details, summary, pre").exists()).toBe(false);
-      expect(wrapper.findAll("p")).toHaveLength(0);
-    }
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(wrapper.get("pre").text()).toContain("First result");
+    await wrapper.get("summary").trigger("click");
+    await wrapper.setProps({ activity: { ...tool, output: "More results" } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get("pre").text()).toContain("More results");
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
   });
-
-  it.each([
-    ["  session__search  ", "Session search"],
-    ["web\tsearch", "Web search"],
-    ["", "Tool"],
-    ["___", "Tool"],
-  ])("normalizes tool name %j", (toolName, label) => {
-    const wrapper = mount(ActivityRow, { props: { activity: { ...tool, toolName } } });
-    expect(wrapper.get('[role="status"]').text()).toBe(`Using tool: ${label}`);
+  it("preserves manual expansion when execution completes", async () => {
+    const wrapper = mount(ActivityRow, { props: { activity: tool } });
+    await wrapper.get("summary").trigger("click");
+    await wrapper.get("summary").trigger("click");
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
   });
-
-  it.each(["completed", "failed"] as const)(
-    "restores collapsed, inspectable details when %s",
-    async (state) => {
-      const wrapper = mount(ActivityRow, { props: { activity: tool } });
-      await wrapper.setProps({
-        activity: { ...tool, title: "Searched sessions", complete: true, state },
+  it.each(["failed", "interrupted", "unknown"] as const)(
+    "exposes %s results by default",
+    (state) => {
+      const wrapper = mount(ActivityRow, {
+        props: { activity: { ...tool, complete: true, state } },
       });
-      const details = wrapper.get("details");
-      expect(details.attributes("open")).toBeUndefined();
-      expect(wrapper.find(".working-shimmer, .active-tool").exists()).toBe(false);
-      expect(wrapper.get("summary").text()).toContain("Searched sessions");
-      expect(wrapper.get("summary").text()).toContain("1.2s");
-      expect(wrapper.get("summary").text().includes("Failed")).toBe(state === "failed");
-      (details.element as HTMLDetailsElement).open = true;
-      await details.trigger("toggle");
-      expect(details.attributes("open")).toBeDefined();
-      expect(wrapper.get("pre").text()).toBe(
-        [tool.toolName, tool.content, tool.output].join("\n\n"),
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
+      expect(wrapper.get("summary").text()).toContain(
+        state === "unknown" ? "Result unavailable" : state === "failed" ? "Failed" : "Interrupted",
       );
     },
   );
-
-  it("restores a collapsed disclosure when the turn ends before the tool completes", async () => {
-    const wrapper = mount(ActivityRow, { props: { activity: tool } });
-    await wrapper.setProps({ turnComplete: true });
-    expect(wrapper.get("details").attributes("open")).toBeUndefined();
-    expect(wrapper.get("pre").text()).toContain(tool.content);
-    expect(wrapper.find(".active-tool, .working-shimmer").exists()).toBe(false);
+  it("does not claim an unfinished historical tool succeeded", () => {
+    const wrapper = mount(ActivityRow, { props: { activity: tool, turnComplete: true } });
+    expect(wrapper.get("summary").text()).toContain("Result unavailable");
+    expect(wrapper.find(".working-shimmer").exists()).toBe(false);
   });
-
-  it("keeps arriving reasoning in its open disclosure", () => {
-    const wrapper = mount(ActivityRow, {
-      props: { activity: { ...tool, kind: "thinking", title: "Thinking…" } },
-    });
+  it("streams reasoning independently and collapses untouched completed thoughts", async () => {
+    const thinking: Activity = {
+      id: "r",
+      kind: "thinking",
+      title: "Thinking…",
+      content: "First",
+      complete: false,
+    };
+    const wrapper = mount(ActivityRow, { props: { activity: thinking } });
+    await wrapper.setProps({ activity: { ...thinking, content: "First second" } });
     expect(wrapper.get("details").attributes("open")).toBeDefined();
-    expect(wrapper.get("summary .working-shimmer").text()).toBe("Thinking…");
-    expect(wrapper.get("pre").text()).toContain(tool.content);
+    expect(wrapper.get("pre").text()).toBe("First second");
+    await wrapper.setProps({ activity: { ...thinking, complete: true, duration: 2.5 } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get("summary").text()).toContain("Thought");
+    expect(wrapper.get("summary").text()).toContain("2.5s");
   });
+  it("honors native keyboard disclosure changes without treating automatic toggle as intent", async () => {
+    const wrapper = mount(ActivityRow, { props: { activity: tool } });
+    await wrapper.get("details").trigger("toggle");
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    (wrapper.get("details").element as HTMLDetailsElement).open = true;
+    await wrapper.get("details").trigger("toggle");
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+  });
+});
+
+it("follows arriving output only while the reader stays at the preview bottom", async () => {
+  const wrapper = mount(ActivityRow, { props: { activity: tool } });
+  const element = wrapper.get("pre").element as HTMLElement;
+  Object.defineProperties(element, {
+    scrollHeight: { value: 500, configurable: true },
+    clientHeight: { value: 240 },
+  });
+  await wrapper.setProps({ activity: { ...tool, output: "New output" } });
+  expect(element.scrollTop).toBe(500);
+  element.scrollTop = 50;
+  await wrapper.get("pre").trigger("scroll");
+  Object.defineProperty(element, "scrollHeight", { value: 600 });
+  await wrapper.setProps({ activity: { ...tool, output: "More output" } });
+  expect(element.scrollTop).toBe(50);
+});
+
+it("keeps a delegated task live after the parent settles", () => {
+  const wrapper = mount(ActivityRow, {
+    props: { activity: { ...tool, delegated: true }, turnComplete: true },
+  });
+  expect(wrapper.get("summary").text()).toContain("Running…");
+  expect(wrapper.get("details").attributes("open")).toBeDefined();
 });

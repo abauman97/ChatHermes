@@ -27,7 +27,11 @@ export function transcriptEntries(input: {
       const turnBlocks = blocks.length ? blocks : last ? input.progress : [];
       const working =
         last &&
-        (input.working ?? turnBlocks.some((block) => block.kind !== "text" && !block.complete));
+        (input.working ??
+          Boolean(
+            (message.blocks || input.blocks?.length || input.progress.length) &&
+            turnBlocks.some((block) => block.kind !== "text" && !block.complete),
+          ));
       if (turnBlocks.length || working)
         result.push({
           kind: "turn",

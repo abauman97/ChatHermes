@@ -84,7 +84,7 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await expect(plugin.locator(".message.user").last()).toContainText(prompt);
   await area.fill("draft while responding");
   await expect(area).toBeFocused();
-  await expect(plugin.locator(".work-summary").last()).toBeVisible({ timeout: 60_000 });
+  await expect(plugin.locator(".turn-work .activity").last()).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: info.outputPath("streaming.png") });
   await expect(plugin.locator(".message.assistant").last()).toContainText("chathermes-smoke-ok", {
     timeout: 120_000,
@@ -92,7 +92,8 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await expect(send).toBeEnabled({ timeout: 120_000 });
   await expect(area).toHaveValue("draft while responding");
   await expect(plugin.locator(".activity[open]")).toHaveCount(0);
-  await plugin.locator(".work-summary").last().click();
+  const completedGroup = plugin.locator(".turn-work").last().locator(".work-summary");
+  if (await completedGroup.isVisible()) await completedGroup.click();
   const tool = plugin
     .locator(".activity")
     .filter({ has: page.locator("pre", { hasText: "terminal" }) })
@@ -321,4 +322,221 @@ test("native artifact cards preview, download and survive history reconstruction
     filename,
   );
   await page.screenshot({ path: info.outputPath("project-artifacts-filter.png") });
+});
+
+// Exercise the activity view through the real authenticated plugin/runtime.
+// Keep a command running long enough to inspect disclosure and scroll state.
+test("chronological activity streams and preserves disclosure choices", async ({ page }, info) => {
+  test.setTimeout(180_000);
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const send = plugin.getByRole("button", { name: "Send message", exact: true });
+  await area.fill(
+    "First say 'Starting activity check'. Then use terminal to run this exact command: for i in $(seq 1 60); do echo activity-line-$i; done; sleep 6; echo activity-done. Then use terminal again to run printf second-tool-done. Finally reply 'Activity check finished'. Do not combine the two terminal calls.",
+  );
+  await send.click();
+  // Wait for the new-session composer mount before entering the next draft.
+  await expect(plugin.locator(".message.user").last()).toContainText("Starting activity check");
+  await area.fill("Draft stays focusable");
+  await expect(area).toBeFocused();
+  const active = plugin.locator(".current-activity .activity").first();
+  await expect(active).toBeVisible({ timeout: 60_000 });
+  await expect(active).toHaveAttribute("open", "");
+  await expect(active.locator("pre")).toContainText("activity-line-", { timeout: 60_000 });
+  await active.locator("summary").click();
+  await expect(active).not.toHaveAttribute("open");
+  await active.locator("summary").click();
+  const group = active.locator("xpath=ancestor::section[contains(@class, 'turn-work')]");
+  const groupSummary = group.locator(".work-summary");
+  if (await groupSummary.isVisible()) {
+    await groupSummary.click();
+    await groupSummary.click(); // explicitly keep this multi-call run expanded
+    await expect(groupSummary).toHaveAttribute("aria-expanded", "true");
+  }
+  await page.screenshot({ path: info.outputPath("activity-live.png") });
+  await expect(send).toBeEnabled({ timeout: 120_000 });
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Activity check finished",
+  );
+  await expect(area).toHaveValue("Draft stays focusable");
+  const turn = plugin.locator(".assistant-turn").last();
+  const tools = turn
+    .locator(".turn-work .activity")
+    .filter({ has: page.locator("pre", { hasText: "terminal" }) });
+  // A real provider may retry a call. Compare with the authoritative persisted
+  // call identities rather than assuming the model executes exactly twice.
+  const sessionId = new URL(page.url()).searchParams.get("session")!;
+  const saved = await page.request.get(
+    `/api/plugins/chathermes/api/sessions/${encodeURIComponent(sessionId)}/messages?profile=default&limit=500&order=oldest&inline_images=false`,
+  );
+  expect(saved.ok()).toBeTruthy();
+  const body = await saved.json();
+  const history = Array.isArray(body) ? body : body.data || body.messages;
+  const calls = history.flatMap(
+    (message: { tool_calls?: { id?: string; function?: { name?: string } }[] }) =>
+      (message.tool_calls || []).filter((call) => call.function?.name === "terminal"),
+  );
+  expect(calls.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(calls.map((call: { id: string }) => call.id)).size).toBe(calls.length);
+  await expect(tools).toHaveCount(calls.length);
+  await expect(tools.first()).toHaveAttribute("open", "");
+  await expect(tools.first().locator("pre")).toContainText("activity-done");
+  if (await groupSummary.isVisible())
+    await expect(groupSummary).toHaveAttribute("aria-expanded", "true");
+  // The intro precedes the tool run, and the answer follows it. Reasoning
+  // between calls is allowed to split the ordinary run into separate groups.
+  const order = await turn.locator(":scope > *").evaluateAll((elements) =>
+    elements.map((element) => ({
+      text: element.textContent || "",
+      tool: element.classList.contains("turn-work"),
+    })),
+  );
+  const firstTool = order.findIndex((row) => row.tool);
+  expect(
+    order.slice(0, firstTool).some((row) => row.text.includes("Starting activity check")),
+  ).toBe(true);
+  expect(
+    order.slice(firstTool + 1).some((row) => row.text.includes("Activity check finished")),
+  ).toBe(true);
+  const transcript = plugin.locator(".transcript");
+  await transcript.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  const before = await transcript.evaluate((element) => element.scrollTop);
+  // Toggle offscreen without Playwright scrolling the target into view.
+  await tools.first().locator("summary").dispatchEvent("click");
+  expect(await transcript.evaluate((element) => element.scrollTop)).toBe(before);
+  await page.screenshot({ path: info.outputPath("activity-complete.png") });
+  await page.reload();
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Activity check finished",
+  );
+  await expect(
+    plugin
+      .locator(".turn-work .activity")
+      .filter({ has: page.locator("pre", { hasText: "terminal" }) }),
+  ).toHaveCount(calls.length);
+  await expect(plugin.locator(".current-activity")).toHaveCount(0);
+  // Retained reasoning has no native duration metadata. Replay must not invent
+  // a duration based on how quickly the browser consumed historical events.
+  const thoughtLabels = await plugin
+    .locator(".assistant-turn > .activity summary")
+    .allTextContents();
+  expect(thoughtLabels.every((label) => !/\d+(?:\.\d+)?s/.test(label))).toBe(true);
+  await page.screenshot({ path: info.outputPath("activity-history.png") });
+});
+
+// Deterministic grouped history inside the actual authenticated dashboard.
+// Only the attach snapshot is substituted; real-provider tests above cover
+// execution. This guarantees adjacent calls regardless of model prose choices.
+test("desktop grouped history counts tools and commands with matching chevrons", async ({
+  page,
+}, info) => {
+  await signIn(page);
+  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
+    data: {},
+  });
+  expect(created.ok()).toBeTruthy();
+  const body = await created.json();
+  const sessionId = (body.session || body).id;
+  const call = (id: string, name: string, args = {}) => ({
+    id,
+    type: "function",
+    function: { name, arguments: JSON.stringify(args) },
+  });
+  const toolResult = (row_id: string, id: string, name: string) => ({
+    row_id,
+    role: "tool",
+    name,
+    tool_call_id: id,
+    content: JSON.stringify({ output: `Result ${id}`, exit_code: 0 }),
+  });
+  const messages = [
+    { row_id: "u", role: "user", text: "Inspect grouped activity" },
+    {
+      row_id: "a",
+      role: "assistant",
+      reasoning: "Review the activity in order.",
+      text: "Checking tools.",
+      tool_calls: [call("t1", "custom_tool"), call("t2", "custom_tool")],
+    },
+    toolResult("r1", "t1", "custom_tool"),
+    toolResult("r2", "t2", "custom_tool"),
+    {
+      row_id: "b",
+      role: "assistant",
+      text: "Checking commands next.",
+      tool_calls: [
+        call("c1", "terminal", { command: "pwd" }),
+        call("c2", "terminal", { command: "git status --short" }),
+        call("t3", "custom_tool"),
+      ],
+    },
+    toolResult("r3", "c1", "terminal"),
+    toolResult("r4", "c2", "terminal"),
+    toolResult("r5", "t3", "custom_tool"),
+    { row_id: "c", role: "assistant", text: "Finished." },
+  ];
+  // Recovery also refreshes authoritative REST history after attachment.
+  await page.route(`**/sessions/${sessionId}/messages?*`, (route) =>
+    route.fulfill({
+      json: {
+        data: messages.map((row) => ({
+          ...row,
+          id: row.row_id,
+          content: "text" in row ? row.text : row.content,
+          tool_name: "name" in row ? row.name : undefined,
+        })),
+      },
+    }),
+  );
+  await page.routeWebSocket("**/api/plugins/chathermes/chat/ws?*", (socket) => {
+    const server = socket.connectToServer();
+    const attachIds = new Set<string>();
+    socket.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (frame.method === "chat.attach") attachIds.add(frame.id);
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (attachIds.has(frame.id) && frame.result) {
+        frame.result.messages = messages;
+        frame.result.running = false;
+        frame.result.queued = false;
+        frame.result.inflight = null;
+        frame.result.recovery = {
+          ...frame.result.recovery,
+          complete: false,
+          through: 0,
+          start: 0,
+          base_row_ids: null,
+        };
+        socket.send(JSON.stringify(frame));
+      } else socket.send(message);
+    });
+  });
+  await page.goto(`/chathermes?session=${encodeURIComponent(sessionId)}`);
+  const plugin = page.locator(".chathermes-embedded");
+  const summaries = plugin.locator(".work-summary");
+  await expect(summaries).toHaveCount(2);
+  await expect(summaries.nth(0)).toContainText("Used 2 tools");
+  await expect(summaries.nth(1)).toContainText("Ran 2 commands, used 1 tool");
+  await expect(plugin.locator(".work-timeline .activity:visible")).toHaveCount(0);
+  const thought = plugin.locator(".activity-thinking");
+  await expect(thought.locator(".work-chevron")).not.toHaveClass(/expanded/);
+  await thought.locator("summary").click();
+  await expect(thought.locator(".work-chevron")).toHaveClass(/expanded/);
+  await expect(thought.locator("pre")).toBeVisible();
+  await thought.locator("summary").click();
+  await page.screenshot({ path: info.outputPath("grouped-history-collapsed.png") });
+  await summaries.nth(0).click();
+  await expect(plugin.locator(".work-timeline .activity:visible")).toHaveCount(2);
+  const first = plugin.locator(".work-timeline .activity").first();
+  await first.locator("summary").click();
+  await expect(first.locator("pre")).toContainText("Result t1");
+  await summaries.nth(1).click();
+  await expect(plugin.locator(".work-timeline .activity:visible")).toHaveCount(5);
+  await page.screenshot({ path: info.outputPath("grouped-history-expanded.png") });
 });

@@ -145,7 +145,9 @@ watch(
             :profile="profile"
             :session-id="sessionId"
             @image-load="disclosureChanged"
-          />
+          >
+            <template v-if="entry.working" #request><slot name="request" /></template>
+          </AssistantTurn>
         </template>
         <div
           v-if="working && !entries.some((entry) => entry.kind === 'turn' && entry.working)"
@@ -153,7 +155,10 @@ watch(
         >
           <TurnWork :activities="progress" :working="true" :approval-pending="approvalPending" />
         </div>
-        <slot name="request" />
+        <slot
+          v-if="!entries.some((entry) => entry.kind === 'turn' && entry.working)"
+          name="request"
+        />
         <article v-if="draft && !blocks?.length" class="message assistant w-full self-start">
           <div
             class="message-content markdown-content break-words text-base leading-7"
