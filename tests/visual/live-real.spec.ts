@@ -340,8 +340,11 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(plugin.locator(".message.user").last()).toContainText("Starting activity check");
   await area.fill("Draft stays focusable");
   await expect(area).toBeFocused();
-  const active = plugin.locator(".current-activity .activity").first();
+  const active = plugin.locator(".current-activity .activity:not(.activity-thinking)").first();
   await expect(active).toBeVisible({ timeout: 60_000 });
+  await expect(active).not.toHaveAttribute("open");
+  await page.screenshot({ path: info.outputPath("activity-live-collapsed.png") });
+  await active.locator("summary").click();
   await expect(active).toHaveAttribute("open", "");
   await expect(active.locator("pre")).toContainText("activity-line-", { timeout: 60_000 });
   await active.locator("summary").click();
