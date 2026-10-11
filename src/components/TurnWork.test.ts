@@ -131,7 +131,7 @@ it("keeps concurrent active calls visible and ordered when results arrive out of
   wrapper.unmount();
 });
 
-it.each(["failed", "interrupted", "unknown"] as const)(
+it.each(["interrupted", "unknown"] as const)(
   "retains %s indicators beside a collapsed streaming summary",
   (state) => {
     const wrapper = mount(TurnWork, {
@@ -151,22 +151,71 @@ it.each(["failed", "interrupted", "unknown"] as const)(
     expect(wrapper.get(".activity-failed").attributes("open")).toBeUndefined();
     expect(wrapper.get(".current-activity").isVisible()).toBe(true);
     expect(wrapper.findAll(".result").every((row) => row.isVisible())).toBe(true);
-    if (state === "failed") expect(wrapper.get(".work-summary").text()).toContain("1 failed");
     wrapper.unmount();
   },
 );
 
-it("keeps unfinished calls inspectable when the turn stops", async () => {
-  const wrapper = mount(TurnWork, {
-    props: {
-      working: true,
-      activities: [tool, { ...tool, id: "b", complete: false, state: "running" }],
-    },
-  });
-  await wrapper.setProps({ working: false });
-  expect(wrapper.findAll(".current-activity")).toHaveLength(0);
-  expect(wrapper.get(".activity-failed").isVisible()).toBe(true);
-  expect(wrapper.get(".activity-failed summary").text()).toContain("Result unavailable");
-  expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
-  wrapper.unmount();
-});
+it.each(["terminal", "custom_tool"])(
+  "folds a failed completed %s into the summary while another call is active",
+  async (toolName) => {
+    const activities = reactive<Activity[]>([
+      { ...tool, toolName, complete: false, state: "running", output: "partial" },
+      { ...tool, id: "live", complete: false, state: "running" },
+    ]);
+    const wrapper = mount(TurnWork, { props: { activities, working: true } });
+    const failed = wrapper.findAll(".activity")[0]!;
+    const live = wrapper.findAll(".activity")[1]!;
+    const element = failed.element;
+    expect(rowShown(failed)).toBe(true);
+    activities[0]!.complete = true;
+    activities[0]!.state = "failed";
+    activities[0]!.output = "Command failed: exit code 1";
+    await nextTick();
+    const summary = wrapper.get(".work-summary");
+    expect(summary.text()).toContain(toolName === "terminal" ? "1 command" : "1 tool");
+    expect(summary.text()).toContain("1 failed");
+    expect(summary.attributes("aria-expanded")).toBe("false");
+    expect(rowShown(failed)).toBe(false);
+    expect(rowShown(live)).toBe(true);
+    expect(wrapper.findAll(".current-activity")).toHaveLength(1);
+    await summary.trigger("click");
+    expect(rowShown(failed)).toBe(true);
+    expect(failed.element).toBe(element);
+    expect(wrapper.findAll(".activity").map((row) => row.element)).toEqual([element, live.element]);
+    expect(failed.classes()).toContain("activity-failed");
+    expect(failed.get("summary").text()).toContain("Failed");
+    await failed.get("summary").trigger("click");
+    expect(failed.get("pre").isVisible()).toBe(true);
+    expect(failed.get("pre").text()).toContain("Command failed: exit code 1");
+    await summary.trigger("click");
+    expect(rowShown(failed)).toBe(false);
+    expect(rowShown(live)).toBe(true);
+    await wrapper.setProps({ working: false });
+    expect(rowShown(failed)).toBe(false);
+    expect(rowShown(live)).toBe(true);
+    await summary.trigger("click");
+    expect(failed.attributes("open")).toBeDefined();
+    wrapper.unmount();
+  },
+);
+
+it.each(["running", "failed"] as const)(
+  "keeps unfinished %s calls inspectable when the turn stops",
+  async (state) => {
+    const wrapper = mount(TurnWork, {
+      props: {
+        working: true,
+        activities: [tool, { ...tool, id: "b", complete: false, state }],
+      },
+    });
+    expect(rowShown(wrapper.findAll(".activity")[1]!)).toBe(true);
+    await wrapper.setProps({ working: false });
+    expect(wrapper.findAll(".current-activity")).toHaveLength(0);
+    expect(wrapper.get(".activity-failed").isVisible()).toBe(true);
+    expect(wrapper.get(".activity-failed summary").text()).toContain(
+      state === "failed" ? "Failed" : "Result unavailable",
+    );
+    expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
+    wrapper.unmount();
+  },
+);

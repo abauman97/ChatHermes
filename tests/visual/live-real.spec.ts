@@ -639,7 +639,7 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
   const plugin = page.locator(".chathermes-embedded");
   const failures = plugin.locator(".activity-failed");
   await expect(failures).toHaveCount(2);
-  await expect(failures.nth(0)).toBeVisible();
+  await expect(failures.nth(0)).not.toBeVisible();
   await expect(failures.nth(1)).toBeVisible();
   await expect(failures.nth(0).locator("summary")).toContainText("Failed");
   await expect(failures.nth(1).locator("summary")).toContainText("Result unavailable");
@@ -649,6 +649,7 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
   await area.fill("Draft while inspecting failure");
   await expect(area).toBeFocused();
   await page.screenshot({ path: info.outputPath("failed-activity-collapsed.png") });
+  await plugin.locator(".work-summary").click();
   for (const failure of await failures.all()) {
     await failure.locator("summary").click();
     await expect(failure.locator("pre")).toBeVisible();
@@ -665,7 +666,7 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
 
 // Use the real dashboard mount and authenticated socket, with controlled native
 // frames so adjacent calls and out-of-order completion do not depend on a model.
-test("streaming summarizes completed work and retains only active ordinary rows", async ({
+test("streaming folds completed successes and failures while retaining active rows", async ({
   page,
 }, info) => {
   await signIn(page);
@@ -780,15 +781,42 @@ test("streaming summarizes completed work and retains only active ordinary rows"
   complete("failure", 1);
   start("last");
   await expect(summary).toContainText("1 failed");
-  await expect(turn.locator(".activity-failed")).toBeVisible();
-  await expect(turn.locator(".activity-failed summary")).toContainText("Failed");
+  await expect(summary).toContainText("4 commands, 1 failed");
+  const failure = turn.locator(".activity-failed");
+  await expect(failure).not.toBeVisible();
+  await expect(turn.locator(".work-timeline .activity:visible")).toHaveCount(1);
   await expect(turn.locator(".current-activity")).toHaveCount(1);
+  await expect(rows.nth(4)).toBeVisible();
+  await area.click();
+  await expect(area).toBeFocused();
   await page.screenshot({ path: info.outputPath("stream-group-failed.png") });
+  await summary.click();
+  await expect(failure).toBeVisible();
+  await expect(failure.locator("summary")).toContainText("Failed");
+  await expect(failure).toHaveClass(/activity-failed/);
+  await expect(failure.locator("summary > span").nth(1)).toHaveText("!");
+  await failure.locator("summary").click();
+  await expect(failure.locator("pre")).toContainText("Result failure");
+  await expect(failure.locator("pre")).toContainText(/"exit_code":\s*1/);
+  await expect(rows).toHaveCount(5);
+  expect(await rows.locator("pre").allTextContents()).toEqual(
+    ["first", "second", "third", "failure", "last"].map((id) =>
+      expect.stringContaining(`printf ${id}`),
+    ),
+  );
+  await page.screenshot({ path: info.outputPath("stream-group-failed-expanded.png") });
+  await summary.click();
+  await expect(failure).not.toBeVisible();
+  await expect(rows.nth(4)).toBeVisible();
   complete("last");
   event("message.complete", { text: "Activity finished.", status: "complete" });
   await expect(turn.locator(".message.assistant").last()).toContainText("Activity finished.");
   await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await expect(summary).toContainText("5 commands, 1 failed");
+  await expect(failure).not.toBeVisible();
   await summary.click();
+  await expect(failure).toBeVisible();
+  await expect(failure.locator("pre")).toBeVisible();
   await expect(rows.nth(1)).toHaveAttribute("open", "");
   await expect(rows.nth(1).locator("pre")).toContainText("Result second");
   await expect(area).toHaveValue("Focusable draft during streaming");

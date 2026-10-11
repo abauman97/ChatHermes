@@ -16,8 +16,10 @@ const active = (activity: Activity) => props.working && !activity.complete;
 const settled = computed(() => props.activities.filter((activity) => !active(activity)));
 const grouped = computed(() => props.activities.length > 1 && settled.value.length > 0);
 const expanded = computed(() => userOpen.value ?? false);
+// Completed failures fold like successes; stopped or unavailable calls remain
+// visible so a missing result is not mistaken for completed work.
 const needsAttention = (activity: Activity) =>
-  ["failed", "interrupted", "unknown"].includes(activity.state || "") ||
+  ["interrupted", "unknown"].includes(activity.state || "") ||
   (!props.working && !activity.complete);
 const label = computed(() =>
   props.approvalPending

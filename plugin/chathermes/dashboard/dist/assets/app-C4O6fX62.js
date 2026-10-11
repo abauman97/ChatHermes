@@ -7968,11 +7968,7 @@ var jp = ["open"], Mp = {
 		approvalPending: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = /* @__PURE__ */ V(null), r = Wn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => [
-			"failed",
-			"interrupted",
-			"unknown"
-		].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Ap(a.value, !1) : "Working…");
+		let t = e, n = /* @__PURE__ */ V(null), r = Wn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Ap(a.value, !1) : "Working…");
 		return (t, a) => (W(), G("section", Hp, [o.value || !e.activities.length ? (W(), G("button", {
 			key: 0,
 			type: "button",
