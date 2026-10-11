@@ -385,6 +385,7 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(tools).toHaveCount(calls.length);
   await expect(tools.first()).toHaveAttribute("open", "");
   await expect(tools.first().locator("pre")).toContainText("activity-done");
+  await expect(turn.locator(".activity-failed")).not.toHaveAttribute("open");
   if (await groupSummary.isVisible())
     await expect(groupSummary).toHaveAttribute("aria-expanded", "true");
   // The intro precedes the tool run, and the answer follows it. Reasoning
