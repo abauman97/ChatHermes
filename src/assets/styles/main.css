@@ -116,34 +116,53 @@ body {
   touch-action: pan-x pan-y;
 }
 .activity {
-  color: #b4b4b4;
-  font-size: 14px;
+  color: #8e8e8e;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .activity summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
+  min-width: 0;
   cursor: pointer;
   list-style: none;
-  padding: 6px 0;
+  padding: 2px 0;
 }
 .activity summary::-webkit-details-marker {
   display: none;
 }
-.activity summary::after {
-  content: "⌄";
-  margin-left: 4px;
-}
-.activity[open] summary::after {
-  transform: rotate(180deg);
-}
 .activity pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 13px/1.6 monospace;
-  margin: 8px 0 10px 24px;
+  font: 12px/1.45 monospace;
+  margin: 3px 0 5px 0;
   max-height: 240px;
   overflow: auto;
+}
+.activity-thinking pre {
+  font: inherit;
+  line-height: 1.5;
+}
+.activity-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-meta {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.activity-command-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 12px;
+  border-radius: 2px;
+  background: #8e8e8e;
+  color: #212121;
+  font: bold 10px/12px monospace;
+  text-align: center;
 }
 /* Host dashboard themes must not replace the plugin's readable system font. */
 .chathermes-embedded .app-shell {
@@ -549,48 +568,38 @@ body {
   --work-highlight: #fff;
 }
 .turn-work {
-  color: inherit;
-  font-size: 14px;
+  color: #8e8e8e;
+  font-size: 13px;
+  line-height: 1.5;
   min-width: 0;
 }
 .work-summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 5px;
+  padding: 2px 0;
   cursor: pointer;
   text-align: left;
   max-width: 100%;
   min-width: 0;
-}
-.work-summary > :not(.active-tool) {
-  flex-shrink: 0;
-}
-.work-summary .working-shimmer {
-  color: #b4b4b4;
-  font-weight: 700;
-}
-.working-shimmer-tool {
   font-weight: 400;
-}
-.active-tool {
-  min-width: 0;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .work-chevron {
-  width: 12px;
+  flex-shrink: 0;
+  width: 10px;
   text-align: center;
+  opacity: 0.6;
   transform: rotate(0deg);
 }
 .work-chevron.expanded {
   transform: rotate(90deg);
 }
 .work-timeline {
-  padding-left: 20px;
+  padding-left: 12px;
   min-width: 0;
+}
+.work-timeline-single {
+  padding-left: 0;
 }
 .working-shimmer {
   background: linear-gradient(

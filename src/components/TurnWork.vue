@@ -1,65 +1,64 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from "vue";
+import { computed, ref, useId } from "vue";
 import type { Activity } from "../types/hermes";
 import ActivityRow from "./ActivityRow.vue";
+import { isCommand, toolGroupLabel } from "../features/chat/utils/activity-labels";
 const props = defineProps<{
   activities: Activity[];
   working: boolean;
   approvalPending?: boolean;
 }>();
-const expanded = ref(false);
+const userOpen = ref<boolean | null>(null);
 const timelineId = useId();
-// Keep the ordered collection and row instances intact when hiding history.
-const rows = computed(() =>
-  props.activities.map((activity) => (props.working ? activity : { ...activity, complete: true })),
-);
-const activeTool = computed(() => {
-  if (!props.working) return undefined;
-  for (let index = rows.value.length - 1; index >= 0; index--) {
-    const activity = rows.value[index];
-    if (activity.kind === "tool" && !activity.complete) return activity;
-  }
-  return undefined;
-});
-const timelineRows = computed(() =>
-  rows.value.filter((activity) => activity.kind !== "tool" || activity.complete),
-);
-const visibleActive = (activity: Activity) => props.working && !activity.complete;
-watch(
-  () => props.working,
-  (working) => {
-    if (!working) expanded.value = false;
-  },
+const active = (activity: Activity) => props.working && !activity.complete;
+const grouped = computed(() => props.activities.length > 1);
+const running = computed(() => props.activities.some(active));
+const expanded = computed(() => userOpen.value ?? running.value);
+const needsAttention = (activity: Activity) =>
+  ["failed", "interrupted", "unknown"].includes(activity.state || "") ||
+  (!props.working && !activity.complete);
+const label = computed(() =>
+  props.approvalPending
+    ? "Waiting for approval"
+    : !props.activities.length
+      ? "Working…"
+      : toolGroupLabel(props.activities, running.value),
 );
 </script>
 <template>
-  <section class="turn-work" aria-label="Turn work">
+  <section class="turn-work" aria-label="Tool activity">
     <button
+      v-if="grouped || !activities.length"
       type="button"
       class="work-summary"
       :aria-expanded="expanded"
       :aria-controls="timelineId"
-      @click="expanded = !expanded"
+      @click="userOpen = !expanded"
     >
-      <span class="work-chevron" :class="{ expanded }" aria-hidden="true">›</span>
-      <span :class="{ 'working-shimmer': working && !approvalPending }"
-        >{{ approvalPending ? "Waiting for approval" : working ? "Working…" : "Worked"
-        }}<template v-if="working && !approvalPending && activeTool">
-          <span class="working-shimmer-tool"> Using tool: {{ activeTool.toolName }}</span></template
-        ></span
+      <span v-if="activities.some(isCommand)" class="activity-command-icon" aria-hidden="true"
+        >›_</span
       >
-
+      <span
+        class="activity-label"
+        :class="{
+          'working-shimmer': running || (working && !activities.length && !approvalPending),
+        }"
+        :title="label"
+        >{{ label }}</span
+      >
+      <span class="work-chevron" :class="{ expanded }" aria-hidden="true">›</span>
       <span v-if="approvalPending" class="sr-only" role="status">Waiting for approval</span>
     </button>
-    <div :id="timelineId" class="work-timeline">
-      <div
-        v-for="activity in timelineRows"
-        :key="activity.id"
-        v-show="expanded || visibleActive(activity)"
-        :class="{ 'current-activity': visibleActive(activity) }"
-      >
-        <ActivityRow :activity="activity" :turn-complete="!working" />
-      </div>
+    <div :id="timelineId" class="work-timeline" :class="{ 'work-timeline-single': !grouped }">
+      <template v-for="activity in activities" :key="activity.id">
+        <div
+          v-show="!grouped || expanded || active(activity) || needsAttention(activity)"
+          :class="{ 'current-activity': active(activity) }"
+        >
+          <ActivityRow :activity="activity" :turn-complete="!working" />
+        </div>
+        <slot name="result" :activity="activity" />
+      </template>
     </div>
   </section>
 </template>

@@ -75,31 +75,23 @@ describe("ordered activity presentation", () => {
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
   });
 
-  it("groups all activity before the response and keeps only active work visible", async () => {
+  it("renders text, reasoning and separate tool runs in chronological order", async () => {
     const blocks = [
+      { id: "intro", kind: "text" as const, content: "Intro" },
+      { id: "r", kind: "thinking" as const, title: "Thinking…", content: "Plan", complete: false },
       {
-        id: "r1",
-        kind: "thinking" as const,
-        title: "Thought",
-        content: "First plan",
-        complete: true,
-      },
-      { id: "commentary", kind: "text" as const, content: "Checking files" },
-      {
-        id: "t1",
+        id: "a",
         kind: "tool" as const,
-        title: "Read package.json",
-        content: "details",
-        complete: true,
-      },
-      {
-        id: "active",
-        kind: "thinking" as const,
-        title: "Thinking…",
-        content: "streaming",
+        toolName: "terminal",
+        title: "Running command",
+        content: "pwd",
+        output: "partial",
         complete: false,
       },
-      { id: "answer", kind: "text" as const, content: "Answer" },
+      { id: "b", kind: "tool" as const, title: "Reading file", content: "file", complete: false },
+      { id: "middle", kind: "text" as const, content: "Middle" },
+      { id: "c", kind: "tool" as const, title: "Searching", content: "query", complete: false },
+      { id: "final", kind: "text" as const, content: "Answer" },
     ];
     const wrapper = mount(ChatTranscript, {
       props: {
@@ -112,162 +104,64 @@ describe("ordered activity presentation", () => {
       },
     });
     expect(wrapper.findAll(".assistant-turn > *").map((row) => row.classes()[0])).toEqual([
+      "message",
+      "activity",
       "turn-work",
       "message",
+      "turn-work",
       "message",
     ]);
-    expect(wrapper.get(".work-summary").text()).toBe("›Working…");
-    expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
-    expect(wrapper.findAll(".activity").map((row) => row.get("summary").isVisible())).toEqual([
-      false,
-      false,
-      true,
-    ]);
-    expect(wrapper.get(".current-activity .activity").attributes("open")).toBeDefined();
-    expect(wrapper.findAll(".working-shimmer")).toHaveLength(2);
-    await wrapper.get(".work-summary").trigger("click");
-    expect(
-      wrapper
-        .findAll(".work-timeline > div")
-        .every((row) => row.attributes("style") !== "display: none;"),
-    ).toBe(true);
-    // Independent native disclosures can be opened without changing siblings.
-    const first = wrapper.findAll(".activity").at(0)!;
-    (first.element as HTMLDetailsElement).open = true;
-    await first.trigger("toggle");
-    expect(wrapper.findAll(".activity[open]")).toHaveLength(2);
-    expect(wrapper.findAll(".activity").at(1)!.attributes("open")).toBeUndefined();
+    expect(wrapper.findAll(".turn-work")).toHaveLength(2);
+    expect(wrapper.findAll(".current-activity")).toHaveLength(3);
+    expect(wrapper.get(".activity pre").text()).toBe("Plan");
+    const firstRun = wrapper.findAll(".turn-work")[0]!;
+    await firstRun.get(".work-summary").trigger("click"); // explicit collapse
+    expect(firstRun.get(".activity").isVisible()).toBe(true); // active rows remain visible
+    await firstRun.get(".work-summary").trigger("click"); // explicit expansion
+    const row = firstRun.get("details").element;
     await wrapper.setProps({
-      blocks: blocks.map((block) => (block.kind !== "text" ? { ...block, complete: true } : block)),
+      blocks: blocks.map((block) =>
+        block.kind === "text" ? block : { ...block, complete: true, state: "completed" },
+      ),
       working: false,
     });
-    expect(wrapper.get(".work-summary").text()).toBe("›Worked");
-    expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
-    expect(
-      wrapper
-        .findAll(".work-timeline > div")
-        .every((row) => row.attributes("style") === "display: none;"),
-    ).toBe(true);
-    expect(wrapper.findAll(".working-shimmer")).toHaveLength(0);
-    await wrapper.get(".work-summary").trigger("click");
-    expect(
-      wrapper
-        .findAll(".work-timeline > div")
-        .every((row) => row.attributes("style") !== "display: none;"),
-    ).toBe(true);
-    expect(wrapper.findAll(".activity[open]")).toHaveLength(0);
+    expect(firstRun.get(".work-summary").attributes("aria-expanded")).toBe("true");
+    expect(firstRun.get("details").element).toBe(row);
+    expect(wrapper.findAll(".turn-work")[1]!.find(".work-summary").exists()).toBe(false);
+    expect(wrapper.findAll(".turn-work")[1]!.get("details").attributes("open")).toBeUndefined();
   });
-  it("puts only the normalized active tool inline with Working and preserves completed disclosures", async () => {
-    const tool = {
-      id: "tool",
-      kind: "tool" as const,
-      toolName: "session_search",
-      title: "Search sessions",
-      content: '{"query":"old chat"}',
-      output: "partial result",
-      complete: false,
-    };
+  it("keeps failed tools and interactive requests visible when a run is collapsed", async () => {
     const wrapper = mount(ChatTranscript, {
       props: {
         messages: [{ role: "user", content: "Question" }],
-        blocks: [tool],
+        blocks: [
+          {
+            id: "a",
+            kind: "tool",
+            title: "Ran command",
+            content: "false",
+            output: "Action needed",
+            complete: true,
+            state: "failed",
+          },
+        ],
         working: true,
+        approvalPending: true,
         progress: [],
         draft: "",
         loading: false,
       },
+      slots: { request: "<button class='approve'>Approve</button>" },
     });
-    for (const state of ["pending", "running"] as const) {
-      await wrapper.setProps({ blocks: [{ ...tool, state, output: "More results" }] });
-      expect(wrapper.get(".work-summary").text()).toBe("›Working… Using tool: session_search");
-      expect(wrapper.get(".work-summary .working-shimmer").text()).toBe(
-        "Working… Using tool: session_search",
-      );
-      expect(wrapper.get(".working-shimmer-tool").classes()).toContain("working-shimmer-tool");
-      expect(wrapper.findAll(".working-shimmer")).toHaveLength(1);
-      expect(wrapper.find("pre").exists()).toBe(false);
-      await wrapper.get(".work-summary").trigger("click");
-      expect(wrapper.find("pre").exists()).toBe(false);
-    }
-    await wrapper.setProps({ blocks: [{ ...tool, complete: true }], working: false });
-    expect(wrapper.find(".active-tool").exists()).toBe(false);
-    expect(wrapper.get(".work-summary").text()).toBe("›Worked");
-    await wrapper.get(".work-summary").trigger("click");
-    const details = wrapper.get("details");
-    expect(details.isVisible()).toBe(true);
-    expect(details.attributes("open")).toBeUndefined();
-    (details.element as HTMLDetailsElement).open = true;
-    await details.trigger("toggle");
-    expect(wrapper.get("pre").text()).toContain("old chat");
-    expect(wrapper.get("pre").text()).toContain("partial result");
-  });
-
-  it("shows approval waiting independently of completed activity and keeps history inspectable", async () => {
-    const blocks = [
-      {
-        id: "tool",
-        kind: "tool" as const,
-        title: "Ran command",
-        content: "approval command",
-        complete: true,
-        state: "failed" as const,
-      },
-    ];
-    const wrapper = mount(ChatTranscript, {
-      props: {
-        messages: [{ role: "user", content: "Question" }],
-        blocks,
-        working: true,
-        progress: [],
-        draft: "",
-        loading: false,
-      },
-      slots: { request: "<button>Approve</button>" },
-    });
-    expect(wrapper.get(".work-summary").text()).toContain("Working…");
-    expect(wrapper.get(".activity").isVisible()).toBe(false);
-    await wrapper.setProps({ approvalPending: true });
-    expect(wrapper.get(".work-summary").text()).toContain("Waiting for approval");
-    expect(wrapper.get('.work-summary [role="status"]').text()).toBe("Waiting for approval");
-    expect(wrapper.findAll(".work-summary .working-shimmer")).toHaveLength(0);
-    expect(wrapper.find(".current-activity").exists()).toBe(false);
-    expect(wrapper.findAll(".current-activity").filter((row) => row.isVisible())).toHaveLength(0);
-    expect(wrapper.findAll(".work-timeline > div")[0]!.attributes("style")).toContain(
-      "display: none",
-    );
-    expect(wrapper.get("button:last-child").isVisible()).toBe(true);
-    await wrapper.get(".work-summary").trigger("click");
-    expect(wrapper.findAll(".work-timeline > div")[0]!.attributes("style")).not.toContain(
-      "display: none",
-    );
-    expect(wrapper.get(".activity summary").text()).toContain("Failed");
-    expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
-    expect(wrapper.get("button:last-child").isVisible()).toBe(true);
-    await wrapper.get(".work-summary").trigger("click");
-    expect(wrapper.get('.work-summary [role="status"]').isVisible()).toBe(true);
-    await wrapper.setProps({
-      approvalPending: false,
-      blocks: [
-        ...blocks,
-        {
-          id: "running",
-          kind: "tool",
-          toolName: "search",
-          title: "Searching",
-          content: "",
-          output: "",
-          complete: false,
-        },
-      ],
-    });
-    expect(wrapper.findAll(".current-activity")).toHaveLength(0);
-    expect(wrapper.get(".work-summary .working-shimmer").text()).toBe(
-      "Working… Using tool: search",
-    );
-    expect(wrapper.get(".activity").isVisible()).toBe(false);
-    await wrapper.setProps({ approvalPending: false, working: false });
-    expect(wrapper.get(".work-summary").text()).toContain("Worked");
-    expect(wrapper.get(".activity").isVisible()).toBe(false);
+    expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
+    expect(wrapper.get(".approve").isVisible()).toBe(true);
+    expect(wrapper.findAll(".approve")).toHaveLength(1);
+    expect(wrapper.text()).toContain("Waiting for approval");
+    await wrapper.get(".activity summary").trigger("click");
+    await wrapper.get(".activity summary").trigger("click");
+    expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect(wrapper.get(".approve").isVisible()).toBe(true);
   });
   it("shows Working on admission before any activity arrives", () => {
     const wrapper = mount(ChatTranscript, {
@@ -598,7 +492,6 @@ it("keeps disclosure instances independent when two turns reuse a local block ID
   const arriving = turns[1]!.get("details").element;
   expect(earlier.open).toBe(false);
   expect(arriving.open).toBe(true);
-  await turns[0]!.get(".work-summary").trigger("click");
   earlier.open = true;
   await turns[0]!.get("details").trigger("toggle");
   await wrapper.setProps({

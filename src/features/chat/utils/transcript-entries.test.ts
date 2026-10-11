@@ -47,3 +47,18 @@ describe("transcript entries", () => {
     });
   });
 });
+
+it("does not infer a running session from a saved call with no result", () => {
+  const entries = transcriptEntries({
+    messages: [
+      { role: "user", content: "Question" },
+      { role: "assistant", content: "", tool_calls: [{ id: "a", function: { name: "terminal" } }] },
+    ],
+    progress: [],
+  });
+  expect(entries.at(-1)).toMatchObject({
+    kind: "turn",
+    working: false,
+    blocks: [expect.objectContaining({ id: "a", complete: false })],
+  });
+});

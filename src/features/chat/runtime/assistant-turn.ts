@@ -13,6 +13,24 @@ export function nativeSubagentId(data: Data): string {
     ? `${delegation}:${data.task_index}`
     : "";
 }
+export function toolResultFailed(value: unknown): boolean {
+  let result = value;
+  if (typeof result === "string") {
+    try {
+      result = JSON.parse(result);
+    } catch {
+      return false;
+    }
+  }
+  if (!result || typeof result !== "object") return false;
+  const record = result as Data;
+  return Boolean(
+    record.is_error ||
+    record.error ||
+    record.success === false ||
+    (typeof record.exit_code === "number" && record.exit_code !== 0),
+  );
+}
 export function toolTitle(name: string, complete = false): string {
   const labels: Record<string, [string, string]> = {
     file_search: ["Searching files", "Searched files"],
@@ -61,11 +79,13 @@ export interface AssistantTurn {
 }
 export const createTurn = (): AssistantTurn => ({ blocks: [], seen: new Set(), sequence: 0 });
 export function finishTurn(turn: AssistantTurn) {
+  closeReasoning(turn);
   for (const block of turn.blocks)
     if (block.kind !== "text") {
       block.complete = true;
       if (block.kind === "thinking") block.title = "Thought";
-      if (block.state === "running" || block.state === "pending") block.state = "completed";
+      if (!block.state || block.state === "running" || block.state === "pending")
+        block.state = block.kind === "tool" ? "unknown" : "completed";
     }
 }
 function closeReasoning(turn: AssistantTurn) {
@@ -74,6 +94,8 @@ function closeReasoning(turn: AssistantTurn) {
       block.complete = true;
       block.state = "completed";
       block.title = "Thought";
+      if (block.duration === undefined && block.startedAt !== undefined)
+        block.duration = Math.max(0, (Date.now() - block.startedAt) / 1000);
     }
 }
 export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
@@ -127,6 +149,11 @@ export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
         content: "",
         complete: false,
         state: "running",
+        startedAt: data.persisted
+          ? undefined
+          : typeof data.ts === "number"
+            ? data.ts * 1000
+            : Date.now(),
       };
       turn.blocks.push(block);
     }
@@ -169,7 +196,13 @@ export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
       block.output = (block.output || "") + delta;
     } else {
       block.complete = true;
-      block.state = type === "tool.failed" ? "failed" : "completed";
+      block.state =
+        type === "tool.failed" ||
+        toolResultFailed(data.output ?? data.result) ||
+        data.is_error ||
+        data.error
+          ? "failed"
+          : "completed";
       block.title = toolTitle(block.toolName || name, true);
       block.output = detail(data.output ?? data.result ?? data.error) || block.output || delta;
       block.content = detail(data.args) || block.content;
@@ -202,7 +235,7 @@ export function historyBlocks(messages: Message[]): TurnBlock[] {
     if (message.role === "assistant") {
       const reasoning = message.reasoning_content || message.reasoning;
       if (reasoning) {
-        reduceTurn(turn, { type: "reasoning", data: { delta: reasoning } });
+        reduceTurn(turn, { type: "reasoning", data: { delta: reasoning, persisted: true } });
         closeReasoning(turn);
       }
       const text = messageText(message.content);
@@ -496,8 +529,11 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
       for (const block of turn.blocks)
         if (block.kind !== "text" && !block.delegated) {
           block.complete = true;
-          if (block.state === "running" || block.state === "pending")
-            block.state = data.status === "complete" ? "completed" : "failed";
+          if (!block.state || block.state === "running" || block.state === "pending")
+            block.state =
+              data.status === "cancelled" || data.status === "interrupted"
+                ? "interrupted"
+                : "unknown";
         }
       if (data.reasoning && !turn.blocks.some((b) => b.kind === "thinking"))
         reduceTurn(turn, { type: "reasoning", data: { text: data.reasoning } });
@@ -508,22 +544,15 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
       const block = [...turn.blocks].reverse().find((b) => b.kind === "thinking");
       if (block && block.kind === "thinking") {
         block.content = string(data.text);
-        block.complete = false;
         return;
       }
     }
-    reduceTurn(turn, { type: "reasoning", data: { delta: data.text } });
+    reduceTurn(turn, { type: "reasoning", data: { ...data, delta: data.text } });
   } else if (name === "tool.start" || name === "tool.complete" || name === "tool.progress") {
     if (name === "tool.start") native.toolStream = true;
     const result = data.result as Record<string, unknown> | undefined;
     const failed =
-      data.is_error ||
-      data.error ||
-      (result &&
-        typeof result === "object" &&
-        (result.error ||
-          result.success === false ||
-          (typeof result.exit_code === "number" && result.exit_code !== 0)));
+      data.is_error || data.error || toolResultFailed(result) || toolResultFailed(data.result_text);
     reduceTurn(turn, {
       type:
         name === "tool.start"

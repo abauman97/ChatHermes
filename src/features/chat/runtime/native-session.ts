@@ -277,7 +277,7 @@ export function useNativeSession(onSettled: () => void) {
                 .reverse()
                 .find((entry) => entry.turn.blocks.some((block) => block.id === key))?.turn || turn;
           }
-          if (target) reduceNativeTurn(target, event.type, data);
+          if (target) reduceNativeTurn(target, event.type, { ...data, persisted: recovering });
           if (event.type === "message.complete") {
             for (const entry of completed)
               reduceNativeTurn(entry.turn, "message.complete", { status: data.status });

@@ -142,7 +142,10 @@ describe("Ordered assistant turns", () => {
       emit("completed");
       expect(turn.blocks).toHaveLength(2);
       expect(turn.blocks[0]).toMatchObject({ kind: "text", content: "Final answer" });
-      expect(turn.blocks[1]).toMatchObject({ complete: true, state: "completed" });
+      expect(turn.blocks[1]).toMatchObject({
+        complete: true,
+        state: activity === "reasoning" ? "completed" : "unknown",
+      });
     },
   );
   it.each([
@@ -400,7 +403,7 @@ describe("native Desktop event semantics", () => {
       reduceNativeTurn(turn, "message.interim", { text: "Final answer", already_streamed });
       reduceNativeTurn(turn, "message.complete", { text: "Final answer", status: "complete" });
       expect(turn.blocks).toHaveLength(2);
-      expect(turn.blocks[0]).toMatchObject({ kind: "tool", complete: true, state: "completed" });
+      expect(turn.blocks[0]).toMatchObject({ kind: "tool", complete: true, state: "unknown" });
       expect(turn.blocks[1]).toMatchObject({ kind: "text", content: "Final answer" });
     },
   );
@@ -644,4 +647,102 @@ describe("event identity validation", () => {
       expect(turn.blocks).toEqual([]);
     }
   });
+});
+
+describe("honest activity settlement", () => {
+  it.each(["complete", "cancelled", "interrupted", "error"])(
+    "does not manufacture success for a missing result on %s",
+    (status) => {
+      const turn = createTurn();
+      reduceNativeTurn(turn, "tool.start", {
+        tool_id: "a",
+        name: "terminal",
+        args: { command: "sleep 10" },
+      });
+      reduceNativeTurn(turn, "tool.progress", { tool_id: "a", text: "Partial output" });
+      reduceNativeTurn(turn, "message.complete", { status, text: "Final" });
+      expect(turn.blocks[0]).toMatchObject({
+        complete: true,
+        output: "Partial output",
+        state: ["cancelled", "interrupted"].includes(status) ? "interrupted" : "unknown",
+      });
+      reduceNativeTurn(turn, "tool.complete", { tool_id: "a", result_text: "Late result" });
+      expect(turn.blocks[0]).toMatchObject({
+        complete: true,
+        state: "completed",
+        output: "Late result",
+      });
+      expect(turn.blocks).toHaveLength(2);
+    },
+  );
+  it.each([{ is_error: true }, { error: "Denied" }, { success: false }, { exit_code: 2 }])(
+    "detects nested errors in structured and serialized results: %j",
+    (result) => {
+      for (const value of [result, JSON.stringify(result)]) {
+        const turn = createTurn();
+        reduceNativeTurn(turn, "tool.start", { tool_id: "a", name: "terminal" });
+        reduceNativeTurn(turn, "tool.complete", { tool_id: "a", result: value });
+        expect(turn.blocks[0]).toMatchObject({ state: "failed", complete: true });
+      }
+    },
+  );
+  it("keeps sealed reasoning sealed when an authoritative snapshot arrives after a tool", () => {
+    const turn = createTurn();
+    reduceNativeTurn(turn, "reasoning.delta", { text: "Plan" });
+    reduceNativeTurn(turn, "tool.start", { tool_id: "a", name: "terminal" });
+    reduceNativeTurn(turn, "reasoning.available", { text: "Full plan" });
+    expect(turn.blocks[0]).toMatchObject({ complete: true, content: "Full plan" });
+    reduceNativeTurn(turn, "reasoning.delta", { text: "Next phase" });
+    expect(turn.blocks.map((block) => block.kind)).toEqual(["thinking", "tool", "thinking"]);
+  });
+  it("reconciles lagging history and replay without moving tool output or text phases", () => {
+    const turn = createTurn();
+    const events: TurnEvent[] = [
+      { type: "text", data: { text: "Intro" }, key: "1" },
+      { type: "reasoning", data: { text: "Plan" }, key: "2" },
+      { type: "tool.started", data: { tool_call_id: "a", tool_name: "terminal" }, key: "3" },
+      { type: "tool.updated", data: { tool_call_id: "a", text: "Partial" }, key: "4" },
+    ];
+    events.forEach((event) => reduceTurn(turn, event));
+    mergeHistoryBlocks(
+      turn,
+      historyBlocks([
+        { role: "assistant", content: "Intro" },
+        {
+          role: "assistant",
+          content: "",
+          reasoning: "Plan",
+          tool_calls: [{ id: "a", function: { name: "terminal" } }],
+        },
+      ]),
+      true,
+    );
+    events.forEach((event) => reduceTurn(turn, event));
+    expect(turn.blocks.map((block) => block.kind)).toEqual(["text", "thinking", "tool"]);
+    expect(turn.blocks[2]).toMatchObject({ output: "Partial", state: "running" });
+    const saved = historyBlocks([
+      { role: "assistant", content: "Intro" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning: "Plan",
+        tool_calls: [{ id: "a", function: { name: "terminal" } }],
+      },
+      { role: "tool", tool_call_id: "a", content: "Done" },
+      { role: "assistant", content: "Final" },
+    ]);
+    mergeHistoryBlocks(turn, saved, false);
+    mergeHistoryBlocks(turn, saved, false);
+    expect(turn.blocks.map((block) => block.kind)).toEqual(saved.map((block) => block.kind));
+    expect(turn.blocks[2]).toMatchObject({ state: "completed", output: "Done" });
+  });
+});
+
+it("does not measure historical reasoning replay as fresh thinking time", () => {
+  const turn = createTurn();
+  reduceNativeTurn(turn, "reasoning.delta", { text: "Saved plan", persisted: true });
+  reduceNativeTurn(turn, "tool.start", { tool_id: "a", name: "terminal", persisted: true });
+  expect(turn.blocks[0]).toMatchObject({ kind: "thinking", complete: true });
+  expect(turn.blocks[0]).not.toHaveProperty("duration");
+  expect(turn.blocks[0]).toHaveProperty("startedAt", undefined);
 });
