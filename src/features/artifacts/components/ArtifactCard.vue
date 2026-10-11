@@ -78,7 +78,12 @@ const thumbnail = ref("");
 // Native image reads use the same authenticated preview endpoint as the viewer.
 import { watch } from "vue";
 watch(
-  () => [props.file.path, props.file.imageData, props.profile, props.file.sessionId],
+  [
+    () => props.file.path,
+    () => props.file.imageData,
+    () => props.profile,
+    () => props.file.sessionId,
+  ],
   async (_, __, cleanup) => {
     thumbnail.value = "";
     imageFailed.value = false;

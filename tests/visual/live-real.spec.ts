@@ -116,6 +116,7 @@ test("native artifact cards preview, download and survive history reconstruction
   const filename = `artifact-${info.project.name}.txt`;
   const imageName = `artifact-${info.project.name}.png`;
   const pdfName = `artifact-${info.project.name}.pdf`;
+  const codeName = `artifact-code-filter-${info.project.name}.py`;
   const stream = "BT /F1 18 Tf 32 80 Td (Hermes PDF artifact) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -190,7 +191,7 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(plugin.locator(".composer")).toContainText("dragged.txt");
   await expect(plugin.locator(".message.user")).toHaveCount(0);
   await plugin.getByRole("button", { name: "Remove dragged.txt" }).click();
-  const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName} and reply with these three Markdown links exactly: [${filename}](sandbox:/opt/data/${filename}) , [${imageName}](sandbox:/opt/data/${imageName}), and [${pdfName}](sandbox:/opt/data/${pdfName}). Do not read the files.`;
+  const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification' and /opt/data/${codeName} containing 'print(1)'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName}. Reply with the plain text 'Modified /opt/data/${codeName}' followed by these three Markdown links exactly: [${filename}](sandbox:/opt/data/${filename}) , [${imageName}](sandbox:/opt/data/${imageName}), and [${pdfName}](sandbox:/opt/data/${pdfName}). Do not emit MEDIA or a link for the Python file. Do not read the files.`;
   await area.fill(prompt);
   await send.click();
   await area.fill("Draft remains available");
@@ -199,15 +200,27 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(plugin.locator(".message.assistant").last()).toContainText(filename, {
     timeout: 180_000,
   });
+  // Refill after the response arrives so the send-enabled assertion always
+  // checks a nonempty composer after the mobile submission/layout transition.
+  await area.fill("Draft remains available");
+  await area.click();
+  await expect(area).toBeFocused();
   await expect(send).toBeEnabled({ timeout: 180_000 });
+  await expect(plugin.locator(".message.assistant").last()).toContainText(codeName);
+  await expect(plugin.locator(".artifact-card").filter({ hasText: codeName })).toHaveCount(0);
   const card = plugin
     .locator(".message.assistant .artifact-card")
     .filter({ hasText: filename })
     .first();
   await expect(card).toBeVisible();
-  await card.getByRole("button", { name: `Preview ${filename}` }).click();
+  // Activate the accessible button directly: thumbnail arrival and composer
+  // blur can move mobile tap coordinates while the transcript scrolls.
+  await card.getByRole("button", { name: `Preview ${filename}` }).press("Enter");
   const dialog = plugin.locator("dialog[open]");
-  await expect(dialog.locator("pre")).toContainText("Generated artifact verification");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("pre")).toContainText("Generated artifact verification", {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: info.outputPath("artifact-text-preview.png") });
   await dialog.getByRole("button", { name: "Close preview" }).click();
   const download = page.waitForEvent("download");
@@ -222,7 +235,7 @@ test("native artifact cards preview, download and survive history reconstruction
     .getByRole("button", { name: `Preview ${imageName}` })
     .first()
     .click();
-  await expect(plugin.locator("dialog[open] img")).toBeVisible();
+  await expect(plugin.locator("dialog[open] img")).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: info.outputPath("artifact-image-preview.png") });
   await plugin.locator("dialog[open]").getByRole("button", { name: "Close preview" }).click();
   const pdfCard = plugin
@@ -230,7 +243,7 @@ test("native artifact cards preview, download and survive history reconstruction
     .filter({ hasText: pdfName })
     .first();
   await pdfCard.getByRole("button", { name: `Preview ${pdfName}` }).click();
-  await expect(plugin.locator("dialog[open] iframe")).toBeVisible();
+  await expect(plugin.locator("dialog[open] iframe")).toBeVisible({ timeout: 30_000 });
   // The browser's PDF plugin paints after the frame itself becomes visible.
   await page.waitForTimeout(2000);
   await page.screenshot({ path: info.outputPath("artifact-pdf-preview.png") });
@@ -249,6 +262,7 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(browser).toContainText(filename);
   await expect(browser).toContainText("Uploaded");
   await expect(browser).toContainText("Generated");
+  await expect(browser.locator(".artifact-card").filter({ hasText: codeName })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("artifacts-browser.png") });
   await browser
     .getByRole("button", { name: `Delete ${filename}`, exact: true })

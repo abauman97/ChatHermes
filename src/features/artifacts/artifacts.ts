@@ -38,6 +38,38 @@ const textExtensions = new Set(
     " ",
   ),
 );
+// Match the pinned Desktop artifact collector, rather than the broader set
+// of formats that the viewer can display. MEDIA delivery bypasses this filter.
+const artifactExtension =
+  /\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|xlsx?|docx?|pptx?|html|zip|tar|gz|avi|flac|m4a|mkv|mp3|ogg|opus|wav|webm|mp4|mov)(?:[?#].*)?$/i;
+const producerTool =
+  /(?:^|_)(?:creat(?:e|ion)|download|export|generat(?:e|ion)|render|save|speech|tts|write)(?:_|$)/i;
+const strongToolKey =
+  /^(?:artifact_(?:file|image|path|url)|files?_(?:created|modified|written)|generated_(?:file|image|path|url)|media_tag|output_(?:file|path|url)|result_(?:file|path|url)|saved_to|screenshot_path)$/i;
+const producerToolKey =
+  /^(?:artifact(?:s|_(?:file|image|path|url))?|attachment(?:s|_(?:file|image|path|url))?|download(?:s|_(?:file|path|url))?|(?:audio|image|video)(?:_(?:file|path|url))?|file_path|local_path|media(?:_(?:file|path|url))?|path)$/i;
+function artifactCandidate(path: string, explicit = false, name?: string) {
+  const file = artifact(path, name);
+  if (!file || explicit) return file;
+  let normalized = file.path.replace(/\\/g, "/").toLowerCase();
+  if (/^(?:https?|file):\/\//i.test(file.path)) {
+    try {
+      normalized = decodeURIComponent(new URL(file.path).pathname).toLowerCase();
+    } catch {
+      return;
+    }
+  }
+  // Desktop suppresses package-manager downloads unless explicitly delivered.
+  if (
+    /\/(?:\.cache\/pip|library\/caches\/pip|appdata\/local\/pip\/cache)\//.test(normalized) ||
+    /\.whl(?:\.metadata)?$/.test(normalized) ||
+    (/^https?:\/\//i.test(file.path) &&
+      /\/packages\/.+\.(?:tar\.gz|tar\.bz2|zip|egg)(?:\.metadata)?$/.test(normalized))
+  )
+    return;
+  if (/^(?:https?:\/\/|data:image\/)/.test(file.path) || artifactExtension.test(file.path))
+    return file;
+}
 export function extension(name: string) {
   return name.split(".").at(-1)?.toLowerCase() || "";
 }
@@ -49,7 +81,7 @@ export function artifact(path: string, name?: string): Artifact | undefined {
   } catch {
     return;
   }
-  if (!/^(\/|~\/|\.\.?\/|[A-Za-z]:[\\/]|data:image\/|https?:\/\/)/.test(path)) return;
+  if (!/^(\/|~\/|\.\.?\/|[A-Za-z]:[\\/]|\\\\|data:image\/|https?:\/\/)/.test(path)) return;
   const pathName = path.split(/[\\/]/).at(-1)?.split(/[?#]/)[0] || "";
   name = (name && /\.[a-z0-9]{1,12}$/i.test(name) ? name : pathName) || name || "Attached image";
   const ext = extension(name);
@@ -79,8 +111,8 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
 // generated output paths. Fences remain source code, never filesystem promises.
 export function textArtifacts(text: string): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
-  const add = (path: string, name?: string) => {
-    const file = artifact(path, name);
+  const add = (path: string, name?: string, explicit = false) => {
+    const file = artifactCandidate(path, explicit, name);
     if (!file) return false;
     if (!files.some((item) => item.path === file.path)) files.push(file);
     return true;
@@ -94,16 +126,12 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
           /Attached file [^\n]+: /.test(text) ? "" : all,
         )
         .replace(/Attached (?:image|file) ([^\n]+?): ([^\n]+)(?:\n|$)/g, (all, name, path) =>
-          add(path.trim(), name) ? "" : all,
+          add(path.trim(), name, true) ? "" : all,
         )
         .replace(/(!?)\[([^\]]*)\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g, (all, image, name, path) => {
-          const serverFile = /^(?:#media:|sandbox:|file:\/\/|\/|~\/|\.\.?\/)/.test(path);
-          const remoteFile =
-            /^https?:\/\//.test(path) &&
-            (image ||
-              /\.(?:png|jpe?g|gif|webp|pdf|csv|zip|docx?|xlsx?|pptx?|mp3|mp4|wav)(?:[?#]|$)/i.test(
-                path,
-              ));
+          const serverFile =
+            /^(?:#media:|sandbox:|file:\/\/|\/|~\/|\.\.?\/|[A-Za-z]:[\\/]|\\\\)/.test(path);
+          const remoteFile = /^https?:\/\//.test(path) && (image || artifactExtension.test(path));
           if (serverFile || remoteFile) {
             const added = add(path, name || undefined);
             if (added && image && files.at(-1)?.type === "application/octet-stream")
@@ -114,10 +142,11 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
         })
         .replace(
           /(?:MEDIA:|@file:)\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s<>]+))/g,
-          (all, quoted, single, path) => (add(quoted || single || path) ? "" : all),
+          (all, quoted, single, path) =>
+            add(quoted || single || path, undefined, true) ? "" : all,
         )
         .replace(
-          /(^|[\s`(])((?:\/|~\/|\.\.?\/)[^\s`<>"')]+\.[a-z0-9]{1,12})(?=$|[\s`)!,;])/gi,
+          /(^|[\s`(])((?:\/|~\/|\.\.?\/|[A-Za-z]:[\\/]|\\\\)[^\s`<>"')]+\.[a-z0-9]{1,12})(?=$|[\s`)!,;])/gi,
           (all, prefix, path) => (add(path) ? prefix : all),
         );
     })
@@ -127,55 +156,60 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
 export function toolArtifacts(block: TurnBlock): Artifact[] {
   if (block.kind !== "tool" || !block.complete || block.state === "failed") return [];
   const files: Artifact[] = [];
-  const producer = /(?:write|create|generate|export|render|save|download|speech|tts)/i.test(
-    block.toolName || "",
-  );
-  const push = (value: unknown, key = "") => {
+  const name = (block.toolName || "").trim().toLowerCase();
+  const producer = producerTool.test(name) || name.startsWith("bfl_flux3_");
+  const terminal = name === "terminal";
+  const add = (path: string, explicit = false, metadata?: Record<string, unknown>) => {
+    const file = artifactCandidate(
+      path,
+      explicit,
+      typeof metadata?.name === "string" ? metadata.name : undefined,
+    );
+    if (!file) return;
+    const type = metadata?.mime_type || metadata?.mime;
+    if (typeof type === "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(type)) file.type = type;
+    const size = metadata?.size ?? metadata?.bytes;
+    if (typeof size === "number" && Number.isSafeInteger(size) && size >= 0) file.size = size;
+    files.push(file);
+  };
+  const scan = (text: string) => files.push(...textArtifacts(text).files);
+  const push = (value: unknown, keys: string[] = [], metadata?: Record<string, unknown>) => {
     if (Array.isArray(value)) {
-      value.forEach((item) => push(item, key));
+      value.forEach((item) => push(item, keys, metadata));
       return;
     }
     if (value && typeof value === "object") {
       const row = value as Record<string, unknown>;
-      const path =
-        row.output_path || row.artifact_path || (producer ? row.file_path || row.path : undefined);
-      if (typeof path === "string") {
-        const file = artifact(path, typeof row.name === "string" ? row.name : undefined);
-        if (file) {
-          const type = row.mime_type || row.mime;
-          if (typeof type === "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(type))
-            file.type = type;
-          const size = row.size ?? row.bytes;
-          if (typeof size === "number" && Number.isSafeInteger(size) && size >= 0) file.size = size;
-          files.push(file);
-        }
-      }
-      Object.entries(value).forEach(([k, v]) => push(v, k));
+      Object.entries(row).forEach(([key, child]) => push(child, [...keys, key], row));
       return;
     }
     if (typeof value !== "string") return;
-    if (
-      /^(?:output_(?:path|files?|url)|artifact(?:s|_path|_file)?|generated_(?:path|files?|image)|files_(?:created|modified|written)|saved_to|media_tag|screenshot_path)$/i.test(
-        key,
-      ) ||
-      (producer && /^(?:path|file_path|filename|image|audio|video|url)$/i.test(key))
-    ) {
-      const file = artifact(value);
-      if (file) files.push(file);
+    if (terminal && keys.some((key) => /^(?:output|stdout|path)$/i.test(key))) {
+      scan(value);
+      return;
     }
+    if (!keys.some((key) => strongToolKey.test(key) || (producer && producerToolKey.test(key))))
+      return;
+    // Recognized output fields still require a deliverable extension, except
+    // for explicit MEDIA/@file delivery tags. Ancestor keys cover nested arrays.
+    for (const match of value.matchAll(
+      /(?:MEDIA:|@file:)\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s<>]+))/g,
+    ))
+      add(match[1] || match[2] || match[3]!, true, metadata);
+    add(value.trim().replace(/^['"`]|['"`]$/g, ""), false, metadata);
   };
-  for (const value of [block.output, ...(producer ? [block.content] : [])]) {
-    if (!value) continue;
+  // content is the tool's input arguments, not its produced output.
+  if (block.output) {
     try {
-      push(JSON.parse(value));
+      push(JSON.parse(block.output));
     } catch {
-      /* Non-JSON outputs use explicit delivery tags only. */
+      if (producer || terminal) scan(block.output);
     }
-    for (const match of value.matchAll(/(?:MEDIA:|@file:|Screenshot path:)\s*([^\n]+)/g)) {
-      const file = artifact(match[1]!.trim().replace(/^['"]|['"]$/g, ""));
-      if (file) files.push(file);
-    }
+    if (name === "browser_vision")
+      for (const match of block.output.matchAll(/Screenshot path:\s*([^\r\n<>]+)/gi))
+        add(match[1]!.trim());
   }
+
   return files.filter(
     (file, index) => files.findIndex((item) => item.path === file.path) === index,
   );
