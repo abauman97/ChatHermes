@@ -18,7 +18,11 @@ const needsAttention = computed(() =>
 );
 // null means follow the default; only a user action records disclosure intent.
 const userOpen = ref<boolean | null>(null);
-const expanded = computed(() => userOpen.value ?? (active.value || needsAttention.value));
+const expanded = computed(
+  () =>
+    userOpen.value ??
+    (props.activity.kind === "thinking" && (needsAttention.value || active.value)),
+);
 const preview = ref<HTMLElement>();
 const following = ref(true);
 function previewScrolled() {

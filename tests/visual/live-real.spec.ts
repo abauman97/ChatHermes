@@ -340,8 +340,11 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(plugin.locator(".message.user").last()).toContainText("Starting activity check");
   await area.fill("Draft stays focusable");
   await expect(area).toBeFocused();
-  const active = plugin.locator(".current-activity .activity").first();
+  const active = plugin.locator(".current-activity .activity:not(.activity-thinking)").first();
   await expect(active).toBeVisible({ timeout: 60_000 });
+  await expect(active).not.toHaveAttribute("open");
+  await page.screenshot({ path: info.outputPath("activity-live-collapsed.png") });
+  await active.locator("summary").click();
   await expect(active).toHaveAttribute("open", "");
   await expect(active.locator("pre")).toContainText("activity-line-", { timeout: 60_000 });
   await active.locator("summary").click();
@@ -539,4 +542,116 @@ test("desktop grouped history counts tools and commands with matching chevrons",
   await summaries.nth(1).click();
   await expect(plugin.locator(".work-timeline .activity:visible")).toHaveCount(5);
   await page.screenshot({ path: info.outputPath("grouped-history-expanded.png") });
+});
+
+// Substitute terminal history outcomes inside the real authenticated plugin so
+// failure coverage does not depend on the provider choosing to run a bad command.
+test("failed and unavailable tool results stay collapsed and inspectable", async ({
+  page,
+}, info) => {
+  await signIn(page);
+  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
+    data: {},
+  });
+  expect(created.ok()).toBeTruthy();
+  const body = await created.json();
+  const sessionId = (body.session || body).id;
+  const messages = [
+    { row_id: "u", role: "user", text: "Inspect failed activity" },
+    {
+      row_id: "a",
+      role: "assistant",
+      reasoning: "Check the command results.",
+      text: "Checking commands.",
+      tool_calls: ["failed", "unavailable"].map((id) => ({
+        id,
+        type: "function",
+        function: { name: "terminal", arguments: JSON.stringify({ command: id }) },
+      })),
+    },
+    {
+      row_id: "r",
+      role: "tool",
+      name: "terminal",
+      tool_call_id: "failed",
+      content: JSON.stringify({ output: "Synthetic command failure", exit_code: 1 }),
+    },
+    { row_id: "b", role: "assistant", text: "Finished checking." },
+  ];
+  await page.route(`**/sessions/${sessionId}/messages?*`, (route) =>
+    route.fulfill({
+      json: {
+        data: messages.map((row) => ({
+          ...row,
+          id: row.row_id,
+          content: "text" in row ? row.text : row.content,
+          tool_name: "name" in row ? row.name : undefined,
+        })),
+      },
+    }),
+  );
+  // Keep the real authenticated socket; alter only its attach snapshot before
+  // the plugin's message handler reads it.
+  await page.addInitScript((messages) => {
+    const Socket = window.WebSocket;
+    class FailureHistorySocket extends Socket {
+      private attachIds = new Set<string>();
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (!new URL(String(url)).pathname.endsWith("/chathermes/chat/ws")) return;
+        this.addEventListener("message", (event) => {
+          const frame = JSON.parse(event.data);
+          if (!this.attachIds.has(frame.id) || !frame.result) return;
+          Object.assign(frame.result, {
+            messages,
+            running: false,
+            queued: false,
+            inflight: null,
+            recovery: {
+              ...frame.result.recovery,
+              complete: false,
+              through: 0,
+              start: 0,
+              base_row_ids: null,
+            },
+          });
+          Object.defineProperty(event, "data", { value: JSON.stringify(frame) });
+        });
+      }
+      override send(data: Parameters<WebSocket["send"]>[0]) {
+        if (typeof data === "string") {
+          const frame = JSON.parse(data);
+          if (frame.method === "chat.attach") this.attachIds.add(frame.id);
+        }
+        super.send(data);
+      }
+    }
+    window.WebSocket = FailureHistorySocket;
+  }, messages);
+  await page.goto(`/chathermes?session=${encodeURIComponent(sessionId)}`);
+  const plugin = page.locator(".chathermes-embedded");
+  const failures = plugin.locator(".activity-failed");
+  await expect(failures).toHaveCount(2);
+  await expect(failures.nth(0)).toBeVisible();
+  await expect(failures.nth(1)).toBeVisible();
+  await expect(failures.nth(0).locator("summary")).toContainText("Failed");
+  await expect(failures.nth(1).locator("summary")).toContainText("Result unavailable");
+  await expect(plugin.locator(".activity[open]")).toHaveCount(0);
+  await expect(plugin.locator(".work-summary")).toHaveAttribute("aria-expanded", "false");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await area.fill("Draft while inspecting failure");
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("failed-activity-collapsed.png") });
+  for (const failure of await failures.all()) {
+    await failure.locator("summary").click();
+    await expect(failure.locator("pre")).toBeVisible();
+  }
+  await expect(failures.nth(0).locator("pre")).toContainText("Synthetic command failure");
+  await page.screenshot({ path: info.outputPath("failed-activity-expanded.png") });
+  for (const failure of await failures.all()) {
+    await failure.locator("summary").click();
+    await expect(failure.locator("pre")).not.toBeVisible();
+  }
+  await expect(plugin.locator(".activity[open]")).toHaveCount(0);
+  await expect(area).toHaveValue("Draft while inspecting failure");
 });

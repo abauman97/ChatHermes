@@ -154,13 +154,15 @@ describe("ordered activity presentation", () => {
       slots: { request: "<button class='approve'>Approve</button>" },
     });
     expect(wrapper.get(".activity").isVisible()).toBe(true);
-    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
+    expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
     expect(wrapper.findAll(".approve")).toHaveLength(1);
     expect(wrapper.text()).toContain("Waiting for approval");
     await wrapper.get(".activity summary").trigger("click");
+    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
     await wrapper.get(".activity summary").trigger("click");
     expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
   });
   it("shows Working on admission before any activity arrives", () => {

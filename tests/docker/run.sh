@@ -36,7 +36,7 @@ esac
 if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
   echo 'CHATHERMES_DASHBOARD_PORT must be 1 to 65535.' >&2; exit 2
 fi
-bind="${CHATHERMES_BIND_ADDRESS:-127.0.0.1}"
+bind="${CHATHERMES_BIND_ADDRESS:-0.0.0.0}"
 url_host="${CHATHERMES_DASHBOARD_URL_HOST:-$bind}"
 if [ "$url_host" = 0.0.0.0 ]; then
   case "${DOCKER_HOST:-}" in
