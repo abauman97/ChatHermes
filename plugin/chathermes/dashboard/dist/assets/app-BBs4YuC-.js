@@ -7891,7 +7891,7 @@ var jp = ["open"], Mp = {
 			"failed",
 			"interrupted",
 			"unknown"
-		].includes(r.value || "")), a = /* @__PURE__ */ V(null), o = X(() => a.value ?? (t.activity.kind === "thinking" && n.value)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(!0);
+		].includes(r.value || "")), a = /* @__PURE__ */ V(null), o = X(() => a.value ?? (i.value || t.activity.kind === "thinking" && n.value)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(!0);
 		function l() {
 			let e = s.value;
 			e && (c.value = e.scrollHeight - e.scrollTop - e.clientHeight < 24);

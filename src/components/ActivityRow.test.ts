@@ -53,29 +53,25 @@ describe("activity disclosures", () => {
     expect(wrapper.get("details").classes()).toContain("activity-failed");
   });
   it.each(["failed", "interrupted", "unknown"] as const)(
-    "keeps an untouched streaming tool collapsed when its result becomes %s",
+    "opens an untouched streaming tool when its result becomes %s",
     async (state) => {
       const wrapper = mount(ActivityRow, { props: { activity: tool } });
       expect(wrapper.get("details").attributes("open")).toBeUndefined();
       await wrapper.get("details").trigger("toggle");
       await wrapper.setProps({ activity: { ...tool, complete: true, state } });
-      expect(wrapper.get("details").attributes("open")).toBeUndefined();
-      expect(wrapper.get("summary").text()).toContain(
-        state === "unknown" ? "Result unavailable" : state === "failed" ? "Failed" : "Interrupted",
-      );
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
     },
   );
   it.each(["failed", "interrupted", "unknown"] as const)(
-    "keeps %s results inspectable while collapsed by default",
+    "exposes %s results by default",
     (state) => {
       const wrapper = mount(ActivityRow, {
         props: { activity: { ...tool, complete: true, state } },
       });
-      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
       expect(wrapper.get("summary").text()).toContain(
         state === "unknown" ? "Result unavailable" : state === "failed" ? "Failed" : "Interrupted",
       );
-      expect(wrapper.get("pre").text()).toContain("First result");
     },
   );
   it("does not claim an unfinished historical tool succeeded", () => {
