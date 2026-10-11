@@ -309,7 +309,8 @@ describe("ordered activity presentation", () => {
     expect(wrapper.findAll("details")).toHaveLength(2);
     expect(wrapper.findAll("details[open]")).toHaveLength(0);
     expect(wrapper.get(".assistant img").attributes("src")).toContain("data:image/png");
-    expect(wrapper.get(".assistant").text()).toBe("Answer");
+    expect(wrapper.get(".assistant .message-content").text()).toBe("Answer");
+    expect(wrapper.find('a[aria-label="Download Attached image.png"]').exists()).toBe(true);
   });
   it("does not force scroll when the reader has scrolled up to inspect history", async () => {
     const wrapper = mount(ChatTranscript, {

@@ -90,11 +90,17 @@ export function useChatController(
       p = profile.value;
     const preview = [
       { type: "text", text },
-      ...attachments.map((file) =>
-        file.type.startsWith("image/")
-          ? { type: "image_url", image_url: { url: file.data } }
-          : { type: "text", text: "📎 " + file.name },
-      ),
+      ...attachments.flatMap((file): unknown[] => [
+        {
+          type: "text",
+          text: file.path
+            ? `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${file.path}`
+            : "📎 " + file.name,
+        },
+        ...(file.type.startsWith("image/")
+          ? [{ type: "image_url", image_url: { url: file.data } }]
+          : []),
+      ]),
     ];
     try {
       await native.submit(
@@ -104,7 +110,7 @@ export function useChatController(
             { type: "text", text: text || "Please examine the attached files." },
           ];
           for (const file of attachments) {
-            const uploaded = await api.upload(p, file);
+            const uploaded = file.path ? { path: file.path } : await api.upload(p, file);
             if (current !== scope.generation())
               throw new Error("Session changed before submission");
             parts.push({

@@ -257,3 +257,41 @@ describe("provider and model picker", () => {
     expect(wrapper.find(".model-panel").exists()).toBe(false);
   });
 });
+
+it("shares file staging, retains the draft and other files on upload failure, and retries without sending", async () => {
+  const { api } = await import("../../../services/hermes-api");
+  const upload = vi
+    .spyOn(api, "upload")
+    .mockResolvedValueOnce({ path: "/uploads/one.txt" })
+    .mockRejectedValueOnce(new Error("failed"))
+    .mockResolvedValueOnce({ path: "/uploads/two.txt" });
+  const wrapper = mount(ChatComposer, {
+    props: { disabled: false, sending: false, profile: "work" },
+  });
+  await wrapper.get("textarea").setValue("Keep this draft");
+  await (wrapper.vm as unknown as { stageFiles(files: File[]): Promise<void> }).stageFiles([
+    new File(["one"], "one.txt", { type: "text/plain" }),
+    new File(["two"], "two.txt", { type: "text/plain" }),
+  ]);
+  expect(wrapper.text()).toContain("one.txt");
+  expect(wrapper.text()).toContain("two.txt");
+  expect(wrapper.emitted("send")).toBeUndefined();
+  expect(wrapper.get("textarea").element.value).toBe("Keep this draft");
+  expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
+  await wrapper.get('button[aria-label="Retry upload two.txt"]').trigger("click");
+  const { flushPromises } = await import("@vue/test-utils");
+  await flushPromises();
+  expect(wrapper.find('button[aria-label="Retry upload two.txt"]').exists()).toBe(false);
+  expect(wrapper.get(".send-button").attributes("disabled")).toBeUndefined();
+  await wrapper.get("form").trigger("submit");
+  expect(wrapper.emitted("send")?.[0]).toMatchObject([
+    "Keep this draft",
+    [
+      { name: "one.txt", path: "/uploads/one.txt" },
+      { name: "two.txt", path: "/uploads/two.txt" },
+    ],
+  ]);
+  expect(upload.mock.calls.every(([profile]) => profile === "work")).toBe(true);
+  upload.mockRestore();
+  wrapper.unmount();
+});

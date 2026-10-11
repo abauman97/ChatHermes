@@ -67,6 +67,9 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await page.screenshot({ path: info.outputPath("camera-attachment.png") });
   await composer.getByRole("button", { name: "Remove camera.png" }).click();
 
+  const uploaded = page.waitForResponse(
+    (response) => response.url().includes("/uploads") && response.request().method() === "POST",
+  );
   await composer.locator('input[aria-label="Upload files"]').setInputFiles({
     name: "smoke.txt",
     mimeType: "text/plain",
@@ -75,11 +78,9 @@ test("disposable dashboard composer, attachments and real native response", asyn
   const prompt =
     "Use the terminal tool to run printf chathermes-smoke-ok, then reply briefly with its output.";
   await area.fill(prompt);
-  const uploaded = page.waitForResponse(
-    (response) => response.url().includes("/uploads") && response.request().method() === "POST",
-  );
-  await send.click();
   expect((await uploaded).status()).toBe(201);
+  await expect(send).toBeEnabled();
+  await send.click();
   await expect(plugin.locator(".message.user").last()).toContainText(prompt);
   await area.fill("draft while responding");
   await expect(area).toBeFocused();
@@ -100,4 +101,190 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await expect(tool.locator("pre")).toBeVisible();
   await expect(tool.locator("pre")).toContainText("chathermes-smoke-ok");
   await page.screenshot({ path: info.outputPath("completed.png") });
+});
+
+test("native artifact cards preview, download and survive history reconstruction", async ({
+  page,
+}, info) => {
+  test.setTimeout(240_000);
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const send = plugin.getByRole("button", { name: "Send message", exact: true });
+  await area.click();
+  await expect(area).toBeFocused();
+  const filename = `artifact-${info.project.name}.txt`;
+  const imageName = `artifact-${info.project.name}.png`;
+  const pdfName = `artifact-${info.project.name}.pdf`;
+  const stream = "BT /F1 18 Tf 32 80 Td (Hermes PDF artifact) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 160] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const pdfUpload = await page.request.post("/api/plugins/chathermes/uploads", {
+    data: {
+      name: pdfName,
+      type: "application/pdf",
+      data: `data:application/pdf;base64,${Buffer.from(pdf).toString("base64")}`,
+      size: Buffer.byteLength(pdf),
+    },
+  });
+  expect(pdfUpload.status()).toBe(201);
+  const pdfPath = (await pdfUpload.json()).path;
+  const data = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 240;
+    canvas.height = 160;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#3176d1";
+    ctx.fillRect(0, 0, 240, 160);
+    ctx.fillStyle = "white";
+    ctx.font = "24px sans-serif";
+    ctx.fillText("Hermes artifact", 24, 86);
+    return canvas.toDataURL("image/png");
+  });
+  // Stage through the public authenticated API, then ask the real runtime to
+  // return native server file references. No browser interception or fixtures.
+  const staged = await page.request.post("/api/plugins/chathermes/uploads", {
+    data: { name: imageName, type: "image/png", data, size: 1 },
+  });
+  expect(staged.status()).toBe(201);
+  const imagePath = (await staged.json()).path;
+  await plugin.locator('input[aria-label="Upload files"]').setInputFiles({
+    name: filename,
+    mimeType: "text/plain",
+    buffer: Buffer.from("Native artifact preview verification"),
+  });
+  await expect(send).toBeEnabled();
+  await expect(plugin.locator(".message.user")).toHaveCount(0);
+  await plugin.locator(".header-title").dispatchEvent("dragenter", {
+    dataTransfer: await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(["Dragged attachment"], "dragged.txt", { type: "text/plain" }));
+      return data;
+    }),
+  });
+  await expect(
+    plugin.getByRole("status").filter({ hasText: "Drop files to attach" }),
+  ).toBeVisible();
+  const dragged = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["Dragged attachment"], "dragged.txt", { type: "text/plain" }));
+    return data;
+  });
+  await plugin.locator(".header-title").dispatchEvent("drop", { dataTransfer: dragged });
+  await expect(plugin.locator(".composer")).toContainText("dragged.txt");
+  await expect(plugin.locator(".message.user")).toHaveCount(0);
+  await plugin.getByRole("button", { name: "Remove dragged.txt" }).click();
+  const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName} and reply with these three Markdown links exactly: [${filename}](sandbox:/opt/data/${filename}) , [${imageName}](sandbox:/opt/data/${imageName}), and [${pdfName}](sandbox:/opt/data/${pdfName}). Do not read the files.`;
+  await area.fill(prompt);
+  await send.click();
+  await area.fill("Draft remains available");
+  await area.click();
+  await expect(area).toBeFocused();
+  await expect(plugin.locator(".message.assistant").last()).toContainText(filename, {
+    timeout: 180_000,
+  });
+  await expect(send).toBeEnabled({ timeout: 180_000 });
+  const card = plugin
+    .locator(".message.assistant .artifact-card")
+    .filter({ hasText: filename })
+    .first();
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: `Preview ${filename}` }).click();
+  const dialog = plugin.locator("dialog[open]");
+  await expect(dialog.locator("pre")).toContainText("Generated artifact verification");
+  await page.screenshot({ path: info.outputPath("artifact-text-preview.png") });
+  await dialog.getByRole("button", { name: "Close preview" }).click();
+  const download = page.waitForEvent("download");
+  await card.getByRole("link", { name: `Download ${filename}` }).click();
+  expect((await download).suggestedFilename()).toBe(filename);
+  const image = plugin
+    .locator(".message.assistant .artifact-card")
+    .filter({ hasText: imageName })
+    .first();
+  await expect(image.locator("img").first()).toBeVisible();
+  await image
+    .getByRole("button", { name: `Preview ${imageName}` })
+    .first()
+    .click();
+  await expect(plugin.locator("dialog[open] img")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("artifact-image-preview.png") });
+  await plugin.locator("dialog[open]").getByRole("button", { name: "Close preview" }).click();
+  const pdfCard = plugin
+    .locator(".message.assistant .artifact-card")
+    .filter({ hasText: pdfName })
+    .first();
+  await pdfCard.getByRole("button", { name: `Preview ${pdfName}` }).click();
+  await expect(plugin.locator("dialog[open] iframe")).toBeVisible();
+  // The browser's PDF plugin paints after the frame itself becomes visible.
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: info.outputPath("artifact-pdf-preview.png") });
+  await plugin.locator("dialog[open]").getByRole("button", { name: "Close preview" }).click();
+  await page.screenshot({ path: info.outputPath("artifact-timeline.png") });
+  const sessionId = new URL(page.url()).searchParams.get("session");
+  expect(sessionId).toBeTruthy();
+  await page.reload();
+  await expect(
+    plugin.locator(".message.assistant .artifact-card").filter({ hasText: filename }).first(),
+  ).toBeVisible();
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await plugin.locator(".artifacts-nav").click();
+  const browser = plugin.getByRole("region", { name: "Artifacts", exact: true });
+  await expect(browser).toContainText(filename);
+  await expect(browser).toContainText("Uploaded");
+  await expect(browser).toContainText("Generated");
+  await page.screenshot({ path: info.outputPath("artifacts-browser.png") });
+  await browser
+    .getByRole("button", { name: `Delete ${filename}`, exact: true })
+    .last()
+    .click();
+  await expect(plugin.getByRole("dialog", { name: "Delete artifact" })).toBeVisible();
+  await plugin.getByRole("button", { name: "Cancel", exact: true }).click();
+  const deletedUrl = await browser
+    .locator(".artifact-card")
+    .filter({ hasText: filename })
+    .last()
+    .getByRole("link", { name: `Download ${filename}` })
+    .getAttribute("href");
+  await browser
+    .getByRole("button", { name: `Delete ${filename}`, exact: true })
+    .last()
+    .click();
+  await plugin.getByRole("button", { name: "Delete file", exact: true }).click();
+  await expect(plugin.getByRole("dialog", { name: "Delete artifact" })).not.toBeVisible();
+  expect((await page.request.get(deletedUrl!)).status()).toBe(404);
+  const project = await page.request.post("/api/plugins/chathermes/projects/manage", {
+    data: { action: "create", name: `Artifact filter ${info.project.name}` },
+  });
+  expect(project.ok()).toBeTruthy();
+  const projectId = (await project.json()).project.id;
+  await page.goto(`/chathermes?project=${encodeURIComponent(projectId)}&view=project-artifacts`);
+  await expect(
+    plugin
+      .getByRole("navigation", { name: "Project view" })
+      .getByRole("button", { name: "Artifacts", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(plugin.getByRole("region", { name: "Artifacts", exact: true })).toContainText(
+    "No artifacts found.",
+  );
+  await expect(plugin.getByRole("region", { name: "Artifacts", exact: true })).not.toContainText(
+    filename,
+  );
+  await page.screenshot({ path: info.outputPath("project-artifacts-filter.png") });
 });

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+import { api } from "../../../services/hermes-api";
 import type { Attachment, ModelOption, ProviderOption } from "../../../types/hermes";
 const props = withDefaults(
   defineProps<{
+    profile?: string;
     disabled: boolean;
     sending: boolean;
     projectName?: string;
@@ -184,9 +186,12 @@ onBeforeUnmount(() => {
 // Derive availability from current state so every temporary gate can recover.
 const buttonDisabled = computed(() =>
   props.sending
-    ? !props.stoppable || (!!value.value.trim() && (reading.value || imageGated.value))
+    ? !props.stoppable ||
+      (!!value.value.trim() &&
+        (reading.value || attachments.value.some((file) => !!file.uploadError) || imageGated.value))
     : props.disabled ||
       reading.value ||
+      attachments.value.some((file) => !!file.uploadError) ||
       imageGated.value ||
       (!value.value.trim() && !attachments.value.length),
 );
@@ -197,7 +202,14 @@ function send() {
     value.value = "";
     return;
   }
-  if (props.disabled || props.sending || reading.value || imageGated.value) return;
+  if (
+    props.disabled ||
+    props.sending ||
+    reading.value ||
+    attachments.value.some((file) => !!file.uploadError) ||
+    imageGated.value
+  )
+    return;
   const text = value.value.trim();
   if (text || attachments.value.length) {
     emit("send", text, [...attachments.value]);
@@ -231,35 +243,72 @@ async function fitImage(data: string): Promise<string> {
   }
   throw new Error("This image is too large to send.");
 }
-async function attach(event: Event) {
-  const input = event.target as HTMLInputElement;
+let stagingGeneration = 0;
+onBeforeUnmount(() => {
+  stagingGeneration++;
+});
+async function uploadAttachment(file: Attachment) {
+  const current = stagingGeneration;
+  try {
+    const result = await api.upload(props.profile || "", file);
+    if (current !== stagingGeneration) return;
+    file.path = result.path;
+    file.uploadError = undefined;
+  } catch {
+    if (current === stagingGeneration)
+      file.uploadError = "Upload failed. Retry or remove this file.";
+  }
+}
+async function retryUpload(file: Attachment) {
+  if (reading.value) return;
+  reading.value = true;
+  try {
+    await uploadAttachment(file);
+  } finally {
+    reading.value = false;
+  }
+}
+async function stageFiles(selected: File[]) {
+  if (reading.value) return;
+  const current = stagingGeneration;
   reading.value = true;
   attachmentError.value = "";
   attachmentsOpen.value = false;
   try {
-    for (const file of Array.from(input.files || [])) {
-      if (file.size > 20 * 1024 * 1024) throw new Error("Each file must be 20 MB or smaller.");
-      if (attachments.value.length >= 5) throw new Error("Attach up to five files per message.");
-      let data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(new Error("Could not read file."));
-        reader.onabort = () => reject(new Error("File reading was cancelled. Try again."));
-        reader.readAsDataURL(file);
-      });
-      if (file.type.startsWith("image/")) data = await fitImage(data);
-      const type = file.type.startsWith("image/")
-        ? data.slice(5, data.indexOf(";"))
-        : file.type || "application/octet-stream";
-      attachments.value.push({ name: file.name, type, data, size: file.size });
+    for (const file of selected) {
+      try {
+        if (file.size > 20 * 1024 * 1024) throw new Error("Each file must be 20 MB or smaller.");
+        if (attachments.value.length >= 5) throw new Error("Attach up to five files per message.");
+        let data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("Could not read file."));
+          reader.onabort = () => reject(new Error("File reading was cancelled. Try again."));
+          reader.readAsDataURL(file);
+        });
+        if (file.type.startsWith("image/")) data = await fitImage(data);
+        if (current !== stagingGeneration) return;
+        const type = file.type.startsWith("image/")
+          ? data.slice(5, data.indexOf(";"))
+          : file.type || "application/octet-stream";
+        const pending: Attachment = { name: file.name, type, data, size: file.size };
+        attachments.value.push(pending);
+        await uploadAttachment(pending);
+      } catch (cause) {
+        if (current !== stagingGeneration) return;
+        attachmentError.value = cause instanceof Error ? cause.message : "Could not read file.";
+      }
     }
-  } catch (cause) {
-    attachmentError.value = cause instanceof Error ? cause.message : "Could not read file.";
   } finally {
-    reading.value = false;
-    input.value = "";
+    if (current === stagingGeneration) reading.value = false;
   }
 }
+async function attach(event: Event) {
+  const input = event.target as HTMLInputElement;
+  await stageFiles(Array.from(input.files || []));
+  input.value = "";
+}
+defineExpose({ stageFiles });
 </script>
 <template>
   <form
@@ -281,7 +330,16 @@ async function attach(event: Event) {
           :alt="file.name"
           class="size-12 rounded-lg object-cover"
         />
-        <span class="truncate">{{ file.name }}</span
+        <span class="truncate">{{ file.name }}</span>
+        <button
+          v-if="file.uploadError"
+          type="button"
+          class="text-red-200 underline"
+          :disabled="reading"
+          @click="retryUpload(file)"
+          :aria-label="`Retry upload ${file.name}`"
+        >
+          Retry upload</button
         ><button
           type="button"
           :aria-label="`Remove ${file.name}`"
@@ -335,7 +393,7 @@ async function attach(event: Event) {
           +
         </button>
         <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">
-          {{ reading ? "Reading files…" : reason || "" }}
+          {{ reading ? "Preparing attachments…" : reason || "" }}
         </p>
         <button
           ref="pill"

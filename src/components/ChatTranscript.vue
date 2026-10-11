@@ -9,6 +9,7 @@ import { renderMarkdown } from "../utils/markdown";
 const props = withDefaults(
   defineProps<{
     profile?: string;
+    sessionId?: string;
     messages: Message[];
     draft: string;
     loading: boolean;
@@ -135,9 +136,16 @@ watch(
             v-if="entry.kind === 'user'"
             :message="entry.message"
             :profile="profile"
+            :session-id="sessionId"
             @image-load="disclosureChanged"
           />
-          <AssistantTurn v-else :entry="entry" @image-load="disclosureChanged" />
+          <AssistantTurn
+            v-else
+            :entry="entry"
+            :profile="profile"
+            :session-id="sessionId"
+            @image-load="disclosureChanged"
+          />
         </template>
         <div
           v-if="working && !entries.some((entry) => entry.kind === 'turn' && entry.working)"

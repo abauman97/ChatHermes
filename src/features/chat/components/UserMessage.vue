@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import ArtifactCard from "../../artifacts/components/ArtifactCard.vue";
+import { messageArtifacts, uploadedArtifacts } from "../../artifacts/artifacts";
+import { messageText } from "../../../services/hermes-api";
 import type { Message } from "../../../types/hermes";
 import { renderMarkdown } from "../../../utils/markdown";
-import { images, displayText } from "../utils/user-message";
-defineProps<{ message: Message; profile?: string }>();
+
+defineProps<{ message: Message; profile?: string; sessionId?: string }>();
 const emit = defineEmits<{ imageLoad: [] }>();
 </script>
 <template>
@@ -11,15 +14,21 @@ const emit = defineEmits<{ imageLoad: [] }>();
   >
     <div
       class="message-content markdown-content break-words text-base leading-7"
-      v-html="renderMarkdown(displayText(message))"
+      v-html="
+        renderMarkdown(
+          uploadedArtifacts(messageText(message.content)).text.replace(
+            /\[screenshot\]/g,
+            '📷 Attached image',
+          ),
+        )
+      "
     />
-    <img
-      v-for="url in images(message.content, profile)"
-      :key="url"
-      :src="url"
-      alt="Attached image"
-      @load="emit('imageLoad')"
-      class="mt-2 max-h-72 max-w-full rounded-xl object-contain"
+    <ArtifactCard
+      v-for="file in messageArtifacts(message)"
+      :key="file.path"
+      :file="{ ...file, sessionId }"
+      :profile="profile"
+      @image-load="emit('imageLoad')"
     />
   </article>
 </template>

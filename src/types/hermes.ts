@@ -36,6 +36,8 @@ export interface Capabilities {
 }
 
 export interface Attachment {
+  path?: string;
+  uploadError?: string;
   name: string;
   type: string;
   data: string;

@@ -211,3 +211,44 @@ non-regular files and unavailable local workspaces are rejected. Filesystem
 errors are generic. Editing instructions does not move or resume any session;
 Hermes's existing context loader consumes the saved file on subsequent context
 loads. Project details and instructions pages retain profile/project URL scope.
+
+## Files and artifacts (issue 35)
+
+The composer and file drop target share upload staging. Failed uploads remain
+pending and can be retried or removed without discarding the draft or other
+files. Staging does not submit a prompt. General files use native `file.attach`
+at submission, after checking that every source belongs to the selected
+profile's authenticated upload directory. The native `ref_text` is passed to
+`prompt.submit` for file context; original upload annotations retain the
+filename and retrieval reference in durable history. Images retain the existing
+validated multipart prompt mechanism rather than a session-wide attachment queue.
+
+Timeline cards and the global/project Artifacts views share history-based
+reference detection and one preview/download component. Detection supports
+Desktop `MEDIA:`, `@file:`, `#media:` links, file/sandbox links, and completed
+producer tool outputs. Read-only tool paths are not promoted automatically.
+Code fences remain code; they are not treated as promises of server files.
+Artifact browsing pages through the authoritative sessions and message APIs,
+and project browsing uses native session membership. No client transcript or
+artifact metadata journal is introduced.
+
+| Plugin route                                               | Native dashboard handler | Behavior                                                                                           |
+| ---------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `GET /files/preview?path=…&profile=…&session_id=…`         | `/api/fs/read-data-url`  | Authenticated, bounded file preview; native session-relative resolution and SSH workspace handling |
+| `GET /files/download?path=…&profile=…&session_id=…&name=…` | `/api/fs/download`       | Native file/stream response with a sanitized display filename and private/no-store headers         |
+| `DELETE /files?path=…&profile=…&session_id=…`              | `/api/files`             | Confirmed, nonrecursive native managed-file deletion; regular-file/read-policy checks first        |
+
+The adapter passes the authenticated dashboard request into the native handlers,
+including the release's hosted-files read guard. Native file policy and preview
+size limits apply, and native errors are reduced to generic status messages.
+Remote SSH preview/download use Hermes's filesystem adapter; remote deletion is
+explicitly unsupported because the native managed deletion route is host-local.
+Missing native handlers return 501. Deleting a file leaves its historical
+references intact; subsequent preview/download reports it unavailable.
+
+Raster images have thumbnails and a larger viewer; PDFs and browser media use
+browser viewers. Source/text formats, including HTML and SVG, display as escaped
+text. Unsupported formats retain an explicit download link. Preview resources
+are revoked and requests aborted on close or unmount. File type icons are
+vendored from the MIT-licensed dmhendricks/file-icon-vectors vivid collection,
+with its license and attribution in `src/assets/file-icons/`.
