@@ -102,7 +102,7 @@ onBeforeUnmount(() => controller?.abort());
 </script>
 <template>
   <section class="min-h-0 flex-1 overflow-y-auto px-5 py-6" aria-label="Artifacts">
-    <div class="mx-auto max-w-[760px]">
+    <div class="mx-auto max-w-[1100px]">
       <div class="mb-5 flex items-center justify-between">
         <h2 class="text-xl font-medium">Artifacts</h2>
         <button class="text-sm underline" :disabled="loading" @click="load">Refresh</button>
@@ -112,24 +112,45 @@ onBeforeUnmount(() => controller?.abort());
       </p>
       <p v-if="error" role="alert" class="mb-4 text-sm text-red-200">{{ error }}</p>
       <p v-if="!loading && !files.length" class="text-sm text-[#b4b4b4]">No artifacts found.</p>
-      <div v-for="file in files" :key="`${file.sessionId}:${file.path}`" class="mb-5">
-        <div class="flex max-w-md items-center gap-3 text-xs text-[#b4b4b4]">
-          <span v-if="file.projectTitle">{{ file.projectTitle }}</span>
-          <span>{{ file.direction === "uploaded" ? "Uploaded" : "Generated" }}</span
-          ><button
-            class="min-w-0 flex-1 truncate text-left underline"
-            @click="emit('openSession', file.sessionId!)"
-          >
-            {{ file.sessionTitle }}</button
-          ><button
-            v-if="!/^(https?:|data:)/.test(file.path)"
-            :aria-label="`Delete ${file.name}`"
-            @click="deletion = file"
-          >
-            Delete
-          </button>
-        </div>
-        <ArtifactCard :file="file" :profile="profile" />
+      <div
+        class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),20rem))] items-start gap-4 [&>.artifact-card]:my-0"
+      >
+        <ArtifactCard
+          v-for="file in files"
+          :key="`${file.sessionId}:${file.path}`"
+          :file="file"
+          :profile="profile"
+        >
+          <template #footer>
+            <div class="border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]">
+              <span v-if="file.projectTitle" class="mb-1 block truncate">{{
+                file.projectTitle
+              }}</span>
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="shrink-0">{{
+                  file.direction === "uploaded" ? "Uploaded" : "Generated"
+                }}</span>
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 truncate py-2 text-left underline"
+                  :title="file.sessionTitle"
+                  @click="emit('openSession', file.sessionId!)"
+                >
+                  {{ file.sessionTitle }}
+                </button>
+                <button
+                  v-if="!/^(https?:|data:)/.test(file.path)"
+                  type="button"
+                  class="shrink-0 py-2 hover:text-white"
+                  :aria-label="`Delete ${file.name}`"
+                  @click="deletion = file"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </template>
+        </ArtifactCard>
       </div>
       <dialog
         ref="confirmation"

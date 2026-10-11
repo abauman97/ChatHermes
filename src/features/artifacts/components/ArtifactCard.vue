@@ -184,6 +184,7 @@ watch(
         </svg>
       </a>
     </div>
+    <slot name="footer" />
     <dialog
       ref="dialog"
       class="artifact-preview fixed m-auto max-h-[90dvh] w-[min(900px,94vw)] overflow-auto rounded-2xl border border-[#424242] bg-[#212121] p-4 text-white backdrop:bg-black/80"

@@ -263,6 +263,26 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(browser).toContainText("Uploaded");
   await expect(browser).toContainText("Generated");
   await expect(browser.locator(".artifact-card").filter({ hasText: codeName })).toHaveCount(0);
+  const cards = browser.locator(".artifact-card");
+  const generatedCard = cards.filter({ hasText: filename }).last();
+  await expect(generatedCard).toContainText("Generated");
+  await expect(
+    generatedCard.getByRole("button", { name: `Delete ${filename}`, exact: true }),
+  ).toBeVisible();
+  await expect(generatedCard.locator("button[title]")).toBeVisible();
+  const firstBox = (await cards.nth(0).boundingBox())!;
+  const secondBox = (await cards.nth(1).boundingBox())!;
+  expect(firstBox.width).toBeLessThanOrEqual(320);
+  if (info.project.name === "desktop") {
+    expect(secondBox.y).toBe(firstBox.y);
+    expect(secondBox.x).toBeGreaterThan(firstBox.x + firstBox.width);
+  } else {
+    expect(secondBox.x).toBe(firstBox.x);
+    expect(secondBox.y).toBeGreaterThan(firstBox.y);
+  }
+  expect(await browser.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
   await page.screenshot({ path: info.outputPath("artifacts-browser.png") });
   await browser
     .getByRole("button", { name: `Delete ${filename}`, exact: true })
