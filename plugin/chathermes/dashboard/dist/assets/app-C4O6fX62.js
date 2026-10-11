@@ -7968,22 +7968,18 @@ var jp = ["open"], Mp = {
 		approvalPending: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = /* @__PURE__ */ V(null), r = Wn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.length > 1), o = X(() => t.activities.some(i)), s = X(() => n.value ?? o.value), c = (e) => [
-			"failed",
-			"interrupted",
-			"unknown"
-		].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Ap(t.activities, o.value) : "Working…");
-		return (t, u) => (W(), G("section", Hp, [a.value || !e.activities.length ? (W(), G("button", {
+		let t = e, n = /* @__PURE__ */ V(null), r = Wn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Ap(a.value, !1) : "Working…");
+		return (t, a) => (W(), G("section", Hp, [o.value || !e.activities.length ? (W(), G("button", {
 			key: 0,
 			type: "button",
 			class: "work-summary",
 			"aria-expanded": s.value,
 			"aria-controls": H(r),
-			onClick: u[0] ||= (e) => n.value = !s.value
+			onClick: a[0] ||= (e) => n.value = !s.value
 		}, [
 			e.activities.some(H(Cp)) ? (W(), G("span", Wp, "›_")) : Y("v-if", !0),
 			q("span", {
-				class: de(["activity-label", { "working-shimmer": o.value || e.working && !e.activities.length && !e.approvalPending }]),
+				class: de(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
 				title: l.value
 			}, F(l.value), 11, Gp),
 			q("span", {
@@ -7993,11 +7989,11 @@ var jp = ["open"], Mp = {
 			e.approvalPending ? (W(), G("span", Kp, "Waiting for approval")) : Y("v-if", !0)
 		], 8, Up)) : Y("v-if", !0), q("div", {
 			id: H(r),
-			class: de(["work-timeline", { "work-timeline-single": !a.value }])
+			class: de(["work-timeline", { "work-timeline-single": !o.value }])
 		}, [(W(!0), G(U, null, hr(e.activities, (n) => (W(), G(U, { key: n.id }, [Dn(q("div", { class: de({ "current-activity": i(n) }) }, [Gi(Vp, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Na, !a.value || s.value || i(n) || c(n)]]), _r(t.$slots, "result", { activity: n })], 64))), 128))], 10, qp)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Na, !o.value || s.value || i(n) || c(n)]]), _r(t.$slots, "result", { activity: n })], 64))), 128))], 10, qp)]));
 	}
 }), Yp = { class: "message assistant w-full self-start" }, Xp = ["innerHTML"], Zp = /* @__PURE__ */ Un({
 	__name: "AssistantTextBlock",
