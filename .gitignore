@@ -12,9 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Generated dashboard bundles are committed and rebuilt when source changes.
-!plugin/chathermes/dashboard/dist/
-!plugin/chathermes/dashboard/dist/**
+# Generated dashboard bundles are built by CI and must not be tracked.
+plugin/chathermes/dashboard/dist/
 
 # The dashboard plugin's generated assets are built in GitHub Actions.
 
