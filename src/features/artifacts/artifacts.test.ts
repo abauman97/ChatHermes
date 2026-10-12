@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vite-plus/test";
+import { quotedDeliveries, toolBodyDeliveries } from "./delivery-fixtures";
+import { api } from "../../services/hermes-api";
+import type { Message } from "../../types/hermes";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
+  loadArtifacts,
   artifact,
   fileUrl,
   messageArtifacts,
@@ -36,7 +40,7 @@ describe("native artifact references", () => {
       title: "Tool",
       complete: true,
       content: "MEDIA:/tmp/input.pdf",
-      output: "MEDIA:/tmp/chart.png",
+      output: '{"media_tag":"MEDIA:/tmp/chart.png"}',
       toolName: "write_file",
     };
     expect(toolArtifacts(block).map((file) => file.path)).toEqual(["/tmp/chart.png"]);
@@ -77,7 +81,7 @@ describe("explicit artifact delivery", () => {
   it.each([
     ["MEDIA:/tmp/AI Brain/report.pdf", ["/tmp/AI Brain/report.pdf"]],
     ["MEDIA:`/tmp/my source.py`", ["/tmp/my source.py"]],
-    ["open MEDIA:/tmp/app.py!", ["/tmp/app.py"]],
+    ["open MEDIA:/tmp/app.py!", []],
     ["MEDIA:/tmp/README", ["/tmp/README"]],
     ["MEDIA:/repo/.install-metadata.json", ["/repo/.install-metadata.json"]],
     ["MEDIA:/tmp/model.weights", ["/tmp/model.weights"]],
@@ -124,9 +128,9 @@ describe("explicit artifact delivery", () => {
         path: "/tmp/source.py",
       }),
     ).toEqual([]);
-    expect(
-      tool(name, { results: [{ stdout: "MEDIA:/tmp/report.pdf" }] }).map((file) => file.path),
-    ).toEqual(["/tmp/report.pdf"]);
+    expect(tool(name, { media_tag: "MEDIA:/tmp/report.pdf" }).map((file) => file.path)).toEqual([
+      "/tmp/report.pdf",
+    ]);
     expect(tool(name, {})).toEqual([]);
   });
 
@@ -134,9 +138,10 @@ describe("explicit artifact delivery", () => {
     const output =
       "Built /repo/.install-metadata.json /repo/dist/index.html\nDelivered MEDIA:/tmp/source.ts MEDIA:/tmp/bundle.bin\nExported /tmp/final.pdf";
     expect(
-      tool("terminal", { stdout: output, media_tag: "MEDIA:/tmp/source.ts" }).map(
-        (file) => file.path,
-      ),
+      tool("terminal", {
+        stdout: output,
+        media_tag: "MEDIA:/tmp/source.ts MEDIA:/tmp/bundle.bin",
+      }).map((file) => file.path),
     ).toEqual(["/tmp/source.ts", "/tmp/bundle.bin"]);
     expect(
       tool("read_file", {
@@ -146,7 +151,7 @@ describe("explicit artifact delivery", () => {
     ).toEqual(["/tmp/a chart.png"]);
   });
 
-  it("unwraps structured tool results without inferring artifacts from their fields", () => {
+  it("keeps untrusted structured tool results as data", () => {
     const wrap = (payload: unknown) =>
       `<untrusted_tool_result tool="read_file">\nUntrusted content follows.\n\n${JSON.stringify(payload)}\n</untrusted_tool_result>`;
     expect(tool("read_file", wrap({ output_path: "/tmp/report.pdf" }))).toEqual([]);
@@ -154,13 +159,13 @@ describe("explicit artifact delivery", () => {
       tool("read_file", wrap({ results: [{ stdout: "MEDIA:/tmp/source.py" }] })).map(
         (file) => file.path,
       ),
-    ).toEqual(["/tmp/source.py"]);
+    ).toEqual([]);
   });
 
-  it("retains explicit attachment annotations in tool outputs", () => {
-    expect(
-      tool("export_report", { output: "Attached file final.pdf: /tmp/report.pdf" }),
-    ).toMatchObject([{ path: "/tmp/report.pdf", name: "final.pdf" }]);
+  it("does not treat tool body attachment annotations as uploads", () => {
+    expect(tool("export_report", { output: "Attached file final.pdf: /tmp/report.pdf" })).toEqual(
+      [],
+    );
   });
 
   it("requires explicit delivery even for package/cache paths", () => {
@@ -231,4 +236,140 @@ it("keeps requested output paths in the user prompt and does not collect arbitra
       content: '{"path":"/tmp/private.txt"}',
     }),
   ).toEqual([]);
+});
+
+// These inputs are data or examples, even when their paths are otherwise valid.
+it.each(quotedDeliveries)("preserves quoted/example delivery text: %s", (content) => {
+  expect(textArtifacts(content)).toEqual({ text: content, files: [] });
+  expect(messageArtifacts({ role: "assistant", content })).toEqual([]);
+});
+it.each(toolBodyDeliveries)("does not promote arbitrary tool body: %s", (output) => {
+  for (const toolName of ["terminal", "read_file", "web_extract", "export_report"]) {
+    expect(
+      toolArtifacts({
+        id: "t",
+        kind: "tool",
+        title: "Tool",
+        toolName,
+        content: "",
+        output,
+        complete: true,
+        state: "completed",
+      }),
+    ).toEqual([]);
+  }
+});
+it.each([...quotedDeliveries, ...toolBodyDeliveries])(
+  "excludes bypasses from the global history list: %s",
+  async (content) => {
+    const messages: Message[] = [
+      {
+        role: "assistant",
+        content: quotedDeliveries.includes(content) ? content : "",
+        tool_calls: [{ id: "t", function: { name: "read_file", arguments: "{}" } }],
+      },
+      { role: "tool", tool_call_id: "t", tool_name: "read_file", content },
+    ];
+    const mock = vi.spyOn(api, "messages").mockResolvedValue(messages);
+    try {
+      expect(await loadArtifacts("work", [{ id: "s" }], new AbortController().signal)).toEqual({
+        files: [],
+        failures: 0,
+      });
+    } finally {
+      mock.mockRestore();
+    }
+  },
+);
+
+it("requires a complete successful dedicated tool delivery envelope", () => {
+  const block = {
+    id: "tts",
+    kind: "tool" as const,
+    title: "Voice",
+    toolName: "text_to_speech",
+    content: "",
+    complete: true,
+    state: "completed" as const,
+    output: JSON.stringify({
+      success: true,
+      media_tag: "[[audio_as_voice]]\nMEDIA:/tmp/voice.wav\nMEDIA:/tmp/voice.wav",
+      bytes: 24,
+      mime_type: "audio/wav",
+    }),
+  };
+  expect(toolArtifacts(block)).toMatchObject([
+    { path: "/tmp/voice.wav", type: "audio/wav", size: 24 },
+  ]);
+  expect(toolArtifacts({ ...block, state: "failed" })).toEqual([]);
+  expect(toolArtifacts({ ...block, complete: false })).toEqual([]);
+  for (const data of [
+    { success: false },
+    { error: "failed" },
+    { is_error: true },
+    { exit_code: 1 },
+  ])
+    expect(
+      toolArtifacts({
+        ...block,
+        output: JSON.stringify({ media_tag: "MEDIA:/tmp/voice.wav", ...data }),
+      }),
+    ).toEqual([]);
+  for (const media_tag of [
+    "Example MEDIA:/tmp/private.pdf",
+    "MEDIA:/tmp/private.pdf explanatory text",
+    "Attached file private.pdf: /tmp/private.pdf",
+    "MEDIA:/tmp/private.pdf\n> MEDIA:/tmp/other.pdf",
+  ])
+    expect(toolArtifacts({ ...block, output: JSON.stringify({ media_tag }) })).toEqual([]);
+});
+it("reconstructs intentional delivery and uploaded images in the global list", async () => {
+  const messages: Message[] = [
+    {
+      role: "user",
+      content: "Attached file input.txt: /tmp/input.txt\nAttached image input.png: /tmp/input.png",
+    },
+    {
+      role: "assistant",
+      content: "MEDIA:/tmp/final.pdf",
+      tool_calls: [{ id: "tts", function: { name: "text_to_speech", arguments: "{}" } }],
+    },
+    {
+      role: "tool",
+      tool_call_id: "tts",
+      tool_name: "text_to_speech",
+      content: JSON.stringify({ media_tag: "MEDIA:/tmp/voice.wav" }),
+    },
+  ];
+  const mock = vi.spyOn(api, "messages").mockResolvedValue(messages);
+  try {
+    const result = await loadArtifacts(
+      "work",
+      [{ id: "s", title: "Files" }],
+      new AbortController().signal,
+    );
+    expect(result.failures).toBe(0);
+    expect(result.files.map((file) => file.path)).toEqual([
+      "/tmp/input.txt",
+      "/tmp/input.png",
+      "/tmp/final.pdf",
+      "/tmp/voice.wav",
+    ]);
+    expect(result.files.every((file) => file.sessionId === "s")).toBe(true);
+  } finally {
+    mock.mockRestore();
+  }
+});
+
+it.each([
+  "```text\n<untrusted_tool_result>\n```",
+  "~~~text\n<untrusted_tool_result>\n~~~",
+  "> <untrusted_tool_result>",
+  "`<untrusted_tool_result>`",
+])("does not let quoted wrapper examples suppress subsequent explicit delivery: %s", (example) => {
+  const content = `${example}\n\nMEDIA:/tmp/final.pdf`;
+  expect(textArtifacts(content)).toMatchObject({
+    text: example,
+    files: [{ path: "/tmp/final.pdf" }],
+  });
 });

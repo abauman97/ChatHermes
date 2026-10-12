@@ -1,3 +1,4 @@
+import MarkdownIt from "markdown-it";
 import { historyBlocks } from "../chat/runtime/assistant-turn";
 import { api, messageText } from "../../services/hermes-api";
 import type { Message, Session, TurnBlock } from "../../types/hermes";
@@ -48,7 +49,7 @@ const mediaExtensions =
 const mediaAnchored = `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${mediaExtensions})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`;
 const mediaBare = '[^\\s`"]+';
 const mediaTag = new RegExp(
-  `[\`"']?MEDIA:\\s*(\`[^\`\n]+\`|"[^"\n]+"|'[^'\n]+'|${mediaAnchored}|${mediaBare})[\`"']?`,
+  `MEDIA:\\s*(\`[^\`\n]+\`|"[^"\n]+"|'[^'\n]+'|${mediaAnchored}|${mediaBare})`,
   "g",
 );
 function mediaValue(value: string) {
@@ -64,14 +65,21 @@ function mediaValue(value: string) {
   }
   return /[/\\]|\.[^.]/.test(value) ? value : "";
 }
+// Delivery directives must occupy a whole line. Validate before collecting so a
+// trailing example/explanation cannot partially assert delivery.
 function collectMedia(text: string, add: (path: string) => boolean) {
-  return text.replace(mediaTag, (all, value) => {
-    const path = mediaValue(value);
-    // Preserve the existing MEDIA path grammar; native uploads use artifact() directly.
+  const paths: string[] = [];
+  let end = 0;
+  for (const match of text.matchAll(mediaTag)) {
+    if (text.slice(end, match.index).trim()) return text;
+    const path = mediaValue(match[1]!);
     if (!/^(?:file:|\/|[~.][\\/]|\.\.[\\/]|[a-z]:[\\/]|\\\\|https?:\/\/|data:image\/)/i.test(path))
-      return all;
-    return add(path) ? "" : all;
-  });
+      return text;
+    paths.push(path);
+    end = match.index + match[0].length;
+  }
+  if (!paths.length || text.slice(end).trim()) return text;
+  return paths.every((path) => !!artifact(path)) && paths.every(add) ? "" : text;
 }
 export function extension(name: string) {
   return name.split(".").at(-1)?.toLowerCase() || "";
@@ -110,78 +118,115 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
   if (download) query.set("name", file.name);
   return `/api/plugins/chathermes/files/${download ? "download" : "preview"}?${query}`;
 }
-// ChatHermes keeps fenced source code intact and native upload annotations.
-// Generated references require explicit MEDIA delivery or attachment annotations.
+// Block tokens keep backtick/tilde fences (including incomplete fences),
+// indented code, blockquotes and lists out of the delivery channel.
+const deliveryMarkdown = new MarkdownIt({ html: true });
 export function textArtifacts(text: string): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
-  const add = (path: string) => {
-    const file = artifact(path);
+  const add = (path: string, name?: string) => {
+    const file = artifact(path, name);
     if (!file) return false;
     if (!files.some((item) => item.path === file.path)) files.push(file);
     return true;
   };
-  const clean = text
-    .split(/(```[\s\S]*?(?:```|$))/g)
-    .map((part, index) => {
-      if (index % 2) return part;
-      part = part.replace(/(?:^|\n)@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)(?=\n|$)/g, (all) =>
-        /Attached file [^\n]+: /.test(text) ? "" : all,
-      );
-      part = part.replace(
-        /Attached (?:image|file) ([^\n]+?): ([^\n]+)(?:\n|$)/g,
-        (all, name, path) => {
-          const file = artifact(path.trim(), name);
-          if (!file) return all;
-          if (!files.some((item) => item.path === file.path)) files.push(file);
-          return "";
-        },
-      );
-      return collectMedia(part, add);
-    })
-    .join("");
-  return { text: clean.trim(), files };
-}
-function untrustedToolPayload(text: string) {
-  const trimmed = text.trim();
-  const open = trimmed.match(/^<untrusted_tool_result\b[^>]*>\s*/);
-  if (!open) return;
-  const close = trimmed.lastIndexOf("</untrusted_tool_result>");
-  if (close <= open[0].length) return;
-  const wrapped = trimmed.slice(open[0].length, close).trim();
-  const start = wrapped.indexOf("\n\n");
-  return (start === -1 ? wrapped : wrapped.slice(start + 2)).trim();
+  const originalLines = text.split("\n");
+  const lines = [...originalLines];
+  let hasAttachment = false;
+  const references: number[] = [];
+  const tokens = deliveryMarkdown.parse(text, {});
+  const literalLines = new Set<number>();
+  for (const token of tokens) {
+    if (!token.map) continue;
+    if (
+      ["fence", "code_block", "blockquote_open", "bullet_list_open", "ordered_list_open"].includes(
+        token.type,
+      ) ||
+      token.children?.some(
+        (child) => child.type === "code_inline" && /untrusted_tool_result/i.test(child.content),
+      )
+    )
+      for (let index = token.map[0]; index < token.map[1]; index++) literalLines.add(index);
+  }
+  const untrustedLines = new Set<number>();
+  let untrustedDepth = 0;
+  for (const [index, line] of originalLines.entries()) {
+    if (untrustedDepth) untrustedLines.add(index);
+    if (literalLines.has(index) || !/^\s*<\/?untrusted_tool_result\b/i.test(line)) continue;
+    for (const tag of line.matchAll(/<(\/?)untrusted_tool_result\b[^>]*(?:>|$)/gi)) {
+      untrustedLines.add(index);
+      untrustedDepth = tag[1] ? Math.max(0, untrustedDepth - 1) : untrustedDepth + 1;
+    }
+  }
+  for (const [position, token] of tokens.entries()) {
+    if (token.type !== "paragraph_open" || token.level !== 0 || !token.map) continue;
+    // Inline code can span lines; its body still belongs to the quotation.
+    if (
+      tokens[position + 1]?.children?.some(
+        (child) =>
+          child.type === "code_inline" && /MEDIA:|Attached (?:image|file) /.test(child.content),
+      )
+    )
+      continue;
+    for (let index = token.map[0]; index < token.map[1]; index++) {
+      if (untrustedLines.has(index)) continue;
+      const line = lines[index]!;
+      const attachment = line.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
+      if (attachment && add(attachment[2]!.trim(), attachment[1])) {
+        hasAttachment = true;
+        lines[index] = "";
+      } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
+        references.push(index);
+      } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
+    }
+  }
+  if (hasAttachment) for (const index of references) lines[index] = "";
+  return {
+    text: files.length
+      ? lines
+          .filter((line, index) => line !== "" || originalLines[index] === "")
+          .join("\n")
+          .trim()
+      : text,
+    files,
+  };
 }
 export function toolArtifacts(block: TurnBlock): Artifact[] {
   if (block.kind !== "tool" || !block.complete || block.state === "failed") return [];
-  const files: Artifact[] = [];
-  const collect = (value: unknown, metadata?: Record<string, unknown>) => {
-    if (Array.isArray(value)) {
-      value.forEach((item) => collect(item));
-    } else if (value && typeof value === "object") {
-      const row = value as Record<string, unknown>;
-      Object.values(row).forEach((child) => collect(child, row));
-    } else if (typeof value === "string") {
-      for (const file of textArtifacts(value).files) {
-        const type = metadata?.mime_type || metadata?.mime;
-        if (typeof type === "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(type))
-          file.type = type;
-        const size = metadata?.size ?? metadata?.bytes;
-        if (typeof size === "number" && Number.isSafeInteger(size) && size >= 0) file.size = size;
-        if (!files.some((item) => item.path === file.path)) files.push(file);
-      }
-    }
-  };
-  // Decode structured output before scanning explicit delivery strings, so JSON
-  // escapes cannot become part of a path. Tool inputs never assert delivery.
-  const output = block.output && (untrustedToolPayload(block.output) ?? block.output);
-  if (output) {
-    try {
-      collect(JSON.parse(output));
-    } catch {
-      collect(output);
-    }
+  // Tool bodies are data: read_file.content, terminal.output/stdout, arguments,
+  // MCP result text and untrusted wrappers cannot establish delivery. Hermes TTS
+  // uses a top-level media_tag; retain explicit multimodal meta.media_tag too.
+  // Never recursively search for those keys or unwrap untrusted result text.
+  let result: unknown;
+  try {
+    result = JSON.parse(block.output || "");
+  } catch {
+    return [];
   }
-  return files;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
+  const row = result as Record<string, unknown>;
+  if (
+    row.is_error ||
+    row.error ||
+    row.success === false ||
+    (typeof row.exit_code === "number" && row.exit_code !== 0)
+  )
+    return [];
+  const metadata =
+    row._multimodal === true && row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+      ? (row.meta as Record<string, unknown>)
+      : row;
+  if (typeof metadata.media_tag !== "string") return [];
+  const directives = metadata.media_tag.replace(/^\[\[audio_as_voice\]\]\r?\n/, "");
+  if (directives.split("\n").some((line) => line && !line.startsWith("MEDIA:"))) return [];
+  const delivery = textArtifacts(directives);
+  if (delivery.text.trim()) return [];
+  return delivery.files.map((file) => {
+    const type = metadata.mime_type || metadata.mime;
+    if (typeof type === "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(type)) file.type = type;
+    const size = metadata.size ?? metadata.bytes;
+    if (typeof size === "number" && Number.isSafeInteger(size) && size >= 0) file.size = size;
+    return file;
+  });
 }
 export function uploadedArtifacts(text: string): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
