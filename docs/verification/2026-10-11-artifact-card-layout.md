@@ -12,7 +12,7 @@ content area. Cards keep their natural height and fit within narrow viewports.
 - `npm test`: 369 passed across 25 files.
 - `npm run test:api`: 100 passed using `/tmp/chathermes-api-venv`.
   The sandboxed run stalled on file serving; the unsandboxed run passed.
-- `npm run build`: passed; local dashboard distribution rebuilt for validation.
+- `npm run build`: passed; dashboard distribution rebuilt and included.
 - Isolated real-provider dashboard launched with `npm run live` on port 9120.
   Artifact browser tests passed on desktop and mobile, including text/image/PDF
   previews, download, deletion confirmation/cancellation, history reconstruction,

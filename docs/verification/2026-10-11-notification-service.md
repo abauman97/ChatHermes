@@ -61,8 +61,8 @@ Validation:
   `public/push-service-worker.js` and
   `src/features/notifications/services/push-worker.test.ts`. Neither was edited;
   unrelated formatting is preserved. Changed documentation passes formatting.
-- `npm run build`: passed. Local dashboard dist assets were rebuilt and are
-  byte-identical to the validation baseline. Generated assets stay out of commits.
+- `npm run build`: passed. Committed dashboard dist assets were rebuilt and are
+  byte-identical to HEAD, so there is no generated asset diff to include.
 - `git diff --check`: passed.
 
 ## Visual and transport limitations

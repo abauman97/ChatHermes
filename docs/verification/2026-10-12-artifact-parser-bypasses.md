@@ -50,27 +50,27 @@ artifact preview/download/history reconstruction, and chronological activity.
 Playwright screenshot evidence is saved in `tests/visual-output/` for local review; the
 visual tests used the isolated fixture dashboard, not production data.
 
-## Source-only PR correction
+## Source-only PR scope correction
 
-Verified PR #124 and branch `fix/artifact-filter-desktop` at
-`ff46ef53728644d129a1cb12fa9495c876d207a6` with a clean worktree. Latest fetched
-main is `92d654d2420ac038bba6e652ec143bf16f8cb316`, already the branch base;
-the existing source uses main's dashboard plugin architecture unchanged.
-Preserved all parser source, tests, and contract changes. Removed stale instructions
-and verification wording that treated generated bundles as commit contents.
+Revalidated PR #124 from cleanup commit
+`38fbea2d75736805f0e79f782858eb4cc1c54d5e` against fetched main
+`92d654d2420ac038bba6e652ec143bf16f8cb316`, which remains the branch base.
+Parser source, tests, and the API contract are preserved. Restored the 12 unrelated
+historical verification notes and the historical plugin implementation plan to
+main. Dist guidance changes remain limited to AGENTS.md, README.md, architecture,
+and the future gateway plan's explicit instructions to commit generated assets.
 
-This correction passed `npm test` (622 tests), `npm run test:api` (103 tests),
-`vp fmt`, `vp fmt --check`, `vp lint`, `npm run build`, and `git diff --check`.
-After building, restored only dashboard dist output to main's exact baseline.
-The final PR diff contains no dist paths or `.gitignore` changes; the existing
-ignore rule still matches `plugin/chathermes/dashboard/dist/index.js`.
-Main still contains historically tracked dist files despite that ignore rule;
-restoring that baseline avoids either new generated bundles or baseline deletions
-in this PR. Build output must remain out of future commits.
+`npm test` (622 tests), `npm run test:api` (103 tests), `npx vp fmt --check`,
+`npx vp lint`, `npm run build`, and `git diff --check origin/main` passed.
+After building, restored dashboard dist output to main's exact baseline and
+removed only extra ignored build files. The PR diff contains no dist paths;
+`.gitignore` is unchanged and its existing dist ignore rule still matches.
+Main's historically tracked dist baseline is preserved without staging build
+output.
 
-No UI source changed in this correction. Reviewed the existing passing six-test
-live dashboard record and desktop/mobile screenshots in `tests/visual-output/`,
-including composer focus/scrolling, attachments, profile/model selection, artifact
-cards, and activity disclosure states. Those visual tests were run in the prior
-parser pass; they were not rerun for this documentation/output correction.
-No deployment, merge, commit amendment, or `.env` inspection was performed.
+No UI source changed in this correction. Reviewed the existing passing live
+visual-test record and actual dashboard screenshots at desktop/mobile sizes for
+composer focus/scrolling, attachments, profile/model selects, artifact cards,
+and active/completed/history disclosures. The live fixture was not rerun for
+this documentation correction. No deployment, merge, amendment, force push,
+`.env` inspection, or original-checkout inspection was performed.

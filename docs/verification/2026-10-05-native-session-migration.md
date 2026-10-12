@@ -26,7 +26,7 @@ validated by the native chat fixture.
 | Native lifecycle   | `native_channel.py`: profile-bound create/resume/activate/submit/steer/interrupt/request answers; explicit busy queue; preparation before prompt admission                            |
 | Retained ownership | `native_owners.py`, `gateway_transport.py`, `chat_gateway.py`: browser subscribers share one native owner; raw sanitized frames survive disconnect and bounded native replay eviction |
 | Plugin integration | `src/App.vue`, `hermes-api.ts`: native controller selection follows reactive capabilities; native actions bypass Runs; genuine legacy pointers drain before native attachment         |
-| Contract / assets  | `docs/api-contract.md`, `tests/docker/Dockerfile`, generated `dashboard/dist/` assets                                                                                                 |
+| Contract / assets  | `docs/api-contract.md`, `tests/docker/Dockerfile`, committed `dashboard/dist/` assets                                                                                                 |
 
 The full `JsonRpcGatewayClient` is deliberately not wrapped around the `chat.*`
 facade: its automatic native replay RPCs are not wire compatible with the

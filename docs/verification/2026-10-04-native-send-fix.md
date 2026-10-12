@@ -72,7 +72,7 @@ The fixture was then rebuilt/relaunched from the unchanged pinned source
 The final Docker image is `9b7039d5aa7b`. Local and installed fixture hashes match:
 native channel `4968b52aae737997dd60a7ed0be8e4cbd027f3486c578490b23e19b9e7e19483`;
 frontend bundle `c8298a292f73bd8891966324b0ea33c95d8ff4ac2728f2715bd97af2b0679cfa`.
-`npm run build` regenerated local `dashboard/dist/` assets; they are
+`npm run build` regenerated committed `dashboard/dist/` assets; they are
 byte-identical because the implementation change is in Python.
 
 ## Final verification
@@ -81,7 +81,7 @@ byte-identical because the implementation change is in Python.
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `npm test`                                                      | 111 passed, 13 files, exit 0                                                                                             |
 | `npm run test:api`                                              | 73 passed, exit 0; used the existing repository venv at `/opt/data/projects/ChatHermes-reconnect/.venv-test/bin` on PATH |
-| `npm run build`                                                 | Passed; regenerated local dist matches the validation baseline byte-for-byte                                             |
+| `npm run build`                                                 | Passed; regenerated dist matches tracked assets byte-for-byte                                                            |
 | `npm run test:docker`                                           | 18 passed, exit 0                                                                                                        |
 | Older-schema first-send + failed-attach/recovery browser checks | 4 passed, desktop/mobile, exit 0                                                                                         |
 | `npm run test:native` / `sh tests/docker/native-tests.sh`       | 84 pinned Python checks, native model/image runtime probe, 20 desktop/mobile browser cases passed, exit 0                |

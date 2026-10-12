@@ -30,7 +30,7 @@ changes were added to the product. The supplied reference is retained at
 - `npm test`: 99 tests passed across 11 files.
 - `PATH="$PWD/.venv/bin:$PATH" npm run test:api`: 42 tests passed.
 - `npm run build`: passed TypeScript checks and both plugin builds. Updated
-  `plugin/chathermes/dashboard/dist/` assets were generated locally for validation.
+  `plugin/chathermes/dashboard/dist/` assets are included in the working tree.
 - `git diff --check`: passed.
 
 Tests cover chronological retrieval and paging beyond 500 retained sessions and

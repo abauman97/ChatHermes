@@ -65,7 +65,7 @@ Verification for this correction:
 
 - Targeted worker/client/push suites: 3 files, 54 tests passed.
 - `npm test`: 19 files, 206 tests passed.
-- `npm run build`: passed; the generated dist worker was rebuilt and is identical
+- `npm run build`: passed; the committed dist worker was rebuilt and is identical
   to `public/push-service-worker.js`.
 - Python API tests were not rerun: no Python routes, API contracts, or server
   behavior changed. The earlier API results above belong to the original change.

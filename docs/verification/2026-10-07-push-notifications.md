@@ -13,7 +13,7 @@ were not merged. Main's project screens and API remain in place.
   failure, expired subscriptions, and continuing delivery to the next device
   when delivery or expired-subscription removal fails.
 - Docker distribution/launcher suite: 28 tests passed.
-- `npm run build`: passed; generated distribution asset paths rebuilt.
+- `npm run build`: passed; committed-distribution asset paths rebuilt.
 - `git diff --check`: passed.
 
 Native attach regression coverage checks stored session links when the runtime
