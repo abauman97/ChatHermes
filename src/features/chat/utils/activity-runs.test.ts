@@ -26,8 +26,6 @@ describe("chronological tool runs", () => {
     ).toEqual(blocks);
   });
   it.each([
-    "edit_file",
-    "write_file",
     "clarify",
     "setup_choose",
     "image_generate",
@@ -47,9 +45,9 @@ describe("chronological tool runs", () => {
     );
   });
   it.each(["running", "completed", "failed"] as const)(
-    "groups patch and delegate_task with adjacent ordinary tools while %s",
+    "groups patch, delegation, and file changes with adjacent ordinary tools while %s",
     (state) => {
-      for (const toolName of ["patch", "delegate_task"]) {
+      for (const toolName of ["patch", "delegate_task", "edit_file", "write_file"]) {
         const activity: Activity = {
           ...tool("call", toolName),
           state,
@@ -61,13 +59,16 @@ describe("chronological tool runs", () => {
       }
     },
   );
-  it("keeps subagents outside generic runs", () => {
-    expect(
-      activityRuns([tool("a"), { ...tool("child"), delegated: true }, tool("b")]).map(
-        (part) => part.kind,
-      ),
-    ).toEqual(["tools", "block", "tools"]);
-  });
+  it.each(["terminal", "edit_file", "write_file"])(
+    "keeps subagent %s activity outside generic runs",
+    (name) => {
+      expect(
+        activityRuns([tool("a"), { ...tool("child", name), delegated: true }, tool("b")]).map(
+          (part) => part.kind,
+        ),
+      ).toEqual(["tools", "block", "tools"]);
+    },
+  );
 });
 
 it("groups consecutive calls across empty continuation and reasoning placeholders", () => {

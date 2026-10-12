@@ -481,10 +481,10 @@ test("desktop grouped history counts tools and commands with matching chevrons",
       role: "assistant",
       reasoning: "Review the activity in order.",
       text: "Checking tools.",
-      tool_calls: [call("t1", "custom_tool"), call("t2", "custom_tool")],
+      tool_calls: [call("t1", "edit_file"), call("t2", "write_file")],
     },
-    toolResult("r1", "t1", "custom_tool"),
-    toolResult("r2", "t2", "custom_tool"),
+    toolResult("r1", "t1", "edit_file"),
+    toolResult("r2", "t2", "write_file"),
     {
       row_id: "b",
       role: "assistant",
@@ -492,12 +492,12 @@ test("desktop grouped history counts tools and commands with matching chevrons",
       tool_calls: [
         call("c1", "terminal", { command: "pwd" }),
         call("c2", "terminal", { command: "git status --short" }),
-        call("t3", "custom_tool"),
+        call("t3", "delegate_task"),
       ],
     },
     toolResult("r3", "c1", "terminal"),
     toolResult("r4", "c2", "terminal"),
-    toolResult("r5", "t3", "custom_tool"),
+    toolResult("r5", "t3", "delegate_task"),
     { row_id: "c", role: "assistant", text: "Finished." },
   ];
   // Recovery also refreshes authoritative REST history after attachment.
@@ -684,170 +684,203 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
 
 // Use the real dashboard mount and authenticated socket, with controlled native
 // frames so adjacent calls and out-of-order completion do not depend on a model.
-test("streaming folds completed successes and failures while retaining active rows", async ({
-  page,
-}, info) => {
-  await signIn(page);
-  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
-    data: {},
-  });
-  expect(created.ok()).toBeTruthy();
-  const body = await created.json();
-  const sessionId = (body.session || body).id;
-  await page.route(`**/sessions/${sessionId}/messages?*`, (route) =>
-    route.fulfill({ json: { data: [] } }),
-  );
-  let sendFrame: ((frame: object) => void) | undefined;
-  let runtime = "";
-  let seq = 0;
-  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
-    const server = socket.connectToServer();
-    const attachIds = new Set<string>();
-    socket.onMessage((message) => {
-      const frame = JSON.parse(String(message));
-      if (frame.method === "chat.attach") attachIds.add(frame.id);
-      server.send(message);
+for (const toolName of ["terminal", "edit_file", "write_file"]) {
+  const unit = toolName === "terminal" ? "command" : "tool";
+  test(`streaming ${toolName} folds completed successes and failures while retaining active rows`, async ({
+    page,
+  }, info) => {
+    await signIn(page);
+    const created = await page.request.post(
+      "/api/plugins/chathermes/chat/sessions?profile=default",
+      {
+        data: {},
+      },
+    );
+    expect(created.ok()).toBeTruthy();
+    const body = await created.json();
+    const sessionId = (body.session || body).id;
+    await page.route(`**/sessions/${sessionId}/messages?*`, (route) =>
+      route.fulfill({ json: { data: [] } }),
+    );
+    let sendFrame: ((frame: object) => void) | undefined;
+    let runtime = "";
+    let seq = 0;
+    await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+      const server = socket.connectToServer();
+      const attachIds = new Set<string>();
+      socket.onMessage((message) => {
+        const frame = JSON.parse(String(message));
+        if (frame.method === "chat.attach") attachIds.add(frame.id);
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        const frame = JSON.parse(String(message));
+        if (attachIds.has(frame.id) && frame.result) {
+          runtime = frame.result.session_id;
+          Object.assign(frame.result, {
+            messages: [],
+            running: false,
+            queued: false,
+            inflight: null,
+            recovery: {
+              ...frame.result.recovery,
+              complete: false,
+              through: 0,
+              start: 0,
+              base_row_ids: null,
+            },
+          });
+          sendFrame = (frame) => socket.send(JSON.stringify(frame));
+          socket.send(JSON.stringify(frame));
+        } else socket.send(message);
+      });
     });
-    server.onMessage((message) => {
-      const frame = JSON.parse(String(message));
-      if (attachIds.has(frame.id) && frame.result) {
-        runtime = frame.result.session_id;
-        Object.assign(frame.result, {
-          messages: [],
-          running: false,
-          queued: false,
-          inflight: null,
-          recovery: {
-            ...frame.result.recovery,
-            complete: false,
-            through: 0,
-            start: 0,
-            base_row_ids: null,
-          },
-        });
-        sendFrame = (frame) => socket.send(JSON.stringify(frame));
-        socket.send(JSON.stringify(frame));
-      } else socket.send(message);
-    });
-  });
-  await page.goto(`/chathermes?profile=default#/chat/${encodeURIComponent(sessionId)}`);
-  // Hash navigation can reuse the already-mounted socket. Reload to install
-  // the controlled frames on a fresh authenticated plugin connection.
-  await page.reload();
-  const plugin = page.locator(".chathermes-embedded");
-  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
-  await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
-  await expect.poll(() => !!sendFrame).toBe(true);
-  const event = (type: string, payload: object = {}) =>
+    await page.goto(`/chathermes?profile=default#/chat/${encodeURIComponent(sessionId)}`);
+    // Hash navigation can reuse the already-mounted socket. Reload to install
+    // the controlled frames on a fresh authenticated plugin connection.
+    await page.reload();
+    const plugin = page.locator(".chathermes-embedded");
+    const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+    await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
+    await expect.poll(() => !!sendFrame).toBe(true);
+    const event = (type: string, payload: object = {}) =>
+      sendFrame!({
+        jsonrpc: "2.0",
+        method: "event",
+        params: { session_id: runtime, seq: ++seq, type, payload },
+      });
+    const start = (id: string) =>
+      event("tool.start", {
+        tool_id: id,
+        name: toolName,
+        args:
+          toolName === "terminal"
+            ? { command: `printf ${id}` }
+            : toolName === "edit_file"
+              ? { path: `notes-${id}.txt`, old_text: "before", new_text: "after" }
+              : { path: `notes-${id}.txt`, content: "after" },
+      });
+    const complete = (id: string, exit_code = 0) =>
+      event("tool.complete", {
+        tool_id: id,
+        name: toolName,
+        result: { output: `Result ${id}`, exit_code },
+      });
     sendFrame!({
       jsonrpc: "2.0",
-      method: "event",
-      params: { session_id: runtime, seq: ++seq, type, payload },
+      method: "chat.input",
+      params: { text: "Check streaming activity" },
     });
-  const start = (id: string) =>
-    event("tool.start", { tool_id: id, name: "terminal", args: { command: `printf ${id}` } });
-  const complete = (id: string, exit_code = 0) =>
-    event("tool.complete", {
-      tool_id: id,
-      name: "terminal",
-      result: { output: `Result ${id}`, exit_code },
-    });
-  sendFrame!({
-    jsonrpc: "2.0",
-    method: "chat.input",
-    params: { text: "Check streaming activity" },
-  });
-  event("message.start");
-  event("message.delta", { text: "Starting activity." });
-  start("first");
-  const turn = plugin.locator(".assistant-turn").last();
-  await expect(turn.locator(".current-activity")).toHaveCount(1);
-  complete("first");
-  event("message.start");
-  event("message.delta", { text: "" });
-  start("second");
-  start("third");
-  await expect(turn.locator(".turn-work")).toHaveCount(1);
-  const summary = turn.locator(".work-summary");
-  const rows = turn.locator(".work-timeline .activity");
-  await expect(summary).toContainText("Ran 1 command");
-  await expect(summary).toHaveAttribute("aria-expanded", "false");
-  await expect(rows.nth(0)).not.toBeVisible();
-  await expect(rows.nth(1)).toBeVisible();
-  await expect(rows.nth(2)).toBeVisible();
-  await rows.nth(1).locator("summary").click();
-  event("tool.progress", { tool_id: "second", name: "terminal", text: "Arriving live output" });
-  await expect(rows.nth(1).locator("pre")).toContainText("Arriving live output");
-  await area.fill("Focusable draft during streaming");
-  await expect(area).toBeFocused();
-  await page.screenshot({ path: info.outputPath("stream-group-active.png") });
-  complete("third"); // Later call finishes first; preserve source chronology.
-  await expect(summary).toContainText("Ran 2 commands");
-  await expect(rows.nth(1)).toBeVisible();
-  await expect(rows.nth(1)).toHaveAttribute("open", "");
-  await expect(rows.nth(2)).not.toBeVisible();
-  await expect(area).toBeFocused();
-  await summary.click();
-  await expect(rows).toHaveCount(3);
-  for (const row of await rows.all()) await expect(row).toBeVisible();
-  await page.screenshot({ path: info.outputPath("stream-group-expanded.png") });
-  await summary.click();
-  await expect(rows.nth(1)).toBeVisible();
-  await expect(rows.nth(0)).not.toBeVisible();
-  complete("second");
-  await expect(summary).toContainText("Ran 3 commands");
-  await expect(turn.locator(".current-activity")).toHaveCount(0);
-  await expect(turn.locator(".work-timeline .activity:visible")).toHaveCount(0);
-  start("failure");
-  complete("failure", 1);
-  start("last");
-  await expect(summary).toContainText("1 failed");
-  await expect(summary).toContainText("4 commands, 1 failed");
-  const failure = turn.locator(".activity-failed");
-  await expect(failure).not.toBeVisible();
-  await expect(turn.locator(".work-timeline .activity:visible")).toHaveCount(1);
-  await expect(turn.locator(".current-activity")).toHaveCount(1);
-  await expect(rows.nth(4)).toBeVisible();
-  await area.click();
-  await expect(area).toBeFocused();
-  await page.screenshot({ path: info.outputPath("stream-group-failed.png") });
-  await summary.click();
-  await expect(failure).toBeVisible();
-  await expect(failure.locator("summary")).toContainText("Failed");
-  await expect(failure).toHaveClass(/activity-failed/);
-  await expect(failure.locator("summary > span").nth(1)).toHaveText("!");
-  await failure.locator("summary").click();
-  await expect(failure.locator("pre")).toContainText("Result failure");
-  await expect(failure.locator("pre")).toContainText(/"exit_code":\s*1/);
-  await expect(rows).toHaveCount(5);
-  expect(await rows.locator("pre").allTextContents()).toEqual(
-    ["first", "second", "third", "failure", "last"].map((id) =>
-      expect.stringContaining(`printf ${id}`),
-    ),
-  );
-  await page.screenshot({ path: info.outputPath("stream-group-failed-expanded.png") });
-  await summary.click();
-  await expect(failure).not.toBeVisible();
-  await expect(rows.nth(4)).toBeVisible();
-  complete("last");
-  event("message.complete", { text: "Activity finished.", status: "complete" });
-  await expect(turn.locator(".message.assistant").last()).toContainText("Activity finished.");
-  await expect(summary).toHaveAttribute("aria-expanded", "false");
-  await expect(summary).toContainText("5 commands, 1 failed");
-  await expect(failure).not.toBeVisible();
-  await summary.click();
-  await expect(failure).toBeVisible();
-  await expect(failure.locator("pre")).toBeVisible();
-  await expect(rows.nth(1)).toHaveAttribute("open", "");
-  await expect(rows.nth(1).locator("pre")).toContainText("Result second");
-  await expect(area).toHaveValue("Focusable draft during streaming");
-  const order = await turn
-    .locator(":scope > *")
-    .evaluateAll((elements) =>
-      elements.map((element) =>
-        element.classList.contains("turn-work") ? "work" : element.textContent?.trim(),
+    event("message.start");
+    event("message.delta", { text: "Starting activity." });
+    start("first");
+    const turn = plugin.locator(".assistant-turn").last();
+    await expect(turn.locator(".current-activity")).toHaveCount(1);
+    complete("first");
+    event("message.start");
+    event("message.delta", { text: "" });
+    start("second");
+    start("third");
+    await expect(turn.locator(".turn-work")).toHaveCount(1);
+    const summary = turn.locator(".work-summary");
+    const rows = turn.locator(".work-timeline .activity");
+    await expect(summary).toContainText(`${toolName === "terminal" ? "Ran" : "Used"} 1 ${unit}`);
+    await expect(summary).toHaveAttribute("aria-expanded", "false");
+    await expect(rows.nth(0)).not.toBeVisible();
+    await expect(rows.nth(1)).toBeVisible();
+    await expect(rows.nth(2)).toBeVisible();
+    await rows.nth(1).locator("summary").click();
+    event("tool.progress", { tool_id: "second", name: toolName, text: "Arriving live output" });
+    await expect(rows.nth(1).locator("pre")).toContainText("Arriving live output");
+    await area.fill("Focusable draft during streaming");
+    await expect(area).toBeFocused();
+    await page.screenshot({ path: info.outputPath("stream-group-active.png") });
+    complete("third"); // Later call finishes first; preserve source chronology.
+    await expect(summary).toContainText(`${toolName === "terminal" ? "Ran" : "Used"} 2 ${unit}s`);
+    await expect(rows.nth(1)).toBeVisible();
+    await expect(rows.nth(1)).toHaveAttribute("open", "");
+    await expect(rows.nth(2)).not.toBeVisible();
+    await expect(area).toBeFocused();
+    await summary.click();
+    await expect(rows).toHaveCount(3);
+    for (const row of await rows.all()) await expect(row).toBeVisible();
+    await page.screenshot({ path: info.outputPath("stream-group-expanded.png") });
+    await summary.click();
+    await expect(rows.nth(1)).toBeVisible();
+    await expect(rows.nth(0)).not.toBeVisible();
+    complete("second");
+    await expect(summary).toContainText(`${toolName === "terminal" ? "Ran" : "Used"} 3 ${unit}s`);
+    await expect(turn.locator(".current-activity")).toHaveCount(0);
+    await expect(turn.locator(".work-timeline .activity:visible")).toHaveCount(0);
+    start("failure");
+    complete("failure", 1);
+    start("last");
+    event("subagent.start", { subagent_id: "child", status: "running" });
+    const child = turn.locator(":scope > .activity");
+    await expect(child).toBeVisible();
+    await expect(child).toHaveClass(/activity-active/);
+    await expect(summary).toContainText("1 failed");
+    await expect(summary).toContainText(`4 ${unit}s, 1 failed`);
+    const failure = turn.locator(".activity-failed");
+    await expect(failure).not.toBeVisible();
+    await expect(turn.locator(".work-timeline .activity:visible")).toHaveCount(1);
+    await expect(turn.locator(".current-activity")).toHaveCount(1);
+    await expect(rows.nth(4)).toBeVisible();
+    await area.click();
+    await expect(area).toBeFocused();
+    await page.screenshot({ path: info.outputPath("stream-group-failed.png") });
+    await summary.click();
+    await expect(failure).toBeVisible();
+    await expect(failure.locator("summary")).toContainText("Failed");
+    await expect(failure).toHaveClass(/activity-failed/);
+    await expect(failure.locator("summary > span").nth(toolName === "terminal" ? 1 : 0)).toHaveText(
+      "!",
+    );
+    await failure.locator("summary").click();
+    await expect(failure.locator("pre")).toContainText("Result failure");
+    await expect(failure.locator("pre")).toContainText(/"exit_code":\s*1/);
+    await expect(rows).toHaveCount(5);
+    expect(await rows.locator("pre").allTextContents()).toEqual(
+      ["first", "second", "third", "failure", "last"].map((id) =>
+        expect.stringContaining(toolName === "terminal" ? `printf ${id}` : `notes-${id}.txt`),
       ),
     );
-  expect(order).toEqual(["Starting activity.", "work", "Activity finished."]);
-  await page.screenshot({ path: info.outputPath("stream-group-completed.png") });
-});
+    await page.screenshot({ path: info.outputPath("stream-group-failed-expanded.png") });
+    await summary.click();
+    await expect(failure).not.toBeVisible();
+    await expect(rows.nth(4)).toBeVisible();
+    complete("last");
+    event("message.complete", { text: "Activity finished.", status: "complete" });
+    await expect(turn.locator(".message.assistant").last()).toContainText("Activity finished.");
+    await expect(summary).toHaveAttribute("aria-expanded", "false");
+    await expect(summary).toContainText(`5 ${unit}s, 1 failed`);
+    await expect(failure).not.toBeVisible();
+    await summary.click();
+    await expect(failure).toBeVisible();
+    await expect(failure.locator("pre")).toBeVisible();
+    await expect(rows.nth(1)).toHaveAttribute("open", "");
+    await expect(rows.nth(1).locator("pre")).toContainText("Result second");
+    await expect(area).toHaveValue("Focusable draft during streaming");
+    const order = await turn
+      .locator(":scope > *")
+      .evaluateAll((elements) =>
+        elements.map((element) =>
+          element.classList.contains("turn-work") ? "work" : element.textContent?.trim(),
+        ),
+      );
+    expect(order).toHaveLength(4);
+    expect(order.slice(0, 2)).toEqual(["Starting activity.", "work"]);
+    expect(order[3]).toBe("Activity finished.");
+    await expect(child).toBeVisible();
+    await expect(child).toHaveClass(/activity-active/);
+    event("subagent.complete", {
+      subagent_id: "child",
+      status: "completed",
+      summary: "Child result",
+    });
+    await expect(child).not.toHaveClass(/activity-active/);
+    await child.locator("summary").click();
+    await expect(child.locator("pre")).toContainText("Child result");
+    await page.screenshot({ path: info.outputPath("stream-group-completed.png") });
+  });
+}

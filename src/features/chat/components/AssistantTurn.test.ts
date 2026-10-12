@@ -3,7 +3,7 @@ import { quotedDeliveries, toolBodyDeliveries } from "../../artifacts/delivery-f
 import { expect, it } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import { reactive } from "vue";
-import { createTurn, historyBlocks, reduceNativeTurn } from "../runtime/assistant-turn";
+import { createTurn, historyBlocks, reduceNativeTurn, reduceTurn } from "../runtime/assistant-turn";
 import AssistantTurn from "./AssistantTurn.vue";
 
 it("folds the delegation call into its tool run while keeping the child independently live", async () => {
@@ -66,31 +66,111 @@ it("folds the delegation call into its tool run while keeping the child independ
   wrapper.unmount();
 });
 
-it("folds restored delegate_task calls with neighboring history tools", () => {
-  const blocks = historyBlocks([
-    {
-      role: "assistant",
-      content: "",
-      tool_calls: [
-        { id: "read", function: { name: "read_file" } },
-        {
-          id: "delegate",
-          function: { name: "delegate_task", arguments: '{"goal":"Check files"}' },
-        },
-      ],
-    },
-    { role: "tool", tool_call_id: "read", content: "File contents" },
-    { role: "tool", tool_call_id: "delegate", content: "Task accepted" },
-  ]);
-  const wrapper = mount(AssistantTurn, {
-    props: { entry: { kind: "turn", key: "turn", working: false, blocks } },
-  });
-  expect(wrapper.findAll(".turn-work")).toHaveLength(1);
-  expect(wrapper.get(".work-summary").text()).toContain("Explored 1 file, used 1 tool");
-  expect(wrapper.find(".assistant-turn > .activity").exists()).toBe(false);
-  expect(wrapper.findAll(".activity").every((row) => !row.isVisible())).toBe(true);
-  wrapper.unmount();
-});
+it.each(["delegate_task", "edit_file", "write_file"])(
+  "folds restored %s calls with neighboring history tools",
+  async (name) => {
+    const blocks = historyBlocks([
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { id: "read", function: { name: "read_file" } },
+          {
+            id: "delegate",
+            function: { name, arguments: '{"path":"notes.txt"}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "read", content: "File contents" },
+      { role: "tool", tool_call_id: "delegate", content: "Task accepted" },
+    ]);
+    const wrapper = mount(AssistantTurn, {
+      props: { entry: { kind: "turn", key: "turn", working: false, blocks } },
+    });
+    expect(wrapper.findAll(".turn-work")).toHaveLength(1);
+    expect(wrapper.get(".work-summary").text()).toContain("Explored 1 file, used 1 tool");
+    expect(wrapper.find(".assistant-turn > .activity").exists()).toBe(false);
+    expect(wrapper.findAll(".activity").every((row) => !row.isVisible())).toBe(true);
+    await wrapper.get(".work-summary").trigger("click");
+    const call = wrapper.findAll(".turn-work .activity")[1]!;
+    await call.get("summary").trigger("click");
+    expect(call.get("pre").text()).toContain("notes.txt");
+    expect(call.get("pre").text()).toContain("Task accepted");
+    wrapper.unmount();
+  },
+);
+
+it.each(["edit_file", "write_file"])(
+  "folds streaming %s on native and normalized event paths without remounting rows",
+  async (name) => {
+    for (const native of [true, false]) {
+      const turn = reactive(createTurn());
+      const emit = (
+        phase: "start" | "progress" | "complete",
+        id: string,
+        toolName: string,
+        text = "",
+      ) => {
+        if (native) {
+          reduceNativeTurn(turn, `tool.${phase}`, {
+            tool_id: id,
+            name: toolName,
+            args: toolName === "read_file" ? {} : { path: "notes.txt" },
+            text,
+            result_text: text,
+          });
+        } else {
+          const type = {
+            start: "tool.started",
+            progress: "tool.updated",
+            complete: "tool.completed",
+          } as const;
+          reduceTurn(turn, {
+            type: type[phase],
+            data: {
+              tool_call_id: id,
+              tool_name: toolName,
+              args: toolName === "read_file" ? {} : { path: "notes.txt" },
+              delta: text,
+              output: text,
+            },
+          });
+        }
+      };
+      emit("start", "read", "read_file");
+      emit("complete", "read", "read_file", "File contents");
+      emit("start", "change", name);
+      reduceNativeTurn(turn, "subagent.start", { subagent_id: "child", status: "running" });
+      const entry = () => ({
+        kind: "turn" as const,
+        key: "turn",
+        working: true,
+        blocks: turn.blocks,
+      });
+      const wrapper = mount(AssistantTurn, { props: { entry: entry() } });
+      const call = wrapper.findAll(".turn-work .activity")[1]!;
+      const child = wrapper.get(".assistant-turn > .activity");
+      expect(wrapper.findAll(".turn-work")).toHaveLength(1);
+      expect(call.isVisible()).toBe(true);
+      await call.get("summary").trigger("click");
+      expect(call.attributes("open")).toBe("");
+      emit("progress", "change", name, "Arriving file update");
+      await wrapper.setProps({ entry: entry() });
+      expect(call.get("pre").text()).toContain("Arriving file update");
+      expect(call.element).toBe(wrapper.findAll(".turn-work .activity")[1]!.element);
+      emit("complete", "change", name, "Saved notes.txt");
+      await wrapper.setProps({ entry: entry() });
+      expect(wrapper.get(".work-summary").text()).toContain("Explored 1 file, used 1 tool");
+      expect((call.element.parentElement as HTMLElement).style.display).toBe("none");
+      expect(child.isVisible()).toBe(true);
+      expect(child.classes()).toContain("activity-active");
+      await wrapper.get(".work-summary").trigger("click");
+      expect(call.get("pre").text()).toContain("notes.txt");
+      expect(call.get("pre").text()).toContain("Saved notes.txt");
+      wrapper.unmount();
+    }
+  },
+);
 
 it("keeps delivered artifacts at their tool position and outside collapsed details", async () => {
   const wrapper = mount(AssistantTurn, {

@@ -6,8 +6,6 @@ export function standaloneTool(block: Activity): boolean {
   return (
     !!block.delegated ||
     [
-      "edit_file",
-      "write_file",
       "clarify",
       "setup_choose",
       "image_generate",
