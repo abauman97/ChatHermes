@@ -121,8 +121,11 @@ class Owner:
         try:
             sender = self.api._push_sender_module
             if sender:
+                # Keep native dedupe identities distinct, but send secret requests
+                # as generic attention alerts without their prompt or value.
+                push_kind = 'attention' if kind == 'secret' else kind
                 # Browser routes use the stored session ID, not the resumed runtime alias.
-                scheduled = sender.notify(self.profile, self.stored, kind, str(identity), message=message if isinstance(message, str) else None)
+                scheduled = sender.notify(self.profile, self.stored, push_kind, str(identity), message=message if isinstance(message, str) else None)
                 if scheduled is not True:
                     push_log('owner.unscheduled', self.profile, self.stored, kind)
             else:
