@@ -7833,11 +7833,8 @@ var Pp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 //#region src/features/chat/utils/activity-runs.ts
 function Lp(e) {
 	return !!e.delegated || [
-		"edit_file",
-		"write_file",
 		"clarify",
 		"setup_choose",
-		"delegate_task",
 		"image_generate",
 		"manage_catalog",
 		"manage_connections",
