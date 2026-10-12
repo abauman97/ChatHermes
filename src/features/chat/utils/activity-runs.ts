@@ -7,7 +7,6 @@ export function standaloneTool(block: Activity): boolean {
     !!block.delegated ||
     [
       "edit_file",
-      "patch",
       "write_file",
       "clarify",
       "setup_choose",
