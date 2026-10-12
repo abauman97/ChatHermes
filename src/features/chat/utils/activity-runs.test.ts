@@ -26,11 +26,8 @@ describe("chronological tool runs", () => {
     ).toEqual(blocks);
   });
   it.each([
-    "edit_file",
-    "write_file",
     "clarify",
     "setup_choose",
-    "delegate_task",
     "image_generate",
     "manage_catalog",
     "manage_connections",
@@ -48,25 +45,30 @@ describe("chronological tool runs", () => {
     );
   });
   it.each(["running", "completed", "failed"] as const)(
-    "groups patch with adjacent ordinary tools while %s",
+    "groups patch, delegation, and file changes with adjacent ordinary tools while %s",
     (state) => {
-      const patch: Activity = {
-        ...tool("patch", "patch"),
-        state,
-        complete: state !== "running",
-      };
-      const blocks = [tool("before"), patch, tool("after")];
-      expect(standaloneTool(patch)).toBe(false);
-      expect(activityRuns(blocks)).toEqual([{ id: "before", kind: "tools", activities: blocks }]);
+      for (const toolName of ["patch", "delegate_task", "edit_file", "write_file"]) {
+        const activity: Activity = {
+          ...tool("call", toolName),
+          state,
+          complete: state !== "running",
+        };
+        const blocks = [tool("before"), activity, tool("after")];
+        expect(standaloneTool(activity)).toBe(false);
+        expect(activityRuns(blocks)).toEqual([{ id: "before", kind: "tools", activities: blocks }]);
+      }
     },
   );
-  it("keeps subagents outside generic runs", () => {
-    expect(
-      activityRuns([tool("a"), { ...tool("child"), delegated: true }, tool("b")]).map(
-        (part) => part.kind,
-      ),
-    ).toEqual(["tools", "block", "tools"]);
-  });
+  it.each(["terminal", "edit_file", "write_file"])(
+    "keeps subagent %s activity outside generic runs",
+    (name) => {
+      expect(
+        activityRuns([tool("a"), { ...tool("child", name), delegated: true }, tool("b")]).map(
+          (part) => part.kind,
+        ),
+      ).toEqual(["tools", "block", "tools"]);
+    },
+  );
 });
 
 it("groups consecutive calls across empty continuation and reasoning placeholders", () => {
