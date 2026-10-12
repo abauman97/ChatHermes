@@ -47,5 +47,30 @@ Validation: 149 targeted artifact/chat tests and the full 622-test suite pass;
 and `git diff --check` pass. All six live dashboard tests pass (three scenarios
 at desktop and mobile sizes), including attachment delivery and composer, native
 artifact preview/download/history reconstruction, and chronological activity.
-Playwright screenshot evidence is saved in `test-results/` for local review; the
+Playwright screenshot evidence is saved in `tests/visual-output/` for local review; the
 visual tests used the isolated fixture dashboard, not production data.
+
+## Source-only PR correction
+
+Verified PR #124 and branch `fix/artifact-filter-desktop` at
+`ff46ef53728644d129a1cb12fa9495c876d207a6` with a clean worktree. Latest fetched
+main is `92d654d2420ac038bba6e652ec143bf16f8cb316`, already the branch base;
+the existing source uses main's dashboard plugin architecture unchanged.
+Preserved all parser source, tests, and contract changes. Removed stale instructions
+and verification wording that treated generated bundles as commit contents.
+
+This correction passed `npm test` (622 tests), `npm run test:api` (103 tests),
+`vp fmt`, `vp fmt --check`, `vp lint`, `npm run build`, and `git diff --check`.
+After building, restored only dashboard dist output to main's exact baseline.
+The final PR diff contains no dist paths or `.gitignore` changes; the existing
+ignore rule still matches `plugin/chathermes/dashboard/dist/index.js`.
+Main still contains historically tracked dist files despite that ignore rule;
+restoring that baseline avoids either new generated bundles or baseline deletions
+in this PR. Build output must remain out of future commits.
+
+No UI source changed in this correction. Reviewed the existing passing six-test
+live dashboard record and desktop/mobile screenshots in `tests/visual-output/`,
+including composer focus/scrolling, attachments, profile/model selection, artifact
+cards, and activity disclosure states. Those visual tests were run in the prior
+parser pass; they were not rerun for this documentation/output correction.
+No deployment, merge, commit amendment, or `.env` inspection was performed.

@@ -87,8 +87,8 @@ plugin/chathermes/dashboard/
   manifest.json          # name "chathermes", tab {path: "/chathermes"}, entry "dist/index.js",
                          # css "dist/style.css", api "plugin_api.py"
   plugin_api.py          # FastAPI router (see §6)
-  dist/                  # BUILT OUTPUT, committed (matches kanban plugin convention:
-    index.js               #   plugins/kanban/dashboard ships committed dist/)
+  dist/                  # GENERATED OUTPUT, ignored; built locally or by CI
+    index.js
     style.css
     assets/...
   package.json           # (optional) — build scripts live in the repo root, see §7
@@ -171,7 +171,7 @@ Existing repo: `src/` (Vue app, mostly unchanged), `docs/`, `tests/` (vitest).
   (`$HERMES_HOME/plugins/chathermes/` — `/opt/data/profiles/developer/plugins/` here) and prints:
   add `"chathermes"` to `plugins.enabled` in config.yaml (user plugins are allowlisted,
   `web_server.py:630-644`), then restart the dashboard.
-- Built `dist/` is **committed** (kanban convention) so the plugin is drop-in deployable.
+- Built `dist/` is ignored and generated for validation and packaging; keep it out of commits.
 
 ## 8. Verification plan
 

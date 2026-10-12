@@ -73,7 +73,7 @@ substantial shell coordinator; further navigation/project extraction should be
 small, behavior-tested changes rather than a state-machine rewrite.
 
 Use `vp lint` and `vp fmt` on owned source; run `npm test`, `npm run test:api`,
-and `npm run build`. Include rebuilt committed plugin dist assets. Verify the
+and `npm run build`. Keep generated plugin dist assets ignored and out of commits. Verify the
 actual React-mounted dashboard at desktop/mobile sizes with `npm run live` and
 `npm run test:visual`, inspect screenshots, and stop only your fixture with
 `npm run live:stop`. Follow [AGENTS.md](../AGENTS.md) for scope and fixture rules.

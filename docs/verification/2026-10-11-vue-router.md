@@ -27,7 +27,7 @@ links and preserves the visible, connected viewer attestation.
 
 - vp fmt and vp lint passed.
 - npm test: 444 tests passed across 30 files, with no unhandled async errors.
-- npm run build passed; the tracked dashboard bundle replacement was rebuilt.
+- npm run build passed; the local dashboard bundle was rebuilt for validation.
 - API suite: 100 tests passed in the disposable Linux container, using the
   repository-pinned requirements and pytest's importlib mode for dotted test
   filenames. The native Windows attempt encountered 14 POSIX-dependent failures

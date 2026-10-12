@@ -29,7 +29,7 @@ The only runtime source delta against main is the intended drawer-resume fix: aw
 - System `npm run test:api` lacked pytest. `uv run --with-requirements tests/requirements.txt npm run test:api`: **103 passed**.
 - `uv run --with-requirements tests/requirements.txt python -m pytest tests/plugin_api.test.py tests/push_store.test.py`: **182 passed**.
 - `npm run test:docker`: **28 passed**.
-- `npm run build`: passed; committed distribution rebuilt.
+- `npm run build`: passed; local distribution rebuilt for validation.
 
 ## Actual dashboard visual verification
 
