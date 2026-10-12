@@ -7834,7 +7834,6 @@ var Pp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 function Lp(e) {
 	return !!e.delegated || [
 		"edit_file",
-		"patch",
 		"write_file",
 		"clarify",
 		"setup_choose",
