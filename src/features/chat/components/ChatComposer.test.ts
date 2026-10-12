@@ -3,6 +3,22 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ChatComposer from "./ChatComposer.vue";
 describe("composer", () => {
+  it("adds goal and plan slash commands to the next message and shows the active mode", async () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    await wrapper.get('[aria-label="Attachment options"]').trigger("click");
+    await wrapper.get('[data-mode="goal"]').trigger("click");
+    expect(wrapper.get('[role="status"]').text()).toContain("Goal mode");
+    await wrapper.get("textarea").setValue("finish the migration");
+    await wrapper.get(".send-button").trigger("click");
+    expect(wrapper.emitted("send")?.[0]).toEqual(["/goal\nfinish the migration", []]);
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="Attachment options"]').trigger("click");
+    await wrapper.get('[data-mode="plan"]').trigger("click");
+    await wrapper.get("textarea").setValue("refactor the parser");
+    await wrapper.get(".send-button").trigger("click");
+    expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
+    wrapper.unmount();
+  });
   it("leaves Enter, Shift+Enter and composition to native newline handling; only the button sends", async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
     const area = wrapper.get("textarea");
