@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { signIn } from "./login";
 
-test("mobile chat-plane swipes track and settle the drawer without claiming edge or composer gestures", async ({ page }, info) => {
+test("mobile chat-plane swipes track and settle the drawer without claiming edge or composer gestures", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "mobile", "mobile interaction only");
   await signIn(page);
   const plugin = page.locator(".chathermes-embedded");
@@ -26,5 +28,8 @@ test("mobile chat-plane swipes track and settle the drawer without claiming edge
   await expect(menu).toHaveAttribute("aria-expanded", "false");
   const closed = await sidebar.boundingBox();
   expect(closed!.x + closed!.width).toBeLessThanOrEqual(1);
-  await page.screenshot({ animations: "disabled", path: info.outputPath("drawer-swipe-closed.png") });
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("drawer-swipe-closed.png"),
+  });
 });
