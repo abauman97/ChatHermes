@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { Activity, TurnBlock } from "../../../types/hermes";
-import { activityRuns } from "./activity-runs";
+import { activityRuns, standaloneTool } from "./activity-runs";
 const tool = (id: string, toolName = "terminal"): Activity => ({
   id,
   kind: "tool",
@@ -27,7 +27,6 @@ describe("chronological tool runs", () => {
   });
   it.each([
     "edit_file",
-    "patch",
     "write_file",
     "clarify",
     "setup_choose",
@@ -48,6 +47,19 @@ describe("chronological tool runs", () => {
       shape(blocks),
     );
   });
+  it.each(["running", "completed", "failed"] as const)(
+    "groups patch with adjacent ordinary tools while %s",
+    (state) => {
+      const patch: Activity = {
+        ...tool("patch", "patch"),
+        state,
+        complete: state !== "running",
+      };
+      const blocks = [tool("before"), patch, tool("after")];
+      expect(standaloneTool(patch)).toBe(false);
+      expect(activityRuns(blocks)).toEqual([{ id: "before", kind: "tools", activities: blocks }]);
+    },
+  );
   it("keeps subagents outside generic runs", () => {
     expect(
       activityRuns([tool("a"), { ...tool("child"), delegated: true }, tool("b")]).map(
