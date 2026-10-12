@@ -1,6 +1,6 @@
 import type { Activity, TurnBlock } from "../../../types/hermes";
 
-// Cards and delegated tasks stay outside ordinary runs. Classification depends
+// Cards and child activities stay outside ordinary runs. Classification depends
 // on identity, never completion state, so streaming updates keep rows mounted.
 export function standaloneTool(block: Activity): boolean {
   return (
@@ -10,7 +10,6 @@ export function standaloneTool(block: Activity): boolean {
       "write_file",
       "clarify",
       "setup_choose",
-      "delegate_task",
       "image_generate",
       "manage_catalog",
       "manage_connections",

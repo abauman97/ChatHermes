@@ -30,7 +30,6 @@ describe("chronological tool runs", () => {
     "write_file",
     "clarify",
     "setup_choose",
-    "delegate_task",
     "image_generate",
     "manage_catalog",
     "manage_connections",
@@ -48,16 +47,18 @@ describe("chronological tool runs", () => {
     );
   });
   it.each(["running", "completed", "failed"] as const)(
-    "groups patch with adjacent ordinary tools while %s",
+    "groups patch and delegate_task with adjacent ordinary tools while %s",
     (state) => {
-      const patch: Activity = {
-        ...tool("patch", "patch"),
-        state,
-        complete: state !== "running",
-      };
-      const blocks = [tool("before"), patch, tool("after")];
-      expect(standaloneTool(patch)).toBe(false);
-      expect(activityRuns(blocks)).toEqual([{ id: "before", kind: "tools", activities: blocks }]);
+      for (const toolName of ["patch", "delegate_task"]) {
+        const activity: Activity = {
+          ...tool("call", toolName),
+          state,
+          complete: state !== "running",
+        };
+        const blocks = [tool("before"), activity, tool("after")];
+        expect(standaloneTool(activity)).toBe(false);
+        expect(activityRuns(blocks)).toEqual([{ id: "before", kind: "tools", activities: blocks }]);
+      }
     },
   );
   it("keeps subagents outside generic runs", () => {
