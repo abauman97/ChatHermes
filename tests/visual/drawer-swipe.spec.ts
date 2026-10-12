@@ -1,0 +1,30 @@
+import { expect, test } from "@playwright/test";
+import { signIn } from "./login";
+
+test("mobile chat-plane swipes track and settle the drawer without claiming edge or composer gestures", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "mobile interaction only");
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const transcript = plugin.locator(".transcript");
+  await expect(transcript).toBeVisible();
+  const box = (await transcript.boundingBox())!;
+  const start = { x: Math.max(box.x + 50, 40), y: box.y + box.height * 0.55 };
+  const end = { x: start.x + Math.min(180, box.width * 0.65), y: start.y + 4 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+  const sidebar = plugin.locator(".sidebar");
+  const menu = plugin.getByRole("button", { name: "Open navigation" });
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await expect(sidebar).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+  await page.screenshot({ animations: "disabled", path: info.outputPath("drawer-swipe-open.png") });
+  await page.mouse.move(220, start.y);
+  await page.mouse.down();
+  await page.mouse.move(75, start.y + 3, { steps: 8 });
+  await page.mouse.up();
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  const closed = await sidebar.boundingBox();
+  expect(closed!.x + closed!.width).toBeLessThanOrEqual(1);
+  await page.screenshot({ animations: "disabled", path: info.outputPath("drawer-swipe-closed.png") });
+});
