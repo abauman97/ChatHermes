@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./login";
+import { signIn, pluginRouteUrl } from "./login";
 
 test("compact project list and plain project chats retain keyboard and menu access", async ({
   page,
@@ -95,7 +95,7 @@ test("project menu creates an authenticated scoped chat", async ({ page }, testI
     .locator(".project-list")
     .getByRole("button", { name: "Hermes Mobile", exact: true })
     .click();
-  const projectId = new URL(page.url()).searchParams.get("project");
+  const projectId = pluginRouteUrl(page.url()).searchParams.get("project");
   await plugin.getByRole("button", { name: "Screen options", exact: true }).click();
   const created = page.waitForResponse(
     (r) => r.url().includes("/projects/session?") && r.request().method() === "POST",
@@ -104,7 +104,7 @@ test("project menu creates an authenticated scoped chat", async ({ page }, testI
   const response = await created;
   expect(response.status()).toBe(201);
   expect((await response.json()).session.cwd).toBe("/tmp/chathermes-issue7-runtime/workspace-a");
-  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(pluginRouteUrl(page.url()).searchParams.get("project")).toBe(projectId);
   const prompt = plugin.getByRole("textbox", { name: "Message Hermes" });
   await prompt.click();
   await expect(prompt).toBeFocused();

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vite-plus/test";
+import { reactive, nextTick } from "vue";
+import { createTurn, reduceNativeTurn } from "../features/chat/runtime/assistant-turn";
 import { mount, flushPromises } from "@vue/test-utils";
 import ChatTranscript from "./ChatTranscript.vue";
 
@@ -115,8 +117,16 @@ describe("ordered activity presentation", () => {
     expect(wrapper.findAll(".current-activity")).toHaveLength(3);
     expect(wrapper.get(".activity pre").text()).toBe("Plan");
     const firstRun = wrapper.findAll(".turn-work")[0]!;
-    await firstRun.get(".work-summary").trigger("click"); // explicit collapse
-    expect(firstRun.get(".activity").isVisible()).toBe(true); // active rows remain visible
+    expect(firstRun.find(".work-summary").exists()).toBe(false);
+    expect(firstRun.get(".activity").isVisible()).toBe(true);
+    await wrapper.setProps({
+      blocks: blocks.map((block) =>
+        block.id === "a" ? { ...block, complete: true, state: "completed" } : block,
+      ),
+    });
+    expect(firstRun.get(".work-summary").attributes("aria-expanded")).toBe("false");
+    expect(firstRun.get(".work-timeline > div").attributes("style")).toContain("display: none");
+    expect(firstRun.get(".current-activity").isVisible()).toBe(true);
     await firstRun.get(".work-summary").trigger("click"); // explicit expansion
     const row = firstRun.get("details").element;
     await wrapper.setProps({
@@ -154,13 +164,15 @@ describe("ordered activity presentation", () => {
       slots: { request: "<button class='approve'>Approve</button>" },
     });
     expect(wrapper.get(".activity").isVisible()).toBe(true);
-    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
+    expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
     expect(wrapper.findAll(".approve")).toHaveLength(1);
     expect(wrapper.text()).toContain("Waiting for approval");
     await wrapper.get(".activity summary").trigger("click");
+    expect(wrapper.get(".activity").attributes("open")).toBeDefined();
     await wrapper.get(".activity summary").trigger("click");
     expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
   });
   it("shows Working on admission before any activity arrives", () => {
@@ -535,4 +547,103 @@ it("keeps disclosure instances independent when two turns reuse a local block ID
   expect(arriving.open).toBe(false);
   expect(turns[0]!.text()).toContain("Late earlier result");
   expect(turns[1]!.text()).toContain("Final reasoning");
+});
+
+it("collapses completed native calls during streaming across empty generation boundaries", async () => {
+  const turn = reactive(createTurn());
+  const wrapper = mount(ChatTranscript, {
+    props: {
+      messages: [
+        {
+          id: "earlier",
+          role: "user",
+          content: "Earlier question",
+          blocks: [
+            {
+              id: "a",
+              kind: "tool",
+              title: "Used tool",
+              content: "",
+              complete: true,
+              state: "completed",
+            },
+            {
+              id: "b",
+              kind: "tool",
+              title: "Used tool",
+              content: "",
+              complete: true,
+              state: "completed",
+            },
+          ],
+        },
+        { id: "current", role: "user", content: "Current question" },
+      ],
+      blocks: turn.blocks,
+      progress: [],
+      working: true,
+      draft: "",
+      loading: false,
+    },
+  });
+  const event = async (name: string, data: Record<string, unknown> = {}) => {
+    reduceNativeTurn(turn, name, data);
+    await nextTick();
+  };
+  await event("message.start");
+  await event("message.delta", { text: "Starting." });
+  await event("tool.start", { tool_id: "a", name: "terminal", args: { command: "pwd" } });
+  const current = wrapper.findAll(".assistant-turn")[1]!;
+  const first = current.get(".activity").element;
+  await event("tool.complete", { tool_id: "a", name: "terminal", result_text: "first result" });
+  await event("message.start"); // a new native generation does not create a visible separator
+  await event("message.delta", { text: "" });
+  await event("tool.start", { tool_id: "b", name: "terminal", args: { command: "ls" } });
+  expect(current.findAll(".turn-work")).toHaveLength(1);
+  const summary = current.get(".work-summary");
+  expect(summary.text()).toContain("Ran 1 command");
+  expect(summary.attributes("aria-expanded")).toBe("false");
+  expect(summary.find(".working-shimmer").exists()).toBe(false);
+  expect(current.get(".work-timeline > div").attributes("style")).toContain("display: none");
+  const active = current.get(".current-activity .activity");
+  const activeElement = active.element;
+  await active.get("summary").trigger("click");
+  await event("tool.progress", { tool_id: "b", name: "terminal", text: "live result" });
+  expect(active.get("pre").text()).toContain("live result");
+  expect(active.attributes("open")).toBeDefined();
+  expect(current.get(".activity").element).toBe(first);
+  await summary.trigger("click");
+  expect(
+    wrapper.findAll(".assistant-turn")[0]!.get(".work-summary").attributes("aria-expanded"),
+  ).toBe("false");
+  await summary.trigger("click");
+  expect(current.get(".current-activity").isVisible()).toBe(true);
+  await event("tool.complete", { tool_id: "b", name: "terminal", result_text: "second result" });
+  expect(summary.text()).toContain("Ran 2 commands");
+  expect(current.findAll(".current-activity")).toHaveLength(0);
+  expect(current.findAll(".activity")[1]!.element).toBe(activeElement);
+  expect(
+    current
+      .findAll(".work-timeline > div")
+      .every((row) => row.attributes("style")?.includes("display: none")),
+  ).toBe(true);
+  await event("reasoning.delta", { text: "A separate phase." });
+  await event("tool.start", { tool_id: "c", name: "read_file", args: { path: "file.txt" } });
+  expect(current.findAll(".turn-work")).toHaveLength(2);
+  expect(current.findAll(".current-activity")).toHaveLength(1);
+  await event("message.complete", { text: "Finished.", status: "cancelled" });
+  await wrapper.setProps({ working: false });
+  expect(current.get(".activity-failed summary").text()).toContain("Interrupted");
+  expect(current.findAll(":scope > *").map((row) => row.classes()[0])).toEqual([
+    "message",
+    "turn-work",
+    "activity",
+    "turn-work",
+    "message",
+  ]);
+  expect(wrapper.findAll(".transcript > div > *")[2]!.classes()).toContain("message");
+  await summary.trigger("click");
+  expect(current.findAll(".activity")[1]!.attributes("open")).toBeDefined();
+  expect(current.findAll(".activity")[1]!.get("pre").text()).toContain("second result");
+  wrapper.unmount();
 });

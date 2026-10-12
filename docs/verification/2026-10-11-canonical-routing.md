@@ -37,7 +37,7 @@ notification title validation are separate from routing and remain unchanged.
   and its draft intact, then confirmed canonical targets attach the first session
   and replace the composer instance. Composer focus and reconnect state were
   checked, and both screenshots were visually inspected.
-- Dashboard assets were rebuilt. No commit was created.
+- Dashboard assets were rebuilt; these checks completed before the migration commit.
 
 Actual OS notification clicks, HTTPS push delivery and installed iOS/Safari were
 not exercised; browser message handling, real session attachment, and service
@@ -48,3 +48,31 @@ The updated disposable test build is left running at port 9121 for ongoing user
 testing. The user's existing port-9120 container and its test session were not
 restarted or modified. Cleanup of the new build uses npm run live:stop with
 CHATHERMES_INSTANCE=router-canonical.
+
+## Integration with latest main
+
+Fetched and merged origin/main at 1363319 before opening the pull request.
+The upstream activity-disclosure and secret-request attention fixes are retained.
+The only textual merge conflict was the generated dashboard entry file; rebuilding
+resolved it and replaced obsolete bundles with app-BBv0jD26.js. Two new upstream
+browser scenarios now open canonical chat routes. Project-row test assertions
+also read plugin query context from the canonical hash.
+
+The merged version passed vp fmt, vp lint, npm run build, 464 unit tests across
+30 files, and 103 API tests in Linux. Browser verification used a separate
+router-merged container on port 9122, preserving both earlier test containers.
+
+The full browser run passed 18 scenarios and exposed two failures in the new
+upstream controlled-frame streaming test. Hash navigation retained the existing
+socket, so hooks registered after sign-in did not intercept its attach response.
+The three controlled-frame scenarios now reload after selecting their canonical
+route; socket patterns also accept URLs without profile query strings. All six
+affected desktop/mobile cases passed on rerun, covering 20 distinct browser
+scenarios overall. Streaming, notification session changes, failed disclosures,
+and desktop/mobile layouts were visually inspected. Logs are in ignored
+tmp/merged-visual.log and tmp/merged-controlled.log; rerun screenshots are under
+tmp/merged-controlled-output.
+
+The latest merged build remains available at http://127.0.0.1:9122/chathermes
+for user testing. Cleanup uses npm run live:stop with
+CHATHERMES_INSTANCE=router-merged.

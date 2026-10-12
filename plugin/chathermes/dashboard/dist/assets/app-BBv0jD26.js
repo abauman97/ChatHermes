@@ -8006,7 +8006,7 @@ var qp = ["open"], Jp = {
 			"failed",
 			"interrupted",
 			"unknown"
-		].includes(r.value || "")), a = /* @__PURE__ */ z(null), o = Y(() => a.value ?? (n.value || i.value)), s = /* @__PURE__ */ z(), c = /* @__PURE__ */ z(!0);
+		].includes(r.value || "")), a = /* @__PURE__ */ z(null), o = Y(() => a.value ?? (t.activity.kind === "thinking" && (i.value || n.value))), s = /* @__PURE__ */ z(), c = /* @__PURE__ */ z(!0);
 		function l() {
 			let e = s.value;
 			e && (c.value = e.scrollHeight - e.scrollTop - e.clientHeight < 24);
@@ -8083,22 +8083,18 @@ var qp = ["open"], Jp = {
 		approvalPending: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = /* @__PURE__ */ z(null), r = Kn(), i = (e) => t.working && !e.complete, a = Y(() => t.activities.length > 1), o = Y(() => t.activities.some(i)), s = Y(() => n.value ?? o.value), c = (e) => [
-			"failed",
-			"interrupted",
-			"unknown"
-		].includes(e.state || "") || !t.working && !e.complete, l = Y(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Kp(t.activities, o.value) : "Working…");
-		return (t, u) => (U(), W("section", im, [a.value || !e.activities.length ? (U(), W("button", {
+		let t = e, n = /* @__PURE__ */ z(null), r = Kn(), i = (e) => t.working && !e.complete, a = Y(() => t.activities.filter((e) => !i(e))), o = Y(() => t.activities.length > 1 && a.value.length > 0), s = Y(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = Y(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Kp(a.value, !1) : "Working…");
+		return (t, a) => (U(), W("section", im, [o.value || !e.activities.length ? (U(), W("button", {
 			key: 0,
 			type: "button",
 			class: "work-summary",
 			"aria-expanded": s.value,
 			"aria-controls": B(r),
-			onClick: u[0] ||= (e) => n.value = !s.value
+			onClick: a[0] ||= (e) => n.value = !s.value
 		}, [
 			e.activities.some(B(zp)) ? (U(), W("span", om, "›_")) : J("v-if", !0),
 			K("span", {
-				class: fe(["activity-label", { "working-shimmer": o.value || e.working && !e.activities.length && !e.approvalPending }]),
+				class: fe(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
 				title: l.value
 			}, F(l.value), 11, sm),
 			K("span", {
@@ -8108,11 +8104,11 @@ var qp = ["open"], Jp = {
 			e.approvalPending ? (U(), W("span", cm, "Waiting for approval")) : J("v-if", !0)
 		], 8, am)) : J("v-if", !0), K("div", {
 			id: B(r),
-			class: fe(["work-timeline", { "work-timeline-single": !a.value }])
+			class: fe(["work-timeline", { "work-timeline-single": !o.value }])
 		}, [(U(!0), W(H, null, xr(e.activities, (n) => (U(), W(H, { key: n.id }, [An(K("div", { class: fe({ "current-activity": i(n) }) }, [Zi(rm, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Va, !a.value || s.value || i(n) || c(n)]]), Cr(t.$slots, "result", { activity: n })], 64))), 128))], 10, lm)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Va, !o.value || s.value || i(n) || c(n)]]), Cr(t.$slots, "result", { activity: n })], 64))), 128))], 10, lm)]));
 	}
 }), dm = { class: "message assistant w-full self-start" }, fm = ["innerHTML"], pm = /* @__PURE__ */ V({
 	__name: "AssistantTextBlock",
@@ -8855,7 +8851,7 @@ var qp = ["open"], Jp = {
 			}, "Send", 8, lh)])
 		], 8, ih)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-4672d460"]]), dh = /* @__PURE__ */ V({
+}), [["__scopeId", "data-v-85384878"]]), dh = /* @__PURE__ */ V({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},

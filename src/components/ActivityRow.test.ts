@@ -14,39 +14,88 @@ const tool: Activity = {
   state: "running",
 };
 describe("activity disclosures", () => {
-  it("streams arguments and output immediately and preserves manual collapse", async () => {
+  it.each(["session_search", "terminal", "execute_code", "python"])(
+    "keeps %s collapsed by default through pending, streaming, and completion",
+    async (toolName) => {
+      const activity = { ...tool, toolName, state: "pending" as const };
+      const wrapper = mount(ActivityRow, { props: { activity } });
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      expect(wrapper.get("summary").text()).toContain("Waiting…");
+      await wrapper.setProps({
+        activity: { ...activity, state: "running", output: "More results" },
+      });
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      expect(wrapper.get("summary").text()).toContain("Running…");
+      expect(wrapper.get("pre").text()).toContain("More results");
+      await wrapper.setProps({ activity: { ...activity, complete: true, state: "completed" } });
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    },
+  );
+  it("streams output when manually expanded and preserves expansion through completion", async () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } });
+    await wrapper.get("summary").trigger("click");
     expect(wrapper.get("details").attributes("open")).toBeDefined();
-    expect(wrapper.get("pre").text()).toContain("First result");
+    await wrapper.setProps({ activity: { ...tool, output: "More results" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(wrapper.get("pre").text()).toContain("More results");
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+  });
+  it("preserves manual collapse through streaming and a failed result", async () => {
+    const wrapper = mount(ActivityRow, { props: { activity: tool } });
+    await wrapper.get("summary").trigger("click");
     await wrapper.get("summary").trigger("click");
     await wrapper.setProps({ activity: { ...tool, output: "More results" } });
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
-    expect(wrapper.get("pre").text()).toContain("More results");
-    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "failed" } });
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
-  });
-  it("preserves manual expansion when execution completes", async () => {
-    const wrapper = mount(ActivityRow, { props: { activity: tool } });
-    await wrapper.get("summary").trigger("click");
-    await wrapper.get("summary").trigger("click");
-    await wrapper.setProps({ activity: { ...tool, complete: true, state: "completed" } });
-    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(wrapper.get("summary").text()).toContain("Failed");
+    expect(wrapper.get("details").classes()).toContain("activity-failed");
   });
   it.each(["failed", "interrupted", "unknown"] as const)(
-    "exposes %s results by default",
-    (state) => {
+    "keeps an untouched streaming tool collapsed when its result becomes %s",
+    async (state) => {
+      const wrapper = mount(ActivityRow, { props: { activity: tool } });
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      await wrapper.get("details").trigger("toggle");
+      await wrapper.setProps({ activity: { ...tool, complete: true, state } });
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    },
+  );
+  it.each(["failed", "interrupted", "unknown"] as const)(
+    "keeps restored %s results collapsed with indicators and manual toggling",
+    async (state) => {
       const wrapper = mount(ActivityRow, {
         props: { activity: { ...tool, complete: true, state } },
       });
-      expect(wrapper.get("details").attributes("open")).toBeDefined();
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      expect(wrapper.get("details").classes()).toContain("activity-failed");
       expect(wrapper.get("summary").text()).toContain(
         state === "unknown" ? "Result unavailable" : state === "failed" ? "Failed" : "Interrupted",
       );
+      await wrapper.get("summary").trigger("click");
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
+      expect(wrapper.get("pre").text()).toContain(tool.output);
+      await wrapper.get("summary").trigger("click");
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    },
+  );
+  it.each(["failed", "interrupted", "unknown"] as const)(
+    "preserves manual expansion when a streaming tool becomes %s",
+    async (state) => {
+      const wrapper = mount(ActivityRow, { props: { activity: tool } });
+      await wrapper.get("summary").trigger("click");
+      await wrapper.setProps({ activity: { ...tool, complete: true, state } });
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
+      expect(wrapper.get("details").classes()).toContain("activity-failed");
+      await wrapper.get("summary").trigger("click");
+      expect(wrapper.get("details").attributes("open")).toBeUndefined();
     },
   );
   it("does not claim an unfinished historical tool succeeded", () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool, turnComplete: true } });
     expect(wrapper.get("summary").text()).toContain("Result unavailable");
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
     expect(wrapper.find(".working-shimmer").exists()).toBe(false);
   });
   it("streams reasoning independently and collapses untouched completed thoughts", async () => {
@@ -74,11 +123,19 @@ describe("activity disclosures", () => {
     (wrapper.get("details").element as HTMLDetailsElement).open = true;
     await wrapper.get("details").trigger("toggle");
     expect(wrapper.get("details").attributes("open")).toBeDefined();
+    await wrapper.setProps({ activity: { ...tool, output: "More results" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    (wrapper.get("details").element as HTMLDetailsElement).open = false;
+    await wrapper.get("details").trigger("toggle");
+    await wrapper.setProps({ activity: { ...tool, complete: true, state: "failed" } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get("summary").text()).toContain("Failed");
   });
 });
 
 it("follows arriving output only while the reader stays at the preview bottom", async () => {
   const wrapper = mount(ActivityRow, { props: { activity: tool } });
+  await wrapper.get("summary").trigger("click");
   const element = wrapper.get("pre").element as HTMLElement;
   Object.defineProperties(element, {
     scrollHeight: { value: 500, configurable: true },
@@ -93,10 +150,10 @@ it("follows arriving output only while the reader stays at the preview bottom", 
   expect(element.scrollTop).toBe(50);
 });
 
-it("keeps a delegated task live after the parent settles", () => {
+it("keeps a delegated task live and collapsed after the parent settles", () => {
   const wrapper = mount(ActivityRow, {
     props: { activity: { ...tool, delegated: true }, turnComplete: true },
   });
   expect(wrapper.get("summary").text()).toContain("Running…");
-  expect(wrapper.get("details").attributes("open")).toBeDefined();
+  expect(wrapper.get("details").attributes("open")).toBeUndefined();
 });
