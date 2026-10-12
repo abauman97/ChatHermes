@@ -8851,7 +8851,7 @@ var qp = ["open"], Jp = {
 			}, "Send", 8, lh)])
 		], 8, ih)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-85384878"]]), dh = /* @__PURE__ */ V({
+}), [["__scopeId", "data-v-4672d460"]]), dh = /* @__PURE__ */ V({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},
