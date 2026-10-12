@@ -36,7 +36,7 @@ not the retained native execution. Frames are limited to 29 MiB.
 
 | JSON-RPC operation                  | Contract                                                                                                                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat.attach`                       | `{session_id: stored_id}`; verify profile, activate retained runtime or resume stored conversation; full native snapshot plus recovery boundary                  |
+| `chat.attach`                       | `{session_id: stored_id}`; verify profile, resume stored conversation (reuse retained runtime); compact image history plus recovery boundary                     |
 | `chat.replay`                       | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks                                                           |
 | `chat.reconciled`                   | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary                                 |
 | `chat.submit`                       | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
@@ -44,6 +44,8 @@ not the retained native execution. Frames are limited to 29 MiB.
 | `chat.steer`                        | `{text}`; native `session.steer`, separate from sending                                                                                                          |
 | `chat.answer`                       | `{request_id,result}`; validate native open approval/clarify request and result ownership                                                                        |
 | `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat                                                                                                                               |
+
+Attach requests `inline_images: false` and retries without that flag only when the native runtime explicitly rejects the parameter.
 
 Native `event` envelopes retain runtime IDs, sequence numbers and payloads.
 Approval/clarify requests retain their JSON-RPC request IDs. Only local input and

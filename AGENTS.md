@@ -1,6 +1,6 @@
 # ChatHermes conventions
 
-Use Vite+ (`vp`) for project linting, formatting, tests, and build workflows. Run `vp lint` and `vp fmt` for code quality; `npm test`, `npm run test:api`, and `npm run build` remain the project validation commands. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from lint and formatting; generate them with `npm run build` for validation. Keep build output ignored; do not commit, stage, force-add, or push generated dist assets.
+Use Vite+ (`vp`) for project linting, formatting, tests, and build workflows. Run `vp lint` and `vp fmt` for code quality; `npm test`, `npm run test:api`, and `npm run build` remain the project validation commands. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from lint and formatting; generate them with `npm run build` for validation. Keep build output ignored; do not commit, stage, force-add, or push generated dist assets. **Never commit dist assets.**
 
 ChatHermes is exclusively a Hermes dashboard plugin. Do not add standalone SPA, PWA, browser API keys, connection management, or direct cross-origin gateway requests. Vue mounts through the Hermes React plugin SDK; Python routes inherit dashboard authentication and keep gateway credentials on the server.
 

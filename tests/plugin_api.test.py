@@ -962,7 +962,8 @@ async def test_native_submit_timeout_is_unknown_not_rejected(monkeypatch, error_
 
 @run_async
 @pytest.mark.parametrize('profile', ['default', 'alpha'])
-async def test_native_attach_and_first_submit_with_resume_schema_without_inline_images(app, monkeypatch, tmp_path, profile):
+@pytest.mark.parametrize('supports_inline_images', [True, False])
+async def test_native_attach_image_history_and_first_submit(app, monkeypatch, tmp_path, profile, supports_inline_images):
     import sys
     import types
     import threading
@@ -977,6 +978,11 @@ async def test_native_attach_and_first_submit_with_resume_schema_without_inline_
         session_id: str
         source: str
         omit_messages: bool = False
+
+    image_ref = 'Review this\nAttached image chart.png: /srv/hermes/uploads/chathermes/' + 'a' * 32 + '.png'
+    image_uri = 'data:image/png;base64,' + 'YQ==' * 10000
+    history = [{'role': 'user', 'row_id': 1, 'text': image_ref + '\n[image]'},
+               {'role': 'assistant', 'row_id': 2, 'text': 'A chart.'}]
 
     launch_home = tmp_path / 'default'
     home = tmp_path / profile
@@ -1015,13 +1021,18 @@ async def test_native_attach_and_first_submit_with_resume_schema_without_inline_
             result = {'session_id': 'runtime', 'stored_session_id': 'stored'}
         elif request['method'] == 'session.resume':
             try:
-                params = ResumeParams.model_validate(request['params'])
+                native_params = dict(request['params'])
+                if supports_inline_images:
+                    if native_params.pop('inline_images', None) is not False:
+                        raise ValidationError.from_exception_data('ResumeParams', [])
+                params = ResumeParams.model_validate(native_params)
             except ValidationError:
                 return {'id': request['id'], 'error': {'code': 4000,
                     'message': 'invalid params for session.resume: inline_images: Extra inputs are not permitted'}}
             assert params.profile == profile and params.session_id == 'stored'
             assert params.source == 'desktop' and not params.omit_messages
-            result = {'session_id': 'runtime', 'messages': [], 'message_count': 0}
+            result = {'session_id': 'runtime', 'messages': history if supports_inline_images else
+                [{**history[0], 'text': image_ref + '\n' + image_uri}, history[1]], 'message_count': 2}
         elif request['method'] == 'session.activate':
             result = {'session_id': 'runtime', 'messages': [], 'running': False}
         elif request['method'] == 'session.events.since':
@@ -1060,12 +1071,25 @@ async def test_native_attach_and_first_submit_with_resume_schema_without_inline_
         assert [call['method'] for call in calls] == ['session.create']
         attached = await channel.handle({'jsonrpc': '2.0', 'id': 'attach', 'method': 'chat.attach', 'params': {'session_id': 'stored'}})
         assert attached.get('result', {}).get('session_id') == 'runtime', attached
+        rows = attached['result']['messages']
+        assert image_ref in rows[0]['text']
+        assert [row['row_id'] for row in rows] == [1, 2]
+        assert ('data:image/' in rows[0]['text']) is (not supports_inline_images)
+        resume_calls = [call for call in calls if call['method'] == 'session.resume']
+        assert resume_calls[0]['params'] == {'profile': profile, 'session_id': 'stored', 'source': 'desktop', 'inline_images': False}
+        assert len(resume_calls) == (1 if supports_inline_images else 2)
+        if not supports_inline_images:
+            assert resume_calls[1]['params'] == {'profile': profile, 'session_id': 'stored', 'source': 'desktop'}
+        reopened = await channel.handle({'jsonrpc': '2.0', 'id': 'reopen', 'method': 'chat.attach', 'params': {'session_id': 'stored'}})
+        assert reopened['result']['session_id'] == 'runtime'
+        assert reopened['result']['messages'] == rows
+        assert reopened['result']['recovery'] == attached['result']['recovery']
         replay = await channel.handle({'jsonrpc': '2.0', 'id': 'replay', 'method': 'chat.replay', 'params': {'offset': 0, 'through': 0}})
         assert replay['result']['frames'] == []
         submitted = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'first message'}})
         assert submitted['result']['outcome'] == 'accepted'
-        assert lookups == ['foreign', 'stored']
-        assert [call['method'] for call in calls] == ['session.create', 'session.resume', 'session.events.since', 'session.activate', 'prompt.submit']
+        assert lookups == ['foreign', 'stored', 'stored']
+        assert [call['method'] for call in calls] == ['session.create', *(['session.resume'] * (1 if supports_inline_images else 2)), 'session.events.since', *(['session.resume'] * (1 if supports_inline_images else 2)), 'session.activate', 'prompt.submit']
         assert calls[-1]['params'] == {'profile': profile, 'session_id': 'runtime', 'text': 'first message'}
     finally:
         if channel.owner:
