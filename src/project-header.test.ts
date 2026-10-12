@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { mount, flushPromises } from "@vue/test-utils";
+import { mount as vueMount, flushPromises } from "@vue/test-utils";
+import { createChatHermesRouter } from "./router";
+const mount: typeof vueMount = (component, options = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
+    },
+  });
 import App from "./App.vue";
 
 const json = (value: unknown) =>
@@ -10,7 +19,7 @@ const json = (value: unknown) =>
   });
 
 beforeEach(() => {
-  history.replaceState({}, "", "/chathermes?profile=alpha");
+  history.replaceState({}, "", "/chathermes?profile=alpha#/?profile=alpha");
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -119,11 +128,12 @@ describe("project chat header", () => {
         return json({});
       }),
     );
-    history.replaceState({}, "", "/chathermes?profile=alpha&project=p1&session=s1");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/s1?profile=alpha&project=p1");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.get(".header-title").text()).toBe("Investigate mobile flow");
     await wrapper.findAll(".session-select")[0]!.trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.get(".header-project-subtitle").text()).toBe("Hermes Mobile");
     wrapper.unmount();

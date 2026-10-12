@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { mount, flushPromises } from "@vue/test-utils";
+import { mount as vueMount, flushPromises } from "@vue/test-utils";
+import { createChatHermesRouter } from "./router";
+function routeUrl() {
+  return new URL(location.hash.slice(1) || "/", location.origin);
+}
+const mount: typeof vueMount = (component, options = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
+    },
+  });
 import { computed, ref } from "vue";
 import App from "./App.vue";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
 beforeEach(() => {
-  history.replaceState({}, "", "/chathermes?profile=alpha");
+  history.replaceState({}, "", "/chathermes?profile=alpha#/?profile=alpha");
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -88,7 +100,7 @@ describe("settings page", () => {
     expect(postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ profile: "alpha", session: "", connected: false }),
     );
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=push_one");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/push_one?profile=alpha");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
     query();
@@ -123,11 +135,12 @@ describe("settings page", () => {
     owner.connection.value = "ready";
     await flushPromises();
     await wrapper.get(".scheduled-nav").trigger("click");
+    await flushPromises();
     query();
     expect(postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ session: "", connected: false }),
     );
-    history.replaceState({}, "", "/chathermes?profile=beta&session=push_two");
+    history.replaceState({}, "", "/chathermes?profile=beta#/chat/push_two?profile=beta");
     window.dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
     query();
@@ -171,8 +184,10 @@ describe("settings page", () => {
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
     expect(wrapper.get(".push-setting").text()).toContain("Notifications for alpha");
     await wrapper.get(".push-setting button").trigger("click");
+    await flushPromises();
     expect(disable).toHaveBeenCalledWith("alpha");
     state.mockImplementation((p) =>
       p === "alpha" ? oldState.promise : Promise.resolve({ ...enabled, subscribed: false }),
@@ -180,6 +195,7 @@ describe("settings page", () => {
     await wrapper.get("#profile-field").setValue("beta");
     await flushPromises();
     await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
     expect(wrapper.get(".push-setting").text()).toContain("Notifications for beta");
     expect(wrapper.get(".push-setting").text()).toContain("Notifications disabled for beta");
     action.reject(new Error("Alpha action failed"));
@@ -192,6 +208,7 @@ describe("settings page", () => {
     oldState.resolve(enabled);
     await flushPromises();
     await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
     expect(wrapper.get(".push-setting button").text()).toBe("Enable notifications");
     expect(state).toHaveBeenCalledWith("beta");
     wrapper.unmount();
@@ -211,11 +228,13 @@ describe("settings page", () => {
     expect(wrapper.find(".push-setting").exists()).toBe(false);
     expect(sidebar.find(".sidebar-foot .drawer-chat").exists()).toBe(false);
     await wrapper.get('[aria-label="Open navigation"]').trigger("click");
+    await flushPromises();
     await wrapper.get('[aria-label="Settings"]').trigger("click");
+    await flushPromises();
     const panel = wrapper.get(".settings-page");
     expect(panel.get("h2").element).toBe(document.activeElement);
     expect(wrapper.get(".drawer-settings").attributes("aria-current")).toBe("page");
-    expect(location.search).toContain("view=settings");
+    expect(routeUrl().pathname).toBe("/settings");
     expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
     expect(panel.text()).toContain("Enable notifications");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
@@ -224,6 +243,7 @@ describe("settings page", () => {
     expect(wrapper.get(".drawer-settings").element).toBe(document.activeElement);
     expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
     await wrapper.get('[aria-label="Open navigation"]').trigger("click");
+    await flushPromises();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
     expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement);
@@ -239,7 +259,7 @@ describe("settings page", () => {
       });
       return owner;
     });
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=live-chat");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/live-chat?profile=alpha");
     const fake = vi.fn(async (input: string) =>
       json(
         input.includes("/capabilities")
@@ -257,6 +277,7 @@ describe("settings page", () => {
     await textarea.setValue("Unsent draft");
     const chatUrl = location.href;
     await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
     const settingsUrl = location.href;
     expect(wrapper.get(".settings-page").text()).toContain("Settings");
     expect(wrapper.find('[role="dialog"][aria-label="Settings"]').exists()).toBe(false);
@@ -275,7 +296,21 @@ describe("settings page", () => {
     expect(fake.mock.calls).toHaveLength(requests);
     expect(wrapper.get(".composer").element).toBe(composer);
     expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
+    for (const selector of [".projects-nav", ".artifacts-nav"]) {
+      await wrapper.get(selector).trigger("click");
+      await flushPromises();
+      expect(wrapper.get(".composer").element).toBe(composer);
+      expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
+      expect(owner.busy.value).toBe(true);
+      history.replaceState({}, "", chatUrl);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await flushPromises();
+    }
+    expect(nativeSession.useNativeSession).toHaveBeenCalledTimes(1);
+    expect(owner.attach).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
     await textarea.trigger("focus");
+    await flushPromises();
     expect(textarea.attributes("disabled")).toBeUndefined();
     wrapper.unmount();
   });
@@ -283,7 +318,7 @@ describe("settings page", () => {
     history.replaceState(
       {},
       "",
-      "/chathermes?profile=alpha&view=settings&return_view=projects&archived=1",
+      "/chathermes?profile=alpha#/settings?profile=alpha&archived=1&return_to=%2Fprojects%3Fprofile%3Dalpha%26archived%3D1",
     );
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
     vi.spyOn(push, "state").mockImplementation(async () => ({
@@ -297,16 +332,23 @@ describe("settings page", () => {
     await flushPromises();
     expect(wrapper.get(".settings-page").text()).toContain("Notifications for alpha");
     await wrapper.get('[aria-label="Close settings"]').trigger("click");
-    expect(new URLSearchParams(location.search).get("view")).toBe("projects");
-    expect(new URLSearchParams(location.search).get("archived")).toBe("1");
+    await flushPromises();
+    expect(routeUrl().pathname).toBe("/projects");
+    expect(new URLSearchParams(routeUrl().search).get("archived")).toBe("1");
     await wrapper.get(".drawer-settings").trigger("click");
-    expect(new URLSearchParams(location.search).get("archived")).toBe("1");
+    await flushPromises();
+    expect(
+      new URL(routeUrl().searchParams.get("return_to")!, location.origin).searchParams.get(
+        "archived",
+      ),
+    ).toBe("1");
     await wrapper.get("#settings-profile").setValue("beta");
     await flushPromises();
     expect(wrapper.get(".settings-page").text()).toContain("Notifications for beta");
-    expect(new URLSearchParams(location.search).get("view")).toBe("settings");
-    expect(new URLSearchParams(location.search).get("profile")).toBe("beta");
+    expect(routeUrl().pathname).toBe("/settings");
+    expect(new URLSearchParams(routeUrl().search).get("profile")).toBe("beta");
     await wrapper.get('[aria-label="Close settings"]').trigger("click");
+    await flushPromises();
     expect(wrapper.find(".projects-page").exists()).toBe(false);
     wrapper.unmount();
   });
@@ -317,9 +359,11 @@ describe("settings page", () => {
     expect(wrapper.get(".drawer-chat").text()).toBe("New chat");
     expect(wrapper.find(".drawer-settings").exists()).toBe(true);
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     const menu = wrapper.get('[role="menu"]');
     expect(menu.get('[role="menuitem"]').text()).toBe("New chat");
     await menu.trigger("keydown", { key: "Escape" });
+    await flushPromises();
     await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("false");
@@ -338,26 +382,36 @@ describe("settings page", () => {
     await flushPromises();
     const button = wrapper.get('[aria-label="Screen options"]');
     await button.trigger("click");
+    await flushPromises();
     await wrapper.get('[role="menuitem"]').trigger("pointerdown");
+    await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(true);
     await button.trigger("click");
+    await flushPromises();
     await button.trigger("click");
+    await flushPromises();
     await button.trigger("click");
+    await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     await button.trigger("click");
+    await flushPromises();
     const textarea = wrapper.get("textarea");
     (textarea.element as HTMLTextAreaElement).focus();
     await textarea.trigger("click");
+    await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(document.activeElement).toBe(textarea.element);
     await button.trigger("click");
+    await flushPromises();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(document.activeElement).toBe(button.element);
     await textarea.setValue("Draft");
     await button.trigger("click");
+    await flushPromises();
     await wrapper.get('[role="menuitem"]').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     expect(fake.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
@@ -382,8 +436,10 @@ describe("settings page", () => {
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
     const toggle = wrapper.get(".push-setting button");
     await toggle.trigger("click");
+    await flushPromises();
     expect(subscribe).toHaveBeenCalledWith("alpha");
     expect(toggle.text()).toBe("Updating…");
     expect(toggle.attributes("disabled")).toBeDefined();
@@ -402,15 +458,18 @@ describe("settings page", () => {
     );
     await wrapper.get(".push-setting button:nth-of-type(2)").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(sendTest).toHaveBeenCalledWith("alpha");
     expect(wrapper.get(".push-setting").text()).toContain("Test notification scheduled.");
     await toggle.trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(unsubscribe).toHaveBeenCalledWith("alpha");
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     await flushPromises();
     expect(wrapper.find(".settings-page").exists()).toBe(true);
     await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.find(".settings-page").exists()).toBe(false);
     wrapper.unmount();
@@ -433,9 +492,11 @@ describe("profile navigation", () => {
     expect(wrapper.findAll(".drawer-chat")).toHaveLength(1);
     expect(wrapper.find(".drawer-chat").attributes("disabled")).toBeUndefined();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     expect(wrapper.get('[role="menu"]').get('[role="menuitem"]').text()).toBe("New chat");
     expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("true");
     await wrapper.get('[role="menuitem"]').trigger("click");
+    await flushPromises();
     expect(wrapper.find('[role="menu"]').exists()).toBe(false);
     wrapper.unmount();
   });
@@ -448,13 +509,12 @@ describe("profile navigation", () => {
     mockFetch(fake);
     const wrapper = mount(App);
     await flushPromises();
-    const calls = fake.mock.calls.length;
-    history.pushState({}, "", "/chathermes?profile=../x");
+
+    history.pushState({}, "", "/chathermes?profile=..%2Fx#/?profile=../x");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
-    expect(wrapper.get('.sidebar [role="alert"]').text()).toContain("Invalid profile name");
-    expect(fake).toHaveBeenCalledTimes(calls);
-    expect(wrapper.text()).toContain("Alpha session");
+    expect(location.hash).toBe("#/");
+    expect(fake.mock.calls.some(([url]) => url.includes("../x"))).toBe(false);
     expect(localStorage.length).toBe(0);
     wrapper.unmount();
   });
@@ -482,7 +542,7 @@ describe("profile navigation", () => {
     expect(wrapper.text()).not.toContain("Private history");
     expect(wrapper.text()).not.toContain("Alpha session");
     expect(wrapper.text()).toContain("Current session");
-    history.pushState({}, "", "/chathermes?profile=alpha");
+    history.pushState({}, "", "/chathermes?profile=alpha#/?profile=alpha");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
     expect(wrapper.get(".topbar-profile").text()).toBe("alpha");
@@ -539,6 +599,7 @@ describe("profile navigation", () => {
     await flushPromises();
     await wrapper.get(".load-more").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(fake.mock.calls.some(([input]) => String(input).includes("offset=30"))).toBe(true);
     expect(wrapper.findAll(".session-row")).toHaveLength(3);
     expect(wrapper.text()).toContain("Second page");
@@ -563,6 +624,7 @@ describe("profile navigation", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("Alpha only");
     await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.text()).toContain("Beta only");
     expect(wrapper.text()).not.toContain("Alpha only");
@@ -609,6 +671,7 @@ describe("profile navigation", () => {
     await flushPromises();
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
+    await flushPromises();
     alpha.reject(new Error("Old profile failed"));
     await flushPromises();
     expect(wrapper.text()).toContain("Loading sessions…");
@@ -643,6 +706,7 @@ describe("profile navigation", () => {
     wrapper.findComponent(SessionSidebar).vm.$emit("rename", "shared", "Renamed alpha");
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
+    await flushPromises();
     rename.resolve(json({ id: "shared", title: "Renamed alpha" }));
     await flushPromises();
     expect(wrapper.text()).toContain("Beta title");
@@ -666,7 +730,7 @@ describe("profile navigation", () => {
     );
     const wrapper = mount(App);
     await flushPromises();
-    history.pushState({}, "", "/chathermes?profile=beta&session=beta-one");
+    history.pushState({}, "", "/chathermes?profile=beta#/chat/beta-one?profile=beta");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
     await wrapper.get(".profile-field").setValue("alpha");
@@ -674,7 +738,7 @@ describe("profile navigation", () => {
     await flushPromises();
     expect((wrapper.get(".profile-field").element as HTMLInputElement).value).toBe("alpha");
     expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
-    expect(location.search).toBe("?profile=alpha");
+    expect(routeUrl().search).toBe("?profile=alpha");
     wrapper.unmount();
   });
   it("clears unsent text on session and profile changes", async () => {
@@ -699,6 +763,7 @@ describe("profile navigation", () => {
     expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe("");
     await wrapper.get(".composer textarea").setValue("another draft");
     await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
     expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe("");
     wrapper.unmount();
   });
@@ -725,7 +790,7 @@ describe("profile navigation", () => {
     wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
     create.reject(new Error("Stale create failed"));
     await flushPromises();
-    expect(location.search).toBe("?profile=alpha&session=existing");
+    expect(location.hash).toBe("#/chat/existing?profile=alpha");
     expect(wrapper.text()).not.toContain("Stale create failed");
     wrapper.unmount();
   });
@@ -752,7 +817,7 @@ describe("profile navigation", () => {
     wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
     create.resolve(json({ id: "new" }));
     await flushPromises();
-    expect(location.search).toBe("?profile=alpha&session=existing");
+    expect(location.hash).toBe("#/chat/existing?profile=alpha");
     wrapper.unmount();
   });
   it("allows a successful create to select its new session when selection is unchanged", async () => {
@@ -773,7 +838,7 @@ describe("profile navigation", () => {
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
     await flushPromises();
-    expect(location.search).toBe("?profile=alpha&session=new");
+    expect(location.hash).toBe("#/chat/new?profile=alpha");
     wrapper.unmount();
   });
 });
@@ -836,14 +901,18 @@ describe("profile model inventory", () => {
     await flushPromises();
     expect(wrapper.get(".model-pill").text()).toBe("alpha-default");
     await wrapper.get(".model-pill").trigger("click");
+    await flushPromises();
     expect(wrapper.get('[data-provider="alpha"]').text()).toContain("Current");
     await wrapper.get('[data-provider="alpha"]').trigger("click");
+    await flushPromises();
     expect(
       wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
     ).toEqual(["alpha-default", "alpha-extra"]);
     await wrapper.get('[data-model="alpha-default"]').trigger("click");
+    await flushPromises();
     await wrapper.get("textarea").setValue("default turn");
     await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(turns[0]).toEqual({
       profile: "alpha",
@@ -855,21 +924,29 @@ describe("profile model inventory", () => {
       },
     });
     await wrapper.get(".model-pill").trigger("click");
+    await flushPromises();
     await wrapper.get('[data-provider="custom:other"]').trigger("click");
+    await flushPromises();
     await wrapper.get('[data-model="shared-model"]').trigger("click");
+    await flushPromises();
     await wrapper.get("textarea").setValue("other turn");
     await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(turns[1]?.body).toMatchObject({
       model: "shared-model",
       provider: "custom:other",
     });
     await wrapper.get(".model-pill").trigger("click");
+    await flushPromises();
     await wrapper.get('[data-provider=""]').trigger("click");
+    await flushPromises();
     expect(wrapper.findAll(".model-option").map((item) => item.text())).toEqual(["Instant"]);
     await wrapper.get('[data-model="Instant"]').trigger("click");
+    await flushPromises();
     await wrapper.get("textarea").setValue("route turn");
     await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(turns[2]?.body).toEqual({
       session_id: "alpha-session",
@@ -878,16 +955,21 @@ describe("profile model inventory", () => {
     });
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
+    await flushPromises();
     expect(wrapper.get(".model-pill").text()).toBe("beta-default");
     await wrapper.get(".model-pill").trigger("click");
+    await flushPromises();
     expect(wrapper.get('[data-provider="beta"]').text()).toContain("Current");
     await wrapper.get('[data-provider="beta"]').trigger("click");
+    await flushPromises();
     expect(
       wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
     ).toEqual(["beta-default", "beta-extra"]);
     await wrapper.get('[data-model="beta-extra"]').trigger("click");
+    await flushPromises();
     await wrapper.get("textarea").setValue("beta turn");
     await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(turns[3]).toEqual({
       profile: "beta",
@@ -929,6 +1011,7 @@ describe("profile model inventory", () => {
     expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
+    await flushPromises();
     old.resolve(
       json({
         provider: "alpha",
@@ -939,10 +1022,12 @@ describe("profile model inventory", () => {
     await flushPromises();
     expect(wrapper.get(".model-pill").text()).toBe("saved");
     await wrapper.get(".model-pill").trigger("click");
+    await flushPromises();
     expect(wrapper.findAll(".provider-option").map((item) => item.text())).toEqual([
       "Model routes",
     ]);
     await wrapper.get('[data-provider=""]').trigger("click");
+    await flushPromises();
     expect(
       wrapper.findAll(".model-option").map((item) => item.text().replace("✓", "").trim()),
     ).toEqual(["saved", "route"]);
@@ -953,7 +1038,7 @@ describe("profile model inventory", () => {
 
 describe("TUI-only chat execution", () => {
   it.each([true, false])("ignores saved REST turns with native capability %s", async (enabled) => {
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/s1?profile=alpha");
     const pointer = 'chathermes.run.v1:["alpha","s1"]';
     const idempotency = 'chathermes.run-idempotency.v1:["alpha","s1"]';
     localStorage.setItem(pointer, "legacy-run");
@@ -990,6 +1075,7 @@ describe("TUI-only chat execution", () => {
       expect(owner.attach).toHaveBeenCalledExactlyOnceWith("alpha", "s1");
       await send.trigger("click");
       await flushPromises();
+      await flushPromises();
       expect(owner.submit).toHaveBeenCalledWith(
         "Continue",
         expect.any(Function),
@@ -1011,7 +1097,7 @@ describe("TUI-only chat execution", () => {
 
 describe("native clarification submission", () => {
   it("passes an option to the response handler exactly once, retains errors for retry and resets new requests", async () => {
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/s1?profile=alpha");
     const factory = nativeSession.useNativeSession;
     let owner!: ReturnType<typeof factory>;
     const approval = ref<Record<string, unknown>>();
@@ -1042,7 +1128,9 @@ describe("native clarification submission", () => {
     await flushPromises();
     await wrapper.get(".clarification-other input").setValue("Draft");
     await wrapper.get(".clarification-choices button").trigger("click");
+    await flushPromises();
     await wrapper.get(".clarification-choices button").trigger("click");
+    await flushPromises();
     expect(answer).toHaveBeenCalledExactlyOnceWith("clarify-1", {
       answers: { q0: "Blue (Recommended)" },
     });
@@ -1053,6 +1141,7 @@ describe("native clarification submission", () => {
     answer.mockImplementation(async () => {});
     await wrapper.get(".clarification-choices button").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(answer).toHaveBeenCalledTimes(2);
     await wrapper.get(".clarification-other input").setValue("Old draft");
     approval.value = { ...request.params, request_id: "clarify-2", kind: request.method };
@@ -1060,6 +1149,7 @@ describe("native clarification submission", () => {
     expect((wrapper.get(".clarification-other input").element as HTMLInputElement).value).toBe("");
     await wrapper.get(".clarification-other input").setValue("Exact other response");
     await wrapper.get(".clarification-card form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(answer).toHaveBeenLastCalledWith("clarify-2", {
       answers: { q0: "Exact other response" },
@@ -1070,7 +1160,7 @@ describe("native clarification submission", () => {
 
 describe("native approval controls", () => {
   it("renders stacked approve and deny actions and sends the exact choice", async () => {
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=s1");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/s1?profile=alpha");
     const factory = nativeSession.useNativeSession;
     const answer = vi.fn(async () => {});
     vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
@@ -1116,8 +1206,10 @@ describe("native approval controls", () => {
     expect(buttons[3]!.element.className).not.toContain("bg-[#b91c1c]");
     await buttons[0]!.trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(answer).toHaveBeenLastCalledWith("approve-1", { choice: "once" });
     await buttons[3]!.trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(answer).toHaveBeenLastCalledWith("approve-1", { choice: "deny" });
     expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
@@ -1136,7 +1228,7 @@ describe("native secret prompts", () => {
       });
       return owner;
     });
-    history.replaceState({}, "", "/chathermes?profile=alpha&session=secret-chat");
+    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/secret-chat?profile=alpha");
     mockFetch(
       vi.fn(async (input) =>
         json(
@@ -1167,8 +1259,80 @@ describe("native secret prompts", () => {
     await input.setValue("sensitive-value");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
+    await flushPromises();
     expect(answer).toHaveBeenCalledWith("secret-request-id", { value: "sensitive-value" });
     expect((input.element as HTMLInputElement).value).toBe("");
     wrapper.unmount();
   });
+});
+
+it("dismisses the mobile drawer when selecting the current profile or page", async () => {
+  mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+  const wrapper = mount(App);
+  await flushPromises();
+  await wrapper.get('[aria-label="Open navigation"]').trigger("click");
+  await wrapper.get("#profile-field").setValue("alpha");
+  await flushPromises();
+  expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
+  await wrapper.get(".projects-nav").trigger("click");
+  await flushPromises();
+  await wrapper.get('[aria-label="Open navigation"]').trigger("click");
+  await wrapper.get(".projects-nav").trigger("click");
+  await flushPromises();
+  expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
+  expect(wrapper.find(".projects-page").exists()).toBe(true);
+  wrapper.unmount();
+});
+
+it("switches an already-open viewer for canonical notification links and ignores removed query links", async () => {
+  const listeners: ((event: MessageEvent) => void)[] = [];
+  vi.stubGlobal("navigator", {
+    onLine: true,
+    serviceWorker: {
+      ready: Promise.resolve({ active: { postMessage: vi.fn() } }),
+      addEventListener: (name: string, listener: (event: MessageEvent) => void) => {
+        if (name === "message") listeners.push(listener);
+      },
+      removeEventListener: vi.fn(),
+    },
+  });
+  const factory = nativeSession.useNativeSession;
+  let owner!: ReturnType<typeof factory>;
+  vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+    owner = factory(callback);
+    owner.attach = vi.fn(async () => {
+      owner.connection.value = "ready";
+    });
+    return owner;
+  });
+  mockFetch(
+    vi.fn(async (input) =>
+      json(
+        input.includes("/capabilities")
+          ? { features: { native_chat: true } }
+          : { sessions: [], total: 0 },
+      ),
+    ),
+  );
+  history.replaceState({}, "", "/chathermes?profile=alpha#/chat/one?profile=alpha");
+  const wrapper = mount(App);
+  await flushPromises();
+  const dispatch = (url: string) =>
+    listeners.forEach((listener) =>
+      listener(
+        new MessageEvent("message", {
+          data: { type: "chathermes.navigate", url: location.origin + url },
+        }),
+      ),
+    );
+  dispatch("/chathermes?profile=alpha&session=two");
+  await flushPromises();
+  expect(owner.attach).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+  dispatch("/chathermes?profile=alpha#/chat/two?profile=alpha");
+  await flushPromises();
+  expect(owner.attach).toHaveBeenCalledTimes(2);
+  expect(owner.attach).toHaveBeenLastCalledWith("alpha", "two");
+  expect(routeUrl().pathname).toBe("/chat/two");
+  expect(nativeSession.useNativeSession).toHaveBeenCalledOnce();
+  wrapper.unmount();
 });

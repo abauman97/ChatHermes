@@ -7,7 +7,7 @@ test("compact project list and plain project chats retain keyboard and menu acce
   await page.setViewportSize(
     testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1280, height: 900 },
   );
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   const projects = plugin.locator(".project-list");
   await expect(plugin.getByRole("button", { name: "New project", exact: true })).toBeVisible();
@@ -89,7 +89,7 @@ test("project menu creates an authenticated scoped chat", async ({ page }, testI
   await page.setViewportSize(
     testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1280, height: 900 },
   );
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   await plugin
     .locator(".project-list")

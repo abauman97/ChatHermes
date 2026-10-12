@@ -12,42 +12,60 @@ import type {
   ProjectAction,
 } from "./types/hermes";
 import { projectRoot, projectSessions } from "./features/projects/utils/projects";
-import ArtifactsPage from "./features/artifacts/components/ArtifactsPage.vue";
-import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
-import ProjectsPage from "./features/projects/components/ProjectsPage.vue";
-import SettingsPage from "./features/settings/components/SettingsPage.vue";
-import ProjectSettings from "./features/projects/components/ProjectSettings.vue";
-import ProjectInstructions from "./features/projects/components/ProjectInstructions.vue";
 import * as push from "./features/notifications/services/push";
 import { connectPushClient } from "./features/notifications/services/push-client";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import { useChatController } from "./features/chat/composables/useChatController";
 import { provideChat } from "./features/chat/context";
-const artifactsPage = ref(false),
-  projectArtifacts = ref(false);
-function showArtifacts(fromHistory = false) {
-  settingsPage.value = false;
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
-  projectsPage.value = false;
-  projectPage.value = "";
-  projectView.value = false;
-  artifactsPage.value = true;
+import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import {
+  destination,
+  queryString,
+  resolvePluginUrl,
+  safeReturn,
+  type RouteName,
+} from "./router/links";
+const router = useRouter(),
+  route = useRoute();
+const routeName = computed(() => String(route.name || "home"));
+const artifactsPage = computed(() => routeName.value === "artifacts");
+const projectArtifacts = computed(() => routeName.value === "project-artifacts");
+const scheduledPage = computed(() => routeName.value.startsWith("scheduled"));
+const projectsPage = computed(() => routeName.value === "projects");
+const projectView = computed(() =>
+  ["project", "project-artifacts", "project-settings", "project-instructions"].includes(
+    routeName.value,
+  ),
+);
+const projectPage = computed(() =>
+  routeName.value === "project-settings"
+    ? "edit"
+    : routeName.value === "project-instructions"
+      ? "instructions"
+      : "",
+);
+const archivedProjects = computed(() => route.query.archived === "1");
+const settingsPage = computed(() => routeName.value === "settings");
+let navigationRevision = 0,
+  scopeReady = false,
+  profileInitialized = false;
+let profileWork: Promise<void> = Promise.resolve();
+let routeWork: Promise<void> = Promise.resolve();
+async function navigate(to: Parameters<typeof router.push>[0], replace = false) {
   drawer.value = false;
-  if (!fromHistory) setUrl();
+  closeScreenMenu(false);
+  navigationRevision++;
+  await router[replace ? "replace" : "push"](to);
+  await routeWork;
 }
-const scheduledPage = ref(false),
-  scheduledPageKey = ref(0),
-  scheduledDiscussionError = ref("");
-const projectPage = ref<"" | "edit" | "instructions">(""),
-  projectConfirmation = ref<"delete" | "archive">(),
+function screenLink(name: RouteName, extra: Record<string, string> = {}) {
+  return destination(name, profile.value, session.value, projectId.value, extra);
+}
+const scheduledDiscussionError = ref("");
+const projectConfirmation = ref<"delete" | "archive">(),
   projectConfirmCancel = ref<HTMLButtonElement>();
-const projectView = ref(false),
-  projectsPage = ref(false),
-  archivedProjects = ref(false),
-  projectBusy = ref(false),
+const projectBusy = ref(false),
   manageError = ref("");
 const projectId = ref(""),
   projects = ref<Project[]>([]),
@@ -134,23 +152,7 @@ const pushBusy = ref(false),
   pushLoading = ref(false),
   pushMessage = ref("");
 let pushGeneration = 0;
-const settingsPage = ref(false),
-  settingsButton = ref<HTMLButtonElement | null>(null);
-function contentView() {
-  return artifactsPage.value
-    ? "artifacts"
-    : scheduledPage.value
-      ? "scheduled"
-      : projectsPage.value
-        ? "projects"
-        : projectPage.value
-          ? "project-" + projectPage.value
-          : projectView.value
-            ? projectArtifacts.value
-              ? "project-artifacts"
-              : "project"
-            : "";
-}
+const settingsButton = ref<HTMLButtonElement | null>(null);
 const native = useNativeSession(() => {
   refreshProjects();
   void loadSessions();
@@ -184,71 +186,30 @@ const chat = useChatController(native, {
 });
 provideChat(chat);
 const nativeMode = canStream;
-function urlState() {
-  const params = new URLSearchParams(location.search);
-  return {
-    profile: params.get("profile") || "",
-    session: params.get("session") || "",
-    project: params.get("project") || "",
-    view: params.get("view") || "",
-    returnView: params.get("return_view") || "",
-    archived: params.get("archived") === "1",
-  };
-}
-function setUrl(replace = false) {
-  const url = new URL(location.href);
-  url.searchParams.delete("profile");
-  url.searchParams.delete("session");
-  url.searchParams.delete("project");
-  url.searchParams.delete("view");
-  url.searchParams.delete("return_view");
-  url.searchParams.delete("archived");
-  url.searchParams.delete("job");
-  url.searchParams.delete("scheduled_run");
-  if (settingsPage.value) {
-    url.searchParams.set("view", "settings");
-    if (contentView()) url.searchParams.set("return_view", contentView());
-  } else if (scheduledPage.value) url.searchParams.set("view", "scheduled");
-  else if (artifactsPage.value) url.searchParams.set("view", "artifacts");
-  else if (projectsPage.value) {
-    url.searchParams.set("view", "projects");
-  } else if (projectPage.value) url.searchParams.set("view", "project-" + projectPage.value);
-  else if (projectView.value)
-    url.searchParams.set("view", projectArtifacts.value ? "project-artifacts" : "project");
-  if (projectsPage.value && archivedProjects.value) url.searchParams.set("archived", "1");
-  if (!scheduledPage.value && projectId.value) url.searchParams.set("project", projectId.value);
-  if (profile.value) url.searchParams.set("profile", profile.value);
-  if (!scheduledPage.value && session.value) url.searchParams.set("session", session.value);
-  history[replace ? "replaceState" : "pushState"]({}, "", url.pathname + url.search + url.hash);
-}
-function showScheduled(fromHistory = false) {
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  settingsPage.value = false;
-  projectPage.value = "";
-  projectConfirmation.value = undefined;
-  scheduledDiscussionError.value = "";
-  scheduledPage.value = true;
-  scheduledPageKey.value++;
-  projectsPage.value = false;
-  projectView.value = false;
-  drawer.value = false;
-  if (!fromHistory) setUrl();
+function showProjectArtifacts(artifacts: boolean) {
+  return navigate({
+    ...(screenLink(artifacts ? "project-artifacts" : "project") as object),
+    params: { projectId: projectId.value },
+  });
 }
 async function discussScheduled(text: string) {
   if (offline.value || creating.value) return;
   const p = profile.value,
-    owner = profileGeneration;
+    owner = profileGeneration,
+    revision = navigationRevision;
   creating.value = true;
   scheduledDiscussionError.value = "";
   try {
     const made = await api.create(p);
-    if (owner !== profileGeneration || p !== profile.value || !scheduledPage.value) return;
-    projectAbort?.abort();
-    projectId.value = "";
-    selectedProject.value = undefined;
+    if (
+      owner !== profileGeneration ||
+      p !== profile.value ||
+      revision !== navigationRevision ||
+      !scheduledPage.value
+    )
+      return;
     sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
-    await chooseSession(made.id);
+    await chooseSession(made.id, "");
     if (owner === profileGeneration && p === profile.value && session.value === made.id)
       suggestedPrompt.value = text;
   } catch {
@@ -269,7 +230,12 @@ function cancel() {
   listAbort?.abort();
   loading.value = false;
 }
-async function loadProjects() {
+let projectsWork: Promise<void> = Promise.resolve();
+function loadProjects() {
+  projectsWork = readProjects();
+  return projectsWork;
+}
+async function readProjects() {
   projectsAbort?.abort();
   const controller = new AbortController();
   projectsAbort = controller;
@@ -324,84 +290,40 @@ async function loadProject() {
     if (controller === projectAbort) projectLoading.value = false;
   }
 }
-async function chooseProject(id: string, fromHistory = false) {
-  settingsPage.value = false;
-  projectPage.value = "";
-  projectConfirmation.value = undefined;
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
-  // Scope changes never touch the live/stored session or its working directory.
-  projectAbort?.abort();
-  projectsPage.value = false;
-  manageError.value = "";
-  projectId.value = id;
-  projectView.value = !!id;
-  selectedProject.value = undefined;
-  projectError.value = "";
-  drawer.value = false;
-  if (!fromHistory) setUrl();
-  await loadProject();
+async function chooseProject(id: string) {
+  return navigate(
+    id
+      ? { ...(screenLink("project", { project: id }) as object), params: { projectId: id } }
+      : destination("home", profile.value, session.value),
+  );
 }
-function showProjects(archived = false, fromHistory = false) {
-  settingsPage.value = false;
-  projectPage.value = "";
-  projectConfirmation.value = undefined;
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
-  projectAbort?.abort();
-  projectLoading.value = false;
-  projectsPage.value = true;
-  projectView.value = false;
-  archivedProjects.value = archived;
-  drawer.value = false;
-  manageError.value = "";
-  if (!fromHistory) setUrl();
-  void loadProjects();
+function showProjects(archived = false) {
+  return navigate(screenLink("projects", archived ? { archived: "1" } : {}));
 }
 async function recentSession(id: string) {
-  if (!projectsLoaded.value) {
-    cancelChat();
-    const current = generation,
-      p = profile.value;
-    await loadProjects();
-    if (current !== generation || p !== profile.value) return;
-  }
-  // Use gateway membership, including summary IDs beyond the preview page.
+  const revision = ++navigationRevision,
+    p = profile.value;
+  if (!projectsLoaded.value) await loadProjects();
+  if (revision !== navigationRevision || p !== profile.value) return;
   const owner = projects.value.find(
     (project) =>
       project.sessionIds?.includes(id) || projectSessions(project).some((row) => row.id === id),
   );
-  projectAbort?.abort();
-  projectId.value = owner?.id || "";
-  selectedProject.value = owner;
-  projectsPage.value = false;
-  projectError.value = "";
-  await Promise.all([chooseSession(id), owner ? loadProject() : Promise.resolve()]);
+  return navigate({
+    name: "chat",
+    params: { sessionId: id },
+    query: { ...(p ? { profile: p } : {}), ...(owner ? { project: owner.id } : {}) },
+  });
 }
 async function newChat() {
-  settingsPage.value = false;
-  projectPage.value = "";
-  projectConfirmation.value = undefined;
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
-  projectAbort?.abort();
-  projectId.value = "";
-  selectedProject.value = undefined;
-  projectView.value = false;
-  projectsPage.value = false;
-  return await createSession();
+  return await createSession(true);
 }
-function openProjectPage(page: "edit" | "instructions", fromHistory = false) {
-  settingsPage.value = false;
+function openProjectPage(page: "edit" | "instructions") {
   if (!selectedProject.value || selectedProject.value.isNoProject) return;
-  projectPage.value = page;
-  projectView.value = true;
-  manageError.value = "";
-  closeScreenMenu(false);
-  if (!fromHistory) setUrl();
+  return navigate({
+    ...(screenLink(page === "edit" ? "project-settings" : "project-instructions") as object),
+    params: { projectId: projectId.value },
+  });
 }
 async function confirmProject(action: "delete" | "archive") {
   projectConfirmation.value = action;
@@ -423,12 +345,14 @@ async function manageProject(action: ProjectAction, fields: Record<string, strin
   if (projectBusy.value || offline.value) return;
   const p = profile.value,
     owner = profileGeneration,
-    scope = projectId.value;
+    scope = projectId.value,
+    revision = navigationRevision;
   projectBusy.value = true;
   manageError.value = "";
   try {
     const result = await api.projectManage(p, action, fields);
-    if (owner !== profileGeneration || p !== profile.value) return;
+    if (owner !== profileGeneration || p !== profile.value || revision !== navigationRevision)
+      return;
     if (action === "create" && result.project?.id) await chooseProject(result.project.id);
     else if (scope === projectId.value && !projectsPage.value) {
       if (action === "delete") {
@@ -514,18 +438,15 @@ async function loadMessages() {
   }
   return false;
 }
-async function chooseProfile(id: string, fromHistory = false) {
-  if (fromHistory) settingsPage.value = false;
+async function applyProfile(id: string) {
   if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
     error.value = "Invalid profile name";
     return;
   }
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
+
   suggestedPrompt.value = "";
   creating.value = false;
-  projectPage.value = "";
+
   projectConfirmation.value = undefined;
   projectsLoaded.value = false;
   closeProjectEvents?.();
@@ -536,9 +457,7 @@ async function chooseProfile(id: string, fromHistory = false) {
   projectsAbort?.abort();
   projectAbort?.abort();
   projectId.value = "";
-  projectView.value = false;
-  projectsPage.value = false;
-  archivedProjects.value = false;
+
   projectBusy.value = false;
   manageError.value = "";
   selectedProject.value = undefined;
@@ -562,7 +481,6 @@ async function chooseProfile(id: string, fromHistory = false) {
   offset.value = 0;
   hasMore.value = false;
   drawer.value = false;
-  if (!fromHistory) setUrl();
   const current = ++profileGeneration;
   subscribeProjectEvents();
   void loadProjects();
@@ -590,28 +508,22 @@ async function chooseProfile(id: string, fromHistory = false) {
     if (current === profileGeneration && profile.value === id) capabilities.value = {};
   }
 }
-async function chooseSession(id: string, fromHistory = false) {
-  settingsPage.value = false;
-  artifactsPage.value = false;
-  projectArtifacts.value = false;
-  scheduledPage.value = false;
+async function attachSession(id: string) {
   if (api.isNative(profile.value) || projectId.value) api.workspace(profile.value, id);
   else if (
     sessions.value.find((row) => row.id === id)?.cwd ||
     sessions.value.find((row) => row.id === id)?.source === "desktop"
   )
     api.workspace(profile.value, id);
-  projectPage.value = "";
+
   projectConfirmation.value = undefined;
-  projectView.value = false;
-  projectsPage.value = false;
+
   suggestedPrompt.value = "";
   cancelChat();
   session.value = id;
   messages.value = [];
   chatError.value = "";
   drawer.value = false;
-  if (!fromHistory) setUrl();
   const current = generation,
     p = profile.value;
   if (!projectId.value && !api.isWorkspace(p, id)) {
@@ -622,16 +534,20 @@ async function chooseSession(id: string, fromHistory = false) {
     }
     if (current !== generation || p !== profile.value) return;
   }
-  subscribeProjectEvents();
   if (nativeMode.value) await native.attach(p, id);
   else await loadMessages();
 }
-async function createSession() {
-  if (offline.value || creating.value || (projectId.value && selectedProject.value?.archived))
+async function createSession(unscoped = false) {
+  if (
+    offline.value ||
+    creating.value ||
+    (!unscoped && projectId.value && selectedProject.value?.archived)
+  )
     return;
   const id = profile.value,
-    scope = projectId.value,
+    scope = unscoped ? "" : projectId.value,
     selected = session.value,
+    revision = navigationRevision,
     current = generation;
   creating.value = true;
   try {
@@ -644,21 +560,23 @@ async function createSession() {
       current !== generation ||
       profile.value !== id ||
       session.value !== selected ||
-      projectId.value !== scope
+      revision !== navigationRevision
     )
       return;
     sessions.value = [made, ...sessions.value.filter((item) => item.id !== made.id)];
     // RPC drafts have no DB row until the first prompt; their normal resume path
     // can still hydrate them by stored ID. Keep the same chat components.
-    const pending = chooseSession(made.id),
-      selectionGeneration = generation;
+    await chooseSession(made.id, scope);
     refreshProjects();
-    await pending;
-    if (selectionGeneration !== generation || profile.value !== id || session.value !== made.id)
-      return;
+    if (profile.value !== id || session.value !== made.id) return;
     return made.id;
   } catch (cause) {
-    if (current === generation && profile.value === id && projectId.value === scope) {
+    if (
+      current === generation &&
+      revision === navigationRevision &&
+      profile.value === id &&
+      projectId.value === scope
+    ) {
       const message = cause instanceof Error ? cause.message : "Could not create session";
       if (scope) projectError.value = message;
       else error.value = message;
@@ -704,50 +622,97 @@ function onlineChange() {
     void visibilityChange();
   }
 }
-async function restoreView(state: ReturnType<typeof urlState>) {
-  const view = state.view === "settings" ? state.returnView : state.view;
-  const pending = chooseProfile(state.profile, true);
-  let current = generation;
-  await pending;
-  if (current !== generation || profile.value !== state.profile) return;
-  if (view === "artifacts") showArtifacts(true);
-  else if (view === "scheduled") showScheduled(true);
-  else if (view === "projects") showProjects(state.archived, true);
-  else if (state.project) {
-    await chooseProject(state.project, true);
-    if (current !== generation) return;
-    if (view === "project-artifacts") projectArtifacts.value = true;
-    else if (view === "project-edit" || view === "project-instructions")
-      openProjectPage(view === "project-edit" ? "edit" : "instructions", true);
-    else if (state.session && view !== "project") {
-      const selected = chooseSession(state.session, true);
-      current = generation;
-      await selected;
-    }
-  } else if (state.session) {
-    const selected = chooseSession(state.session, true);
-    current = generation;
-    await selected;
-  }
-  if (current === generation && state.view === "settings") await showSettings(true);
-}
-function pop() {
-  const state = urlState();
-  // Settings history never tears down an unchanged conversation or live stream.
-  if (
-    state.profile === profile.value &&
-    state.session === (scheduledPage.value ? "" : session.value) &&
-    state.project === (scheduledPage.value ? "" : projectId.value) &&
-    (!projectsPage.value || state.archived === archivedProjects.value) &&
-    ((state.view === "settings" && state.returnView === contentView()) ||
-      (settingsPage.value && state.view === contentView()))
-  ) {
-    if (state.view === "settings") void showSettings(true);
-    else void closeSettings(true);
+function chooseProfile(id: string) {
+  if (id && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
+    error.value = "Invalid profile name";
     return;
   }
-  void restoreView(state);
+  return navigate(
+    settingsPage.value
+      ? destination("settings", id, "", "", {
+          return_to: router.resolve(destination("home", id)).fullPath,
+        })
+      : destination("home", id),
+  );
 }
+function chooseSession(id: string, project = projectId.value) {
+  return navigate({
+    name: "chat",
+    params: { sessionId: id },
+    query: {
+      ...(profile.value ? { profile: profile.value } : {}),
+      ...(project ? { project } : {}),
+    },
+  });
+}
+async function applyScope(revision: number) {
+  const p = queryString(route.query.profile);
+  if (!profileInitialized || p !== profile.value) {
+    profileInitialized = true;
+    profileWork = applyProfile(p);
+    await profileWork;
+    if (revision !== navigationRevision) return;
+  }
+  await profileWork;
+  if (revision !== navigationRevision) return;
+  const nextSession =
+    typeof route.params.sessionId === "string"
+      ? route.params.sessionId
+      : queryString(route.query.session);
+  const explicitProject =
+    typeof route.params.projectId === "string"
+      ? route.params.projectId
+      : queryString(route.query.project);
+  const membership = () =>
+    projects.value.find(
+      (project) =>
+        project.sessionIds?.includes(nextSession) ||
+        projectSessions(project).some((row) => row.id === nextSession),
+    );
+  const nextProject = explicitProject || (routeName.value === "chat" ? membership()?.id || "" : "");
+  if (nextProject !== projectId.value) {
+    projectAbort?.abort();
+    projectId.value = nextProject;
+    selectedProject.value = undefined;
+    projectError.value = "";
+    projectLoading.value = false;
+    if (nextProject) void loadProject();
+  }
+  if (nextSession !== session.value) {
+    if (nextSession) await attachSession(nextSession);
+    else {
+      cancelChat();
+      session.value = "";
+      messages.value = [];
+      suggestedPrompt.value = "";
+    }
+  }
+  // Session links need no caller-supplied project hint: membership remains gateway-owned.
+  if (nextSession && !explicitProject && routeName.value === "chat" && !projectsLoaded.value) {
+    await projectsWork;
+    if (revision !== navigationRevision || p !== profile.value || nextSession !== session.value)
+      return;
+    const owner = membership();
+    if (owner && owner.id !== projectId.value) {
+      projectId.value = owner.id;
+      selectedProject.value = owner;
+      void loadProject();
+    }
+  }
+}
+watch(
+  () => route.fullPath,
+  () => {
+    if (!route.matched.length) return;
+    const revision = ++navigationRevision;
+    drawer.value = false;
+    closeScreenMenu(false);
+    projectConfirmation.value = undefined;
+    manageError.value = "";
+    if (scopeReady) routeWork = applyScope(revision);
+  },
+  { flush: "sync" },
+);
 function closeDrawer() {
   drawer.value = false;
   menuButton.value?.focus();
@@ -757,20 +722,15 @@ async function openDrawer() {
   await nextTick();
   closeButton.value?.focus();
 }
-async function closeSettings(fromHistory = false) {
-  settingsPage.value = false;
-  if (!fromHistory) setUrl();
+async function closeSettings() {
+  await navigate(safeReturn(queryString(route.query.return_to)));
   await nextTick();
-  // The drawer is hidden on mobile; restore focus to its visible opener.
   if (window.matchMedia?.("(min-width: 701px)").matches ?? true) settingsButton.value?.focus();
   else menuButton.value?.focus();
 }
-async function showSettings(fromHistory = false) {
+function showSettings() {
   if (settingsPage.value) return;
-  settingsPage.value = true;
-  drawer.value = false;
-  closeScreenMenu(false);
-  if (!fromHistory) setUrl();
+  return navigate(screenLink("settings", { return_to: route.fullPath }));
 }
 function closeScreenMenu(restoreFocus = true) {
   if (screenMenu.value) {
@@ -861,11 +821,68 @@ const notificationSession = computed(() => ({
 watch(notificationSession, () => pushClient?.publish(), { flush: "post" });
 function serviceWorkerMessage(event: MessageEvent) {
   if (event.data?.type !== "chathermes.navigate" || typeof event.data.url !== "string") return;
-  const url = new URL(event.data.url, location.origin);
-  if (url.origin !== location.origin || url.pathname !== "/chathermes") return;
-  history.pushState({}, "", url.pathname + url.search);
-  pop();
+  const target = resolvePluginUrl(event.data.url);
+  if (target) void navigate(target);
 }
+const pageProps = computed(() => {
+  if (settingsPage.value)
+    return {
+      profile: profile.value,
+      profiles: profiles.value,
+      pushState: pushState.value,
+      pushBusy: pushBusy.value,
+      pushLoading: pushLoading.value,
+      pushMessage: pushMessage.value,
+      onProfile: chooseProfile,
+      onTogglePush: togglePush,
+      onTestPush: testPush,
+      onClose: closeSettings,
+    };
+  if (artifactsPage.value)
+    return { profile: profile.value, projects: projects.value, onOpenSession: recentSession };
+  if (scheduledPage.value)
+    return {
+      profile: profile.value,
+      chatBusy: creating.value,
+      offline: offline.value,
+      discussionError: scheduledDiscussionError.value,
+      onDiscuss: discussScheduled,
+    };
+  if (projectsPage.value)
+    return {
+      projects: projects.value,
+      archived: archivedProjects.value,
+      loading: projectsLoading.value,
+      error: projectsError.value || manageError.value,
+      busy: projectBusy.value,
+      offline: offline.value,
+      onSelect: chooseProject,
+      onRetry: loadProjects,
+      onManage: manageProject,
+    };
+  if (projectView.value)
+    return {
+      profile: profile.value,
+      projectId: projectId.value,
+      selectedProject: selectedProject.value,
+      projectPage: projectPage.value,
+      projectArtifacts: projectArtifacts.value,
+      projectLoading: projectLoading.value,
+      projectError: projectError.value,
+      manageError: manageError.value,
+      projectBusy: projectBusy.value,
+      offline: offline.value,
+      visibleSessions: visibleSessions.value,
+      chooseProject,
+      showProjects,
+      showProjectArtifacts,
+      loadProject,
+      recentSession,
+      chooseSession,
+      manageProject,
+    };
+  return {};
+});
 onMounted(async () => {
   if ("serviceWorker" in navigator)
     pushClient = connectPushClient(
@@ -888,12 +905,17 @@ onMounted(async () => {
   document.addEventListener("visibilitychange", visibilityChange);
   addEventListener("online", onlineChange);
   addEventListener("offline", onlineChange);
-  addEventListener("popstate", pop);
   addEventListener("keydown", drawerKey);
   document.addEventListener("click", screenMenuOutside);
-  await restoreView(urlState());
+  await router.isReady();
+  scopeReady = true;
+  routeWork = applyScope(++navigationRevision);
+  await routeWork;
 });
 onUnmounted(() => {
+  scopeReady = false;
+  navigationRevision++;
+  router.options.history.destroy();
   pushClient?.stop();
   pushClient = undefined;
   profileGeneration++;
@@ -907,7 +929,6 @@ onUnmounted(() => {
   projectAbort?.abort();
   removeEventListener("online", onlineChange);
   removeEventListener("offline", onlineChange);
-  removeEventListener("popstate", pop);
   removeEventListener("keydown", drawerKey);
   document.removeEventListener("click", screenMenuOutside);
 });
@@ -950,10 +971,11 @@ onUnmounted(() => {
           <path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg
         >New chat
       </button>
-      <button
+      <RouterLink
         class="projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="projectsPage || projectView ? 'page' : undefined"
-        @click="showProjects()"
+        :to="screenLink('projects')"
+        @click="drawer = false"
       >
         <svg
           class="size-6"
@@ -965,11 +987,12 @@ onUnmounted(() => {
         >
           <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" /></svg
         >Projects
-      </button>
-      <button
+      </RouterLink>
+      <RouterLink
         class="scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="scheduledPage ? 'page' : undefined"
-        @click="showScheduled()"
+        :to="screenLink('scheduled')"
+        @click="drawer = false"
       >
         <svg
           class="size-6"
@@ -982,11 +1005,12 @@ onUnmounted(() => {
           <rect x="3" y="5" width="18" height="16" rx="2" />
           <path d="M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6" /></svg
         >Scheduled
-      </button>
-      <button
+      </RouterLink>
+      <RouterLink
         class="artifacts-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="artifactsPage ? 'page' : undefined"
-        @click="showArtifacts()"
+        :to="screenLink('artifacts')"
+        @click="drawer = false"
       >
         <svg
           class="size-6"
@@ -998,7 +1022,7 @@ onUnmounted(() => {
         >
           <path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6" /></svg
         >Artifacts
-      </button>
+      </RouterLink>
       <button
         v-if="embedded"
         class="drawer-dashboard min-h-[44px] rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
@@ -1284,150 +1308,9 @@ onUnmounted(() => {
         :hide-composer="artifactsPage || (projectView && projectArtifacts)"
       >
         <template #page>
-          <SettingsPage
-            v-if="settingsPage"
-            :profile="profile"
-            :profiles="profiles"
-            :push-state="pushState"
-            :push-busy="pushBusy"
-            :push-loading="pushLoading"
-            :push-message="pushMessage"
-            @profile="chooseProfile"
-            @toggle-push="togglePush"
-            @test-push="testPush"
-            @close="closeSettings()"
-          />
-          <ArtifactsPage
-            v-else-if="artifactsPage"
-            :projects="projects"
-            :key="profile"
-            :profile="profile"
-            @open-session="recentSession"
-          />
-          <ScheduledPage
-            v-else-if="scheduledPage"
-            :key="`${profile}:${scheduledPageKey}`"
-            :profile="profile"
-            :chat-busy="creating"
-            :offline="offline"
-            :discussion-error="scheduledDiscussionError"
-            @discuss="discussScheduled"
-          />
-          <ProjectsPage
-            v-else-if="projectsPage"
-            :key="profile"
-            :projects="projects"
-            :archived="archivedProjects"
-            :loading="projectsLoading"
-            :error="projectsError || manageError"
-            :busy="projectBusy"
-            :offline="offline"
-            @select="chooseProject"
-            @retry="loadProjects"
-            @manage="manageProject"
-          />
-          <section
-            v-else-if="projectPage && selectedProject"
-            class="page-content project-editor"
-            :aria-label="projectPage === 'edit' ? 'Edit project' : 'Edit Instructions'"
-          >
-            <button class="project-back" @click="chooseProject(projectId)">
-              ← {{ selectedProject.label }}
-            </button>
-            <h2 class="text-2xl font-semibold">
-              {{ projectPage === "edit" ? "Edit project" : "Edit Instructions" }}
-            </h2>
-            <ProjectSettings
-              v-if="projectPage === 'edit'"
-              :key="`${profile}:${selectedProject.id}`"
-              :project="selectedProject"
-              :busy="projectBusy"
-              :offline="offline"
-              :error="manageError"
-              @manage="manageProject"
-            />
-            <ProjectInstructions
-              v-else
-              :key="`${profile}:${selectedProject.id}`"
-              :profile="profile"
-              :project-id="selectedProject.id"
-              :offline="offline"
-            />
-          </section>
-          <section
-            v-else-if="projectView"
-            class="project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10"
-            aria-label="Selected Project"
-          >
-            <div class="project-home-content">
-              <button class="project-back" @click="showProjects(!!selectedProject?.archived)">
-                ← Projects
-              </button>
-              <p v-if="projectLoading" role="status">Loading Project…</p>
-              <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">
-                {{ projectError }}
-                <button class="underline" @click="loadProject">Retry Project</button>
-              </p>
-              <template v-if="selectedProject">
-                <nav class="mb-5 flex gap-5 text-sm" aria-label="Project view">
-                  <button
-                    :aria-pressed="!projectArtifacts"
-                    @click="
-                      projectArtifacts = false;
-                      setUrl();
-                    "
-                  >
-                    Sessions / Chat</button
-                  ><button
-                    :aria-pressed="projectArtifacts"
-                    @click="
-                      projectArtifacts = true;
-                      setUrl();
-                    "
-                  >
-                    Artifacts
-                  </button>
-                </nav>
-                <ArtifactsPage
-                  v-if="projectArtifacts"
-                  :project="selectedProject"
-                  :profile="profile"
-                  :sessions="visibleSessions"
-                  @open-session="recentSession"
-                />
-                <template v-else>
-                  <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
-                  <p class="mb-4 break-all text-sm text-[#a3a3a3]">
-                    {{
-                      projectRoot(selectedProject)
-                        ? "Workspace: " + projectRoot(selectedProject)
-                        : selectedProject.isNoProject
-                          ? "No project workspace"
-                          : "No workspace configured"
-                    }}
-                  </p>
-                  <p v-if="!visibleSessions.length" class="text-sm text-[#b4b4b4]">
-                    No conversations yet.
-                  </p>
-                  <nav class="project-chat-list" aria-label="Project chats">
-                    <button
-                      v-for="row in visibleSessions"
-                      :key="row.id"
-                      class="project-chat-row"
-                      :aria-label="row.title || 'Untitled session'"
-                      @click="chooseSession(row.id)"
-                    >
-                      <span class="project-chat-title">{{ row.title || "Untitled session" }}</span>
-                      <span v-if="row.preview?.trim()" class="project-chat-preview">{{
-                        row.preview
-                      }}</span>
-                    </button>
-                  </nav>
-                  <button class="project-back mt-5" @click="chooseProject('')">Other chats</button>
-                </template>
-              </template>
-            </div>
-          </section>
+          <RouterView v-slot="{ Component }">
+            <component :is="Component" :key="profile" v-bind="pageProps" />
+          </RouterView>
         </template>
       </ChatInterface>
     </main>

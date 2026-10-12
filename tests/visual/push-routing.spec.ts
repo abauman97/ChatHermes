@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./login";
+import { signIn, pluginRouteUrl, sessionFromUrl } from "./login";
 
 // Playwright worker callbacks execute in the service worker, not the window.
 // Keep the worker-only globals local so page callbacks retain DOM window types.
@@ -47,15 +47,15 @@ test("worker checks visible connected SPA session and closes matching notificati
   });
   await expect(page.locator(".activity[open]")).toHaveCount(0);
   const target = page.url(),
-    params = new URL(target).searchParams;
+    params = pluginRouteUrl(target).searchParams;
   const profile = params.get("profile") || "default",
-    session = params.get("session")!;
+    session = sessionFromUrl(target)!;
   await expect.poll(sessions).toEqual([{ profile, session }]);
   await page.screenshot({ path: info.outputPath("push-connected.png") });
   // WindowClient.url may still contain home. The plugin's state must agree with
   // the current SPA URL, so changing only history cannot attest to another chat.
   await page.evaluate(() =>
-    history.replaceState({}, "", "/chathermes?profile=default&session=stale_probe"),
+    history.replaceState({}, "", "/chathermes?profile=default#/chat/stale_probe?profile=default"),
   );
   await expect.poll(sessions).toEqual([]);
   await page.evaluate((target) => history.replaceState({}, "", target), target);
@@ -74,7 +74,9 @@ test("worker checks visible connected SPA session and closes matching notificati
       await scope.registration.showNotification("ChatHermes", {
         body: "Synthetic other profile",
         tag: "chathermes:other",
-        data: { url: origin + "/chathermes?profile=other_profile&session=stale_probe" },
+        data: {
+          url: origin + "/chathermes?profile=other_profile#/chat/stale_probe?profile=other_profile",
+        },
       });
     },
     { target, origin },
@@ -96,7 +98,7 @@ test("worker checks visible connected SPA session and closes matching notificati
   await expect.poll(tags).toEqual(["chathermes:other"]);
   // Returning from another view must also close a pre-existing notification
   // only once the native session is attached again.
-  await page.goto("/chathermes?view=scheduled");
+  await page.goto("/chathermes?profile=default#/scheduled");
   await expect.poll(sessions).toEqual([]);
   await worker.evaluate(async (target) => {
     const scope = self as unknown as PushWorkerGlobal;
@@ -168,10 +170,10 @@ test("worker displays profile titles and keeps sessionless tests inspectable in 
   expect(result).toEqual([
     {
       title: "Alpha_Name-2",
-      url: origin + "/chathermes?profile=Alpha_Name-2&session=stored_session",
+      url: origin + "/chathermes?profile=Alpha_Name-2#/chat/stored_session?profile=Alpha_Name-2",
     },
-    { title: "beta", url: origin + "/chathermes?profile=beta" },
+    { title: "beta", url: origin + "/chathermes?profile=beta#/?profile=beta" },
     { title: "ChatHermes", url: origin + "/chathermes" },
-    { title: "default", url: origin + "/chathermes?profile=default" },
+    { title: "default", url: origin + "/chathermes?profile=default#/?profile=default" },
   ]);
 });

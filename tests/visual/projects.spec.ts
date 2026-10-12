@@ -1,4 +1,4 @@
-import { signIn } from "./login";
+import { signIn, sessionFromUrl, pluginRouteUrl } from "./login";
 import { expect, test } from "@playwright/test";
 
 const pluginProfile = (page: import("@playwright/test").Page) =>
@@ -26,7 +26,7 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
   };
   const showProjects = async () => {
     await open();
-    await nav.getByRole("button", { name: "Projects", exact: true }).click();
+    await nav.getByRole("link", { name: "Projects", exact: true }).click();
   };
   const list = plugin.locator(".projects-page");
   await showProjects();
@@ -92,7 +92,7 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
   await expect(plugin.locator(".message.assistant").last()).toContainText(
     "Project context discovered.",
   );
-  expect(new URL(page.url()).searchParams.get("session")).toBe(session.id);
+  expect(sessionFromUrl(page.url())).toBe(session.id);
   const tree = await page.request.get("/api/plugins/chathermes/projects");
   const project = (await tree.json()).projects.find(
     (p: { label: string }) => p.label === "Hermes Mobile",
@@ -104,11 +104,11 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
   // Enter B without moving the existing A session; another turn still runs in A.
   await showProjects();
   await list.getByRole("button", { name: "AcumaticaMCP", exact: true }).click();
-  expect(new URL(page.url()).searchParams.get("session")).toBe(session.id);
+  expect(sessionFromUrl(page.url())).toBe(session.id);
   await expect(plugin.locator(".topbar h1")).toHaveText("AcumaticaMCP");
   await page.reload();
   await expect(plugin.locator(".topbar h1")).toHaveText("AcumaticaMCP");
-  const selectedScope = new URL(page.url()).searchParams.get("project")!;
+  const selectedScope = pluginRouteUrl(page.url()).searchParams.get("project")!;
   // Resuming A from Recents restores its own scope while displaying the chat.
   await open();
   await nav
@@ -119,9 +119,9 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
   await expect(plugin.locator(".message.assistant").last()).toContainText(
     "Project context discovered.",
   );
-  expect(new URL(page.url()).searchParams.get("project")).toBe(project.id);
-  expect(new URL(page.url()).searchParams.get("session")).toBe(session.id);
-  expect(new URL(page.url()).searchParams.has("view")).toBe(false);
+  expect(pluginRouteUrl(page.url()).searchParams.get("project")).toBe(project.id);
+  expect(sessionFromUrl(page.url())).toBe(session.id);
+  expect(pluginRouteUrl(page.url()).searchParams.has("view")).toBe(false);
   await composer.click();
   await expect(composer).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("project-drawer-resumed.png") });
@@ -129,9 +129,9 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
   await expect(plugin.locator(".message.assistant").last()).toContainText(
     "Project context discovered.",
   );
-  expect(new URL(page.url()).searchParams.get("project")).toBe(project.id);
+  expect(pluginRouteUrl(page.url()).searchParams.get("project")).toBe(project.id);
   await page.goto(
-    `/chathermes?project=${encodeURIComponent(selectedScope)}&session=${encodeURIComponent(session.id)}`,
+    `/chathermes?profile=default#/chat/${encodeURIComponent(session.id)}?project=${encodeURIComponent(selectedScope)}`,
   );
   await expect(plugin.locator(".message.assistant").last()).toContainText(
     "Project context discovered.",
@@ -144,7 +144,7 @@ test("gateway Projects create workspace chats, discover context, refresh and pre
     "Project context discovered.",
   );
   // A fresh pathless Project cannot create a workspace chat.
-  await page.goto("/chathermes?project=" + encodeURIComponent(project.id));
+  await page.goto("/chathermes?profile=default#/projects/" + encodeURIComponent(project.id));
   await expect(plugin.locator(".topbar h1")).toHaveText("Hermes Mobile");
   expect(
     (
@@ -182,7 +182,7 @@ test("New Project Chat stays scoped starting from a project chat session", async
 }, testInfo) => {
   const mobile = testInfo.project.name === "mobile";
   await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 });
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   const options = plugin.getByRole("button", { name: "Screen options", exact: true });
   const action = plugin.getByRole("menuitem", { name: "New Project Chat", exact: true });
@@ -193,8 +193,8 @@ test("New Project Chat stays scoped starting from a project chat session", async
     .locator(".project-list")
     .getByRole("button", { name: "Hermes Mobile", exact: true })
     .click();
-  const projectId = new URL(page.url()).searchParams.get("project")!;
-  // Start at the reported URL shape, without view=project. Creating a draft
+  const projectId = pluginRouteUrl(page.url()).searchParams.get("project")!;
+  // Start at the reported URL shape, with the canonical chat route. Creating a draft
   // through the authenticated API keeps the menu under test out of setup.
   const initial = await page.request.post(
     "/api/plugins/chathermes/projects/session?project_id=" + encodeURIComponent(projectId),
@@ -203,14 +203,14 @@ test("New Project Chat stays scoped starting from a project chat session", async
   expect(initial.status()).toBe(201);
   const initialSession = (await initial.json()).session;
   await page.goto(
-    `/chathermes?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(initialSession.id)}`,
+    `/chathermes?profile=default#/chat/${encodeURIComponent(initialSession.id)}?project=${encodeURIComponent(projectId)}`,
   );
   await expect(plugin.getByRole("region", { name: "Selected Project" })).toHaveCount(0);
   await expect(plugin.locator(".header-project-subtitle")).toHaveText("Hermes Mobile");
   const ids: string[] = [initialSession.id];
   for (const context of ["chat", "home"]) {
     if (context === "home") {
-      await page.goto("/chathermes?project=" + encodeURIComponent(projectId));
+      await page.goto("/chathermes?profile=default#/projects/" + encodeURIComponent(projectId));
       await expect(plugin.getByRole("region", { name: "Selected Project" })).toBeVisible();
     }
     await options.click();
@@ -232,9 +232,9 @@ test("New Project Chat stays scoped starting from a project chat session", async
     const session = (await response.json()).session;
     expect(session.cwd).toBe("/tmp/chathermes-issue7-runtime/workspace-a");
     ids.push(session.id);
-    await expect.poll(() => new URL(page.url()).searchParams.get("session")).toBe(session.id);
-    expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
-    expect(new URL(page.url()).searchParams.has("view")).toBe(false);
+    await expect.poll(() => sessionFromUrl(page.url())).toBe(session.id);
+    expect(pluginRouteUrl(page.url()).searchParams.get("project")).toBe(projectId);
+    expect(pluginRouteUrl(page.url()).searchParams.has("view")).toBe(false);
     await expect(plugin.getByRole("menu", { name: "Screen options", exact: true })).toHaveCount(0);
     const prompt = plugin.getByRole("textbox", { name: "Message Hermes" });
     await prompt.click();
@@ -245,13 +245,13 @@ test("New Project Chat stays scoped starting from a project chat session", async
   expect(new Set(ids).size).toBe(3);
   // Navigation retains selectedProject internally; the action must still disappear.
   if (mobile) await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
-  await plugin.locator(".sidebar").getByRole("button", { name: "Scheduled", exact: true }).click();
+  await plugin.locator(".sidebar").getByRole("link", { name: "Scheduled", exact: true }).click();
   await options.click();
   await expect(action).toHaveCount(0);
   await page.keyboard.press("Escape");
   if (mobile) await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
   await plugin.locator(".drawer-chat").click();
-  await expect.poll(() => new URL(page.url()).searchParams.has("project")).toBe(false);
+  await expect.poll(() => pluginRouteUrl(page.url()).searchParams.has("project")).toBe(true);
   await options.click();
   await expect(action).toHaveCount(0);
 });

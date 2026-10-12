@@ -16,7 +16,7 @@ test("drawer has exactly one New chat immediately above Projects", async ({ page
   if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
   const navigation = plugin.getByRole("complementary", { name: "Navigation" });
   const newChat = navigation.getByRole("button", { name: "New chat", exact: true });
-  const projects = navigation.getByRole("button", { name: "Projects", exact: true });
+  const projects = navigation.getByRole("link", { name: "Projects", exact: true });
   await expect(newChat).toHaveCount(1);
   await expect(newChat).toBeVisible();
   await expect(navigation.locator(".drawer-chat + .projects-nav")).toHaveCount(1);
@@ -93,7 +93,7 @@ test("dedicated settings page and notifications", async ({ page }, testInfo) => 
   if (mobile) await plugin.getByRole("button", { name: "Open navigation" }).click();
   const navigation = plugin.getByRole("complementary", { name: "Navigation" });
   const newChat = navigation.getByRole("button", { name: "New chat", exact: true });
-  const projects = navigation.getByRole("button", { name: "Projects", exact: true });
+  const projects = navigation.getByRole("link", { name: "Projects", exact: true });
   await expect(navigation.locator(".push-setting")).toHaveCount(0);
   await expect(navigation.getByRole("combobox", { name: "Profile", exact: true })).toHaveCSS(
     "font-size",
@@ -103,7 +103,7 @@ test("dedicated settings page and notifications", async ({ page }, testInfo) => 
   await settings.click();
   const panel = plugin.getByRole("region", { name: "Settings", exact: true });
   await expect(panel.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
-  await expect(page).toHaveURL(/view=settings/);
+  await expect(page).toHaveURL(/#\/settings/);
   if (mobile) await expect(navigation).toHaveClass(/-translate-x-full/);
   await expect(panel.getByRole("combobox", { name: "Active profile" })).toHaveCSS(
     "font-size",
@@ -194,7 +194,7 @@ test("compact black drawer and screen menu dismissal preserve focus and actions"
   await options.click();
   await menu.getByRole("menuitem", { name: "New chat", exact: true }).click();
   await expect(menu).toHaveCount(0);
-  await expect(page).toHaveURL(/session=/);
+  await expect(page).toHaveURL(/#\/chat\//);
   await expect(options).toBeFocused();
   if (testInfo.project.name === "mobile")
     await plugin.getByRole("button", { name: "Open navigation" }).click();

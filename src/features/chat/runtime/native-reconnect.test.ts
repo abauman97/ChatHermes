@@ -5,7 +5,16 @@ import { api } from "../../../services/hermes-api";
 import type { NativeHooks, NativeSnapshot } from "./native-chat";
 import { NativeError } from "./native-chat";
 import { nativeOutcome, uncertainNativeOutcome } from "./native-admission";
-import { mount, flushPromises } from "@vue/test-utils";
+import { mount as vueMount, flushPromises } from "@vue/test-utils";
+import { createChatHermesRouter } from "../../../router";
+const mount: typeof vueMount = (component, options = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
+    },
+  });
 import App from "../../../App.vue";
 import ChatComposer from "../components/ChatComposer.vue";
 import SessionSidebar from "../../sessions/components/SessionSidebar.vue";
@@ -66,7 +75,7 @@ describe("interrupted attachment draft recovery", () => {
   it.each(["background", "offline", "navigation"])(
     "recovers rejected text only in the original selection after %s",
     async (interruption) => {
-      history.replaceState({}, "", "/chathermes?profile=attachment-test");
+      history.replaceState({}, "", "/chathermes?profile=attachment-test#/?profile=attachment-test");
       vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
       vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
       vi.stubGlobal("fetch", async (input: string) => {

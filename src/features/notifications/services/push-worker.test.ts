@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 const worker = readFileSync("public/push-service-worker.js", "utf8");
 const origin = "https://chat.test";
-const route = origin + "/chathermes?profile=alpha&session=one";
+const route = origin + "/chathermes?profile=alpha#/chat/one?profile=alpha";
 function harness() {
   const handlers: Record<string, (event: any) => void> = {};
   let state: any = {
@@ -40,6 +40,7 @@ function harness() {
   runInNewContext(worker, {
     URL,
     MessageChannel: Channel,
+    URLSearchParams,
     setTimeout,
     clearTimeout,
     self: {
@@ -98,6 +99,36 @@ function harness() {
   };
 }
 describe("visible session notifications", () => {
+  it("does not recognize removed query routes for viewer attestation or notification navigation", async () => {
+    const h = harness();
+    h.patch({ url: origin + "/chathermes?profile=alpha&session=one" });
+    await h.push();
+    expect(h.show).toHaveBeenCalledOnce();
+    await h.dispatch("notificationclick", {
+      notification: { data: { url: origin + "/chathermes?profile=alpha&session=one" } },
+    });
+    expect(h.client.focus).not.toHaveBeenCalled();
+  });
+  it("attests canonical chat hashes despite stale outer routing query", async () => {
+    const h = harness();
+    h.patch({
+      url: origin + "/chathermes?profile=beta&session=stale&view=settings#/chat/one?profile=alpha",
+    });
+    await h.push();
+    expect(h.show).not.toHaveBeenCalled();
+  });
+  it.each([
+    "/settings?session=one",
+    "/projects?session=one",
+    "/chat/two?profile=alpha",
+    "/chat/one?profile=alpha&profile=beta",
+    "/chat/%2Fone?profile=alpha",
+  ])("does not suppress for a mismatched canonical route %s", async (path) => {
+    const h = harness();
+    h.patch({ url: origin + "/chathermes#" + path });
+    await h.push();
+    expect(h.show).toHaveBeenCalledOnce();
+  });
   it.each(["turn.complete", "approval", "clarify", "attention"])(
     "suppresses %s in visible matching tabs",
     async (type) => {
@@ -124,7 +155,9 @@ describe("visible session notifications", () => {
       expect(h.show).toHaveBeenCalledTimes(2);
       h.patch({ connected: true });
       await h.update();
-      expect(h.notifications.every((notification) => notification.close.mock.calls.length === 1)).toBe(true);
+      expect(
+        h.notifications.every((notification) => notification.close.mock.calls.length === 1),
+      ).toBe(true);
       await h.push({ type });
       expect(h.show).toHaveBeenCalledTimes(2);
     },
@@ -155,9 +188,9 @@ describe("visible session notifications", () => {
     { session: "" },
     { type: "wrong" },
     { url: origin + "/chathermes" },
-    { url: route + "&view=projects" },
-    { url: route + "&view=scheduled" },
-    { url: route + "&session=two" },
+    { url: origin + "/chathermes#/projects?profile=alpha&session=one" },
+    { url: origin + "/chathermes#/scheduled?profile=alpha&session=one" },
+    { url: route.replace("/chat/one", "/chat/two") },
     { url: route + "&profile=beta" },
     { url: "https://other.test/chathermes" },
     { visible: false },
@@ -282,7 +315,7 @@ describe("visible session notifications", () => {
   });
   it("accepts default profile and ignores stale WindowClient URL and focus", async () => {
     const h = harness();
-    h.patch({ profile: "default", url: origin + "/chathermes?session=one" });
+    h.patch({ profile: "default", url: origin + "/chathermes?profile=default#/chat/one" });
     await h.push({ profile: "default" });
     expect(h.show).not.toHaveBeenCalled();
   });
@@ -354,7 +387,8 @@ describe("visible session notifications", () => {
               if (change === "hidden") h.client.visibilityState = "hidden";
               if (change === "session change")
                 h.patch({ session: "two", url: route.replace("one", "two") });
-              if (change === "navigation") h.patch({ url: origin + "/chathermes?view=scheduled" });
+              if (change === "navigation")
+                h.patch({ url: origin + "/chathermes?profile=default#/scheduled" });
               if (change === "unmount") h.setState(null);
               if (change === "removed client") h.setClients([slow]);
             }, 50);
@@ -471,7 +505,7 @@ describe("visible session notifications", () => {
         await h.push({ profile, type, session_id: session });
         const url = new URL("/chathermes", origin);
         url.searchParams.set("profile", profile);
-        if (session) url.searchParams.set("session", session);
+        url.hash = (session ? "/chat/" + session : "/") + "?profile=" + profile;
         expect(h.show).toHaveBeenLastCalledWith(
           profile,
           expect.objectContaining({
@@ -492,7 +526,7 @@ describe("visible session notifications", () => {
       expect(h.show).toHaveBeenCalledWith(
         "ChatHermes",
         expect.objectContaining({
-          data: { url: origin + "/chathermes?session=one" },
+          data: { url: origin + "/chathermes?profile=default#/chat/one" },
         }),
       );
     },
@@ -504,7 +538,7 @@ describe("visible session notifications", () => {
     expect(h.show).toHaveBeenCalledWith(
       "beta",
       expect.objectContaining({
-        data: { url: origin + "/chathermes?profile=beta&session=one" },
+        data: { url: origin + "/chathermes?profile=beta#/chat/one?profile=beta" },
       }),
     );
   });

@@ -128,3 +128,12 @@ beyond the native dashboard's 100-run cap, checks exact job/run ownership, and
 returns a compatibility message when these helpers are unavailable. Deleted
 jobs or pruned output cannot be recovered. Scheduling and job mutation remain
 in Hermes's native dashboard.
+
+## Navigation links
+
+ChatHermes uses canonical hash routes, for example
+`/chathermes?profile=default#/chat/session_123?profile=default`.
+The outer profile query belongs to the Hermes host; plugin screen selection,
+profile/session scope and Settings return destinations live inside the hash.
+Older query-based page, session, project and scheduled links are no longer
+interpreted. Notifications now generate canonical hash links.

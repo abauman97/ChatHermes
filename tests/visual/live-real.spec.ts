@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./login";
+import { signIn, sessionFromUrl } from "./login";
 
 test("disposable dashboard composer, attachments and real native response", async ({
   page,
@@ -86,6 +86,16 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await expect(area).toBeFocused();
   await expect(plugin.locator(".turn-work .activity").last()).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: info.outputPath("streaming.png") });
+  await area.evaluate((element) => element.setAttribute("data-stream-composer", "original"));
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await plugin.getByRole("link", { name: "Projects", exact: true }).click();
+  await expect(plugin.locator(".projects-page")).toBeVisible();
+  await expect(area).toHaveValue("draft while responding");
+  await expect(area).toHaveAttribute("data-stream-composer", "original");
+  await page.goBack();
+  await expect(plugin.locator(".projects-page")).toHaveCount(0);
+  await expect(area).toHaveValue("draft while responding");
   await expect(plugin.locator(".message.assistant").last()).toContainText("chathermes-smoke-ok", {
     timeout: 120_000,
   });
@@ -250,7 +260,7 @@ test("native artifact cards preview, download and survive history reconstruction
   await page.screenshot({ path: info.outputPath("artifact-pdf-preview.png") });
   await plugin.locator("dialog[open]").getByRole("button", { name: "Close preview" }).click();
   await page.screenshot({ path: info.outputPath("artifact-timeline.png") });
-  const sessionId = new URL(page.url()).searchParams.get("session");
+  const sessionId = sessionFromUrl(page.url());
   expect(sessionId).toBeTruthy();
   await page.reload();
   await expect(
@@ -309,7 +319,9 @@ test("native artifact cards preview, download and survive history reconstruction
   });
   expect(project.ok()).toBeTruthy();
   const projectId = (await project.json()).project.id;
-  await page.goto(`/chathermes?project=${encodeURIComponent(projectId)}&view=project-artifacts`);
+  await page.goto(
+    `/chathermes?profile=default#/projects/${encodeURIComponent(projectId)}/artifacts?project=${encodeURIComponent(projectId)}`,
+  );
   await expect(
     plugin
       .getByRole("navigation", { name: "Project view" })
@@ -366,7 +378,7 @@ test("chronological activity streams and preserves disclosure choices", async ({
     .filter({ has: page.locator("pre", { hasText: "terminal" }) });
   // A real provider may retry a call. Compare with the authoritative persisted
   // call identities rather than assuming the model executes exactly twice.
-  const sessionId = new URL(page.url()).searchParams.get("session")!;
+  const sessionId = sessionFromUrl(page.url())!;
   const saved = await page.request.get(
     `/api/plugins/chathermes/api/sessions/${encodeURIComponent(sessionId)}/messages?profile=default&limit=500&order=oldest&inline_images=false`,
   );
@@ -517,7 +529,7 @@ test("desktop grouped history counts tools and commands with matching chevrons",
       } else socket.send(message);
     });
   });
-  await page.goto(`/chathermes?session=${encodeURIComponent(sessionId)}`);
+  await page.goto(`/chathermes?profile=default#/chat/${encodeURIComponent(sessionId)}`);
   const plugin = page.locator(".chathermes-embedded");
   const summaries = plugin.locator(".work-summary");
   await expect(summaries).toHaveCount(2);

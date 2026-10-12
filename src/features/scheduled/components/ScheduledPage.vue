@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { api, ApiError, messageText } from "../../../services/hermes-api";
 import type { ScheduledJob, ScheduledRun, ScheduledOutput } from "../../../types/hermes";
 import ChatTranscript from "../../../components/ChatTranscript.vue";
@@ -9,6 +10,9 @@ const props = defineProps<{
   offline?: boolean;
   discussionError?: string;
 }>();
+const route = useRoute(),
+  router = useRouter();
+let revision = 0;
 const emit = defineEmits<{ discuss: [text: string] }>();
 const jobs = ref<ScheduledJob[]>([]),
   job = ref<ScheduledJob>(),
@@ -32,13 +36,12 @@ function state(row: ScheduledJob) {
 function date(seconds: number) {
   return seconds > 0 ? new Date(seconds * 1000).toLocaleString() : "Run date unavailable";
 }
-function url() {
-  const target = new URL(location.href);
-  target.searchParams.delete("job");
-  target.searchParams.delete("scheduled_run");
-  if (job.value) target.searchParams.set("job", job.value.id);
-  if (run.value) target.searchParams.set("scheduled_run", run.value.id);
-  history.pushState({}, "", target.pathname + target.search + target.hash);
+function selection(jobId?: string, runId?: string) {
+  return router.push({
+    name: runId ? "scheduled-run" : jobId ? "scheduled-job" : "scheduled",
+    params: { ...(jobId ? { jobId } : {}), ...(runId ? { runId } : {}) },
+    query: route.query,
+  });
 }
 async function read(work: (signal: AbortSignal) => Promise<void>) {
   controller?.abort();
@@ -61,17 +64,19 @@ async function read(work: (signal: AbortSignal) => Promise<void>) {
 async function loadJobs() {
   await read(async (signal) => {
     const result = await api.scheduled(props.profile, signal);
+    if (!Array.isArray(result.jobs)) throw new Error("Invalid scheduled jobs response");
     if (!signal.aborted) jobs.value = result.jobs;
   });
 }
 async function selectJob(row: ScheduledJob, fromHistory = false) {
+  if (!fromHistory) return selection(row.id);
   job.value = row;
   run.value = undefined;
   output.value = undefined;
   runs.value = [];
   offset.value = 0;
   more.value = false;
-  if (!fromHistory) url();
+
   await loadRuns();
 }
 async function loadRuns(append = false) {
@@ -94,9 +99,10 @@ async function loadRuns(append = false) {
   });
 }
 async function selectRun(row: ScheduledRun, fromHistory = false) {
+  if (!fromHistory) return selection(job.value!.id, row.id);
   run.value = row;
   output.value = undefined;
-  if (!fromHistory) url();
+
   await read(async (signal) => {
     const result = await api.scheduledOutput(props.profile, job.value!.id, row.id, signal);
     if (!signal.aborted) {
@@ -107,13 +113,7 @@ async function selectRun(row: ScheduledRun, fromHistory = false) {
   });
 }
 function back() {
-  controller?.abort();
-  loading.value = false;
-  error.value = "";
-  output.value = undefined;
-  if (run.value) run.value = undefined;
-  else job.value = undefined;
-  url();
+  return selection(run.value ? job.value?.id : undefined);
 }
 function retry() {
   if (run.value) void selectRun(run.value, true);
@@ -134,30 +134,52 @@ function discuss() {
       `Discuss this scheduled job run.\n\nJob: ${job.value?.name || job.value?.id}\nRun: ${date(run.value!.started_at)}\n\n${text}`,
     );
 }
+let stopSelection: (() => void) | undefined;
 onMounted(async () => {
-  const params = new URLSearchParams(location.search),
-    id = params.get("job"),
-    runId = params.get("scheduled_run");
-  await loadJobs();
-  if (controller?.signal.aborted) return;
-  const selected = jobs.value.find((row) => row.id === id);
-  if (id && !selected) {
-    error.value = "This scheduled job is no longer available.";
-    return;
-  }
-  if (selected) {
-    status.value = state(selected);
-    await selectJob(selected, true);
-    if (controller?.signal.aborted) return;
-    // Deep links can address older runs outside the first history page.
-    if (runId)
-      await selectRun(
-        runs.value.find((row) => row.id === runId) || { id: runId, started_at: 0, source: "cron" },
-        true,
-      );
-  }
+  await router.isReady();
+  if (disposed) return;
+  stopSelection = watch(
+    () => [props.profile, route.params.jobId, route.params.runId],
+    async () => {
+      const current = ++revision;
+      const id = String(route.params.jobId || ""),
+        runId = String(route.params.runId || "");
+      job.value = undefined;
+      run.value = undefined;
+      output.value = undefined;
+      await loadJobs();
+      if (current !== revision || controller?.signal.aborted) return;
+      const selected = jobs.value.find((row) => row.id === id);
+      if (id && !selected) {
+        error.value = "This scheduled job is no longer available.";
+        return;
+      }
+      if (selected) {
+        status.value = state(selected);
+        await selectJob(selected, true);
+        if (current !== revision || controller?.signal.aborted) return;
+        // Deep links can address older runs outside the first history page.
+        if (runId)
+          await selectRun(
+            runs.value.find((row) => row.id === runId) || {
+              id: runId,
+              started_at: 0,
+              source: "cron",
+            },
+            true,
+          );
+      }
+    },
+    { immediate: true },
+  );
 });
-onUnmounted(() => controller?.abort());
+let disposed = false;
+onUnmounted(() => {
+  disposed = true;
+  stopSelection?.();
+  revision++;
+  controller?.abort();
+});
 </script>
 <template>
   <section class="scheduled-page min-h-0 flex flex-1 flex-col" aria-label="Scheduled">

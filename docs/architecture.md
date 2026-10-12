@@ -2,7 +2,7 @@
 
 ChatHermes mounts Vue through the Hermes React dashboard plugin SDK. `main.ts`
 creates an app per mount; `plugin-entry.ts` owns host integration and viewport
-restoration. There is no standalone application, client router, or global store.
+restoration. Each app installs a fresh Vue Router 4 instance. There is no standalone application or global store.
 
 ## Where code belongs
 
@@ -25,7 +25,7 @@ restoration. There is no standalone application, client router, or global store.
 | `src/assets/styles/`                 | Shared stylesheet and existing DOM/CSS contracts                                                                                                 |
 | `src/vendor/hermes/`                 | Pinned gateway contract and transport primitives; do not edit generated contracts                                                                |
 
-Do not create empty router, stores, views, artifacts, or shared composables
+Do not create empty stores, views, artifacts, or shared composables
 folders. Attachments currently belong to chat; scheduled output is a real feature.
 Keep tests beside the code they exercise. App integration tests stay beside App.
 
@@ -77,3 +77,28 @@ and `npm run build`. Include rebuilt committed plugin dist assets. Verify the
 actual React-mounted dashboard at desktop/mobile sizes with `npm run live` and
 `npm run test:visual`, inspect screenshots, and stop only your fixture with
 `npm run live:stop`. Follow [AGENTS.md](../AGENTS.md) for scope and fixture rules.
+
+## Navigation
+
+Vue Router owns page selection through named hash routes under the host's exact
+/chathermes pathname. src/router/history.ts implements the public RouterHistory
+contract: metadata lives under history.state.chathermes; host usr and unrelated
+fields survive replacements and pushes, while host idx/key follow traversal.
+The adapter ignores navigation outside the plugin and destroys its listeners on
+unmount. Only canonical hash routes select plugin screens and runtime scope. Outer query
+fields belong to the host and are ignored by plugin routing. The host-owned outer
+profile query remains: Hermes profile hydration otherwise drops hashes on traversal.
+On the first document mount, plugin-entry recovers a canonical hash from Navigation
+Timing if host hydration rewrote it before the app import; later host mounts do not
+restore that original document destination.
+
+App's guarded coordinator applies profile and session scope only when they change.
+Screen-only navigation keeps the native viewer, ChatInterface and composer alive.
+Project browsing is separate from session workspace membership; route parameters
+never rewrite membership. Navigation revisions reject obsolete project-membership
+and creation results. RouterView renders feature pages inside the chat page slot;
+thin ProjectRoute owns the project home/editor markup. Scheduled selection watches
+route parameters and aborts obsolete reads, including saved runs outside page one.
+Settings stores a validated plugin-relative return_to destination. Notifications
+use the same link resolver, and the worker produces and recognizes canonical
+chat hashes with the existing visible-connected-viewer handshake.
