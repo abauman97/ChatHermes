@@ -18,6 +18,7 @@ import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import { useChatController } from "./features/chat/composables/useChatController";
 import { provideChat } from "./features/chat/context";
+import { useWakeLock } from "./features/settings/composables/useWakeLock";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import {
   destination,
@@ -185,6 +186,7 @@ const chat = useChatController(native, {
   retryHistory: loadMessages,
 });
 provideChat(chat);
+const wakeLock = useWakeLock();
 const nativeMode = canStream;
 function showProjectArtifacts(artifacts: boolean) {
   return navigate({
@@ -833,9 +835,12 @@ const pageProps = computed(() => {
       pushBusy: pushBusy.value,
       pushLoading: pushLoading.value,
       pushMessage: pushMessage.value,
+      keepScreenAwake: wakeLock.enabled.value,
+      wakeLockAvailable: wakeLock.available.value,
       onProfile: chooseProfile,
       onTogglePush: togglePush,
       onTestPush: testPush,
+      onToggleWakeLock: wakeLock.setEnabled,
       onClose: closeSettings,
     };
   if (artifactsPage.value)

@@ -164,6 +164,43 @@ describe("settings page", () => {
     wrapper.unmount();
   });
 
+  it("shows a global Keep Screen Awake toggle that persists across profiles and remounts", async () => {
+    mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
+    const request = vi.fn().mockResolvedValue({
+      released: false,
+      release: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    vi.stubGlobal("navigator", { wakeLock: { request } });
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
+    const toggle = wrapper.get('input[aria-labelledby="wake-lock-heading"]');
+    expect(toggle.element).toMatchObject({ checked: false });
+    await toggle.setValue(true);
+    await flushPromises();
+    expect(request).toHaveBeenCalledWith("screen");
+    expect(localStorage.getItem("chathermes.keep-screen-awake")).toBe("true");
+    expect(wrapper.get("#settings-app-heading").text()).toBe("Global settings");
+    await wrapper.get("#settings-profile").setValue("beta");
+    await flushPromises();
+    expect(wrapper.get('input[aria-labelledby="wake-lock-heading"]').element).toMatchObject({
+      checked: true,
+    });
+    wrapper.unmount();
+    const restored = mount(App);
+    await flushPromises();
+    expect(request).toHaveBeenCalledTimes(2);
+    await restored.get(".drawer-settings").trigger("click");
+    const restoredToggle = restored.get('input[aria-labelledby="wake-lock-heading"]');
+    expect(restoredToggle.element).toMatchObject({ checked: true });
+    await restoredToggle.setValue(false);
+    expect(localStorage.getItem("chathermes.keep-screen-awake")).toBe("false");
+    restored.unmount();
+  });
+
   it("refreshes profile status and rejects stale status and action results after switching profiles", async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
     const oldState = deferred<push.PushState>(),
@@ -290,6 +327,7 @@ describe("settings page", () => {
       await flushPromises();
       expect(wrapper.find(".settings-page").exists()).toBe(url === settingsUrl);
     }
+    await flushPromises();
     expect(close).not.toHaveBeenCalled();
     expect(owner.attach).toHaveBeenCalledTimes(1);
     expect(owner.busy.value).toBe(true);
