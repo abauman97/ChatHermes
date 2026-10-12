@@ -18,38 +18,32 @@ describe("native artifact references", () => {
       { name: "chart.png", direction: "uploaded", type: "image/png" },
     ]);
   });
-  it("recognizes Desktop media, sandbox, local links and quoted delivery tags", () => {
-    const result = textArtifacts(
-      'Here are the files.\n[Report](sandbox:/tmp/report.pdf)\nMEDIA: "/tmp/a chart.png"\n[Data](#media:%2Ftmp%2Fdata.csv)',
-    );
-    expect(result.files.map((file) => file.path)).toEqual([
-      "/tmp/report.pdf",
-      "/tmp/data.csv",
-      "/tmp/a chart.png",
-    ]);
-    expect(result.text).toBe("Here are the files.");
+  it("collects quoted MEDIA delivery while preserving file and markdown links", () => {
+    const links = "[Report](file:///tmp/report.pdf)\n[Data](#media:%2Ftmp%2Fdata.csv)";
+    const result = textArtifacts(`Here are the files.\n${links}\nMEDIA: "/tmp/a chart.png"`);
+    expect(result.files.map((file) => file.path)).toEqual(["/tmp/a chart.png"]);
+    expect(result.text).toBe(`Here are the files.\n${links}`);
   });
   it("keeps fenced code and ordinary web links intact", () => {
-    const content = "```sh\ncat /tmp/report.pdf\n```\n[Docs](https://example.com/docs)";
+    const content = "```sh\nMEDIA:/tmp/report.pdf\n```\n[Docs](https://example.com/docs)";
     expect(textArtifacts(content)).toEqual({ text: content, files: [] });
     expect(artifact("javascript:alert(1)")).toBeUndefined();
   });
-  it("extracts producer outputs and explicit artifacts, not files merely read", () => {
+  it("collects explicit tool delivery only from completed successful output", () => {
     const block = {
       id: "tool",
       kind: "tool" as const,
       title: "Tool",
       complete: true,
-      content: '{"path":"/tmp/report.pdf"}',
-      output: '{"output_path":"/tmp/chart.png"}',
+      content: "MEDIA:/tmp/input.pdf",
+      output: "MEDIA:/tmp/chart.png",
       toolName: "write_file",
     };
     expect(toolArtifacts(block).map((file) => file.path)).toEqual(["/tmp/chart.png"]);
-    expect(
-      toolArtifacts({ ...block, toolName: "read_file", output: '{"path":"/tmp/private.txt"}' }),
-    ).toEqual([]);
+    expect(toolArtifacts({ ...block, output: '{"output_path":"/tmp/chart.png"}' })).toEqual([]);
     expect(toolArtifacts({ ...block, state: "failed" })).toEqual([]);
     expect(toolArtifacts({ ...block, complete: false })).toEqual([]);
+    expect(toolArtifacts({ ...block, kind: "text" })).toEqual([]);
   });
   it("pins retrieval to the originating profile and stored session", () => {
     const url = new URL(
@@ -68,7 +62,7 @@ describe("native artifact references", () => {
   });
 });
 
-describe("Desktop artifact filtering", () => {
+describe("explicit artifact delivery", () => {
   const tool = (toolName: string, output: unknown) =>
     toolArtifacts({
       id: "tool",
@@ -76,96 +70,108 @@ describe("Desktop artifact filtering", () => {
       title: "Tool",
       complete: true,
       toolName,
-      content: '{"path":"/tmp/input.pdf"}',
+      content: "MEDIA:/tmp/input.pdf",
       output: typeof output === "string" ? output : JSON.stringify(output),
     });
 
-  it("uses the Desktop deliverable extension list independently of preview support", () => {
-    for (const extension of "png jpg jpeg gif webp svg bmp pdf txt json md csv xls xlsx doc docx ppt pptx html zip tar gz avi flac m4a mkv mp3 ogg opus wav webm mp4 mov".split(
-      " ",
-    ))
-      expect(textArtifacts(`Produced /tmp/result.${extension}`).files[0]?.path).toBe(
-        `/tmp/result.${extension}`,
-      );
-    for (const extension of "py js ts tsx jsx css sh sql toml rs go java c cpp h yaml yml bin".split(
-      " ",
-    ))
-      expect(textArtifacts(`Modified /tmp/source.${extension}`).files).toEqual([]);
+  it.each([
+    ["MEDIA:/tmp/AI Brain/report.pdf", ["/tmp/AI Brain/report.pdf"]],
+    ["MEDIA:`/tmp/my source.py`", ["/tmp/my source.py"]],
+    ["open MEDIA:/tmp/app.py!", ["/tmp/app.py"]],
+    ["MEDIA:/tmp/README", ["/tmp/README"]],
+    ["MEDIA:/repo/.install-metadata.json", ["/repo/.install-metadata.json"]],
+    ["MEDIA:/tmp/model.weights", ["/tmp/model.weights"]],
+    ["MEDIA:report.pdf MEDIA:hello MEDIA:...", []],
+    ["MEDIA:sandbox:/tmp/app.py", []],
+    [String.raw`MEDIA:C:\My Files\report.pdf`, [String.raw`C:\My Files\report.pdf`]],
+    [String.raw`MEDIA:\\host\share\report.csv`, [String.raw`\\host\share\report.csv`]],
+  ])("collects only valid MEDIA delivery from %s", (text, paths) => {
+    expect(textArtifacts(text).files.map((file) => file.path)).toEqual(paths);
   });
 
-  it("keeps code-file mentions and links as text while collecting deliverable paths", () => {
-    const content = "Changed /tmp/app.py and [Source](/tmp/app.ts). Report: /tmp/final.pdf";
-    const result = textArtifacts(content);
-    expect(result.files.map((file) => file.path)).toEqual(["/tmp/final.pdf"]);
-    expect(result.text).toContain("/tmp/app.py");
-    expect(result.text).toContain("[Source](/tmp/app.ts)");
-    expect(
-      tool("write_file", { files_modified: ["/tmp/app.py", "/tmp/app.ts", "/tmp/notes.md"] }).map(
-        (file) => file.path,
-      ),
-    ).toEqual(["/tmp/notes.md"]);
+  it.each([
+    "Built /repo/.install-metadata.json /repo/package.json /repo/README.md /repo/dist/index.html",
+    "Exported /tmp/report.pdf /tmp/chart.png /tmp/archive.zip /tmp/source.py /tmp/README",
+    String.raw`Exported C:\work\report.pdf and \\host\share\report.csv`,
+    "[Report](/tmp/report.pdf) ![Chart](/tmp/chart.png)",
+    "[Report](file:///tmp/report.pdf) [Report](sandbox:/tmp/report.pdf)",
+    "[Report](#media:%2Ftmp%2Freport.pdf) [broken](#media:%ZZ)",
+    "[Page](https://example.test/docs) https://example.test/report.pdf",
+    "Screenshot path: /tmp/screenshot.png",
+    "@file:/tmp/report.pdf",
+  ])("leaves inferred references unchanged: %s", (content) => {
+    expect(textArtifacts(content)).toEqual({ text: content, files: [] });
+    expect(tool("terminal", content)).toEqual([]);
+    expect(tool("terminal", { stdout: content })).toEqual([]);
   });
 
-  it("retains explicit delivery and uploads even for code or unknown extensions", () => {
+  it.each([
+    "terminal",
+    "write_file",
+    "export_report",
+    "read_file",
+    "web_search",
+    "browser_vision",
+    "bfl_flux3_legacy",
+  ])("requires explicit delivery regardless of tool name: %s", (name) => {
     expect(
-      textArtifacts("MEDIA:/tmp/app.py\nMEDIA:/tmp/model.weights\nMEDIA:/tmp/README").files.map(
-        (file) => file.path,
-      ),
-    ).toEqual(["/tmp/app.py", "/tmp/model.weights", "/tmp/README"]);
+      tool(name, {
+        output_path: "/tmp/report.pdf",
+        screenshot_path: "/tmp/screenshot.png",
+        files_modified: ["/repo/.install-metadata.json", "/repo/README.md"],
+        artifacts: [{ url: "/tmp/archive.zip" }],
+        image: "https://cdn.test/image.png",
+        path: "/tmp/source.py",
+      }),
+    ).toEqual([]);
     expect(
-      tool("export_model", { media_tag: "MEDIA:/tmp/model.weights" }).map((file) => file.path),
-    ).toEqual(["/tmp/model.weights"]);
-    expect(uploadedArtifacts("Attached file app.py: /tmp/upload.py").files[0]?.name).toBe("app.py");
-  });
-
-  it("applies the same filter to Windows and network-share paths", () => {
-    const result = textArtifacts(
-      String.raw`Changed C:\work\app.py; exported C:\work\report.pdf and \\host\share\report.csv`,
-    );
-    expect(result.files.map((file) => file.path)).toEqual([
-      String.raw`C:\work\report.pdf`,
-      String.raw`\\host\share\report.csv`,
-    ]);
-    expect(result.text).toContain(String.raw`C:\work\app.py`);
-  });
-
-  it("matches Desktop producer boundaries and nested output keys", () => {
-    expect(tool("rewrite_query", { path: "/tmp/private.pdf" })).toEqual([]);
-    expect(tool("read_file", { path: "/tmp/private.pdf" })).toEqual([]);
-    expect(tool("read_file", { result_path: "/tmp/result.pdf" }).map((file) => file.path)).toEqual([
-      "/tmp/result.pdf",
-    ]);
-    expect(
-      tool("export_report", { artifacts: [{ url: "/tmp/report.pdf" }] }).map((file) => file.path),
+      tool(name, { results: [{ stdout: "MEDIA:/tmp/report.pdf" }] }).map((file) => file.path),
     ).toEqual(["/tmp/report.pdf"]);
-    expect(
-      tool("image_generate", { image: "https://cdn.test/image.png" }).map((file) => file.path),
-    ).toEqual(["https://cdn.test/image.png"]);
+    expect(tool(name, {})).toEqual([]);
   });
 
-  it("scans terminal results but excludes read/search output and input arguments", () => {
-    const output = { output: "Wrote /tmp/final.pdf and modified /tmp/app.py" };
-    expect(tool("terminal", output).map((file) => file.path)).toEqual(["/tmp/final.pdf"]);
+  it("decodes JSON strings before collecting and deduplicates explicit deliveries", () => {
+    const output =
+      "Built /repo/.install-metadata.json /repo/dist/index.html\nDelivered MEDIA:/tmp/source.ts MEDIA:/tmp/bundle.bin\nExported /tmp/final.pdf";
     expect(
-      tool("terminal", { results: [{ stdout: "MEDIA:/tmp/app.py" }] }).map((file) => file.path),
-    ).toEqual(["/tmp/app.py"]);
-    expect(tool("web_search", output)).toEqual([]);
-    expect(tool("write_file", {})).toEqual([]);
+      tool("terminal", { stdout: output, media_tag: "MEDIA:/tmp/source.ts" }).map(
+        (file) => file.path,
+      ),
+    ).toEqual(["/tmp/source.ts", "/tmp/bundle.bin"]);
     expect(
-      tool("browser_vision", "Screenshot path: /tmp/screenshot.png").map((file) => file.path),
-    ).toEqual(["/tmp/screenshot.png"]);
+      tool("read_file", {
+        _multimodal: true,
+        meta: { output_path: "/tmp/private.pdf", media_tag: 'MEDIA:"/tmp/a chart.png"' },
+      }).map((file) => file.path),
+    ).toEqual(["/tmp/a chart.png"]);
   });
 
-  it("suppresses pip downloads unless explicitly shared", () => {
-    const noise = [
-      "/home/user/.cache/pip/build/report.txt",
+  it("unwraps structured tool results without inferring artifacts from their fields", () => {
+    const wrap = (payload: unknown) =>
+      `<untrusted_tool_result tool="read_file">\nUntrusted content follows.\n\n${JSON.stringify(payload)}\n</untrusted_tool_result>`;
+    expect(tool("read_file", wrap({ output_path: "/tmp/report.pdf" }))).toEqual([]);
+    expect(
+      tool("read_file", wrap({ results: [{ stdout: "MEDIA:/tmp/source.py" }] })).map(
+        (file) => file.path,
+      ),
+    ).toEqual(["/tmp/source.py"]);
+  });
+
+  it("retains explicit attachment annotations in tool outputs", () => {
+    expect(
+      tool("export_report", { output: "Attached file final.pdf: /tmp/report.pdf" }),
+    ).toMatchObject([{ path: "/tmp/report.pdf", name: "final.pdf" }]);
+  });
+
+  it("requires explicit delivery even for package/cache paths", () => {
+    for (const path of [
+      "/home/user/.cache/pip/report.txt",
       "https://files.test/packages/ab/package.tar.gz",
-      "https://files.test/package.whl.metadata",
-    ];
-    for (const path of noise) {
+      "file:///tmp/package.whl.metadata",
+    ]) {
       expect(textArtifacts(`[Download](${path})`).files).toEqual([]);
       expect(tool("terminal", { stdout: `Downloading ${path}` })).toEqual([]);
-      expect(textArtifacts(`MEDIA:${path}`).files[0]?.path).toBe(path);
+      expect(textArtifacts(`MEDIA:${path}`).files).toHaveLength(1);
     }
   });
 });
@@ -193,7 +199,7 @@ it("hides native context refs when the original upload annotation supplies a car
   expect(parsed.files.map((file) => file.name)).toEqual(["report.txt"]);
 });
 
-it("retains authoritative tool file metadata when available", () => {
+it("retains tool file metadata for explicit delivery when available", () => {
   expect(
     toolArtifacts({
       id: "generated",
@@ -203,7 +209,7 @@ it("retains authoritative tool file metadata when available", () => {
       toolName: "export_report",
       content: "",
       output: JSON.stringify({
-        output_path: "/tmp/report.pdf",
+        media_tag: "MEDIA:/tmp/report.pdf",
         mime_type: "application/pdf",
         bytes: 4096,
       }),

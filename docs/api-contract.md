@@ -224,21 +224,22 @@ filename and retrieval reference in durable history. Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
 Timeline cards and the global/project Artifacts views share history-based
-reference detection and one preview/download component. Detection supports
-Desktop `MEDIA:`, `@file:`, `#media:` links, file/sandbox links, and completed
-producer tool outputs. Candidate filtering mirrors the Desktop artifact collector
-in the pinned Hermes source (`ac28abc96ce83f22f6b831f80d9007e2aba81f21`):
-ordinary local paths must use its image/document/media/archive extension list.
-Source paths such as `.py` and `.ts` stay in the response text. Explicit `MEDIA:`
-delivery (and native `@file:` references) bypasses that extension filter, so code,
-unknown formats, and extensionless files can still be intentionally shared.
-Pip cache/package downloads are suppressed unless explicitly delivered.
-Tool detection uses Desktop's producer-name boundaries and nested output-key
-rules, including terminal stdout and browser screenshots. Tool input arguments
-and generic read/search outputs are not promoted automatically. Uploaded files
-retain their attachment cards regardless of extension. Desktop's filtering is
-heuristic: eligible `.md`, `.json`, and `.html` modifications can still qualify.
-Code fences remain code; they are not treated as promises of server files.
+reference detection and one preview/download component. Generated artifact cards
+require explicit `MEDIA:` delivery directives or existing `Attached file` /
+`Attached image` annotations. MEDIA parsing retains quoted paths, spaced media
+filenames, unknown formats, and extensionless files; no extension eligibility
+filter is used. Bare paths, markdown links (including `file:`, `sandbox:`, and
+`#media:` links), ordinary URLs, screenshot labels, and arbitrary producer output
+fields do not assert delivery. Standalone `@file:` references remain text unless
+an upload annotation supplies a card and hides the redundant context reference.
+Fenced source code remains intact.
+Completed, successful tool outputs use the same explicit delivery rules regardless
+of tool name. JSON results and untrusted result wrappers are decoded before
+scanning their strings for delivery annotations; neither terminal stdout nor
+structured output keys promote bare paths. Tool input arguments, failed blocks,
+and incomplete blocks never produce cards. Explicit deliveries retain available
+file metadata. User upload/image-content cards and authenticated session/profile
+retrieval remain unchanged.
 Artifact browsing pages through the authoritative sessions and message APIs,
 and project browsing uses native session membership. No client transcript or
 artifact metadata journal is introduced.

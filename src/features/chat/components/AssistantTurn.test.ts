@@ -18,7 +18,7 @@ it("keeps delivered artifacts at their tool position and outside collapsed detai
             title: "Generated file",
             toolName: "terminal",
             content: "",
-            output: "@file:/opt/data/report.pdf",
+            output: "MEDIA:/opt/data/report.pdf",
             complete: true,
             state: "completed",
           },
@@ -39,4 +39,35 @@ it("keeps delivered artifacts at their tool position and outside collapsed detai
   await wrapper.get(".activity summary").trigger("click");
   await wrapper.get(".activity summary").trigger("click");
   expect(wrapper.get(".artifact-stub").isVisible()).toBe(true);
+});
+
+it("preserves command output and assistant links without inferred artifact cards", async () => {
+  const output = "Built /repo/.install-metadata.json and /tmp/report.pdf";
+  const wrapper = mount(AssistantTurn, {
+    props: {
+      entry: {
+        kind: "turn",
+        key: "turn",
+        working: false,
+        blocks: [
+          {
+            id: "command",
+            kind: "tool",
+            title: "Command",
+            toolName: "terminal",
+            content: "Build files",
+            output,
+            complete: true,
+            state: "completed",
+          },
+          { id: "answer", kind: "text", content: "Report: [Download](/tmp/report.pdf)" },
+        ],
+      },
+    },
+    global: { stubs: { ArtifactCard: { template: '<div class="artifact-stub">Artifact</div>' } } },
+  });
+  expect(wrapper.find(".artifact-stub").exists()).toBe(false);
+  expect(wrapper.get('a[href="/tmp/report.pdf"]').text()).toBe("Download");
+  await wrapper.get(".activity summary").trigger("click");
+  expect(wrapper.text()).toContain(output);
 });
