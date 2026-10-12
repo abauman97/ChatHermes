@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import type { PushState } from "../../notifications/services/push";
+
 defineProps<{
   profile: string;
   profiles: { name: string }[];
@@ -8,11 +9,14 @@ defineProps<{
   pushBusy: boolean;
   pushLoading: boolean;
   pushMessage: string;
+  keepScreenAwake: boolean;
+  wakeLockAvailable: boolean;
 }>();
 const emit = defineEmits<{
   profile: [value: string];
   togglePush: [];
   testPush: [];
+  toggleWakeLock: [value: boolean];
   close: [];
 }>();
 const heading = ref<HTMLElement>();
@@ -60,7 +64,38 @@ onMounted(() => heading.value?.focus());
           </select>
         </div>
       </div>
-      <h3 id="settings-notifications-heading" class="settings-section-title">App settings</h3>
+      <h3 id="settings-app-heading" class="settings-section-title">Global settings</h3>
+      <div class="settings-group" aria-labelledby="settings-app-heading">
+        <div class="settings-row settings-notifications">
+          <svg
+            class="settings-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <rect x="5" y="3" width="14" height="18" rx="2" />
+            <path d="M9 17h6" />
+          </svg>
+          <div class="wake-lock-setting">
+            <h3 id="wake-lock-heading" class="text-sm font-medium text-white">Keep Screen Awake</h3>
+            <label class="mt-2 flex min-h-[44px] items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                aria-labelledby="wake-lock-heading"
+                :checked="keepScreenAwake"
+                @change="emit('toggleWakeLock', ($event.target as HTMLInputElement).checked)"
+              />
+              Prevent the display from sleeping while ChatHermes is visible.
+            </label>
+            <p v-if="!wakeLockAvailable" class="mt-1 text-sm">
+              Screen wake lock is unavailable in this browser.
+            </p>
+          </div>
+        </div>
+      </div>
+      <h3 id="settings-notifications-heading" class="settings-section-title">Notifications</h3>
       <div class="settings-group" aria-labelledby="settings-notifications-heading">
         <div class="settings-row settings-notifications">
           <svg
