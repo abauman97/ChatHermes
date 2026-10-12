@@ -797,8 +797,7 @@ async def _workspace_resume(transport, profile, stored_id):
         return await transport.call('session.resume', params)
     except _InlineImagesUnsupported:
         # Some published images lack this optional history projection flag.
-        params.pop('inline_images')
-        return await transport.call('session.resume', params)
+        return await transport.call('session.resume', {key: value for key, value in params.items() if key != 'inline_images'})
 
 
 def _workspace_message(row):

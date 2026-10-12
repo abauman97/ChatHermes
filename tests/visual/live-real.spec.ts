@@ -209,7 +209,7 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(plugin.locator(".composer")).toContainText("dragged.txt");
   await expect(plugin.locator(".message.user")).toHaveCount(0);
   await plugin.getByRole("button", { name: "Remove dragged.txt" }).click();
-  const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification' and /opt/data/${codeName} containing 'print(1)'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName}. Reply with the plain text 'Modified /opt/data/${codeName}' followed by these three Markdown links exactly: [${filename}](sandbox:/opt/data/${filename}) , [${imageName}](sandbox:/opt/data/${imageName}), and [${pdfName}](sandbox:/opt/data/${pdfName}). Do not emit MEDIA or a link for the Python file. Do not read the files.`;
+  const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification' and /opt/data/${codeName} containing 'print(1)'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName}. Reply with the plain text 'Modified /opt/data/${codeName}' and then the inline example 'Example: MEDIA:/opt/data/${codeName} is only documentation.' Deliver the three other files using exactly these standalone directives on separate lines: MEDIA:/opt/data/${filename}, MEDIA:/opt/data/${imageName}, MEDIA:/opt/data/${pdfName}. Do not deliver the Python file. Do not wrap the directives in code fences. Do not read the files.`;
   await area.fill(prompt);
   await send.click();
   await area.fill("Draft remains available");

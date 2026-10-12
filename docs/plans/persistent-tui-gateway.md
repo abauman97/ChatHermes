@@ -216,7 +216,7 @@ Switch new turns only after native capability/auth/recovery gates pass. Maintain
 
 Persisted Sessions IDs/transcripts require no bulk copy. Native drafts need bounded retention and a clear expired-draft state; an empty reaped draft cannot be reconstructed from a nonexistent REST row. Distinguish unsupported native capability from transport interruption and unknown admission. If a deployment lacks native support, explicitly select legacy mode before admission or disable send; no silent mid-turn fallback. Preserve minimal legacy routes for a documented drain window and prune old storage only after verified terminal reconciliation. Remove Runs-only UI/reducer code and the workspace SSE facade in a later reviewed stage. Keep Projects HTTP event subscriptions until native global-change parity is verified.
 
-Update `README.md`, `docs/api-contract.md`, `docs/deployment.md`, verification notes and build/install scripts as needed in the future implementation. Rebuild and commit `plugin/chathermes/dashboard/dist/` through `npm run build`; do not hand-edit generated assets.
+Update `README.md`, `docs/api-contract.md`, `docs/deployment.md`, verification notes and build/install scripts as needed in the future implementation. Generate ignored `plugin/chathermes/dashboard/dist/` output through `npm run build` for validation; keep generated assets out of commits.
 
 ## Validation strategy
 
@@ -268,6 +268,6 @@ At both sizes inspect Home composer focus, keyboard/draft edits while active, na
 - Model/provider choices change the runtime without profile-wide mutation; workspace context, full saved tool results, images/files and session lineage survive resume. Profile and authorized request/event isolation hold under races.
 - Approval, clarification, guidance, cancellation and the published chat parity matrix work through the native contract, with safe unsupported-feature handling.
 - Legacy pending Runs finish through their original adapter, saved histories require no rewrite, and capability failures cannot trigger duplicate work or silent transport fallback.
-- `npm test`, `npm run test:api`, `npm run build`, applicable Docker/native/live tests, and actual mobile/desktop dashboard visual checks pass; built dist assets are included in implementation commits and limitations are documented honestly.
+- `npm test`, `npm run test:api`, `npm run build`, applicable Docker/native/live tests, and actual mobile/desktop dashboard visual checks pass; generated dist assets stay out of implementation commits and limitations are documented honestly.
 
 Historical planning deliverable: the initial investigation wrote only this plan. Current implementation and verification results are recorded above and in the linked verification note; the remaining gates below are not claimed complete.

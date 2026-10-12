@@ -36,7 +36,7 @@ not the retained native execution. Frames are limited to 29 MiB.
 
 | JSON-RPC operation                  | Contract                                                                                                                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat.attach`                       | `{session_id: stored_id}`; verify profile, activate retained runtime or resume stored conversation; full native snapshot plus recovery boundary                  |
+| `chat.attach`                       | `{session_id: stored_id}`; verify profile, resume stored conversation (reuse retained runtime); compact image history plus recovery boundary                     |
 | `chat.replay`                       | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks                                                           |
 | `chat.reconciled`                   | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary                                 |
 | `chat.submit`                       | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
@@ -44,6 +44,8 @@ not the retained native execution. Frames are limited to 29 MiB.
 | `chat.steer`                        | `{text}`; native `session.steer`, separate from sending                                                                                                          |
 | `chat.answer`                       | `{request_id,result}`; validate native open approval/clarify request and result ownership                                                                        |
 | `chat.capabilities`, `gateway.ping` | Empty params; capability/heartbeat                                                                                                                               |
+
+Attach requests `inline_images: false` and retries without that flag only when the native runtime explicitly rejects the parameter.
 
 Native `event` envelopes retain runtime IDs, sequence numbers and payloads.
 Approval/clarify requests retain their JSON-RPC request IDs. Only local input and
@@ -224,21 +226,22 @@ filename and retrieval reference in durable history. Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
 Timeline cards and the global/project Artifacts views share history-based
-reference detection and one preview/download component. Detection supports
-Desktop `MEDIA:`, `@file:`, `#media:` links, file/sandbox links, and completed
-producer tool outputs. Candidate filtering mirrors the Desktop artifact collector
-in the pinned Hermes source (`ac28abc96ce83f22f6b831f80d9007e2aba81f21`):
-ordinary local paths must use its image/document/media/archive extension list.
-Source paths such as `.py` and `.ts` stay in the response text. Explicit `MEDIA:`
-delivery (and native `@file:` references) bypasses that extension filter, so code,
-unknown formats, and extensionless files can still be intentionally shared.
-Pip cache/package downloads are suppressed unless explicitly delivered.
-Tool detection uses Desktop's producer-name boundaries and nested output-key
-rules, including terminal stdout and browser screenshots. Tool input arguments
-and generic read/search outputs are not promoted automatically. Uploaded files
-retain their attachment cards regardless of extension. Desktop's filtering is
-heuristic: eligible `.md`, `.json`, and `.html` modifications can still qualify.
-Code fences remain code; they are not treated as promises of server files.
+reference detection and one preview/download component. Generated artifact cards
+require explicit `MEDIA:` delivery directives or existing `Attached file` /
+`Attached image` annotations. MEDIA parsing retains quoted paths, spaced media
+filenames, unknown formats, and extensionless files; no extension eligibility
+filter is used. Bare paths, markdown links (including `file:`, `sandbox:`, and
+`#media:` links), ordinary URLs, screenshot labels, and arbitrary producer output
+fields do not assert delivery. Standalone `@file:` references remain text unless
+an upload annotation supplies a card and hides the redundant context reference.
+Fenced source code remains intact.
+Completed, successful tool outputs use the same explicit delivery rules regardless
+of tool name. JSON results and untrusted result wrappers are decoded before
+scanning their strings for delivery annotations; neither terminal stdout nor
+structured output keys promote bare paths. Tool input arguments, failed blocks,
+and incomplete blocks never produce cards. Explicit deliveries retain available
+file metadata. User upload/image-content cards and authenticated session/profile
+retrieval remain unchanged.
 Artifact browsing pages through the authoritative sessions and message APIs,
 and project browsing uses native session membership. No client transcript or
 artifact metadata journal is introduced.

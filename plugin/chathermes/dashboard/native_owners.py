@@ -160,18 +160,8 @@ class Owner:
                 queue.put_nowait(frame)
 
     async def attach(self):
-        scoped = {'profile': self.profile, 'session_id': self.runtime}
-        if self.runtime:
-            try:
-                result = await self.transport.call('session.activate', scoped)
-            except HTTPException as error:
-                if error.status_code != 409:
-                    raise
-                result = await self.transport.call('session.resume', {
-                    'profile': self.profile, 'session_id': self.stored, 'source': 'desktop'})
-        else:
-            result = await self.transport.call('session.resume', {
-                'profile': self.profile, 'session_id': self.stored, 'source': 'desktop'})
+        # Resume also reuses live runtimes and supports compact image history.
+        result = await self.api._workspace_resume(self.transport, self.profile, self.stored)
         runtime = result['session_id']
         if self.runtime and runtime != self.runtime:
             self.reset()

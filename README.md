@@ -2,7 +2,7 @@
 
 ## Development tooling
 
-This project uses Vite+ (`vp`) for linting and formatting. Run `vp lint` to check code and `vp fmt` to format it. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from both. Run `npm test`, `npm run test:api`, and `npm run build` for the project test and build workflows; the build refreshes the committed dashboard assets.
+This project uses Vite+ (`vp`) for linting and formatting. Run `vp lint` to check code and `vp fmt` to format it. Generated `plugin/chathermes/dashboard/dist/` assets are excluded from both. Run `npm test`, `npm run test:api`, and `npm run build` for the project test and build workflows; the build generates ignored dashboard assets for validation and packaging; keep them out of commits.
 
 A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication protects the UI and its server-side gateway proxy; browser credentials and standalone SPA deployments are not supported.
 
