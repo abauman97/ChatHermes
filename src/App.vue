@@ -18,6 +18,7 @@ import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import { useChatController } from "./features/chat/composables/useChatController";
 import { provideChat } from "./features/chat/context";
+import { useDrawerSwipe } from "./composables/useDrawerSwipe";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import {
   destination,
@@ -705,6 +706,7 @@ watch(
   () => {
     if (!route.matched.length) return;
     const revision = ++navigationRevision;
+    drawerSwipe.cancel();
     drawer.value = false;
     closeScreenMenu(false);
     projectConfirmation.value = undefined;
@@ -722,6 +724,18 @@ async function openDrawer() {
   await nextTick();
   closeButton.value?.focus();
 }
+const sidebar = ref<HTMLElement | null>(null);
+const chatPlane = ref<InstanceType<typeof ChatInterface> | null>(null);
+const drawerSwipe = useDrawerSwipe(
+  drawer,
+  () => sidebar.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * 0.85),
+  () => chatPlane.value?.$el.querySelector(".transcript") || null,
+  (open) => {
+    if (open === drawer.value) return;
+    if (open) void openDrawer();
+    else closeDrawer();
+  },
+);
 async function closeSettings() {
   await navigate(safeReturn(queryString(route.query.return_to)));
   await nextTick();
@@ -936,8 +950,15 @@ onUnmounted(() => {
 <template>
   <div class="app-shell flex min-h-dvh bg-black font-sans text-white dark:bg-black dark:text-white">
     <aside
+      ref="sidebar"
       class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-1 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white"
       :class="drawer ? 'translate-x-0' : '-translate-x-full'"
+      :style="drawerSwipe.sidebarStyle.value"
+      @touchstart="drawerSwipe.start"
+      @touchmove="drawerSwipe.move"
+      @touchend="drawerSwipe.end"
+      @touchcancel="drawerSwipe.cancel"
+      @click.capture="drawerSwipe.click"
       aria-label="Navigation"
     >
       <div class="brand mb-3 shrink-0 flex items-center gap-2.5 px-2 text-2xl font-semibold">
@@ -1096,8 +1117,14 @@ onUnmounted(() => {
       </div>
     </aside>
     <div
-      v-if="drawer"
+      v-if="drawer || drawerSwipe.dragging.value"
       class="scrim fixed inset-0 z-10 bg-black/55 min-[701px]:hidden"
+      :style="drawerSwipe.scrimStyle.value"
+      @touchstart="drawerSwipe.start"
+      @touchmove="drawerSwipe.move"
+      @touchend="drawerSwipe.end"
+      @touchcancel="drawerSwipe.cancel"
+      @click.capture="drawerSwipe.click"
       @click="closeDrawer"
     />
     <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
@@ -1297,6 +1324,12 @@ onUnmounted(() => {
         </div>
       </div>
       <ChatInterface
+        ref="chatPlane"
+        @touchstart="drawerSwipe.start"
+        @touchmove="drawerSwipe.move"
+        @touchend="drawerSwipe.end"
+        @touchcancel="drawerSwipe.cancel"
+        @click.capture="drawerSwipe.click"
         :show-page="
           settingsPage ||
           scheduledPage ||
