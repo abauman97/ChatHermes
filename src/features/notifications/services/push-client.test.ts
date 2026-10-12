@@ -9,7 +9,7 @@ describe("mounted plugin session handshake", () => {
     expect(
       sessionMessage(
         { profile: "", session: "one", connected: true, chat: true },
-        "https://chat.test/chathermes?session=one",
+        "https://chat.test/chathermes?profile=default#/chat/one",
       ),
     ).toMatchObject({ profile: "default", session: "one", connected: true, visible: true });
     expect(
@@ -34,7 +34,7 @@ describe("mounted plugin session handshake", () => {
       expect(
         sessionMessage(
           { profile: "alpha", session: "one", connected: true, chat: true },
-          "https://chat.test/chathermes?profile=alpha&session=one",
+          "https://chat.test/chathermes?profile=alpha#/chat/one?profile=alpha",
         ),
       ).toMatchObject({ visible: false, connected: true });
     },
@@ -53,7 +53,7 @@ describe("mounted plugin session handshake", () => {
     const client = connectPushClient(
       sw,
       () => ({ profile: "alpha", session: "one", connected: true, chat: true }),
-      () => "https://chat.test/chathermes?profile=alpha&session=one",
+      () => "https://chat.test/chathermes?profile=alpha#/chat/one?profile=alpha",
     );
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
@@ -88,7 +88,7 @@ describe("mounted plugin session handshake", () => {
     const client = connectPushClient(
       sw,
       () => ({ profile: "alpha", session: "one", connected, chat: true }),
-      () => "https://chat.test/chathermes?profile=alpha&session=one",
+      () => "https://chat.test/chathermes?profile=alpha#/chat/one?profile=alpha",
     );
     connected = true;
     resolveReady({ active: { postMessage } });
@@ -128,7 +128,7 @@ describe("mounted plugin session handshake", () => {
     const client = connectPushClient(
       sw,
       () => ({ profile: "alpha", session: "one", connected: true, chat: true }),
-      () => "https://chat.test/chathermes?profile=alpha&session=one",
+      () => "https://chat.test/chathermes?profile=alpha#/chat/one?profile=alpha",
     );
     client.stop();
     resolveReady({ active: { postMessage } });

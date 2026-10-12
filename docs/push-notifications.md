@@ -51,7 +51,7 @@ or disable that profile if needed. The full serialized UTF-8 payload is bounded
 to 3000 bytes (below the encrypted Web Push record limit), truncating only the
 body at a Unicode code point boundary with an ellipsis. The worker preserves that
 body, with a defensive 3000-code-point cap. Tapping opens the existing
-`/chathermes?profile=…&session=…` route and native viewer recovery. The
+`/chathermes?profile=…#/chat/…?profile=…` route and native viewer recovery. The
 session ID is the stored dashboard session, even when Hermes resumes it under a
 different runtime alias. Native `message.complete` already maps to completion or
 attention; derived completion events do not schedule an additional push. The service

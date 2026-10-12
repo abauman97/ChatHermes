@@ -12,10 +12,10 @@ test("loaded Projects do not shift during background refreshes", async ({ page }
     const body = await response.json();
     await route.fulfill({ json: { ...body, features: { ...body.features, native_chat: false } } });
   });
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   await page.waitForURL((url) => url.pathname !== "/login");
   const plugin = page.locator(".chathermes-embedded");
-  await page.goto("/chathermes?view=projects");
+  await page.goto("/chathermes?profile=default#/projects");
   await expect(plugin.locator(".projects-page")).toBeVisible();
   const projects = plugin.locator(".projects-page");
   await expect(projects.getByRole("button", { name: "Hermes Mobile", exact: true })).toBeVisible();

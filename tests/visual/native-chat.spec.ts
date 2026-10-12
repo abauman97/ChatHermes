@@ -1,4 +1,4 @@
-import { signIn } from "./login";
+import { signIn, sessionFromUrl } from "./login";
 import { expect, test, type Page } from "@playwright/test";
 // Real authenticated plugin socket and runtime; never record ticket frames in traces.
 test.use({ trace: "off" });
@@ -141,7 +141,7 @@ test("native Other turn reload, second viewer, guidance, stop and persisted hist
     .getByRole("complementary", { name: "Navigation" })
     .getByRole("button", { name: "New chat", exact: true })
     .click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("session")).toBeTruthy();
+  await expect.poll(() => sessionFromUrl(page.url())).toBeTruthy();
   await expect(plugin.getByText("Loading conversation…", { exact: true })).toHaveCount(0);
   const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
   await composer.fill("Native recovery probe [hold-run] [long-run]");
@@ -164,7 +164,7 @@ test("native Other turn reload, second viewer, guidance, stop and persisted hist
   await composer.fill("editable draft");
   await expect(composer).toHaveValue("editable draft");
   const url = page.url();
-  expect(new URL(url).searchParams.get("session")).toBeTruthy();
+  expect(sessionFromUrl(url)).toBeTruthy();
   await page.reload();
   await expect(plugin.getByRole("button", { name: "Stop response" })).toBeVisible();
   await expect(plugin.locator(".message.user")).toHaveCount(1);

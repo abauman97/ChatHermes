@@ -11,9 +11,11 @@ let registrationPromise: Promise<ServiceWorkerRegistration> | undefined;
 
 export function notificationUrl(profile: string, session: string): string {
   const url = new URL("/chathermes", location.origin);
-  if (profile) url.searchParams.set("profile", profile);
-  url.searchParams.set("session", session);
-  return url.pathname + url.search;
+  url.searchParams.set("profile", profile || "default");
+  const query = new URLSearchParams(profile ? { profile } : {});
+  url.hash =
+    (session ? "/chat/" + encodeURIComponent(session) : "/") + (query.size ? "?" + query : "");
+  return url.pathname + url.search + url.hash;
 }
 
 export function supported(): boolean {

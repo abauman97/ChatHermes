@@ -26,9 +26,11 @@ describe("push support", () => {
     vi.stubGlobal("Notification", { permission: "default" });
     expect(supported()).toBe(false);
   });
-  it("builds deep links using the existing profile/session query contract", () => {
+  it("builds deep links using canonical chat hashes and the host profile query", () => {
     vi.stubGlobal("location", { origin: "https://chat.test" });
-    expect(notificationUrl("alpha", "sess_123")).toBe("/chathermes?profile=alpha&session=sess_123");
+    expect(notificationUrl("alpha", "sess_123")).toBe(
+      "/chathermes?profile=alpha#/chat/sess_123?profile=alpha",
+    );
   });
   it("shows server unavailability even when the config request succeeds", async () => {
     vi.stubGlobal("window", { isSecureContext: true, PushManager: class {} });

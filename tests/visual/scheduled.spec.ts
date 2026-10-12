@@ -11,7 +11,7 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
     await plugin.getByRole("button", { name: "Open navigation" }).click();
   await expect(plugin.locator(".projects-nav").first()).toHaveText("Projects");
   await expect(plugin.locator(".scheduled-nav")).toHaveText("Scheduled");
-  await plugin.getByRole("button", { name: "Scheduled", exact: true }).click();
+  await plugin.getByRole("link", { name: "Scheduled", exact: true }).click();
   await expect(plugin.getByRole("navigation", { name: "Scheduled jobs" })).toContainText(
     "Security Audit",
   );
@@ -33,7 +33,7 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
     .click();
   const runs = plugin.getByRole("navigation", { name: "Job runs" }).getByRole("button");
   await expect(runs).toHaveCount(30);
-  const jobId = new URL(page.url()).searchParams.get("job")!;
+  const jobId = decodeURIComponent(new URL(page.url()).hash.slice(1).split("?")[0].split("/")[2]!);
   const history = await (
     await page.request.get(
       "/api/plugins/chathermes/scheduled/runs?job_id=" + encodeURIComponent(jobId),
@@ -133,7 +133,7 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
   await expect(plugin.locator(".composer img")).toHaveCount(0);
   if (testInfo.project.name === "mobile")
     await plugin.getByRole("button", { name: "Open navigation" }).click();
-  await plugin.getByRole("button", { name: "Scheduled", exact: true }).click();
+  await plugin.getByRole("link", { name: "Scheduled", exact: true }).click();
   await plugin
     .getByRole("navigation", { name: "Scheduled jobs" })
     .getByRole("button", { name: /Security Audit/ })

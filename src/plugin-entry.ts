@@ -29,9 +29,19 @@ const pwaHeadTags = [
   ["meta", { name: "apple-mobile-web-app-capable", content: "yes" }],
   ["meta", { name: "apple-mobile-web-app-title", content: "ChatHermes" }],
 ] as const;
+// The host may hydrate its profile query before importing the plugin, dropping
+// the hash. Recover a document-entry hash once, never on subsequent host mounts.
+const documentEntry = performance.getEntriesByType("navigation")[0]?.name;
+let initialPluginUrl =
+  documentEntry &&
+  new URL(documentEntry).pathname === "/chathermes" &&
+  new URL(documentEntry).hash.startsWith("#/")
+    ? documentEntry
+    : undefined;
 function ChatHermesPlugin() {
   const element = React!.useRef(null);
   React!.useEffect(() => {
+    const initialUrl = initialPluginUrl;
     let disposed = false;
     const ownedHeadTags: HTMLElement[] = [];
     for (const [tagName, attributes] of pwaHeadTags) {
@@ -61,7 +71,8 @@ function ChatHermesPlugin() {
     void import(/* @vite-ignore */ appUrl)
       .then(({ createChatHermesApp }) => {
         if (disposed || !element.current) return;
-        app = createChatHermesApp();
+        initialPluginUrl = undefined;
+        app = createChatHermesApp(initialUrl);
         app!.mount(overlay);
       })
       .catch(() => {

@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vite-plus/test";
-import { flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { flushPromises, mount as vueMount } from "@vue/test-utils";
+import { createChatHermesRouter } from "../../../router";
+function routeUrl() {
+  return new URL(location.hash.slice(1) || "/", location.origin);
+}
+const mount: typeof vueMount = (component, options = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
+    },
+  });
 import ScheduledPage from "./ScheduledPage.vue";
 import { api } from "../../../services/hermes-api";
+beforeEach(() => history.replaceState({}, "", "/chathermes#/scheduled"));
 const job = { id: "audit", name: "Security Audit", state: "active" };
 const recent = { id: "cron_audit_20260102_000000", started_at: 200, ended_at: 210, source: "cron" };
 afterEach(() => {
@@ -39,6 +52,7 @@ it("filters jobs, pages history, renders real output and drafts a discussion", a
   await wrapper.get("select").setValue("active");
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
+  await flushPromises();
   expect(api.scheduledRuns).toHaveBeenCalledWith("beta", "audit", 0, expect.any(AbortSignal));
   vi.mocked(api.scheduledRuns).mockResolvedValue({
     runs: [{ ...recent, id: "old", started_at: 100 }],
@@ -51,16 +65,19 @@ it("filters jobs, pages history, renders real output and drafts a discussion", a
     .find((row) => row.text() === "Load older runs")!
     .trigger("click");
   await flushPromises();
+  await flushPromises();
   expect(api.scheduledRuns).toHaveBeenLastCalledWith("beta", "audit", 1, expect.any(AbortSignal));
   expect(wrapper.findAll(".scheduled-list button")).toHaveLength(2);
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
+  await flushPromises();
   expect(wrapper.get(".markdown-content h1").text()).toBe("Full audit");
-  expect(location.search).toContain("scheduled_run=");
+  expect(routeUrl().pathname).toContain("/scheduled/audit/cron_audit_");
   await wrapper
     .findAll("button")
     .find((row) => row.text() === "Open a chat about this run")!
     .trigger("click");
+  await flushPromises();
   expect(wrapper.emitted("discuss")![0]![0]).toContain("Job: Security Audit");
   expect(wrapper.emitted("discuss")![0]![0]).toContain("All clear");
   wrapper.unmount();
@@ -78,10 +95,13 @@ it("ignores late output after going back and aborts on unmount", async () => {
   await flushPromises();
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
+  await flushPromises();
   await wrapper.get(".scheduled-list button").trigger("click");
+  await flushPromises();
   await flushPromises();
   const signal = vi.mocked(api.scheduledOutput).mock.calls[0]![3]!;
   await wrapper.get(".project-back").trigger("click");
+  await flushPromises();
   finish({ messages: [{ role: "assistant", content: "stale" }] });
   await flushPromises();
   expect(signal.aborted).toBe(true);
@@ -96,6 +116,7 @@ it("handles unavailable history and retries", async () => {
   expect(wrapper.get('[role="alert"]').text()).not.toContain("internal");
   await wrapper.get('[role="alert"] button').trigger("click");
   await flushPromises();
+  await flushPromises();
   expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   expect(wrapper.text()).toContain("Security Audit");
   wrapper.unmount();
@@ -105,7 +126,7 @@ it("restores older output directly from a URL without requiring its history page
   history.replaceState(
     {},
     "",
-    "/chathermes?view=scheduled&job=audit&scheduled_run=output%3A2025-01-01_00-00-00",
+    "/chathermes?profile=default#/scheduled/audit/output%3A2025-01-01_00-00-00",
   );
   vi.mocked(api.scheduledOutput).mockResolvedValue({
     messages: [],

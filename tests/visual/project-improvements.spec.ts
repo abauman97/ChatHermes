@@ -9,7 +9,7 @@ test("project header, menus, details and workspace instructions", async ({ page 
     "/api/plugins/chathermes/project-instructions?project_id=hermes-mobile",
   );
   expect(unauthorized.status()).toBe(401);
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   const options = plugin.getByRole("button", { name: "Screen options", exact: true });
   const title = plugin.locator(".topbar h1");

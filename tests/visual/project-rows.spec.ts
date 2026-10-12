@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./login";
+import { signIn, pluginRouteUrl } from "./login";
 
 test("compact project list and plain project chats retain keyboard and menu access", async ({
   page,
@@ -7,7 +7,7 @@ test("compact project list and plain project chats retain keyboard and menu acce
   await page.setViewportSize(
     testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1280, height: 900 },
   );
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   const projects = plugin.locator(".project-list");
   await expect(plugin.getByRole("button", { name: "New project", exact: true })).toBeVisible();
@@ -89,13 +89,13 @@ test("project menu creates an authenticated scoped chat", async ({ page }, testI
   await page.setViewportSize(
     testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1280, height: 900 },
   );
-  await signIn(page, "/chathermes?view=projects");
+  await signIn(page, "/chathermes?profile=default#/projects");
   const plugin = page.locator(".chathermes-embedded");
   await plugin
     .locator(".project-list")
     .getByRole("button", { name: "Hermes Mobile", exact: true })
     .click();
-  const projectId = new URL(page.url()).searchParams.get("project");
+  const projectId = pluginRouteUrl(page.url()).searchParams.get("project");
   await plugin.getByRole("button", { name: "Screen options", exact: true }).click();
   const created = page.waitForResponse(
     (r) => r.url().includes("/projects/session?") && r.request().method() === "POST",
@@ -104,7 +104,7 @@ test("project menu creates an authenticated scoped chat", async ({ page }, testI
   const response = await created;
   expect(response.status()).toBe(201);
   expect((await response.json()).session.cwd).toBe("/tmp/chathermes-issue7-runtime/workspace-a");
-  expect(new URL(page.url()).searchParams.get("project")).toBe(projectId);
+  expect(pluginRouteUrl(page.url()).searchParams.get("project")).toBe(projectId);
   const prompt = plugin.getByRole("textbox", { name: "Message Hermes" });
   await prompt.click();
   await expect(prompt).toBeFocused();

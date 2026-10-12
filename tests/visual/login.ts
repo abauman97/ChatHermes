@@ -26,10 +26,24 @@ export async function signIn(page: Page, next = "/chathermes") {
     cookies = await page.context().cookies();
   }
   await ready;
-  if (next.startsWith("/chathermes"))
+  const destination = new URL(next, "http://plugin.test");
+  const hashPath = destination.hash.slice(1).split("?")[0];
+  const chatDestination = !hashPath || hashPath === "/" || hashPath.startsWith("/chat/");
+  if (next.startsWith("/chathermes") && chatDestination)
     await expect(
       page
         .locator(".chathermes-embedded")
         .getByRole("button", { name: "Choose model", exact: true }),
     ).toBeEnabled();
+}
+
+export function pluginRouteUrl(value: string) {
+  const url = new URL(value);
+  return new URL(url.hash.slice(1) || "/", url.origin);
+}
+export function sessionFromUrl(value: string) {
+  const url = pluginRouteUrl(value);
+  return url.pathname.startsWith("/chat/")
+    ? decodeURIComponent(url.pathname.slice(6))
+    : url.searchParams.get("session");
 }

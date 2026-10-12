@@ -1,6 +1,28 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount as vueMount } from "@vue/test-utils";
+import { createChatHermesRouter } from "./router";
+function routeUrl() {
+  return new URL(location.hash.slice(1) || "/", location.origin);
+}
+function routeSession() {
+  return routeUrl().pathname.startsWith("/chat/")
+    ? decodeURIComponent(routeUrl().pathname.slice(6))
+    : routeUrl().searchParams.get("session");
+}
+function routeProject() {
+  return (
+    /^\/projects\/([^/]+)/.exec(routeUrl().pathname)?.[1] || routeUrl().searchParams.get("project")
+  );
+}
+const mount: typeof vueMount = (component, options = {}) =>
+  vueMount(component, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
+    },
+  });
 import App from "./App.vue";
 import * as nativeSession from "./features/chat/runtime/native-session";
 import { api } from "./services/hermes-api";
@@ -118,25 +140,32 @@ describe("authoritative gateway Projects", () => {
           projects: [{ ...a, repos: [], previewSessions: [], sessionIds: ["project_s1"] }, b, home],
           scoped_session_ids: ["project_s1"],
         });
-      history.replaceState({}, "", "/chathermes?profile=alpha&project=p_b");
+      history.replaceState(
+        {},
+        "",
+        "/chathermes?profile=alpha#/projects/p_b?profile=alpha&project=p_b",
+      );
       const wrapper = mount(App);
       await flushPromises();
       await wrapper.get(".session-select").trigger("click");
       await flushPromises();
+      await flushPromises();
       // Same cwd does not imply membership; an ungrouped chat clears the old scope.
-      expect(location.search).not.toContain("project=");
+      expect(routeUrl().search).not.toContain("project=");
       await wrapper.findAll(".session-select")[1]!.trigger("click");
       await flushPromises();
-      expect(location.search).toContain("project=p_a");
-      expect(location.search).toContain("session=project_s1");
-      expect(location.search).toContain("profile=alpha");
-      expect(location.search).not.toContain("view=project");
+      await flushPromises();
+      expect(routeUrl().search).toContain("project=p_a");
+      expect(location.hash).toContain("/chat/project_s1");
+      expect(routeUrl().search).toContain("profile=alpha");
+      expect(routeUrl().search).not.toContain("view=project");
       expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false);
       expect(wrapper.text()).toContain("Native chat history");
       expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
       expect(api.isWorkspace("alpha", "project_s1")).toBe(true);
       await wrapper.get("textarea").setValue("Continue in this project");
       await wrapper.get("form").trigger("submit");
+      await flushPromises();
       await flushPromises();
       expect(nativeOwner.submit).toHaveBeenCalledWith(
         "Continue in this project",
@@ -146,8 +175,9 @@ describe("authoritative gateway Projects", () => {
       );
       await wrapper.get(".session-select").trigger("click");
       await flushPromises();
-      expect(location.search).not.toContain("project=");
-      expect(location.search).toContain("session=s1");
+      await flushPromises();
+      expect(routeUrl().search).not.toContain("project=");
+      expect(location.hash).toContain("/chat/s1");
       wrapper.unmount();
     },
   );
@@ -164,10 +194,11 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await wrapper.findAll(".session-select")[1]!.trigger("click");
     await flushPromises();
+    await flushPromises();
     finish({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
-    expect(location.search).toContain("project=p_a");
-    expect(location.search).toContain("session=project_s1");
+    expect(routeUrl().search).toContain("project=p_a");
+    expect(location.hash).toContain("/chat/project_s1");
     wrapper.unmount();
   });
   it("ignores a pending drawer resume when the profile changes", async () => {
@@ -183,12 +214,13 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await wrapper.findAll(".session-select")[1]!.trigger("click");
     await flushPromises();
+    await flushPromises();
     const oldRead = finish;
     await wrapper.get("#profile-field").setValue("beta");
     await flushPromises();
     oldRead({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
-    expect(location.search).toBe("?profile=beta");
+    expect(routeUrl().search).toBe("?profile=beta");
     expect(wrapper.text()).not.toContain("Native chat history");
     wrapper.unmount();
   });
@@ -205,13 +237,15 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await wrapper.findAll(".session-select")[1]!.trigger("click");
     await flushPromises();
+    await flushPromises();
     await wrapper.get(".session-select").trigger("click");
+    await flushPromises();
     await flushPromises();
     reads.at(-1)!({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
     reads.at(-2)!({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
-    expect(location.search).toBe("?session=s1");
+    expect(location.hash).toBe("#/chat/s1");
     wrapper.unmount();
   });
   it.each([
@@ -231,7 +265,7 @@ describe("authoritative gateway Projects", () => {
           finish = resolve;
         }),
     );
-    history.replaceState({}, "", "/chathermes?view=projects");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.get('.projects-page [role="status"]').text()).toBe("Loading Projects…");
@@ -249,7 +283,9 @@ describe("authoritative gateway Projects", () => {
     finish({ projects: rows, scoped_session_ids: [] });
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper.get('[role="menuitemradio"][aria-checked="false"]').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.text()).toContain("No archived projects.");
     expect(wrapper.find('.projects-page [role="status"]').exists()).toBe(false);
@@ -258,6 +294,7 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get("#profile-field").setValue("beta");
     await flushPromises();
     await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.get('.projects-page [role="status"]').text()).toBe("Loading Projects…");
     expect(wrapper.find('[aria-label="Project A"]').exists()).toBe(false);
@@ -269,7 +306,7 @@ describe("authoritative gateway Projects", () => {
   it("keeps initial loading on retry until Projects have loaded successfully", async () => {
     setup();
     const read = vi.spyOn(api, "projects").mockRejectedValue(new Error("Unavailable"));
-    history.replaceState({}, "", "/chathermes?view=projects");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.get('.projects-page [role="alert"]').text()).toContain(
@@ -283,6 +320,7 @@ describe("authoritative gateway Projects", () => {
         }),
     );
     await wrapper.get('.projects-page [role="alert"] button').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.get('.projects-page [role="status"]').text()).toBe("Loading Projects…");
     finish({ projects: [], scoped_session_ids: [] });
@@ -305,7 +343,7 @@ describe("authoritative gateway Projects", () => {
           finish = resolve;
         }),
     );
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.get('[aria-label="Selected Project"] [role="status"]').text()).toBe(
@@ -332,10 +370,12 @@ describe("authoritative gateway Projects", () => {
     expect(wrapper.find(".drawer-account #profile-field").exists()).toBe(true);
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Automatic repo");
     expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain("Home");
     expect(wrapper.get('[aria-label="Sessions"]').text()).toContain("Ungrouped");
     await wrapper.get('[aria-label="Project A"]').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain("Native worktree chat");
     expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
@@ -344,9 +384,10 @@ describe("authoritative gateway Projects", () => {
       .find((button) => button.attributes("aria-label") === "Native worktree chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(wrapper.text()).toContain("Native chat history");
-    expect(location.search).toContain("project=p_a");
-    expect(location.search).toContain("session=project_s1");
+    expect(routeUrl().search).toContain("project=p_a");
+    expect(location.hash).toContain("/chat/project_s1");
     expect(api.isWorkspace("", "project_s1")).toBe(true);
     expect(
       fetch.mock.calls.some(([url]) => url.includes("/api/sessions/project_s1/messages")),
@@ -355,23 +396,25 @@ describe("authoritative gateway Projects", () => {
     wrapper.unmount();
   });
   it("retains a workspace project chat context when browsing a separate project", async () => {
-    history.replaceState({}, "", "/chathermes?project=p_a&session=project_s1");
+    history.replaceState({}, "", "/chathermes?profile=default#/chat/project_s1?project=p_a");
     const fetch = setup();
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
+    await flushPromises();
     await wrapper.get('[aria-label="Project B"]').trigger("click");
     await flushPromises();
-    expect(location.search).toContain("session=project_s1");
-    expect(location.search).toContain("project=p_b");
+    await flushPromises();
+    expect(routeSession()).toBe("project_s1");
+    expect(routeProject()).toBe("p_b");
     expect(wrapper.get(".header-project-subtitle").text()).toBe("Project B");
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     wrapper.unmount();
   });
   it("shows plain project chat rows with only supplied previews and keeps creation in the menu", async () => {
     setup();
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App);
     await flushPromises();
     const home = wrapper.get('[aria-label="Selected Project"]');
@@ -382,7 +425,8 @@ describe("authoritative gateway Projects", () => {
     expect(row.get(".project-chat-preview").text()).toBe("Actual workspace preview");
     await row.trigger("click");
     await flushPromises();
-    expect(location.search).toContain("session=project_s1");
+    await flushPromises();
+    expect(location.hash).toContain("/chat/project_s1");
     wrapper.unmount();
     setup(async () =>
       json({
@@ -403,22 +447,30 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await titlesOnly.get(".projects-nav").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(titlesOnly.get(".projects-page").text()).toContain("New project");
     await titlesOnly.get('[aria-label="Project A"]').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(titlesOnly.get(".project-chat-title").text()).toBe("Untitled session");
     expect(titlesOnly.find(".project-chat-preview").exists()).toBe(false);
     titlesOnly.unmount();
   });
   it("creates a scoped chat and uses the existing composer/runtime interface", async () => {
-    history.replaceState({}, "", "/chathermes?profile=alpha&project=p_a");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/projects/p_a?profile=alpha&project=p_a",
+    );
     const fetch = setup();
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper.get('[role="menuitem"]').trigger("click");
     await flushPromises();
-    expect(location.search).toContain("session=project_created");
+    await flushPromises();
+    expect(location.hash).toContain("/chat/project_created");
     expect(
       fetch.mock.calls.find(
         ([url, init]) =>
@@ -433,6 +485,7 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get("textarea").setValue("Check this workspace");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
+    await flushPromises();
     expect(nativeOwner.submit).toHaveBeenCalledWith(
       "Check this workspace",
       expect.any(Function),
@@ -441,60 +494,64 @@ describe("authoritative gateway Projects", () => {
     );
     wrapper.unmount();
   });
-  it.each(["", "&session=project_s1", "&view=project-edit", "&view=project-instructions"])(
-    "creates a fresh project chat from active context %s",
-    async (context) => {
-      setup();
-      history.replaceState({}, "", "/chathermes?profile=alpha&project=p_a" + context);
-      const create = vi.spyOn(api, "projectCreate"),
-        unscoped = vi.spyOn(api, "create");
-      const wrapper = mount(App);
-      await flushPromises();
-      if (context === "&session=project_s1") {
-        expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false);
-        expect(new URLSearchParams(location.search).get("session")).toBe("project_s1");
-      }
-      await wrapper.get('[aria-label="Screen options"]').trigger("click");
-      const menu = wrapper.get('[role="menu"]');
-      expect(
-        menu.findAll('[role="menuitem"]').filter((button) => button.text() === "New chat"),
-      ).toHaveLength(1);
-      const action = menu
-        .findAll('[role="menuitem"]')
-        .find((button) => button.text() === "New Project Chat")!;
-      expect(action).toBeDefined();
-      expect(action.attributes("disabled")).toBeUndefined();
-      await action.trigger("click");
-      await flushPromises();
-      expect(create).toHaveBeenCalledExactlyOnceWith("alpha", "p_a");
-      expect(unscoped).not.toHaveBeenCalled();
-      expect(new URLSearchParams(location.search).get("project")).toBe("p_a");
-      expect(new URLSearchParams(location.search).get("session")).toBe("project_created");
-      expect(new URLSearchParams(location.search).get("session")).not.toBe("project_s1");
-      expect(new URLSearchParams(location.search).has("view")).toBe(false);
-      expect(wrapper.find('[role="menu"]').exists()).toBe(false);
-      expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
-      wrapper.unmount();
-    },
-  );
   it.each([
-    "",
-    "?session=s1",
-    "?session=project_s1",
-    "?view=projects",
-    "?view=scheduled",
-    "?project=p_a&session=project_s1&view=projects",
-    "?project=p_a&session=project_s1&view=scheduled",
-    "?project=home",
-    "?project=home&session=s1",
-    "?project=p_missing",
-    "?project=p_missing&session=project_s1",
+    "/projects/p_a?profile=alpha",
+    "/chat/project_s1?profile=alpha&project=p_a",
+    "/projects/p_a/settings?profile=alpha",
+    "/projects/p_a/instructions?profile=alpha",
+  ])("creates a fresh project chat from active context %s", async (context) => {
+    setup();
+    history.replaceState({}, "", "/chathermes?profile=alpha#" + context);
+    const create = vi.spyOn(api, "projectCreate"),
+      unscoped = vi.spyOn(api, "create");
+    const wrapper = mount(App);
+    await flushPromises();
+    if (context.startsWith("/chat/")) {
+      expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false);
+      expect(routeSession()).toBe("project_s1");
+    }
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
+    const menu = wrapper.get('[role="menu"]');
+    expect(
+      menu.findAll('[role="menuitem"]').filter((button) => button.text() === "New chat"),
+    ).toHaveLength(1);
+    const action = menu
+      .findAll('[role="menuitem"]')
+      .find((button) => button.text() === "New Project Chat")!;
+    expect(action).toBeDefined();
+    expect(action.attributes("disabled")).toBeUndefined();
+    await action.trigger("click");
+    await flushPromises();
+    await flushPromises();
+    expect(create).toHaveBeenCalledExactlyOnceWith("alpha", "p_a");
+    expect(unscoped).not.toHaveBeenCalled();
+    expect(routeProject()).toBe("p_a");
+    expect(routeSession()).toBe("project_created");
+    expect(routeSession()).not.toBe("project_s1");
+    expect(new URLSearchParams(routeUrl().search).has("view")).toBe(false);
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
+    wrapper.unmount();
+  });
+  it.each([
+    "/",
+    "/chat/s1",
+    "/projects",
+    "/scheduled",
+    "/projects?project=p_a&session=project_s1",
+    "/scheduled?project=p_a&session=project_s1",
+    "/projects/home",
+    "/chat/s1?project=home",
+    "/projects/p_missing",
+    "/chat/project_s1?project=p_missing",
   ])("hides New Project Chat outside project context: %s", async (query) => {
     setup();
-    history.replaceState({}, "", "/chathermes" + query);
+    history.replaceState({}, "", "/chathermes?profile=default#" + query);
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     expect(wrapper.get('[role="menu"]').text()).not.toContain("New Project Chat");
     wrapper.unmount();
   });
@@ -502,12 +559,14 @@ describe("authoritative gateway Projects", () => {
     "hides New Project Chat after leaving a selected project through %s",
     async (selector) => {
       setup();
-      history.replaceState({}, "", "/chathermes?project=p_a&session=project_s1");
+      history.replaceState({}, "", "/chathermes?profile=default#/chat/project_s1?project=p_a");
       const wrapper = mount(App);
       await flushPromises();
       await wrapper.get(selector).trigger("click");
       await flushPromises();
+      await flushPromises();
       await wrapper.get('[aria-label="Screen options"]').trigger("click");
+      await flushPromises();
       expect(wrapper.get('[role="menu"]').text()).not.toContain("New Project Chat");
       wrapper.unmount();
     },
@@ -518,7 +577,11 @@ describe("authoritative gateway Projects", () => {
       setup(async () =>
         json({ project: state === "pathless" ? b : { ...a, archived: state === "archived" } }),
       );
-      history.replaceState({}, "", "/chathermes?project=" + (state === "pathless" ? "p_b" : "p_a"));
+      history.replaceState(
+        {},
+        "",
+        "/chathermes?profile=default#/projects/" + (state === "pathless" ? "p_b" : "p_a"),
+      );
       const create = vi.spyOn(api, "projectCreate");
       const wrapper = mount(App);
       await flushPromises();
@@ -528,11 +591,13 @@ describe("authoritative gateway Projects", () => {
         await flushPromises();
       }
       await wrapper.get('[aria-label="Screen options"]').trigger("click");
+      await flushPromises();
       const action = wrapper
         .findAll('[role="menuitem"]')
         .find((button) => button.text() === "New Project Chat")!;
       expect(action.attributes("disabled")).toBeDefined();
       await action.trigger("click");
+      await flushPromises();
       await flushPromises();
       expect(create).not.toHaveBeenCalled();
       wrapper.unmount();
@@ -540,21 +605,27 @@ describe("authoritative gateway Projects", () => {
   );
   it("preserves the unscoped New chat action from an open project chat", async () => {
     setup();
-    history.replaceState({}, "", "/chathermes?profile=alpha&project=p_a&session=project_s1");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/chat/project_s1?profile=alpha&project=p_a",
+    );
     const create = vi.spyOn(api, "create"),
       scoped = vi.spyOn(api, "projectCreate");
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "New chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(create).toHaveBeenCalledExactlyOnceWith("alpha");
     expect(scoped).not.toHaveBeenCalled();
-    expect(new URLSearchParams(location.search).get("session")).toBe("other_created");
-    expect(new URLSearchParams(location.search).has("project")).toBe(false);
+    expect(routeSession()).toBe("other_created");
+    expect(new URLSearchParams(routeUrl().search).has("project")).toBe(false);
     wrapper.unmount();
   });
   it("attaches a native draft separately from the metadata event subscription", async () => {
@@ -562,11 +633,17 @@ describe("authoritative gateway Projects", () => {
     const close = vi.fn();
     const events = vi.spyOn(api, "projectEvents").mockReturnValue(close);
     setup();
-    history.replaceState({}, "", "/chathermes?profile=alpha&project=p_a");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/projects/p_a?profile=alpha&project=p_a",
+    );
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper.get('[role="menuitem"]').trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(events).toHaveBeenLastCalledWith("alpha", expect.any(Function));
     expect(nativeOwner.attach).toHaveBeenCalledWith("alpha", "project_created");
@@ -582,16 +659,23 @@ describe("authoritative gateway Projects", () => {
           finish = resolve;
         }),
     );
-    history.replaceState({}, "", "/chathermes?profile=alpha&project=p_a");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/projects/p_a?profile=alpha&project=p_a",
+    );
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "New Project Chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     expect(
       wrapper
         .findAll('[role="menuitem"]')
@@ -603,8 +687,8 @@ describe("authoritative gateway Projects", () => {
     finish({ id: "late_project_session" });
     await flushPromises();
     expect(create).toHaveBeenCalledWith("alpha", "p_a");
-    expect(location.search).toContain("profile=beta");
-    expect(location.search).not.toContain("late_project_session");
+    expect(routeUrl().search).toContain("profile=beta");
+    expect(routeUrl().search).not.toContain("late_project_session");
     wrapper.unmount();
   });
   it("ignores late creation after changing Project scope", async () => {
@@ -616,27 +700,35 @@ describe("authoritative gateway Projects", () => {
           finish = resolve;
         }),
     );
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "New Project Chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
     await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
     await flushPromises();
     await wrapper.get('[aria-label="Project B"]').trigger("click");
     await flushPromises();
+    await flushPromises();
     finish({ id: "late_other_scope" });
     await flushPromises();
-    expect(location.search).toContain("project=p_b");
-    expect(location.search).not.toContain("session=");
+    expect(routeUrl().search).toContain("project=p_b");
+    expect(routeUrl().search).not.toContain("session=");
     wrapper.unmount();
   });
   it("restores Project scope with a session and browser navigation", async () => {
-    history.replaceState({}, "", "/chathermes?project=p_a&session=project_s1&profile=alpha");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/chat/project_s1?profile=alpha&project=p_a",
+    );
     setup();
     let wrapper = mount(App);
     await flushPromises();
@@ -644,17 +736,18 @@ describe("authoritative gateway Projects", () => {
     wrapper.unmount();
     wrapper = mount(App);
     await flushPromises();
-    expect(location.search).toContain("project=p_a");
-    history.pushState({}, "", "/chathermes?project=p_b");
+    expect(routeUrl().search).toContain("project=p_a");
+    history.pushState({}, "", "/chathermes?profile=default#/projects/p_b?project=p_b");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
     expect(wrapper.get(".topbar h1").text()).toBe("Project B");
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     expect(wrapper.get('[role="menuitem"]').attributes("disabled")).toBeDefined();
     wrapper.unmount();
   });
   it("surfaces deleted/failed Projects and ignores cancelled late reads", async () => {
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     setup(async () => json({}, 404));
     let wrapper = mount(App);
     await flushPromises();
@@ -671,6 +764,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await wrapper.get(".sidebar > button").trigger("click");
     await flushPromises();
+    await flushPromises();
     finish(json({ project: a }));
     await flushPromises();
     expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false);
@@ -685,7 +779,11 @@ describe("authoritative gateway Projects", () => {
       return close;
     });
     const fetch = setup();
-    history.replaceState({}, "", "/chathermes?project=p_a&profile=alpha");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/projects/p_a?profile=alpha&project=p_a",
+    );
     const wrapper = mount(App);
     await flushPromises();
     const before = fetch.mock.calls.length;
@@ -706,7 +804,7 @@ describe("authoritative gateway Projects", () => {
   });
   it("uses project names in the header subtitle and composer in home and chat views", async () => {
     setup();
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.get(".topbar h1").text()).toBe("Project A");
@@ -718,39 +816,46 @@ describe("authoritative gateway Projects", () => {
       .find((button) => button.attributes("aria-label") === "Native worktree chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(wrapper.get(".topbar h1").text()).toBe("Native worktree chat");
     expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
     expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
     await wrapper.get(".drawer-chat").trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Hermes…");
     wrapper.unmount();
   });
   it("moves project editing and deletion to the screen menu and restores editor URLs", async () => {
     setup();
-    history.replaceState({}, "", "/chathermes?project=p_a");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     const edit = wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "Edit project")!;
     await edit.trigger("click");
     await flushPromises();
-    expect(location.search).toContain("view=project-edit");
+    await flushPromises();
+    expect(routeUrl().pathname).toBe("/projects/p_a/settings");
     expect(wrapper.get('[aria-label="Edit project"] input').element).toHaveProperty(
       "value",
       "Project A",
     );
     expect(wrapper.find('[aria-label="Selected Project"]').exists()).toBe(false);
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "Delete project")!
       .trigger("click");
+    await flushPromises();
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("Files and chats will be kept.");
     expect(wrapper.get('[role="alertdialog"] button').element).toBe(document.activeElement);
     await wrapper.get('[role="alertdialog"] button').trigger("click");
+    await flushPromises();
     expect(wrapper.find('[role="alertdialog"]').exists()).toBe(false);
     wrapper.unmount();
     const restored = mount(App);
@@ -776,7 +881,7 @@ describe("authoritative gateway Projects", () => {
     history.replaceState(
       {},
       "",
-      "/chathermes?profile=alpha&project=p_a&view=project-instructions&session=project_s1",
+      "/chathermes?profile=alpha#/projects/p_a/instructions?profile=alpha&session=project_s1&project=p_a",
     );
     const wrapper = mount(App);
     await flushPromises();
@@ -788,6 +893,7 @@ describe("authoritative gateway Projects", () => {
     ).toBeDefined();
     await editor.get("textarea").setValue("Follow project conventions");
     await editor.get("form").trigger("submit");
+    await flushPromises();
     await flushPromises();
     expect(save).toHaveBeenCalledWith("alpha", "p_a", {
       filename: ".hermes.md",
@@ -803,19 +909,26 @@ describe("authoritative gateway Projects", () => {
   it("deletes only after confirmation and uses the current project and profile", async () => {
     setup();
     const manage = vi.spyOn(api, "projectManage").mockResolvedValue({});
-    history.replaceState({}, "", "/chathermes?project=p_a&profile=alpha");
+    history.replaceState(
+      {},
+      "",
+      "/chathermes?profile=alpha#/projects/p_a?profile=alpha&project=p_a",
+    );
     const wrapper = mount(App);
     await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await flushPromises();
     await wrapper
       .findAll('[role="menuitem"]')
       .find((button) => button.text() === "Delete project")!
       .trigger("click");
+    await flushPromises();
     expect(manage).not.toHaveBeenCalled();
     await wrapper
       .findAll('[role="alertdialog"] button')
       .find((button) => button.text() === "Delete project permanently")!
       .trigger("click");
+    await flushPromises();
     await flushPromises();
     expect(manage).toHaveBeenCalledWith("alpha", "delete", { id: "p_a" });
     expect(wrapper.find(".projects-page").exists()).toBe(true);
@@ -823,15 +936,16 @@ describe("authoritative gateway Projects", () => {
   });
   it("defaults to active projects when returning from the archived filter", async () => {
     setup();
-    history.replaceState({}, "", "/chathermes?view=projects&archived=1");
+    history.replaceState({}, "", "/chathermes?profile=default#/projects?archived=1");
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.text()).toContain("No archived projects.");
     expect(wrapper.find(".project-tabs").exists()).toBe(false);
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
+    await flushPromises();
     expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Project A");
-    expect(location.search).not.toContain("archived=1");
+    expect(routeUrl().search).not.toContain("archived=1");
     wrapper.unmount();
   });
   it("uses Project path then first repository path; keeps hierarchy and deduplicates UI rows", () => {
@@ -856,4 +970,25 @@ describe("authoritative gateway Projects", () => {
     await expect(api.messages("beta", "project_created")).rejects.toMatchObject({ status: 404 });
     expect(fetch.mock.calls.at(-1)?.[0]).toContain("/api/sessions/project_created/messages");
   });
+});
+
+it("restores canonical session membership without a project hint", async () => {
+  setup();
+  history.replaceState({}, "", "/chathermes?profile=alpha#/chat/project_s1?profile=alpha");
+  const wrapper = mount(App);
+  await flushPromises();
+  expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
+  expect(nativeOwner.attach).toHaveBeenCalledExactlyOnceWith("alpha", "project_s1");
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.get('[role="menu"]').text()).toContain("New Project Chat");
+  wrapper.unmount();
+});
+it("opens an automatic project whose gateway ID is a filesystem path", async () => {
+  setup();
+  history.replaceState({}, "", "/chathermes?profile=alpha#/projects/%2Fauto%2Frepo?profile=alpha");
+  const wrapper = mount(App);
+  await flushPromises();
+  expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain("/auto/repo");
+  expect(nativeOwner.attach).not.toHaveBeenCalled();
+  wrapper.unmount();
 });

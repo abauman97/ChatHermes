@@ -25,16 +25,14 @@ function currentSession(client) {
 function routeSession(value) {
   try {
     const url = new URL(value);
-    if (
-      url.origin !== self.location.origin ||
-      url.pathname !== APP_URL ||
-      url.searchParams.has("view") ||
-      url.searchParams.getAll("profile").length > 1 ||
-      url.searchParams.getAll("session").length !== 1
-    )
-      return null;
-    const profile = url.searchParams.get("profile") || "default",
-      session = url.searchParams.get("session");
+    if (url.origin !== self.location.origin || url.pathname !== APP_URL) return null;
+    if (!url.hash.startsWith("#/")) return null;
+    const hash = new URL(url.hash.slice(1), self.location.origin);
+    const match = /^\/chat\/([^/]+)$/.exec(hash.pathname);
+    if (!match || hash.searchParams.getAll("profile").length > 1) return null;
+    const params = hash.searchParams,
+      session = decodeURIComponent(match[1]);
+    const profile = params.get("profile") || "default";
     if (
       !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(profile) ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(session)
@@ -47,7 +45,12 @@ function routeSession(value) {
 }
 
 function visibleSession(data) {
-  if (data?.type !== "chathermes.session" || data.connected !== true || data.visible !== true || typeof data.url !== "string")
+  if (
+    data?.type !== "chathermes.session" ||
+    data.connected !== true ||
+    data.visible !== true ||
+    typeof data.url !== "string"
+  )
     return null;
   const route = routeSession(data.url);
   return route && route.profile === data.profile && route.session === data.session ? route : null;
@@ -161,8 +164,10 @@ self.addEventListener("push", (event) => {
       : "";
   if (!session && data.type !== "test") return;
   const url = new URL(APP_URL, self.location.origin);
-  if (profile) url.searchParams.set("profile", profile);
-  if (session) url.searchParams.set("session", session);
+  url.searchParams.set("profile", profile || "default");
+  const query = new URLSearchParams(profile ? { profile } : {});
+  url.hash =
+    (session ? "/chat/" + encodeURIComponent(session) : "/") + (query.size ? "?" + query : "");
   event.waitUntil(
     enqueue(async () => {
       if (data.type !== "test" && profile) {
@@ -185,7 +190,12 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   // Keep the notification until the destination session is visible.
   const target = new URL(event.notification.data?.url || APP_URL, self.location.origin);
-  if (target.origin !== self.location.origin || target.pathname !== APP_URL) return;
+  if (
+    target.origin !== self.location.origin ||
+    target.pathname !== APP_URL ||
+    !target.hash.startsWith("#/")
+  )
+    return;
   event.waitUntil(
     (async () => {
       const clients = await windowClients();
