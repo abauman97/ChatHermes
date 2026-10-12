@@ -1336,3 +1336,202 @@ it("switches an already-open viewer for canonical notification links and ignores
   expect(nativeSession.useNativeSession).toHaveBeenCalledOnce();
   wrapper.unmount();
 });
+
+describe("local mobile drawer swipes", () => {
+  let wrapper: ReturnType<typeof mount>;
+  let clock = 0;
+  beforeEach(async () => {
+    clock = 0;
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    mockFetch(async () => json({ sessions: [], total: 0 }));
+    wrapper = mount(App);
+    await flushPromises();
+    vi.spyOn(wrapper.get(".sidebar").element, "getBoundingClientRect").mockReturnValue({
+      width: 300,
+    } as DOMRect);
+    vi.spyOn(wrapper.get(".transcript").element, "getBoundingClientRect").mockReturnValue({
+      top: 68,
+      bottom: 600,
+    } as DOMRect);
+  });
+  afterEach(() => wrapper.unmount());
+  async function touch(
+    target: Element,
+    type: string,
+    x: number,
+    y = 200,
+    elapsed = 100,
+    count = 1,
+  ) {
+    clock += elapsed;
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    const touches = Array.from({ length: count }, (_, identifier) => ({
+      identifier,
+      clientX: x,
+      clientY: y,
+    }));
+    Object.defineProperties(event, {
+      touches: { value: type === "touchend" ? [] : touches },
+      changedTouches: { value: touches },
+      timeStamp: { value: clock },
+    });
+    target.dispatchEvent(event);
+    await flushPromises();
+    return event;
+  }
+  const opened = () => wrapper.get(".mobile-menu").attributes("aria-expanded") === "true";
+  async function swipe(target: Element, start: number, end: number, elapsed = 400) {
+    await touch(target, "touchstart", start);
+    await touch(target, "touchmove", end, 200, elapsed);
+    await touch(target, "touchend", end);
+  }
+
+  it("tracks the finger, snaps by distance, and closes on a left drawer swipe", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    await touch(transcript, "touchstart", 80);
+    expect(wrapper.find(".scrim").exists()).toBe(false);
+    const move = await touch(transcript, "touchmove", 200, 205, 400);
+    expect(move.defaultPrevented).toBe(true);
+    expect(wrapper.get(".sidebar").attributes("style")).toContain("translate: -180px 0");
+    expect(wrapper.get(".scrim").attributes("style")).toContain("opacity: 0.4");
+    expect(opened()).toBe(false);
+    await touch(transcript, "touchend", 200);
+    expect(opened()).toBe(true);
+    expect(wrapper.get(".sidebar").attributes("style") || "").not.toContain("translate:");
+    await swipe(wrapper.get(".brand").element, 240, 100);
+    expect(opened()).toBe(false);
+  });
+
+  it("snaps short slow drags back and accepts a short fast flick", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    await swipe(transcript, 80, 130);
+    expect(opened()).toBe(false);
+    expect(wrapper.find(".scrim").exists()).toBe(false);
+    await swipe(transcript, 80, 130, 40);
+    expect(opened()).toBe(true);
+    await swipe(wrapper.get(".brand").element, 240, 210);
+    expect(opened()).toBe(true);
+    await swipe(wrapper.get(".brand").element, 240, 210, 30);
+    expect(opened()).toBe(false);
+  });
+
+  it("abandons vertical, wrong-direction, cancelled, and multitouch contacts", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    await touch(transcript, "touchstart", 80);
+    const vertical = await touch(transcript, "touchmove", 85, 250);
+    expect(vertical.defaultPrevented).toBe(false);
+    await touch(transcript, "touchmove", 250, 260);
+    await touch(transcript, "touchend", 250, 260);
+    expect(opened()).toBe(false);
+    await swipe(transcript, 240, 80);
+    expect(opened()).toBe(false);
+    for (const type of ["touchcancel", "touchmove"]) {
+      await touch(transcript, "touchstart", 80);
+      await touch(transcript, "touchmove", 250);
+      await touch(transcript, type, 250, 200, 100, 2);
+      await touch(transcript, "touchend", 250);
+      expect(opened()).toBe(false);
+      expect(wrapper.find(".scrim").exists()).toBe(false);
+    }
+  });
+
+  it("excludes the left 30px, controls, code, composer, header, and other pages", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    await swipe(transcript, 29, 250);
+    expect(opened()).toBe(false);
+    for (const selector of [".composer", "textarea", ".topbar", ".empty-state button"]) {
+      await swipe(wrapper.get(selector).element, 80, 250);
+      expect(opened()).toBe(false);
+    }
+    for (const tag of ["a", "select", "summary", "pre", "code"]) {
+      const control = document.createElement(tag);
+      const child = document.createElement("span");
+      control.append(child);
+      transcript.append(control);
+      await swipe(child, 80, 250);
+      expect(opened()).toBe(false);
+      control.remove();
+    }
+    await wrapper.get(".drawer-settings").trigger("click");
+    await flushPromises();
+    await swipe(wrapper.get(".main-panel").element, 80, 250);
+    expect(opened()).toBe(false);
+  });
+
+  it("keeps backdrop taps and menu buttons working, suppressing the click after dragging", async () => {
+    await wrapper.get(".mobile-menu").trigger("click");
+    expect(opened()).toBe(true);
+    const scrim = wrapper.get(".scrim").element;
+    await touch(scrim, "touchstart", 350);
+    await touch(scrim, "touchmove", 330, 200, 400);
+    await touch(scrim, "touchend", 330);
+    await wrapper.get(".scrim").trigger("click");
+    expect(opened()).toBe(true);
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 500);
+    await wrapper.get(".scrim").trigger("click");
+    expect(opened()).toBe(false);
+    await wrapper.get(".mobile-menu").trigger("click");
+    await swipe(wrapper.get(".scrim").element, 350, 200);
+    expect(opened()).toBe(false);
+  });
+
+  it("excludes the composer area behind the backdrop and desktop gestures", async () => {
+    await wrapper.get(".mobile-menu").trigger("click");
+    const scrim = wrapper.get(".scrim").element;
+    await touch(scrim, "touchstart", 350, 650);
+    await touch(scrim, "touchmove", 200, 650);
+    await touch(scrim, "touchend", 200, 650);
+    expect(opened()).toBe(true);
+    await wrapper.get(".mobile-close").trigger("click");
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false })),
+    );
+    await swipe(wrapper.get(".transcript").element, 80, 250);
+    expect(opened()).toBe(false);
+  });
+
+  it("never registers gestures on document or window", async () => {
+    wrapper.unmount();
+    const documentListeners = vi.spyOn(document, "addEventListener");
+    const windowListeners = vi.spyOn(window, "addEventListener");
+    wrapper = mount(App);
+    await flushPromises();
+    for (const listeners of [documentListeners, windowListeners])
+      expect(listeners.mock.calls.some(([name]) => /^(touch|pointer)/.test(name))).toBe(false);
+    await swipe(document.body, 80, 250);
+    expect(opened()).toBe(false);
+  });
+
+  it("discards an expired flick and cancels tracking on navigation or desktop resize", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    await touch(transcript, "touchstart", 80);
+    await touch(transcript, "touchmove", 130, 200, 40);
+    await touch(transcript, "touchend", 130, 200, 200);
+    expect(opened()).toBe(false);
+    await touch(transcript, "touchstart", 80);
+    await touch(transcript, "touchmove", 250);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false })),
+    );
+    await touch(transcript, "touchend", 250);
+    expect(opened()).toBe(false);
+    expect(wrapper.find(".scrim").exists()).toBe(false);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    await touch(transcript, "touchstart", 80);
+    await touch(transcript, "touchmove", 250);
+    history.replaceState({}, "", "/chathermes?profile=alpha#/settings?profile=alpha");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await flushPromises();
+    expect(opened()).toBe(false);
+    expect(wrapper.find(".scrim").exists()).toBe(false);
+    expect(wrapper.get(".sidebar").attributes("style") || "").not.toContain("translate:");
+  });
+});
