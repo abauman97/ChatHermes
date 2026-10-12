@@ -29,6 +29,7 @@ const emit = defineEmits<{
   "update:provider": [provider: string];
 }>();
 const value = ref(""),
+  activeMode = ref<"goal" | "plan" | null>(null),
   attachmentsOpen = ref(false),
   attachments = ref<Attachment[]>([]),
   attachmentError = ref(""),
@@ -212,10 +213,11 @@ function send() {
     return;
   const text = value.value.trim();
   if (text || attachments.value.length) {
-    emit("send", text, [...attachments.value]);
+    emit("send", activeMode.value ? `/${activeMode.value}\n${text}` : text, [...attachments.value]);
     value.value = "";
     attachments.value = [];
     attachmentsOpen.value = false;
+    activeMode.value = null;
   }
 }
 async function fitImage(data: string): Promise<string> {
@@ -349,6 +351,10 @@ defineExpose({ stageFiles });
         </button>
       </div>
     </div>
+    <p v-if="activeMode" class="px-2 pb-2 text-sm text-[#d4d4d4]" role="status">
+      {{ activeMode === "goal" ? "Goal mode" : "Plan mode" }} · next message
+      <button type="button" class="ml-2 underline" @click="activeMode = null">Turn off</button>
+    </p>
     <p v-if="imageGated" class="px-2 text-sm text-red-300" role="alert">
       Image sending is unavailable for this native capability. Remove the image to send text or
       files.
@@ -554,6 +560,12 @@ defineExpose({ stageFiles });
         @click="camera?.click()"
       >
         Take a photo
+      </button>
+      <button type="button" class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]" data-mode="goal" @click="activeMode = 'goal'; attachmentsOpen = false">
+        Goal mode
+      </button>
+      <button type="button" class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]" data-mode="plan" @click="activeMode = 'plan'; attachmentsOpen = false">
+        Plan mode
       </button>
     </div>
   </form>
