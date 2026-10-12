@@ -1435,6 +1435,64 @@ async def test_push_owner_request_and_event_triggers(monkeypatch, caplog, kind):
 
 
 @run_async
+@pytest.mark.parametrize('kind, expected', [('approval', 'approval'), ('clarify', 'clarify'), ('secret', 'attention')])
+async def test_native_request_reaches_push_transport(monkeypatch, tmp_path, caplog, kind, expected):
+    import json, logging, sys, threading, types, pywebpush
+    from unittest.mock import Mock
+    sender = plugin._push_sender_module
+    store = sender.push_store
+    monkeypatch.setattr(store, '_path', lambda: tmp_path / 'push.json')
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', 'https://dashboard.example.test')
+    assert store.config()['available']
+    store.upsert('alpha', {'endpoint': 'https://push.test/device',
+        'keys': {'p256dh': 'synthetic_key', 'auth': 'synthetic_auth'}})
+    webpush = Mock(return_value=types.SimpleNamespace(status_code=201))
+    monkeypatch.setattr(pywebpush, 'webpush', webpush)
+
+    # Exercise the real scheduling/delivery path without a nondeterministic thread.
+    class InlineThread:
+        def __init__(self, target, args, daemon):
+            self.target, self.args = target, args
+        def start(self):
+            self.target(*self.args)
+    monkeypatch.setattr(threading, 'Thread', InlineThread)
+    server = types.SimpleNamespace(register_live_transport=lambda t: None,
+        _start_backend_heartbeat_refresher=lambda: None, _schedule_startup_orphan_sweep=lambda: None)
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server,
+        server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None)))
+    owner = plugin._native_owners.Owner(plugin, types.SimpleNamespace(close=lambda: None), 'alpha', 'stored')
+    owner.runtime = 'runtime'
+    queue = asyncio.Queue()
+    owner.subscribers.add(queue)
+    frame = {'method': kind, 'id': '1', 'params': {'session_id': 'runtime',
+        'prompt': 'PRIVATE_REQUEST_PROMPT', 'value': 'PRIVATE_REQUEST_VALUE'}}
+    try:
+        with caplog.at_level(logging.INFO):
+            owner.capture({**frame, 'params': {**frame['params'], 'session_id': 'foreign'}})
+            webpush.assert_not_called()
+            owner.capture(frame)
+            owner.capture(frame)
+        webpush.assert_called_once()
+        payload = json.loads(webpush.call_args.args[1])
+        assert payload['type'] == expected
+        assert payload['profile'] == 'alpha' and payload['session_id'] == 'stored'
+        assert payload['body'] == sender.BODIES[expected]
+        assert queue.get_nowait() == frame
+        assert 'PRIVATE_REQUEST' not in webpush.call_args.args[1]
+        assert 'PRIVATE_REQUEST' not in caplog.text
+        if kind == 'secret':
+            # A native request ID and completion sequence may have the same
+            # spelling; normalizing push kinds must not merge their dedupe keys.
+            owner.capture({'method': 'event', 'params': {'session_id': 'runtime',
+                'seq': 1, 'type': 'message.complete',
+                'payload': {'status': 'failed', 'text': 'Final assistant reply'}}})
+            assert webpush.call_count == 2
+            assert json.loads(webpush.call_args.args[1])['body'] == 'Final assistant reply'
+    finally:
+        owner.close()
+
+
+@run_async
 async def test_push_test_endpoint_scopes_normal_transport_and_is_content_free(app, monkeypatch):
     from unittest.mock import Mock
     sender = Mock(return_value=True)

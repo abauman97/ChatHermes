@@ -43,7 +43,9 @@ assistant text, already redacted by the credential-safe native transport. This
 is authoritative even when the runtime rewrites its streamed response. Reasoning,
 tool output and usage are excluded. Missing completion text produces an empty
 body rather than a generic substitute. Approval/clarification alerts and explicit
-tests retain their explanatory text. Enabled notifications can display assistant
+tests retain their explanatory text. Native secret requests use the existing
+generic **Hermes needs attention.** alert; request prompts and secret values are
+never included in push payloads. Enabled notifications can display assistant
 content on the device's lock screen; use platform notification privacy settings
 or disable that profile if needed. The full serialized UTF-8 payload is bounded
 to 3000 bytes (below the encrypted Web Push record limit), truncating only the
