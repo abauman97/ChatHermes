@@ -884,3 +884,77 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await page.screenshot({ path: info.outputPath("stream-group-completed.png") });
   });
 }
+
+// Use structured native delivery rows in the authenticated dashboard. A fixed
+// receipt makes collapse/reload coverage independent of provider delegation.
+test("async delegation receipts collapse as activity across reload", async ({ page }, info) => {
+  await signIn(page);
+  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
+    data: {},
+  });
+  expect(created.ok()).toBeTruthy();
+  const body = await created.json();
+  const sessionId = (body.session || body).id;
+  const receipt = "[ASYNC DELEGATION BATCH COMPLETE — batch-1]\n--- ✓ TASK 1/1 ---\nChild result";
+  const messages = [
+    { row_id: "u", role: "user", text: receipt },
+    { row_id: "a", role: "assistant", text: "Waiting for delegated work." },
+    { row_id: "d", role: "user", text: receipt, display_kind: "async_delegation_complete" },
+    { row_id: "f", role: "assistant", text: "Here is the answer." },
+  ];
+  await page.route(`**/sessions/${sessionId}/messages?*`, (route) =>
+    route.fulfill({
+      json: { data: messages.map((row) => ({ ...row, id: row.row_id, content: row.text })) },
+    }),
+  );
+  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+    const server = socket.connectToServer();
+    const attachIds = new Set<string>();
+    socket.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (frame.method === "chat.attach") attachIds.add(frame.id);
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (attachIds.has(frame.id) && frame.result) {
+        Object.assign(frame.result, {
+          messages,
+          running: false,
+          queued: false,
+          inflight: null,
+          recovery: {
+            ...frame.result.recovery,
+            complete: false,
+            through: 0,
+            start: 0,
+            base_row_ids: null,
+          },
+        });
+        socket.send(JSON.stringify(frame));
+      } else socket.send(message);
+    });
+  });
+  await page.goto(`/chathermes?profile=default#/chat/${encodeURIComponent(sessionId)}`);
+  await page.reload();
+  const plugin = page.locator(".chathermes-embedded");
+  const disclosure = plugin.locator(".turn-work .activity");
+  await expect(plugin.locator(".message.user")).toHaveCount(1);
+  await expect(plugin.locator(".message.user")).toContainText(receipt);
+  await expect(plugin.locator(".message.assistant")).toHaveCount(2);
+  await expect(disclosure.locator("summary")).toContainText("Delegated work completed");
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(disclosure.locator("pre")).toBeHidden();
+  await page.screenshot({ path: info.outputPath("delegation-collapsed.png") });
+  await disclosure.locator("summary").click();
+  await expect(disclosure.locator("pre")).toBeVisible();
+  await expect(disclosure.locator("pre")).toHaveText(receipt);
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await area.click();
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("delegation-expanded.png") });
+  await page.reload();
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(disclosure.locator("pre")).toBeHidden();
+  await expect(plugin.locator(".message.assistant").last()).toContainText("Here is the answer.");
+});

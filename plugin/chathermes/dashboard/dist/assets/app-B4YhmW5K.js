@@ -4609,7 +4609,21 @@ function yc(e) {
 		let a = t[i];
 		if (a.role === "user" || hs(a) === "status") {
 			let o = hs(a);
-			if (o === "status" ? n.push({
+			if (a.display_kind === "async_delegation_complete") {
+				let e = a.id || `delegation-${i}`;
+				n.push({
+					kind: "turn",
+					key: `receipt-${e}`,
+					blocks: [{
+						id: `receipt-${e}`,
+						kind: "tool",
+						title: gs(a),
+						content: ts(a.content),
+						complete: !0,
+						state: "completed"
+					}]
+				});
+			} else o === "status" ? n.push({
 				kind: "status",
 				text: gs(a),
 				content: ts(a.content),
@@ -4618,7 +4632,8 @@ function yc(e) {
 				kind: "user",
 				message: a,
 				key: a.id || `user-${i}`
-			})), o === "status" && !a.blocks?.length) {
+			}));
+			if (o === "status" && !a.blocks?.length) {
 				i++;
 				continue;
 			}
