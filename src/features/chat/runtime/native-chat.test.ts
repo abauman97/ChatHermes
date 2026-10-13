@@ -98,7 +98,10 @@ describe("retained native recovery", () => {
         params: { text: "Use the second approach" },
         chat_offset: 4,
       });
-      expect(h.input).toHaveBeenCalledWith("Use the second approach", true, undefined);
+      expect(h.input).toHaveBeenCalledWith("Use the second approach", true, undefined, {
+        display_kind: undefined,
+        display_metadata: undefined,
+      });
       viewer.close();
     },
   );

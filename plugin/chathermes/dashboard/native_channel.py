@@ -67,6 +67,11 @@ class Channel:
         if not self.runtime:
             raise HTTPException(409, 'Attach a session first')
         scoped = {'profile': self.profile, 'session_id': self.runtime}
+        if method == 'chat.history':
+            if params:
+                raise HTTPException(422, 'Invalid history params')
+            result = await self.api._workspace_resume(self.transport, self.profile, self.stored)
+            return {'messages': [self.api._workspace_message(row) for row in result.get('messages', [])]}
         if method == 'chat.replay':
             if set(params) != {'offset', 'through'}:
                 raise HTTPException(422, 'Invalid recovery cursor')

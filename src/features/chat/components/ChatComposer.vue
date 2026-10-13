@@ -561,10 +561,26 @@ defineExpose({ stageFiles });
       >
         Take a photo
       </button>
-      <button type="button" class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]" data-mode="goal" @click="activeMode = 'goal'; attachmentsOpen = false">
+      <button
+        type="button"
+        class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]"
+        data-mode="goal"
+        @click="
+          activeMode = 'goal';
+          attachmentsOpen = false;
+        "
+      >
         Goal mode
       </button>
-      <button type="button" class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]" data-mode="plan" @click="activeMode = 'plan'; attachmentsOpen = false">
+      <button
+        type="button"
+        class="rounded-xl px-3 py-3 text-left hover:bg-[#303030]"
+        data-mode="plan"
+        @click="
+          activeMode = 'plan';
+          attachmentsOpen = false;
+        "
+      >
         Plan mode
       </button>
     </div>

@@ -1,3 +1,4 @@
+import { gatewayDisplay } from "./gateway-display";
 import type { Activity, Message, TurnBlock } from "../../../types/hermes";
 import { messageText } from "../../../services/hermes-api";
 
@@ -232,6 +233,11 @@ export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
 export function historyBlocks(messages: Message[]): TurnBlock[] {
   const turn = createTurn();
   for (const message of messages) {
+    if (message.blocks) {
+      turn.blocks.push(...message.blocks);
+      continue;
+    }
+    if (gatewayDisplay(message) !== "message") continue;
     if (message.role === "assistant") {
       const reasoning = message.reasoning_content || message.reasoning;
       if (reasoning) {
@@ -477,7 +483,11 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
       block.content += content;
       native.streamText = block.id;
       native.finalText = undefined;
-    } else if (name === "message.complete" && content.trim()) {
+    } else if (
+      name === "message.complete" &&
+      content.trim() &&
+      (!data.response_reused || !turn.blocks.some((block) => block.kind === "text"))
+    ) {
       closeReasoning(turn);
       const final = content.trim();
       const streamed = textBlock(native.streamText);

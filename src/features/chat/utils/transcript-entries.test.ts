@@ -62,3 +62,66 @@ it("does not infer a running session from a saved call with no result", () => {
     blocks: [expect.objectContaining({ id: "a", complete: false })],
   });
 });
+
+it("uses display metadata without interpreting legitimate user text", () => {
+  const quote = "[System note: Your previous turn was interrupted mid-run — quoted by a user]";
+  const messages: Message[] = [
+    { id: "1", role: "user", content: quote },
+    { id: "2", role: "user", content: quote, display_kind: "auto_continue" },
+    { id: "3", role: "assistant", content: "Recovered answer" },
+    {
+      id: "4",
+      role: "user",
+      content: "Internal process instructions",
+      display_kind: "process_complete",
+      display_metadata: { display_text: "Build finished" },
+    },
+    { id: "5", role: "user", content: "secret scaffolding", display_kind: "hidden" },
+    { id: "6", role: "assistant", content: "Visible output" },
+    { id: "7", role: "assistant", content: "hidden answer", display_kind: "hidden" },
+    { id: "8", role: "user", content: "Future kind", display_kind: "unknown" },
+  ];
+  const entries = transcriptEntries({ messages, progress: [] });
+  expect(
+    entries.filter((entry) => entry.kind === "user").map((entry) => entry.message.content),
+  ).toEqual([quote, "Future kind"]);
+  expect(entries.filter((entry) => entry.kind === "status").map((entry) => entry.text)).toEqual([
+    "Resuming interrupted turn…",
+    "Build finished",
+  ]);
+  expect(JSON.stringify(entries)).not.toMatch(
+    /Internal process instructions|secret scaffolding|hidden answer/,
+  );
+  expect(JSON.stringify(entries)).toContain("Recovered answer");
+  expect(JSON.stringify(entries)).toContain("Visible output");
+  expect(messages[1]!.content).toBe(quote);
+});
+
+it("hides an in-flight internal input and its work unless a distinct visible turn exists", () => {
+  const entries = transcriptEntries({
+    messages: [
+      { role: "user", content: "internal", display_kind: "hidden" },
+      { role: "assistant", content: "Visible final" },
+    ],
+    progress: [],
+  });
+  expect(entries).toEqual([
+    expect.objectContaining({ kind: "turn", blocks: [text("Visible final")] }),
+  ]);
+});
+
+it("keeps live assistant blocks attached to hidden or status-only internal input", () => {
+  const blocks = [text("Arriving answer")];
+  for (const display_kind of ["hidden", "auto_continue", "process_complete"]) {
+    const entries = transcriptEntries({
+      messages: [{ role: "user", content: "internal prompt", display_kind, blocks }],
+      progress: [],
+      working: true,
+    });
+    expect(entries.filter((entry) => entry.kind === "user")).toHaveLength(0);
+    expect(entries.filter((entry) => entry.kind === "status")).toHaveLength(
+      display_kind === "hidden" ? 0 : 1,
+    );
+    expect(entries.find((entry) => entry.kind === "turn")).toMatchObject({ blocks });
+  }
+});

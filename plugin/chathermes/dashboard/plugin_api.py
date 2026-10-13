@@ -827,7 +827,7 @@ def _workspace_message(row):
     return {'role': role, 'content': content or '',
             **({'id': str(row['row_id'])} if row.get('row_id') is not None else {}),
             **({'tool_name': row['name']} if role == 'tool' and row.get('name') else {}),
-            **{key: row[key] for key in ('tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content') if row.get(key) is not None}}
+            **{key: row[key] for key in ('tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content', 'display_kind', 'display_metadata') if row.get(key) is not None}}
 
 
 @router.get('/workspace/sessions/{session_id}/messages')
@@ -1055,7 +1055,7 @@ def _scheduled_output_sync(profile, home, job_id, run_id):
             transcript_session = session
         messages = db.get_messages_as_conversation(transcript_id, include_ancestors=True, include_compacted=True)
         return {'session_id': run_id, 'started_at': session.get('started_at'), 'messages': [{key: row.get(key) for key in
-            ('role', 'content', 'tool_name', 'tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content')}
+            ('role', 'content', 'tool_name', 'tool_call_id', 'tool_calls', 'reasoning', 'reasoning_content', 'display_kind', 'display_metadata')}
             for row in messages if row.get('role') != 'system']}
     finally:
         db.close()

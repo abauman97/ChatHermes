@@ -250,6 +250,7 @@ export function useChatController(
       active: viewActive,
       request,
       connection: computed(() => native.connection.value),
+      status: computed(() => (nativeMode.value ? native.status.value : "")),
     },
     composer,
     actions,

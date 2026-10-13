@@ -49,7 +49,7 @@ if docker container inspect "$container" >/dev/null 2>&1; then
   docker rm -f -v "$container" >/dev/null
 fi
 image="chathermes-test:$instance"
-docker build --pull -f tests/docker/Dockerfile -t "$image" .
+docker build --pull -f tests/docker/Dockerfile --build-arg "CHATHERMES_BUILD_OUT_DIR=${CHATHERMES_BUILD_OUT_DIR:-plugin/chathermes/dashboard/dist}" -t "$image" .
 # Do not use --init: the upstream s6 supervisor must own PID 1.
 docker run -d --rm --name "$container" \
   --label "chathermes.live.instance=$instance" \
