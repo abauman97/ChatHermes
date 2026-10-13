@@ -457,6 +457,10 @@ _chat_gateway = _load_sibling('chat_gateway')
 _native_owners = _load_sibling('native_owners')
 _push_store_module = _load_sibling('push_store')
 _push_sender_module = _load_sibling('push_sender')
+# Spec-loaded siblings are not a package: the sender's fallback import creates
+# another store/lock. Share the API store so delivery cleanup and subscription
+# routes serialize read-modify-write operations on the same persisted state.
+_push_sender_module.push_store = _push_store_module
 _native_channel = _load_sibling('native_channel')
 router.add_event_handler('shutdown', _native_owners.shutdown)
 

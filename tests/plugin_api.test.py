@@ -1516,6 +1516,81 @@ async def test_native_request_reaches_push_transport(monkeypatch, tmp_path, capl
         owner.close()
 
 
+@pytest.mark.parametrize('status', [404, 410])
+def test_push_sender_expiry_serializes_with_api_registration(monkeypatch, tmp_path, status):
+    import concurrent.futures, threading, types, pywebpush
+    from unittest.mock import Mock
+    api_store = plugin._push_store_module
+    sender = plugin._push_sender_module
+    sender_store = sender.push_store
+    # Patch both pre-fix instances to the same disposable backing file, as in
+    # production. The fix makes these the same instance and lock.
+    for store in (api_store, sender_store):
+        monkeypatch.setattr(store, '_path', lambda: tmp_path / 'push.json')
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', 'https://dashboard.example.test')
+    assert api_store.config()['available']
+    expired = api_store.upsert('alpha', {'endpoint': 'https://push.test/expired',
+        'keys': {'p256dh': 'synthetic_key', 'auth': 'synthetic_auth'}})
+    error = pywebpush.WebPushException('synthetic expiry',
+        response=types.SimpleNamespace(status_code=status))
+    sending = threading.Event()
+    expire_delivery = threading.Event()
+
+    def expired_transport(*args, **kwargs):
+        sending.set()
+        assert expire_delivery.wait(5)
+        raise error
+
+    webpush = Mock(side_effect=expired_transport)
+    monkeypatch.setattr(pywebpush, 'webpush', webpush)
+    deleting = threading.Event()
+    deleted = threading.Event()
+    registration_read = threading.Event()
+    resume_registration = threading.Event()
+    read = api_store._read
+    remove = sender_store.remove_endpoint
+
+    def paused_read():
+        data = read()
+        if threading.current_thread().name.startswith('registration'):
+            registration_read.set()
+            assert resume_registration.wait(5)
+        return data
+
+    def observed_remove(identity):
+        deleting.set()
+        remove(identity)
+        deleted.set()
+
+    monkeypatch.setattr(api_store, '_read', paused_read)
+    monkeypatch.setattr(sender_store, 'remove_endpoint', observed_remove)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix='registration') as registrations, concurrent.futures.ThreadPoolExecutor(max_workers=1) as deliveries:
+        delivery = deliveries.submit(sender._deliver, 'alpha', 'stored', 'turn.complete', '1')
+        assert sending.wait(5)
+        registration = registrations.submit(api_store.upsert, 'beta', {
+            'endpoint': 'https://push.test/new',
+            'keys': {'p256dh': 'synthetic_key', 'auth': 'synthetic_auth'}})
+        try:
+            assert registration_read.wait(5)
+            expire_delivery.set()
+            assert deleting.wait(5)
+            # Cleanup must wait for the registration's read-modify-write lock.
+            # Before the fix it completes here, then upsert resurrects alpha.
+            cleanup_waited = not deleted.wait(0.2)
+        finally:
+            expire_delivery.set()
+            resume_registration.set()
+        saved = registration.result(timeout=5)
+        delivery.result(timeout=5)
+    webpush.assert_called_once()
+    assert api_store.subscriptions('alpha') == []
+    assert api_store.status('alpha', 'https://push.test/expired')['enabled'] is False
+    assert api_store.status('beta', 'https://push.test/new') == {
+        'profile': 'beta', 'enabled': True, 'id': saved['id']}
+    assert expired['id'] not in [row['id'] for row in api_store._read()['subscriptions']]
+    assert cleanup_waited
+
+
 @run_async
 async def test_push_test_endpoint_scopes_normal_transport_and_is_content_free(app, monkeypatch):
     from unittest.mock import Mock
