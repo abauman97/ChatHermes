@@ -17,6 +17,8 @@ test("disposable dashboard composer, attachments and real native response", asyn
   const profile = plugin.getByRole("combobox", { name: "Profile", exact: true });
   await profile.selectOption("default");
   await expect(profile).toHaveValue("default");
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Close navigation", exact: true }).click();
   await area.click();
   await expect(area).toBeFocused();
   await expect(area).toHaveCSS("font-size", "16px");
@@ -361,10 +363,8 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(area).toBeFocused();
   const active = plugin.locator(".current-activity .activity:not(.activity-thinking)").first();
   await expect(active).toBeVisible({ timeout: 60_000 });
-  await expect(active).not.toHaveAttribute("open");
-  await page.screenshot({ path: info.outputPath("activity-live-collapsed.png") });
-  await active.locator("summary").click();
   await expect(active).toHaveAttribute("open", "");
+  await page.screenshot({ path: info.outputPath("activity-live-expanded.png") });
   await expect(active.locator("pre")).toContainText("activity-line-", { timeout: 60_000 });
   await active.locator("summary").click();
   await expect(active).not.toHaveAttribute("open");

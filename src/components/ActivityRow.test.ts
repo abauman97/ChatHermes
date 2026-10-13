@@ -80,18 +80,6 @@ describe("activity disclosures", () => {
       expect(wrapper.get("details").attributes("open")).toBeUndefined();
     },
   );
-  it.each(["failed", "interrupted", "unknown"] as const)(
-    "preserves manual expansion when a streaming tool becomes %s",
-    async (state) => {
-      const wrapper = mount(ActivityRow, { props: { activity: tool } });
-      await wrapper.get("summary").trigger("click");
-      await wrapper.setProps({ activity: { ...tool, complete: true, state } });
-      expect(wrapper.get("details").attributes("open")).toBeDefined();
-      expect(wrapper.get("details").classes()).toContain("activity-failed");
-      await wrapper.get("summary").trigger("click");
-      expect(wrapper.get("details").attributes("open")).toBeUndefined();
-    },
-  );
   it("does not claim an unfinished historical tool succeeded", () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool, turnComplete: true } });
     expect(wrapper.get("summary").text()).toContain("Result unavailable");

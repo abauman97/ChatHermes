@@ -1813,3 +1813,28 @@ def test_native_general_file_refs_are_profile_bound_and_refuse_symlinks(monkeypa
             plugin._native_channel.verify_file_refs('work', [str(path)])
         assert rejected.value.status_code == 422
         assert str(path) not in rejected.value.detail
+
+@run_async
+async def test_session_project_move_resolves_profile_workspace_and_rejects_browser_paths(app, monkeypatch):
+    calls = []
+
+    async def rpc(request, method, params=None):
+        calls.append((plugin._rpc_profile(request), method, params))
+        if method == 'projects.project_sessions':
+            return {'project': {'id': 'notes', 'label': 'Notes', 'path': '/workspace/notes', 'repos': []}}
+        if method == 'projects.list':
+            return {'projects': [{'id': 'notes', 'name': 'Notes', 'primary_path': '/workspace/notes', 'folders': []}]}
+        return {'cwd': params['cwd']}
+
+    monkeypatch.setattr(plugin, '_rpc', rpc)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        route = '/api/plugins/chathermes/api/sessions/stored-one/project?profile=alpha'
+        response = await client.post(route, json={'project_id': 'notes'})
+        assert response.status_code == 200
+        assert calls[-1] == ('alpha', 'session.workspace.move', {'session_key': 'stored-one', 'cwd': '/workspace/notes'})
+        calls.clear()
+        for body in ({'project_id': 'notes', 'cwd': '/other'}, {'project_id': 2}, {}, {'method': 'session.delete'}):
+            assert (await client.post(route, json=body)).status_code == 422
+        assert calls == []
+        assert (await client.post(route.replace('alpha', '../other'), json={'project_id': 'notes'})).status_code == 422
+        assert calls == []
