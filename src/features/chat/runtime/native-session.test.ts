@@ -247,7 +247,7 @@ it("passes prompt-less message.start boundaries to the native reducer", async ()
   session.close();
 });
 
-it.each(["hidden", "auto_continue", "process_complete"])(
+it.each(["hidden", "auto_continue", "process_complete", "async_delegation_complete"])(
   "reconstructs %s input with inspectable notices and without replaying assistant output",
   async (display_kind) => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
@@ -285,45 +285,56 @@ it.each(["hidden", "auto_continue", "process_complete"])(
       });
     expect(rendered().some((entry) => entry.kind === "user")).toBe(false);
     if (display_kind === "hidden") expect(JSON.stringify(rendered())).not.toContain("internal");
+    else if (display_kind === "async_delegation_complete")
+      expect(rendered().find((entry) => entry.kind === "turn")).toMatchObject({
+        blocks: [{ kind: "tool", title: "Job finished", content: "internal", complete: true }],
+      });
     else
       expect(rendered().find((entry) => entry.kind === "status")).toMatchObject({
         text: "Job finished",
         content: "internal",
       });
-    expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(1);
+    expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(
+      display_kind === "async_delegation_complete" ? 2 : 1,
+    );
     fake.hooks!.snapshot(snapshot as any);
     fake.hooks!.recovered();
-    expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(1);
+    expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(
+      display_kind === "async_delegation_complete" ? 2 : 1,
+    );
     expect(fake.rpc.mock.calls.some(([method]) => method === "chat.submit")).toBe(false);
     session.close();
   },
 );
 
-it("restores native display metadata over durable HTTP history by row identity", async () => {
-  vi.spyOn(api, "messages").mockResolvedValue([
-    { id: "1", role: "user", content: "internal", display_kind: "process_complete" },
-  ]);
-  fake.rpc.mockImplementation(async (method) =>
-    method === "chat.history"
-      ? {
-          messages: [
-            {
-              id: "1",
-              role: "user",
-              content: "internal",
-              display_kind: "process_complete",
-              display_metadata: { display_text: "Job finished" },
-            },
-          ],
-        }
-      : { settled: true },
-  );
-  const session = useNativeSession(vi.fn());
-  await session.attach("alpha", "one");
-  await session.hydrate();
-  expect(session.messages.value[0]!.display_metadata).toEqual({ display_text: "Job finished" });
-  session.close();
-});
+it.each(["process_complete", "async_delegation_complete"])(
+  "restores native %s metadata over durable HTTP history by row identity",
+  async (display_kind) => {
+    vi.spyOn(api, "messages").mockResolvedValue([
+      { id: "1", role: "user", content: "internal", display_kind },
+    ]);
+    fake.rpc.mockImplementation(async (method) =>
+      method === "chat.history"
+        ? {
+            messages: [
+              {
+                id: "1",
+                role: "user",
+                content: "internal",
+                display_kind,
+                display_metadata: { display_text: "Job finished" },
+              },
+            ],
+          }
+        : { settled: true },
+    );
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    await session.hydrate();
+    expect(session.messages.value[0]!.display_metadata).toEqual({ display_text: "Job finished" });
+    session.close();
+  },
+);
 
 it("keeps the reconstructed assistant projection when the in-flight snapshot repeats it", async () => {
   vi.spyOn(api, "messages").mockResolvedValue([]);
@@ -378,3 +389,43 @@ it.each(["complete", "interrupted", "error"])(
     session.close();
   },
 );
+
+it("projects live batch delivery as completed activity without hiding its assistant turn", async () => {
+  vi.spyOn(api, "messages").mockResolvedValue([]);
+  fake.rpc.mockResolvedValue({ settled: false });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  const receipt = "[ASYNC DELEGATION BATCH COMPLETE — batch-1]\nChild details";
+  fake.hooks!.input(receipt, false, undefined, {
+    display_kind: "async_delegation_complete",
+  });
+  const { transcriptEntries } = await import("../utils/transcript-entries");
+  const rendered = () =>
+    transcriptEntries({
+      messages: session.messages.value,
+      progress: [],
+      working: session.busy.value,
+    });
+  expect(rendered()[0]).toMatchObject({
+    kind: "turn",
+    blocks: [{ kind: "tool", complete: true, content: receipt }],
+  });
+  fake.hooks!.event({
+    session_id: "runtime",
+    type: "message.delta",
+    payload: { text: "Parent answer" },
+  } as any);
+  expect(rendered()[1]).toMatchObject({ kind: "turn", working: true });
+  fake.hooks!.event({
+    session_id: "runtime",
+    type: "message.complete",
+    payload: { text: "Parent answer", status: "complete" },
+  } as any);
+  expect(rendered()[1]).toMatchObject({
+    kind: "turn",
+    working: false,
+    blocks: [{ kind: "text", content: "Parent answer" }],
+  });
+  expect(session.messages.value[0]!.content).toBe(receipt);
+  session.close();
+});

@@ -20,7 +20,26 @@ export function transcriptEntries(input: {
     const message = visible[index]!;
     if (message.role === "user" || gatewayDisplay(message) === "status") {
       const display = gatewayDisplay(message);
-      if (display === "status")
+      if (message.display_kind === "async_delegation_complete") {
+        // Hermes persists delivery receipts as context rows (often role=user).
+        // Project only their presentation into completed work; never classify
+        // receipt-looking prose or fold the following assistant response away.
+        const key = message.id || `delegation-${index}`;
+        result.push({
+          kind: "turn",
+          key: `receipt-${key}`,
+          blocks: [
+            {
+              id: `receipt-${key}`,
+              kind: "tool",
+              title: gatewayDisplayText(message),
+              content: messageText(message.content),
+              complete: true,
+              state: "completed",
+            },
+          ],
+        });
+      } else if (display === "status")
         result.push({
           kind: "status",
           text: gatewayDisplayText(message),

@@ -11,7 +11,6 @@ describe("chat markdown", () => {
     ["personality_switch", "Personality changed"],
     ["auto_continue", "Resuming interrupted turn…"],
     ["process_complete", "Background process completed"],
-    ["async_delegation_complete", "Delegated work completed"],
     ["failed_turn", "Response did not complete · verify any actions before resending"],
   ])("keeps structured %s notices collapsed and inspectable", async (display_kind, label) => {
     const ordinary = "[System note: Your previous turn was interrupted mid-run — quoted by a user]";
@@ -749,3 +748,43 @@ it("collapses completed native calls during streaming across empty generation bo
   expect(current.findAll(".activity")[1]!.get("pre").text()).toContain("second result");
   wrapper.unmount();
 });
+
+it.each(["user", "system", "assistant"])(
+  "collapses a structured batch receipt with role=%s into work and keeps surrounding prose",
+  async (role) => {
+    const receipt = "[ASYNC DELEGATION BATCH COMPLETE — batch-1]\n--- ✓ TASK 1/1 ---\nChild result";
+    const messages = [
+      { id: "question", role: "user", content: receipt },
+      { id: "before", role: "assistant", content: "Waiting for the child." },
+      { id: "delivery", role, display_kind: "async_delegation_complete", content: receipt },
+      { id: "answer", role: "assistant", content: "Here is my answer." },
+    ];
+    const wrapper = mount(ChatTranscript, {
+      props: { loading: false, draft: "", progress: [], messages },
+    });
+    expect(wrapper.findAll(".user")).toHaveLength(1);
+    expect(wrapper.get(".user .message-content").text()).toBe(receipt);
+    expect(wrapper.findAll(".assistant").map((row) => row.text())).toEqual([
+      "Waiting for the child.",
+      "Here is my answer.",
+    ]);
+    expect(wrapper.find(".system-notices").exists()).toBe(false);
+    const disclosure = wrapper.get(".turn-work .activity");
+    expect(disclosure.attributes("open")).toBeUndefined();
+    expect(disclosure.get("summary").text()).toBe("Delegated work completed›");
+    await disclosure.get("summary").trigger("click");
+    expect(disclosure.attributes("open")).toBeDefined();
+    expect(disclosure.get("pre").text()).toBe(receipt);
+    await disclosure.get("summary").trigger("click");
+    expect(disclosure.attributes("open")).toBeUndefined();
+    // A fresh history render (including reconnect) starts folded again.
+    wrapper.unmount();
+    const restored = mount(ChatTranscript, {
+      props: { loading: false, draft: "", progress: [], messages },
+    });
+    expect(restored.get(".activity").attributes("open")).toBeUndefined();
+    expect(restored.get(".activity pre").text()).toBe(receipt);
+    expect(messages[2]!.content).toBe(receipt);
+    restored.unmount();
+  },
+);
