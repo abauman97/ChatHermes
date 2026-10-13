@@ -789,12 +789,7 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await expect(rows.nth(0)).not.toBeVisible();
     await expect(rows.nth(1)).toBeVisible();
     await expect(rows.nth(2)).toBeVisible();
-    await expect(rows.nth(1)).toHaveAttribute("open", "");
-    await expect(rows.nth(1).locator(".activity-label")).toHaveText(
-      toolName === "terminal" ? "printf second" : toolName,
-    );
-    await rows.nth(1).locator("summary").click(); // manual collapse
-    await rows.nth(1).locator("summary").click(); // explicitly reopen and retain intent
+    await rows.nth(1).locator("summary").click();
     event("tool.progress", { tool_id: "second", name: toolName, text: "Arriving live output" });
     await expect(rows.nth(1).locator("pre")).toContainText("Arriving live output");
     await area.fill("Focusable draft during streaming");

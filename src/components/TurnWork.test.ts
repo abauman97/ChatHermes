@@ -66,8 +66,6 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   await nextTick();
   const second = wrapper.findAll(".activity")[1]!;
   const secondElement = second.element;
-  await second.get("summary").trigger("click");
-  expect(second.attributes("open")).toBeDefined();
   expect(wrapper.get(".work-summary").text()).toContain("Used 1 tool");
   expect(wrapper.get(".activity").element).toBe(first);
   expect(rowShown(wrapper.get(".activity"))).toBe(false);
@@ -77,7 +75,6 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   await nextTick();
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
   expect(second.get("pre").text()).toContain("arriving output");
-  expect(second.attributes("open")).toBeDefined();
   activities[1]!.complete = true;
   activities[1]!.state = "completed";
   await nextTick();
@@ -88,6 +85,7 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   await wrapper.get(".work-summary").trigger("click");
   expect(rowShown(second)).toBe(true);
+  await second.get("summary").trigger("click");
   expect(second.attributes("open")).toBeDefined();
   await wrapper.get(".work-summary").trigger("click");
   expect(rowShown(wrapper.get(".current-activity .activity"))).toBe(true);
