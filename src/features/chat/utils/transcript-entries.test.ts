@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { transcriptEntries } from "./transcript-entries";
+import { gatewayDisplayText } from "../runtime/gateway-display";
 import type { Message, TurnBlock } from "../../../types/hermes";
 const text = (content: string): TurnBlock => ({ id: "block-1", kind: "text", content });
 describe("transcript entries", () => {
@@ -61,4 +62,79 @@ it("does not infer a running session from a saved call with no result", () => {
     working: false,
     blocks: [expect.objectContaining({ id: "a", complete: false })],
   });
+});
+
+it("uses display metadata without interpreting legitimate user text", () => {
+  const quote = "[System note: Your previous turn was interrupted mid-run — quoted by a user]";
+  const messages: Message[] = [
+    { id: "1", role: "user", content: quote },
+    { id: "2", role: "user", content: quote, display_kind: "auto_continue" },
+    { id: "3", role: "assistant", content: "Recovered answer" },
+    {
+      id: "4",
+      role: "user",
+      content: "Internal process instructions",
+      display_kind: "process_complete",
+      display_metadata: { display_text: "Build finished" },
+    },
+    { id: "5", role: "user", content: "secret scaffolding", display_kind: "hidden" },
+    { id: "6", role: "assistant", content: "Visible output" },
+    { id: "7", role: "assistant", content: "hidden answer", display_kind: "hidden" },
+    { id: "8", role: "user", content: "Future kind", display_kind: "unknown" },
+  ];
+  const entries = transcriptEntries({ messages, progress: [] });
+  expect(
+    entries.filter((entry) => entry.kind === "user").map((entry) => entry.message.content),
+  ).toEqual([quote, "Future kind"]);
+  expect(entries.filter((entry) => entry.kind === "status").map((entry) => entry.text)).toEqual([
+    "Resuming interrupted turn…",
+    "Build finished",
+  ]);
+  expect(JSON.stringify(entries)).not.toMatch(/secret scaffolding|hidden answer/);
+  expect(JSON.stringify(entries)).toContain("Recovered answer");
+  expect(JSON.stringify(entries)).toContain("Visible output");
+  expect(messages[1]!.content).toBe(quote);
+  expect(entries.filter((entry) => entry.kind === "status").map((entry) => entry.content)).toEqual([
+    quote,
+    "Internal process instructions",
+  ]);
+});
+
+it("hides an in-flight internal input and its work unless a distinct visible turn exists", () => {
+  const entries = transcriptEntries({
+    messages: [
+      { role: "user", content: "internal", display_kind: "hidden" },
+      { role: "assistant", content: "Visible final" },
+    ],
+    progress: [],
+  });
+  expect(entries).toEqual([
+    expect.objectContaining({ kind: "turn", blocks: [text("Visible final")] }),
+  ]);
+});
+
+it("includes target model in model-switch status metadata", () => {
+  expect(
+    gatewayDisplayText({
+      display_kind: "model_switch",
+      display_metadata: { model: "openai/gpt-test" },
+    }),
+  ).toBe("Model changed to openai/gpt-test");
+  expect(gatewayDisplayText({ display_kind: "model_switch" })).toBe("Model changed");
+});
+
+it("keeps live assistant blocks attached to hidden or status-only internal input", () => {
+  const blocks = [text("Arriving answer")];
+  for (const display_kind of ["hidden", "auto_continue", "process_complete"]) {
+    const entries = transcriptEntries({
+      messages: [{ role: "user", content: "internal prompt", display_kind, blocks }],
+      progress: [],
+      working: true,
+    });
+    expect(entries.filter((entry) => entry.kind === "user")).toHaveLength(0);
+    expect(entries.filter((entry) => entry.kind === "status")).toHaveLength(
+      display_kind === "hidden" ? 0 : 1,
+    );
+    expect(entries.find((entry) => entry.kind === "turn")).toMatchObject({ blocks });
+  }
 });

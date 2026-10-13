@@ -6,6 +6,108 @@ import { mount, flushPromises } from "@vue/test-utils";
 import ChatTranscript from "./ChatTranscript.vue";
 
 describe("chat markdown", () => {
+  it.each([
+    ["model_switch", "Model changed to openai/gpt-test"],
+    ["personality_switch", "Personality changed"],
+    ["auto_continue", "Resuming interrupted turn…"],
+    ["process_complete", "Background process completed"],
+    ["async_delegation_complete", "Delegated work completed"],
+    ["failed_turn", "Response did not complete · verify any actions before resending"],
+  ])("keeps structured %s notices collapsed and inspectable", async (display_kind, label) => {
+    const ordinary = "[System note: Your previous turn was interrupted mid-run — quoted by a user]";
+    const notice = "[System: the active model changed]\nOriginal notice details";
+    const wrapper = mount(ChatTranscript, {
+      props: {
+        loading: false,
+        progress: [],
+        draft: "",
+        messages: [
+          { role: "user", content: ordinary },
+          {
+            role: "system",
+            display_kind,
+            display_metadata: { model: "openai/gpt-test" },
+            content: notice,
+          },
+          { role: "system", content: "Unclassified system message" },
+          { role: "user", display_kind: "hidden", content: "Hidden internal instructions" },
+        ],
+      },
+    });
+    expect(wrapper.get(".user .message-content").text()).toBe(ordinary);
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1);
+    expect(wrapper.text()).not.toContain("Unclassified system message");
+    expect(wrapper.text()).not.toContain("Hidden internal instructions");
+    const disclosure = wrapper.get(".system-notices");
+    expect(disclosure.attributes("open")).toBeUndefined();
+    expect(disclosure.get("summary").text()).toBe(label);
+    expect(disclosure.get("p").text()).toBe(notice);
+    await disclosure.get("summary").trigger("click");
+    expect(disclosure.attributes("open")).toBeDefined();
+    expect(disclosure.get("p").text()).toBe(notice);
+    await disclosure.get("summary").trigger("click");
+    expect(disclosure.attributes("open")).toBeUndefined();
+  });
+
+  it("discloses gateway-tagged user notices in order and retains content parts", async () => {
+    const wrapper = mount(ChatTranscript, {
+      props: {
+        loading: false,
+        progress: [],
+        draft: "",
+        messages: [
+          { role: "user", content: "Question" },
+          { role: "assistant", content: "First answer" },
+          {
+            role: "user",
+            display_kind: "process_complete",
+            content: [
+              { type: "text", text: "Process receipt" },
+              { type: "text", text: "Exit code: 0" },
+            ],
+          },
+          { role: "assistant", content: "Follow-up answer" },
+        ],
+      },
+    });
+    expect(wrapper.findAll(".user")).toHaveLength(1);
+    const disclosure = wrapper.get(".system-notices");
+    expect(disclosure.attributes("open")).toBeUndefined();
+    await disclosure.get("summary").trigger("click");
+    expect(disclosure.get("p").text()).toBe("Process receipt\nExit code: 0");
+    const text = wrapper.text();
+    expect(text.indexOf("First answer")).toBeLessThan(text.indexOf("Background process completed"));
+    expect(text.indexOf("Exit code: 0")).toBeLessThan(text.indexOf("Follow-up answer"));
+  });
+
+  it.each(["Response failed", "Response completed"])(
+    "preserves terminal %s status",
+    async (statusLabel) => {
+      const wrapper = mount(ChatTranscript, {
+        props: { loading: false, progress: [], draft: "", messages: [], statusLabel },
+      });
+      expect(wrapper.get('[role="status"]').text()).toBe(statusLabel);
+      expect(wrapper.find(".system-notices").exists()).toBe(false);
+      await wrapper.setProps({ working: true });
+      expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    },
+  );
+
+  it("does not leak status rows for ordinary lookalike user text", () => {
+    const ordinary = "[System: the active model changed]";
+    const wrapper = mount(ChatTranscript, {
+      props: {
+        loading: false,
+        progress: [],
+        draft: "",
+        messages: [{ role: "user", content: ordinary }],
+      },
+    });
+    expect(wrapper.get(".user .message-content").text()).toBe(ordinary);
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+    expect(wrapper.find(".system-notices").exists()).toBe(false);
+  });
+
   it("renders history content parts and arriving markdown with readable structure", async () => {
     const wrapper = mount(ChatTranscript, {
       props: {

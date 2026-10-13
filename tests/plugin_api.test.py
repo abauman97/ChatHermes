@@ -1838,3 +1838,26 @@ async def test_session_project_move_resolves_profile_workspace_and_rejects_brows
         assert calls == []
         assert (await client.post(route.replace('alpha', '../other'), json={'project_id': 'notes'})).status_code == 422
         assert calls == []
+
+@pytest.mark.parametrize('kind', ['hidden', 'auto_continue', 'process_complete', 'async_delegation_complete', 'model_switch', 'failed_turn'])
+def test_workspace_message_preserves_display_contract(kind):
+    metadata = {'display_text': 'Synthetic timeline label'}
+    projected = plugin._workspace_message({'row_id': 17, 'role': 'user', 'text': 'Internal context', 'display_kind': kind, 'display_metadata': metadata})
+    assert projected == {'id': '17', 'role': 'user', 'content': 'Internal context', 'display_kind': kind, 'display_metadata': metadata}
+
+@run_async
+async def test_native_history_uses_supported_resume_on_retained_owner(monkeypatch):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            return {'messages': [{'row_id': 1, 'role': 'user', 'text': 'Internal', 'display_kind': 'process_complete', 'display_metadata': {'display_text': 'Job finished'}}]}
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'alpha')
+    channel.runtime, channel.stored = 'runtime', 'stored'
+    result = await channel.operation('chat.history', {})
+    assert result['messages'][0]['display_metadata'] == {'display_text': 'Job finished'}
+    assert calls == [('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})]
+    with pytest.raises(plugin.HTTPException):
+        await channel.operation('chat.history', {'session_id': 'foreign'})

@@ -1,5 +1,7 @@
 import type { Activity, Message, TurnBlock } from "../../../types/hermes";
 import type { TranscriptEntry } from "../types/chat-ui";
+import { gatewayDisplay, gatewayDisplayText } from "../runtime/gateway-display";
+import { messageText } from "../../../services/hermes-api";
 import { historyBlocks } from "../runtime/assistant-turn";
 export function transcriptEntries(input: {
   messages: Message[];
@@ -9,16 +11,37 @@ export function transcriptEntries(input: {
   working?: boolean;
   approvalPending?: boolean;
 }): TranscriptEntry[] {
-  const visible = input.messages.filter((message) => message.role !== "system");
+  const visible = input.messages.filter(
+    (message) => gatewayDisplay(message) !== "hidden" || Boolean(message.blocks?.length),
+  );
   const result: TranscriptEntry[] = [];
   let userCount = 0;
   for (let index = 0; index < visible.length;) {
     const message = visible[index]!;
-    if (message.role === "user") {
-      userCount++;
-      result.push({ kind: "user", message, key: message.id || `user-${index}` });
+    if (message.role === "user" || gatewayDisplay(message) === "status") {
+      const display = gatewayDisplay(message);
+      if (display === "status")
+        result.push({
+          kind: "status",
+          text: gatewayDisplayText(message),
+          content: messageText(message.content),
+          key: message.id || `status-${index}`,
+        });
+      else if (display === "message") {
+        userCount++;
+        result.push({ kind: "user", message, key: message.id || `user-${index}` });
+      }
+      if (display === "status" && !message.blocks?.length) {
+        index++;
+        continue;
+      }
       let end = index + 1;
-      while (end < visible.length && visible[end]!.role !== "user") end++;
+      while (
+        end < visible.length &&
+        visible[end]!.role !== "user" &&
+        gatewayDisplay(visible[end]!) !== "status"
+      )
+        end++;
       const last = end === visible.length;
       const blocks =
         last && (!input.turnUserCount || input.turnUserCount === userCount) && input.blocks?.length
@@ -43,7 +66,12 @@ export function transcriptEntries(input: {
       index = end;
     } else {
       let end = index + 1;
-      while (end < visible.length && visible[end]!.role !== "user") end++;
+      while (
+        end < visible.length &&
+        visible[end]!.role !== "user" &&
+        gatewayDisplay(visible[end]!) !== "status"
+      )
+        end++;
       result.push({
         kind: "turn",
         blocks: historyBlocks(visible.slice(index, end)),

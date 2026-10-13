@@ -19,6 +19,7 @@ export interface SessionPage {
 }
 export interface Message {
   display_kind?: string;
+  display_metadata?: unknown;
   id?: string;
   role: string;
   content: unknown;

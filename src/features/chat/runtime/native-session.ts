@@ -11,6 +11,12 @@ import {
   type AssistantTurn,
 } from "./assistant-turn";
 import { nativeOutcome, uncertainNativeOutcome, settleNativeOutcome } from "./native-admission";
+import {
+  gatewayDisplay,
+  gatewayDisplayText,
+  gatewayOutcome,
+  type DisplayMetadata,
+} from "./gateway-display";
 import type { Message } from "../../../types/hermes";
 import type {
   OpenRequestEntry,
@@ -59,7 +65,12 @@ export function useNativeSession(onSettled: () => void) {
     if (user && turn) user.blocks = turn.blocks;
     messages.value = [...messages.value];
   };
-  function input(text: string, correction = false, admissionId?: string) {
+  function input(
+    text: string,
+    correction = false,
+    admissionId?: string,
+    display: DisplayMetadata = {},
+  ) {
     if (pendingInput && !correction && user && admissionId === pendingAttempt) {
       pendingInput = false;
       // Keep the immediate attachment preview until authoritative history maps
@@ -74,7 +85,13 @@ export function useNativeSession(onSettled: () => void) {
       completed.push({ user, turn, hasCorrections: true });
     }
     hasCorrections = correction || false;
-    user = { id: `native-user-${++sequence}`, role: "user", content: text };
+    user = {
+      id: `native-user-${++sequence}`,
+      role: "user",
+      content: text,
+      display_kind: display.display_kind,
+      display_metadata: display.display_metadata,
+    };
     messages.value.push(user);
     turn = reactive(createTurn());
     user.blocks = turn.blocks;
@@ -108,19 +125,33 @@ export function useNativeSession(onSettled: () => void) {
         (last, row, index) => (row.role === "user" ? index : last),
         -1,
       );
-      if (last < 0 || messageText(messages.value[last]!.content) !== value.inflight.user)
-        input(value.inflight.user);
-      else {
+      if (
+        last < 0 ||
+        messageText(messages.value[last]!.content) !== value.inflight.user ||
+        messages.value[last]!.display_kind !== (value.inflight.display_kind || undefined)
+      ) {
+        input(value.inflight.user, false, undefined, {
+          display_kind: value.inflight.display_kind || undefined,
+          display_metadata: value.inflight.display_metadata,
+        });
+      } else {
         user = messages.value[last];
         turn = reactive(createTurn());
-        mergeHistoryBlocks(turn, historyBlocks(messages.value.slice(last + 1)), busy.value);
+        const recoveredBlocks = historyBlocks(messages.value.slice(last + 1));
+        mergeHistoryBlocks(turn, recoveredBlocks, busy.value);
         user!.blocks = turn.blocks;
       }
-      if (value.inflight.assistant)
+      if (value.inflight.assistant && !turn!.blocks.some((block) => block.kind === "text"))
         reduceTurn(turn!, { type: "text.snapshot", data: { text: value.inflight.assistant } });
       for (const text of value.inflight.corrections || []) input(text, true);
       if (value.inflight.error) error.value = value.inflight.error;
-      if (value.running)
+      status.value =
+        gatewayDisplay(user!) === "status"
+          ? gatewayDisplayText(user!)
+          : value.running
+            ? "Working…"
+            : gatewayOutcome(value.inflight.status);
+      if (value.running && !value.inflight.error)
         error.value =
           "Earlier progress is outside retained recovery; saved history is authoritative.";
     }
@@ -132,7 +163,26 @@ export function useNativeSession(onSettled: () => void) {
       currentViewer = viewer;
     if (!currentViewer || recovering || connection.value !== "ready") return;
     try {
-      const history = await api.messages(p, s);
+      const stored = await api.messages(p, s);
+      if (current !== generation || flight !== hydrating || recovering) return;
+      const display = stored.length
+        ? await currentViewer.rpc<{ messages?: Message[] }>("chat.history").catch(() => null)
+        : { messages: [] };
+      // The pinned HTTP serializer omits display_metadata. Join the native
+      // projection by durable identity, preserving REST attachments/tool output.
+      const projected = new Map(
+        (display?.messages || []).filter((row) => row.id).map((row) => [row.id, row]),
+      );
+      const history = stored.map((row) => {
+        const native = projected.get(row.id);
+        return native
+          ? {
+              ...row,
+              display_kind: native.display_kind ?? row.display_kind,
+              display_metadata: native.display_metadata ?? row.display_metadata,
+            }
+          : row;
+      });
       if (current !== generation || flight !== hydrating || recovering) return;
       // A newer turn may start while REST is pending. Preserve its projection;
       // only a receipt with durable row identities retires covered live parts.
@@ -251,14 +301,16 @@ export function useNativeSession(onSettled: () => void) {
           restore(value);
         });
       },
-      input: (text, correction, admissionId) => deliver(() => input(text, correction, admissionId)),
+      input: (text, correction, admissionId, display) =>
+        deliver(() => input(text, correction, admissionId, display)),
       event: (event) =>
         deliver(() => {
           const data = (event.payload || {}) as Record<string, unknown>;
           const text = typeof data.text === "string" ? data.text : "";
           if (event.type === "message.start") {
             busy.value = true;
-            status.value = "Working…";
+            status.value =
+              user && gatewayDisplay(user) === "status" ? gatewayDisplayText(user) : "Working…";
             receipt = undefined;
           } else if (event.type === "thinking.delta" || event.type === "tool.generating")
             status.value =
@@ -266,6 +318,14 @@ export function useNativeSession(onSettled: () => void) {
                 ? "Preparing " + (typeof data.name === "string" && data.name ? data.name : "tool")
                 : text || "Working…";
           else if (event.type === "status.update") status.value = text;
+          else if (event.type === "notice")
+            status.value = typeof data.message === "string" ? data.message : "";
+          else if (event.type === "error")
+            error.value = typeof data.message === "string" ? data.message : "Session failed";
+          else if (event.type === "session.reclaimed") {
+            busy.value = false;
+            status.value = "Session reclaimed";
+          }
           if (!turn && user) turn = reactive(createTurn());
           let target = turn;
           if (event.type.startsWith("subagent.") || event.type.startsWith("tool.")) {
@@ -282,9 +342,14 @@ export function useNativeSession(onSettled: () => void) {
             for (const entry of completed)
               reduceNativeTurn(entry.turn, "message.complete", { status: data.status });
             receipt = data.persisted_turn as PersistedTurn | undefined;
-            if (user && turn) completed.push({ user, turn, receipt, hasCorrections });
+            if (
+              user &&
+              turn &&
+              !completed.some((entry) => entry.user === user && entry.turn === turn)
+            )
+              completed.push({ user, turn, receipt, hasCorrections });
             busy.value = false;
-            status.value = "";
+            status.value = gatewayOutcome(data.status);
             if (typeof data.status === "string" && data.status && data.status !== "complete")
               error.value =
                 typeof data.error === "string" && data.error
@@ -305,6 +370,7 @@ export function useNativeSession(onSettled: () => void) {
           const wasReady = connection.value === "ready";
           stale();
           error.value = notice || "Session connection lost. Reconnect to restore this session.";
+          status.value = "Disconnected · backend state will be checked on reconnect";
           // A live failure gets one visible reconstruction. A failed attempt
           // stays stale until an explicit retry or a new availability transition.
           const staleGeneration = generation;

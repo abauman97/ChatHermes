@@ -8,6 +8,8 @@ import type {
   OpenRequestEntry,
 } from "../../../vendor/hermes/gateway-contract.generated.ts";
 
+import type { DisplayMetadata } from "./gateway-display";
+
 export class NativeError extends Error {
   outcome: string;
   constructor(message: string, outcome = "unknown") {
@@ -26,7 +28,12 @@ export type NativeSnapshot = SessionResumeResult & { recovery: Recovery };
 export interface NativeHooks {
   snapshot: (snapshot: NativeSnapshot) => void;
   event: (event: GatewayEvent) => void;
-  input: (text: string, correction: boolean, admissionId?: string) => void;
+  input: (
+    text: string,
+    correction: boolean,
+    admissionId?: string,
+    display?: DisplayMetadata,
+  ) => void;
   requests: (requests: OpenRequestEntry[]) => void;
   connection: (state: "connecting" | "recovering" | "open" | "closed", error?: string) => void;
   recovered: () => void;
@@ -242,6 +249,10 @@ export class NativeViewer {
         String(frame.params?.text || ""),
         frame.method === "chat.correction",
         frame.params?.admission_id,
+        {
+          display_kind: frame.params?.display_kind,
+          display_metadata: frame.params?.display_metadata,
+        },
       );
     else if (frame.method === "chat.unsupported")
       this.hooks.connection("open", "Unavailable in ChatHermes: " + frame.params?.method);

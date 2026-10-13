@@ -72,6 +72,7 @@ const {
   error: viewError,
   unavailable: viewUnavailable,
   connection,
+  status,
 } = view;
 </script>
 <template>
@@ -132,6 +133,7 @@ const {
       :working="viewBusy || viewApprovalPending"
       :approval-pending="viewApprovalPending"
       :home="!session"
+      :status-label="status"
     >
       <template #request><LiveRequest /></template>
     </ChatTranscript>

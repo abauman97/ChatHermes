@@ -3,7 +3,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 
-const outDir = "plugin/chathermes/dashboard/dist";
+const outDir = process.env.CHATHERMES_BUILD_OUT_DIR || "plugin/chathermes/dashboard/dist";
 const appBuild = await build({
   configFile: false,
   base: "./",

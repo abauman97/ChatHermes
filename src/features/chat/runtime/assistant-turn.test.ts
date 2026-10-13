@@ -746,3 +746,16 @@ it("does not measure historical reasoning replay as fresh thinking time", () => 
   expect(turn.blocks[0]).not.toHaveProperty("duration");
   expect(turn.blocks[0]).toHaveProperty("startedAt", undefined);
 });
+
+it("honors structured response_reused even when the final prose differs", () => {
+  const turn = createTurn();
+  reduceNativeTurn(turn, "message.delta", { text: "Already delivered" });
+  reduceNativeTurn(turn, "message.complete", {
+    text: "Recovery wrapper",
+    status: "complete",
+    response_reused: true,
+  });
+  expect(turn.blocks).toEqual([
+    expect.objectContaining({ kind: "text", content: "Already delivered" }),
+  ]);
+});

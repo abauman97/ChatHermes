@@ -25,7 +25,7 @@ const props = withDefaults(
   }>(),
   { followInitially: true },
 );
-const visible = computed(() => props.messages.filter((message) => message.role !== "system"));
+const visible = computed(() => entries.value);
 const entries = computed(() => transcriptEntries(props));
 const transcript = ref<HTMLElement>();
 const content = ref<HTMLElement>();
@@ -122,6 +122,12 @@ watch(
             :session-id="sessionId"
             @image-load="disclosureChanged"
           />
+          <div v-else-if="entry.kind === 'status'" class="text-sm text-[#a3a3a3]" role="status">
+            <details class="system-notices">
+              <summary class="cursor-pointer select-none">{{ entry.text }}</summary>
+              <p class="mt-2 whitespace-pre-wrap break-words">{{ entry.content }}</p>
+            </details>
+          </div>
           <AssistantTurn
             v-else
             :entry="entry"
@@ -137,6 +143,9 @@ watch(
           class="assistant-turn"
         >
           <TurnWork :activities="progress" :working="true" :approval-pending="approvalPending" />
+        </div>
+        <div v-if="statusLabel && !working" class="text-sm text-[#a3a3a3]" role="status">
+          {{ statusLabel }}
         </div>
         <slot
           v-if="!entries.some((entry) => entry.kind === 'turn' && entry.working)"

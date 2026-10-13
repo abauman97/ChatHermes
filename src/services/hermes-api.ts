@@ -104,11 +104,7 @@ function messagePage(value: unknown): {
     throw new Error("Invalid Hermes messages response");
   const pagination = record(row?.pagination);
   return {
-    messages: (entries as Message[]).map((row) =>
-      row.role === "user" && ["model_switch", "personality_switch"].includes(row.display_kind || "")
-        ? { ...row, role: "system" }
-        : row,
-    ),
+    messages: entries as Message[],
     pagination:
       typeof pagination?.returned === "number" && typeof pagination.limit === "number"
         ? { returned: pagination.returned, limit: pagination.limit }
