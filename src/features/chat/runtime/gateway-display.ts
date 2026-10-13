@@ -20,6 +20,10 @@ export function gatewayDisplay(row: Message): "hidden" | "status" | "message" {
 }
 export function gatewayDisplayText(row: DisplayMetadata): string {
   const metadata = row.display_metadata;
+  if (row.display_kind === "model_switch" && metadata && typeof metadata === "object") {
+    const model = "model" in metadata && typeof metadata.model === "string" ? metadata.model : "";
+    if (model) return `Model changed to ${model}`;
+  }
   if (
     metadata &&
     typeof metadata === "object" &&

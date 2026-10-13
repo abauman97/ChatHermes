@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { transcriptEntries } from "./transcript-entries";
+import { gatewayDisplayText } from "../runtime/gateway-display";
 import type { Message, TurnBlock } from "../../../types/hermes";
 const text = (content: string): TurnBlock => ({ id: "block-1", kind: "text", content });
 describe("transcript entries", () => {
@@ -108,6 +109,16 @@ it("hides an in-flight internal input and its work unless a distinct visible tur
   expect(entries).toEqual([
     expect.objectContaining({ kind: "turn", blocks: [text("Visible final")] }),
   ]);
+});
+
+it("includes target model in model-switch status metadata", () => {
+  expect(
+    gatewayDisplayText({
+      display_kind: "model_switch",
+      display_metadata: { model: "openai/gpt-test" },
+    }),
+  ).toBe("Model changed to openai/gpt-test");
+  expect(gatewayDisplayText({ display_kind: "model_switch" })).toBe("Model changed");
 });
 
 it("keeps live assistant blocks attached to hidden or status-only internal input", () => {
