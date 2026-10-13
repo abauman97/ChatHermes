@@ -17,6 +17,8 @@ test("disposable dashboard composer, attachments and real native response", asyn
   const profile = plugin.getByRole("combobox", { name: "Profile", exact: true });
   await profile.selectOption("default");
   await expect(profile).toHaveValue("default");
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Close navigation", exact: true }).click();
   await area.click();
   await expect(area).toBeFocused();
   await expect(area).toHaveCSS("font-size", "16px");
@@ -361,10 +363,8 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(area).toBeFocused();
   const active = plugin.locator(".current-activity .activity:not(.activity-thinking)").first();
   await expect(active).toBeVisible({ timeout: 60_000 });
-  await expect(active).not.toHaveAttribute("open");
-  await page.screenshot({ path: info.outputPath("activity-live-collapsed.png") });
-  await active.locator("summary").click();
   await expect(active).toHaveAttribute("open", "");
+  await page.screenshot({ path: info.outputPath("activity-live-expanded.png") });
   await expect(active.locator("pre")).toContainText("activity-line-", { timeout: 60_000 });
   await active.locator("summary").click();
   await expect(active).not.toHaveAttribute("open");
@@ -789,7 +789,12 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await expect(rows.nth(0)).not.toBeVisible();
     await expect(rows.nth(1)).toBeVisible();
     await expect(rows.nth(2)).toBeVisible();
-    await rows.nth(1).locator("summary").click();
+    await expect(rows.nth(1)).toHaveAttribute("open", "");
+    await expect(rows.nth(1).locator(".activity-label")).toHaveText(
+      toolName === "terminal" ? "printf second" : toolName,
+    );
+    await rows.nth(1).locator("summary").click(); // manual collapse
+    await rows.nth(1).locator("summary").click(); // explicitly reopen and retain intent
     event("tool.progress", { tool_id: "second", name: toolName, text: "Arriving live output" });
     await expect(rows.nth(1).locator("pre")).toContainText("Arriving live output");
     await area.fill("Focusable draft during streaming");

@@ -269,6 +269,22 @@ async def messages(request: Request, session_id: str):
     return await _proxy(request, "/api/sessions/" + quote(session_id, safe="") + "/messages")
 
 
+@router.post('/api/sessions/{session_id}/project')
+async def move_session_to_project(request: Request, session_id: str):
+    _rpc_profile(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(422, 'Invalid project selection')
+    if not isinstance(body, dict) or set(body) != {'project_id'} or not isinstance(body['project_id'], str) or not body['project_id'].strip():
+        raise HTTPException(422, 'Invalid project selection')
+    node = (await project(request, body['project_id']))['project']
+    root = node.get('path') or next((repo.get('path') for repo in node.get('repos', []) if repo.get('path')), None)
+    if node.get('archived') or node.get('isNoProject') or not root:
+        raise HTTPException(422, 'Project has no active workspace')
+    return await _rpc(request, 'session.workspace.move', {'session_key': session_id, 'cwd': root})
+
+
 @router.get('/profiles')
 async def profiles():
     from hermes_cli.profiles import list_profiles

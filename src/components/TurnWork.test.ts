@@ -67,6 +67,7 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   const second = wrapper.findAll(".activity")[1]!;
   const secondElement = second.element;
   await second.get("summary").trigger("click");
+  expect(second.attributes("open")).toBeDefined();
   expect(wrapper.get(".work-summary").text()).toContain("Used 1 tool");
   expect(wrapper.get(".activity").element).toBe(first);
   expect(rowShown(wrapper.get(".activity"))).toBe(false);

@@ -153,14 +153,12 @@ describe("settings page", () => {
     );
     expect(removeEventListener).toHaveBeenCalledWith("message", listener);
   });
-  it("renders the ChatHermes logo in the sidebar drawer", async () => {
+  it("renders the ChatHermes title without a sidebar logo", async () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
     const wrapper = mount(App);
     await flushPromises();
-    const logo = wrapper.get(".brand-mark");
-    expect(logo.element.tagName).toBe("IMG");
-    expect(logo.attributes("src")).toBe("/api/plugins/chathermes/assets/dist/icons/icon-192.png");
-    expect(logo.attributes("alt")).toBe("");
+    expect(wrapper.get(".brand").text()).toContain("ChatHermes");
+    expect(wrapper.find(".brand img").exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -256,14 +254,15 @@ describe("settings page", () => {
     const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
     const sidebar = wrapper.get(".sidebar");
-    expect(sidebar.findAll("button").filter((button) => button.text() === "New chat")).toHaveLength(
-      1,
+    expect(sidebar.findAll('[aria-label="New chat"]')).toHaveLength(1);
+    expect(sidebar.get(".profile-field").element.nextElementSibling).toBe(
+      sidebar.get(".drawer-chat").element,
     );
     expect(sidebar.get(".drawer-chat").element.nextElementSibling).toBe(
-      sidebar.get(".projects-nav").element,
+      sidebar.get(".drawer-settings").element,
     );
     expect(wrapper.find(".push-setting").exists()).toBe(false);
-    expect(sidebar.find(".sidebar-foot .drawer-chat").exists()).toBe(false);
+    expect(sidebar.find(".sidebar-foot .drawer-chat").exists()).toBe(true);
     await wrapper.get('[aria-label="Open navigation"]').trigger("click");
     await flushPromises();
     await wrapper.get('[aria-label="Settings"]').trigger("click");
@@ -394,7 +393,7 @@ describe("settings page", () => {
     mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
     const wrapper = mount(App);
     await flushPromises();
-    expect(wrapper.get(".drawer-chat").text()).toBe("New chat");
+    expect(wrapper.get(".drawer-chat").attributes("aria-label")).toBe("New chat");
     expect(wrapper.find(".drawer-settings").exists()).toBe(true);
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
     await flushPromises();
@@ -1304,14 +1303,14 @@ describe("native secret prompts", () => {
   });
 });
 
-it("dismisses the mobile drawer when selecting the current profile or page", async () => {
+it("keeps the mobile drawer open when selecting a profile and dismisses it for pages", async () => {
   mockFetch(vi.fn(async () => json({ sessions: [], total: 0 })));
   const wrapper = mount(App);
   await flushPromises();
   await wrapper.get('[aria-label="Open navigation"]').trigger("click");
   await wrapper.get("#profile-field").setValue("alpha");
   await flushPromises();
-  expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("false");
+  expect(wrapper.get('[aria-label="Open navigation"]').attributes("aria-expanded")).toBe("true");
   await wrapper.get(".projects-nav").trigger("click");
   await flushPromises();
   await wrapper.get('[aria-label="Open navigation"]').trigger("click");
@@ -1480,11 +1479,11 @@ describe("local mobile drawer swipes", () => {
     const transcript = wrapper.get(".transcript").element;
     await swipe(transcript, 29, 250);
     expect(opened()).toBe(false);
-    for (const selector of [".composer", "textarea", ".topbar", ".empty-state button"]) {
+    for (const selector of [".composer", "textarea", ".topbar"]) {
       await swipe(wrapper.get(selector).element, 80, 250);
       expect(opened()).toBe(false);
     }
-    for (const tag of ["a", "select", "summary", "pre", "code"]) {
+    for (const tag of ["button", "a", "select", "summary", "pre", "code"]) {
       const control = document.createElement(tag);
       const child = document.createElement("span");
       control.append(child);

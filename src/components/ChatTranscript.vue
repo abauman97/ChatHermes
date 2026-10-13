@@ -25,7 +25,6 @@ const props = withDefaults(
   }>(),
   { followInitially: true },
 );
-const emit = defineEmits<{ suggest: [text: string] }>();
 const visible = computed(() => props.messages.filter((message) => message.role !== "system"));
 const entries = computed(() => transcriptEntries(props));
 const transcript = ref<HTMLElement>();
@@ -113,22 +112,6 @@ watch(
             <p class="mt-3 text-sm text-[#a3a3a3]">
               Ask Hermes a question or continue a conversation.
             </p>
-          </div>
-          <div v-if="home" class="grid gap-2 pt-8 text-[#b4b4b4]">
-            <button
-              class="flex items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-[#303030]"
-              @click="emit('suggest', 'Help me review my latest project changes')"
-            >
-              <span aria-hidden="true">⌘</span
-              ><span class="truncate">Help me review my latest project changes</span>
-            </button>
-            <button
-              class="flex items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-[#303030]"
-              @click="emit('suggest', 'Find the most useful next step for my work')"
-            >
-              <span aria-hidden="true">✳</span
-              ><span class="truncate">Find the most useful next step for my work</span>
-            </button>
           </div>
         </div>
         <template v-for="entry in entries" :key="entry.key">

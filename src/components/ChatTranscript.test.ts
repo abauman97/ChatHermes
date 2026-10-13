@@ -607,7 +607,7 @@ it("collapses completed native calls during streaming across empty generation bo
   expect(current.get(".work-timeline > div").attributes("style")).toContain("display: none");
   const active = current.get(".current-activity .activity");
   const activeElement = active.element;
-  await active.get("summary").trigger("click");
+  expect(active.attributes("open")).toBeDefined();
   await event("tool.progress", { tool_id: "b", name: "terminal", text: "live result" });
   expect(active.get("pre").text()).toContain("live result");
   expect(active.attributes("open")).toBeDefined();
@@ -643,7 +643,8 @@ it("collapses completed native calls during streaming across empty generation bo
   ]);
   expect(wrapper.findAll(".transcript > div > *")[2]!.classes()).toContain("message");
   await summary.trigger("click");
-  expect(current.findAll(".activity")[1]!.attributes("open")).toBeDefined();
+  expect(current.findAll(".activity")[1]!.attributes("open")).toBeUndefined();
+  await current.findAll(".activity")[1]!.get("summary").trigger("click");
   expect(current.findAll(".activity")[1]!.get("pre").text()).toContain("second result");
   wrapper.unmount();
 });

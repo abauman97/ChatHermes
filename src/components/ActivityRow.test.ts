@@ -81,15 +81,17 @@ describe("activity disclosures", () => {
     },
   );
   it.each(["failed", "interrupted", "unknown"] as const)(
-    "preserves manual expansion when a streaming tool becomes %s",
+    "preserves manual collapse when a streaming tool becomes %s",
     async (state) => {
       const wrapper = mount(ActivityRow, { props: { activity: tool } });
-      await wrapper.get("summary").trigger("click");
+      (wrapper.get("details").element as HTMLDetailsElement).open = false;
+      await wrapper.get("details").trigger("toggle");
       await wrapper.setProps({ activity: { ...tool, complete: true, state } });
-      expect(wrapper.get("details").attributes("open")).toBeDefined();
-      expect(wrapper.get("details").classes()).toContain("activity-failed");
-      await wrapper.get("summary").trigger("click");
       expect(wrapper.get("details").attributes("open")).toBeUndefined();
+      expect(wrapper.get("details").classes()).toContain("activity-failed");
+      (wrapper.get("details").element as HTMLDetailsElement).open = true;
+      await wrapper.get("details").trigger("toggle");
+      expect(wrapper.get("details").attributes("open")).toBeDefined();
     },
   );
   it("does not claim an unfinished historical tool succeeded", () => {

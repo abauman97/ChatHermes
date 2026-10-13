@@ -132,7 +132,6 @@ const {
       :working="viewBusy || viewApprovalPending"
       :approval-pending="viewApprovalPending"
       :home="!session"
-      @suggest="actions.suggest"
     >
       <template #request><LiveRequest /></template>
     </ChatTranscript>

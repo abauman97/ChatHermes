@@ -165,6 +165,7 @@ it.each(["edit_file", "write_file"])(
       expect(child.isVisible()).toBe(true);
       expect(child.classes()).toContain("activity-active");
       await wrapper.get(".work-summary").trigger("click");
+      expect(call.attributes("open")).toBe("");
       expect(call.get("pre").text()).toContain("notes.txt");
       expect(call.get("pre").text()).toContain("Saved notes.txt");
       wrapper.unmount();

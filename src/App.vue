@@ -54,12 +54,19 @@ let navigationRevision = 0,
   profileInitialized = false;
 let profileWork: Promise<void> = Promise.resolve();
 let routeWork: Promise<void> = Promise.resolve();
-async function navigate(to: Parameters<typeof router.push>[0], replace = false) {
-  drawer.value = false;
+let drawerNavigationTarget = "";
+async function navigate(
+  to: Parameters<typeof router.push>[0],
+  replace = false,
+  keepDrawer = false,
+) {
+  drawerNavigationTarget = keepDrawer ? router.resolve(to).fullPath : "";
+  if (!keepDrawer) drawer.value = false;
   closeScreenMenu(false);
   navigationRevision++;
   await router[replace ? "replace" : "push"](to);
   await routeWork;
+  drawerNavigationTarget = "";
 }
 function screenLink(name: RouteName, extra: Record<string, string> = {}) {
   return destination(name, profile.value, session.value, projectId.value, extra);
@@ -449,6 +456,8 @@ async function applyProfile(id: string) {
 
   suggestedPrompt.value = "";
   creating.value = false;
+  sessionBusy.value = false;
+  sessionMutation++;
 
   projectConfirmation.value = undefined;
   projectsLoaded.value = false;
@@ -483,7 +492,6 @@ async function applyProfile(id: string) {
   chatError.value = "";
   offset.value = 0;
   hasMore.value = false;
-  drawer.value = false;
   const current = ++profileGeneration;
   subscribeProjectEvents();
   void loadProjects();
@@ -609,6 +617,37 @@ async function rename(id: string, title: string) {
       error.value = cause instanceof Error ? cause.message : "Could not rename session";
   }
 }
+const sessionBusy = ref(false);
+let sessionMutation = 0;
+async function manageSession(action: "archive" | "delete" | "project", id: string, target = "") {
+  if (offline.value || sessionBusy.value) return;
+  const p = profile.value,
+    current = generation,
+    mutation = ++sessionMutation;
+  sessionBusy.value = true;
+  try {
+    if (action === "archive") await api.archive(p, id);
+    else if (action === "delete") await api.deleteSession(p, id);
+    else await api.moveSession(p, id, target);
+    if (current !== generation || p !== profile.value) return;
+    if (session.value === id) {
+      if (action === "project")
+        await navigate({
+          name: "chat",
+          params: { sessionId: id },
+          query: { ...(p ? { profile: p } : {}), project: target },
+        });
+      else await navigate({ name: "home", query: p ? { profile: p } : {} });
+    }
+    await loadSessions();
+    refreshProjects();
+  } catch (cause) {
+    if (current === generation && p === profile.value)
+      error.value = cause instanceof Error ? cause.message : "Could not update session";
+  } finally {
+    if (mutation === sessionMutation) sessionBusy.value = false;
+  }
+}
 async function visibilityChange() {
   await native.availability(document.visibilityState === "visible", navigator.onLine);
   if (document.visibilityState === "visible") refreshProjects();
@@ -636,6 +675,8 @@ function chooseProfile(id: string) {
           return_to: router.resolve(destination("home", id)).fullPath,
         })
       : destination("home", id),
+    false,
+    true,
   );
 }
 function chooseSession(id: string, project = projectId.value) {
@@ -709,7 +750,7 @@ watch(
     if (!route.matched.length) return;
     const revision = ++navigationRevision;
     drawerSwipe.cancel();
-    drawer.value = false;
+    if (route.fullPath !== drawerNavigationTarget) drawer.value = false;
     closeScreenMenu(false);
     projectConfirmation.value = undefined;
     manageError.value = "";
@@ -966,12 +1007,25 @@ onUnmounted(() => {
       @click.capture="drawerSwipe.click"
       aria-label="Navigation"
     >
-      <div class="brand mb-3 shrink-0 flex items-center gap-2.5 px-2 text-2xl font-semibold">
-        <img
-          class="brand-mark size-9 shrink-0 object-contain"
-          alt=""
-          :src="'/api/plugins/chathermes/assets/dist/icons/icon-192.png'"
-        /><span>ChatHermes</span
+      <div class="brand mb-3 shrink-0 flex items-center gap-2 px-2 text-xl font-semibold">
+        <span class="min-w-0 truncate">ChatHermes</span>
+        <button
+          v-if="embedded"
+          class="drawer-dashboard grid size-8 shrink-0 place-items-center rounded-lg text-[#a3a3a3] hover:bg-[#303030] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+          aria-label="Return to Hermes Desktop"
+          title="Return to Hermes Desktop"
+          @click="exitPlugin"
+        >
+          <svg
+            class="size-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <path d="M10 5 3 12l7 7M3 12h12a6 6 0 0 0 6-6V3" />
+          </svg></button
         ><button
           ref="closeButton"
           class="mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
@@ -981,22 +1035,6 @@ onUnmounted(() => {
           ×
         </button>
       </div>
-      <button
-        class="drawer-chat flex min-h-[44px] shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030] disabled:opacity-55"
-        :disabled="offline || creating"
-        @click="newChat"
-      >
-        <svg
-          class="size-6"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-          aria-hidden="true"
-        >
-          <path d="M14 4H4v16h16V10M12 12l9-9M16 3h5v5" /></svg
-        >New chat
-      </button>
       <RouterLink
         class="projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="projectsPage || projectView ? 'page' : undefined"
@@ -1049,13 +1087,6 @@ onUnmounted(() => {
           <path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6" /></svg
         >Artifacts
       </RouterLink>
-      <button
-        v-if="embedded"
-        class="drawer-dashboard min-h-[44px] rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
-        @click="exitPlugin"
-      >
-        ← Hermes Desktop
-      </button>
       <SessionSidebar
         heading="Recents"
         :sessions="sessions"
@@ -1063,7 +1094,12 @@ onUnmounted(() => {
         :loading="loading"
         :error="error"
         :has-more="hasMore"
-        :busy="offline || creating"
+        :busy="offline || creating || sessionBusy"
+        :projects="projects"
+        :key="profile"
+        @archive="manageSession('archive', $event)"
+        @delete="manageSession('delete', $event)"
+        @project="(id, target) => manageSession('project', id, target)"
         @select="recentSession"
         @create="newChat"
         @more="loadSessions(true)"
@@ -1091,6 +1127,25 @@ onUnmounted(() => {
             <option v-for="item in profiles" :key="item.name" :value="item.name">
               {{ item.name }}
             </option></select
+          ><button
+            class="drawer-chat grid size-11 shrink-0 place-items-center rounded-lg bg-[#2563eb] text-white hover:bg-[#1d4ed8] focus-visible:outline-3 focus-visible:outline-[#b4b4b4] disabled:opacity-55"
+            aria-label="New chat"
+            title="New chat"
+            :disabled="offline || creating"
+            @click="newChat"
+          >
+            <svg
+              class="size-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path
+                d="M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8M16 3l5 5M10 14l1-5 7-7 5 5-7 7Z"
+              />
+            </svg></button
           ><button
             ref="settingsButton"
             class="drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]"

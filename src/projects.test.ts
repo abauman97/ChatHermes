@@ -366,7 +366,7 @@ describe("authoritative gateway Projects", () => {
     const wrapper = mount(App);
     await flushPromises();
     expect(wrapper.find('.sidebar [aria-label="Project A"]').exists()).toBe(false);
-    expect(wrapper.get(".drawer-chat").text()).toBe("New chat");
+    expect(wrapper.get(".drawer-chat").attributes("aria-label")).toBe("New chat");
     expect(wrapper.find(".drawer-account #profile-field").exists()).toBe(true);
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
@@ -762,7 +762,7 @@ describe("authoritative gateway Projects", () => {
     );
     wrapper = mount(App);
     await flushPromises();
-    await wrapper.get(".sidebar > button").trigger("click");
+    await wrapper.get(".drawer-chat").trigger("click");
     await flushPromises();
     await flushPromises();
     finish(json({ project: a }));
