@@ -123,7 +123,10 @@ watch(
             @image-load="disclosureChanged"
           />
           <div v-else-if="entry.kind === 'status'" class="text-sm text-[#a3a3a3]" role="status">
-            {{ entry.text }}
+            <details class="system-notices">
+              <summary class="cursor-pointer select-none">{{ entry.text }}</summary>
+              <p class="mt-2 whitespace-pre-wrap break-words">{{ entry.content }}</p>
+            </details>
           </div>
           <AssistantTurn
             v-else

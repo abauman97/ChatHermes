@@ -248,7 +248,7 @@ it("passes prompt-less message.start boundaries to the native reducer", async ()
 });
 
 it.each(["hidden", "auto_continue", "process_complete"])(
-  "reconstructs %s input without leaking instructions or replaying assistant output",
+  "reconstructs %s input with inspectable notices and without replaying assistant output",
   async (display_kind) => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     fake.rpc.mockResolvedValue({ settled: false });
@@ -284,7 +284,12 @@ it.each(["hidden", "auto_continue", "process_complete"])(
         working: session.busy.value,
       });
     expect(rendered().some((entry) => entry.kind === "user")).toBe(false);
-    expect(JSON.stringify(rendered())).not.toContain("internal");
+    if (display_kind === "hidden") expect(JSON.stringify(rendered())).not.toContain("internal");
+    else
+      expect(rendered().find((entry) => entry.kind === "status")).toMatchObject({
+        text: "Job finished",
+        content: "internal",
+      });
     expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(1);
     fake.hooks!.snapshot(snapshot as any);
     fake.hooks!.recovered();

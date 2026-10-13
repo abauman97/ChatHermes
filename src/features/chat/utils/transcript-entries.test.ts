@@ -90,12 +90,14 @@ it("uses display metadata without interpreting legitimate user text", () => {
     "Resuming interrupted turn…",
     "Build finished",
   ]);
-  expect(JSON.stringify(entries)).not.toMatch(
-    /Internal process instructions|secret scaffolding|hidden answer/,
-  );
+  expect(JSON.stringify(entries)).not.toMatch(/secret scaffolding|hidden answer/);
   expect(JSON.stringify(entries)).toContain("Recovered answer");
   expect(JSON.stringify(entries)).toContain("Visible output");
   expect(messages[1]!.content).toBe(quote);
+  expect(entries.filter((entry) => entry.kind === "status").map((entry) => entry.content)).toEqual([
+    quote,
+    "Internal process instructions",
+  ]);
 });
 
 it("hides an in-flight internal input and its work unless a distinct visible turn exists", () => {

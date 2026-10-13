@@ -1,6 +1,7 @@
 import type { Activity, Message, TurnBlock } from "../../../types/hermes";
 import type { TranscriptEntry } from "../types/chat-ui";
 import { gatewayDisplay, gatewayDisplayText } from "../runtime/gateway-display";
+import { messageText } from "../../../services/hermes-api";
 import { historyBlocks } from "../runtime/assistant-turn";
 export function transcriptEntries(input: {
   messages: Message[];
@@ -23,6 +24,7 @@ export function transcriptEntries(input: {
         result.push({
           kind: "status",
           text: gatewayDisplayText(message),
+          content: messageText(message.content),
           key: message.id || `status-${index}`,
         });
       else if (display === "message") {
