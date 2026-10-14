@@ -140,34 +140,90 @@ it("puts Scheduled below Projects and keeps run refresh in screen options", asyn
   wrapper.unmount();
 });
 
-it.each([{ messages: [], output: "Saved output without a session" }, { messages: [] }])(
-  "does not offer Resume session without a persisted session: %j",
-  async (output) => {
-    setup();
-    vi.spyOn(api, "scheduledOutput").mockResolvedValue(output);
-    history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
-    const wrapper = mount(App);
-    await flushPromises();
-    await flushPromises();
-    await wrapper.get('[aria-label="Screen options"]').trigger("click");
-    expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
-    expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
-    await wrapper.get('[aria-label="Screen options"]').trigger("keydown", { key: "Escape" });
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
-    wrapper.unmount();
-  },
-);
-it("gates refresh during loading and clears resume while navigating away from a run", async () => {
+it.each([
+  { messages: [], output: "Saved output without a session" },
+  { messages: [] },
+  { messages: [], session_id: "" },
+])("does not offer Resume session without a persisted session: %j", async (output) => {
   setup();
-  history.replaceState({}, "", "/chathermes#/scheduled/audit/cron_audit_20260101_000000");
+  vi.spyOn(api, "scheduledOutput").mockResolvedValue(output);
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
   const wrapper = mount(App);
   await flushPromises();
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').text()).toBe("Resume Session");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
+  await wrapper.get('[aria-label="Screen options"]').trigger("keydown", { key: "Escape" });
+  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  wrapper.unmount();
+});
+it("offers exactly one action for the output session, preserving its profile without creating a chat", async () => {
+  setup();
+  // The output's persisted session is authoritative, independently of the run URL.
+  vi.spyOn(api, "scheduledOutput").mockResolvedValue({
+    messages: [],
+    output: "Saved security audit",
+    session_id: "persisted_audit_session",
+  });
+  const create = vi.spyOn(api, "create");
+  history.replaceState(
+    {},
+    "",
+    "/chathermes#/scheduled/audit/cron_audit_20260101_000000?profile=beta",
+  );
+  const wrapper = mount(App);
+  await flushPromises();
+  await flushPromises();
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  const actions = wrapper
+    .findAll('[role="menuitem"]')
+    .filter((row) => row.text() === "Resume Session");
+  expect(actions).toHaveLength(1);
+  expect(actions[0]!.attributes("disabled")).toBeUndefined();
   await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
+  await flushPromises();
+  expect(routeUrl().pathname).toBe("/chat/persisted_audit_session");
+  expect(routeUrl().searchParams.get("profile")).toBe("beta");
+  expect(create).not.toHaveBeenCalled();
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  wrapper.unmount();
+});
+
+it("hides resume and disables refresh while output loads, then clears a previously persisted session", async () => {
+  setup();
+  let finish!: (output: { messages: []; session_id?: string }) => void;
+  const output = vi.spyOn(api, "scheduledOutput").mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/cron_audit_20260101_000000");
+  const wrapper = mount(App);
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
   expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
+  expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
+  finish({ messages: [], session_id: "persisted_audit_session" });
+  await flushPromises();
+  expect(wrapper.findAll('[data-test="resume-scheduled-session"]')).toHaveLength(1);
+  output.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
+  await flushPromises();
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
+  finish({ messages: [] });
+  await flushPromises();
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });

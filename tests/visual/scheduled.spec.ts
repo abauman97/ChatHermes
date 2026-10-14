@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { signIn } from "./login";
 import { expect, test } from "@playwright/test";
 
@@ -180,7 +181,20 @@ test("Scheduled native history, saved output, pagination and session resume menu
 test("scheduled page menu refreshes each view and resumes a persisted session", async ({
   page,
 }, info) => {
+  // Exercise the host-loaded artifact, not just the source component. A previous
+  // deployment included the new app bundle but index.js still imported an old one.
+  const loadedBundles: string[] = [];
+  page.on("response", (response) => {
+    if (/\/dashboard-plugins\/chathermes\/dist\/assets\/app-[^/]+\.js$/.test(response.url()))
+      loadedBundles.push(response.url());
+  });
   await signIn(page, "/chathermes#/scheduled");
+  expect(loadedBundles).toHaveLength(1);
+  const loadedBundle = await page.request.get(loadedBundles[0]!);
+  expect(loadedBundle.ok()).toBe(true);
+  const bundle = await loadedBundle.text();
+  expect(bundle.match(/resume-scheduled-session/g) || []).toHaveLength(1);
+  expect(bundle.match(/Resume Session/g) || []).toHaveLength(1);
   const plugin = page.locator(".chathermes-embedded");
   const options = plugin.getByRole("button", { name: "Screen options", exact: true });
   const refresh = plugin.getByRole("menuitem", { name: "Refresh", exact: true });
@@ -222,16 +236,16 @@ test("scheduled page menu refreshes each view and resumes a persisted session", 
   const runs = plugin.getByRole("navigation", { name: "Job runs" }).getByRole("button");
   await expect(runs).toHaveCount(2);
   await refreshView("runs");
+  const outputResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname.endsWith("/scheduled/output") && response.ok(),
+  );
   await runs.first().click();
+  const output = await (await outputResponse).json();
+  expect(output.session_id).toBeTruthy();
   await expect(plugin.locator(".message.assistant")).toContainText("Synthetic scheduled report");
   await expect(plugin.locator(".project-back")).toHaveCount(0);
   await expect(plugin.getByRole("button", { name: "Open a chat about this run" })).toHaveCount(0);
-  await expect(plugin.locator(".activity[open]")).toHaveCount(0);
-  await plugin.locator(".turn-work .activity summary").click();
-  await expect(plugin.locator(".turn-work .activity pre")).toContainText(
-    "Synthetic menu checks passed.",
-  );
-  await screenshot("run-expanded-disclosure");
+  await expect(plugin.locator(".activity")).toHaveCount(0);
   await plugin.locator(".transcript").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -239,17 +253,54 @@ test("scheduled page menu refreshes each view and resumes a persisted session", 
   await refreshView("output");
   await options.click();
   await expect(resume).toBeEnabled();
+  await expect(resume).toHaveCount(1);
   await expect(plugin.locator('[data-test="resume-scheduled-session"]')).toHaveCount(1);
   await screenshot("resume-session-menu");
   await options.press("Escape");
   await expect(plugin.getByRole("menu")).toHaveCount(0);
   await expect(options).toBeFocused();
+  let releaseOutput!: () => void;
+  const outputGate = new Promise<void>((resolve) => {
+    releaseOutput = resolve;
+  });
+  await page.route(
+    "**/scheduled/output?*",
+    async (route) => {
+      const response = await route.fetch();
+      await outputGate;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  await options.click();
+  await refresh.click();
+  await expect(plugin.getByRole("status")).toContainText("Loading scheduled history");
+  await options.click();
+  await expect(refresh).toBeDisabled();
+  await expect(resume).toHaveCount(0);
+  await composer.click();
+  await expect(composer).toBeFocused();
+  releaseOutput();
+  await expect(plugin.getByRole("status")).toHaveCount(0);
+  await options.click();
+  await expect(resume).toHaveCount(1);
+  await options.press("Escape");
+  const newChats: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/chat/sessions"))
+      newChats.push(request.url());
+  });
   await options.click();
   await resume.click();
-  await expect(page).toHaveURL(/#\/chat\/cron_/);
+  await expect(page).toHaveURL((url) =>
+    url.hash.startsWith("#/chat/" + encodeURIComponent(output.session_id)),
+  );
   await expect(plugin.locator(".scheduled-page")).toHaveCount(0);
-  await expect(plugin.locator(".message.assistant")).toContainText("Synthetic scheduled report");
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Synthetic scheduled report",
+  );
   await expect(composer).toHaveValue("");
+  expect(newChats).toEqual([]);
   await screenshot("resumed-session");
   await page.goBack();
   await expect(plugin.locator(".scheduled-page")).toBeVisible();
