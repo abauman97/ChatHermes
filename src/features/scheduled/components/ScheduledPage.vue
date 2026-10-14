@@ -4,16 +4,10 @@ import { useRoute, useRouter } from "vue-router";
 import { api, ApiError, messageText } from "../../../services/hermes-api";
 import type { ScheduledJob, ScheduledRun, ScheduledOutput } from "../../../types/hermes";
 import ChatTranscript from "../../../components/ChatTranscript.vue";
-const props = defineProps<{
-  profile: string;
-  chatBusy?: boolean;
-  offline?: boolean;
-  discussionError?: string;
-}>();
+const props = defineProps<{ profile: string; chatBusy?: boolean; offline?: boolean }>();
 const route = useRoute(),
   router = useRouter();
 let revision = 0;
-const emit = defineEmits<{ discuss: [text: string] }>();
 const jobs = ref<ScheduledJob[]>([]),
   job = ref<ScheduledJob>(),
   runs = ref<ScheduledRun[]>([]),
@@ -26,6 +20,16 @@ const status = ref("active"),
   offset = ref(0);
 let controller: AbortController | undefined;
 const rows = computed(() => jobs.value.filter((row) => state(row) === status.value));
+const resultMessages = computed(() => {
+  const text =
+    messageText(
+      output.value?.messages
+        .slice()
+        .reverse()
+        .find((row) => row.role === "assistant" && messageText(row.content))?.content,
+    ) || output.value?.output;
+  return text ? [{ role: "assistant", content: text }] : [];
+});
 function state(row: ScheduledJob) {
   return row.state === "completed" || row.state === "error"
     ? "completed"
@@ -112,28 +116,12 @@ async function selectRun(row: ScheduledRun, fromHistory = false) {
     }
   });
 }
-function back() {
-  return selection(run.value ? job.value?.id : undefined);
-}
 function retry() {
   if (run.value) void selectRun(run.value, true);
   else if (job.value) void loadRuns();
   else void loadJobs();
 }
-function discuss() {
-  const text =
-    output.value?.output ||
-    output.value?.messages
-      .filter((row) => row.role === "assistant")
-      .map((row) => messageText(row.content))
-      .filter(Boolean)
-      .join("\n\n");
-  if (text)
-    emit(
-      "discuss",
-      `Discuss this scheduled job run.\n\nJob: ${job.value?.name || job.value?.id}\nRun: ${date(run.value!.started_at)}\n\n${text}`,
-    );
-}
+defineExpose({ retry, loading });
 let stopSelection: (() => void) | undefined;
 onMounted(async () => {
   await router.isReady();
@@ -185,14 +173,8 @@ onUnmounted(() => {
   <section class="scheduled-page min-h-0 flex flex-1 flex-col" aria-label="Scheduled">
     <div class="scheduled-heading">
       <div class="scheduled-heading-content">
-        <button v-if="job" class="project-back" @click="back">
-          ← {{ run ? job.name || job.id : "Scheduled" }}
-        </button>
         <div class="page-heading">
           <h2>{{ job?.name || job?.id || "Scheduled" }}</h2>
-          <button v-if="!run" class="project-button" :disabled="loading" @click="retry">
-            Refresh
-          </button>
         </div>
         <label v-if="!job" class="scheduled-filter"
           >Show
@@ -205,19 +187,6 @@ onUnmounted(() => {
         <p v-else class="project-muted">
           {{ run ? date(run.started_at) : "Run history · newest first" }}
         </p>
-        <button
-          v-if="
-            output &&
-            (output.output ||
-              output.messages.some((row) => row.role === 'assistant' && messageText(row.content)))
-          "
-          class="project-button"
-          :disabled="chatBusy || offline"
-          @click="discuss"
-        >
-          Open a chat about this run
-        </button>
-        <p v-if="discussionError" role="alert" class="project-error">{{ discussionError }}</p>
         <p v-if="loading" role="status" class="project-muted">Loading scheduled history…</p>
         <p v-if="error" role="alert" class="project-error">
           {{ error }} <button class="underline" @click="retry">Retry</button>
@@ -225,10 +194,10 @@ onUnmounted(() => {
       </div>
     </div>
     <ChatTranscript
-      v-if="run && output && (output.output || output.messages.length)"
+      v-if="run && resultMessages.length"
       :key="run.id"
       :follow-initially="false"
-      :messages="output.output ? [{ role: 'assistant', content: output.output }] : output.messages"
+      :messages="resultMessages"
       draft=""
       :loading="false"
       :progress="[]"
@@ -238,11 +207,10 @@ onUnmounted(() => {
         No {{ status }} scheduled jobs.
       </p>
       <nav v-if="!job" class="scheduled-list" aria-label="Scheduled jobs">
-        <button v-for="row in rows" :key="row.id" @click="selectJob(row)">
+        <button v-for="row in rows" :key="row.id" class="scheduled-job-row" @click="selectJob(row)">
           <span
             ><strong>{{ row.name || row.id }}</strong
-            ><small>{{ row.prompt || "Scheduled job" }}</small
-            ><small>{{ row.schedule_display }}</small></span
+            ><small>{{ row.schedule_display || "Scheduled job" }}</small></span
           ><span aria-hidden="true">›</span>
         </button>
       </nav>
@@ -273,7 +241,7 @@ onUnmounted(() => {
       >
         Load older runs
       </button>
-      <p v-if="run && output && !output.output && !output.messages.length" class="project-muted">
+      <p v-if="run && output && !resultMessages.length" class="project-muted">
         No output was saved for this run.
       </p>
     </div>

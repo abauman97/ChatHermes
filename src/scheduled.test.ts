@@ -5,11 +5,7 @@ import { createChatHermesRouter } from "./router";
 function routeUrl() {
   return new URL(location.hash.slice(1) || "/", location.origin);
 }
-function routeSession() {
-  return routeUrl().pathname.startsWith("/chat/")
-    ? decodeURIComponent(routeUrl().pathname.slice(6))
-    : routeUrl().searchParams.get("session");
-}
+
 const mount: typeof vueMount = (component, options = {}) =>
   vueMount(component, {
     ...options,
@@ -27,7 +23,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   history.replaceState({}, "", "/");
 });
-it("puts Scheduled below Projects, gates sending and drafts a separate chat", async () => {
+function setup() {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -35,10 +31,14 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
       if (url.includes("/profiles")) value = { profiles: [{ name: "beta" }] };
       else if (url.includes("/projects")) value = { projects: [], scoped_session_ids: [] };
       else if (url.includes("/scheduled/output"))
-        value = { messages: [], output: "Saved security audit" };
+        value = {
+          messages: [],
+          output: "Saved security audit",
+          session_id: "cron_audit_20260101_000000",
+        };
       else if (url.includes("/scheduled/runs"))
         value = {
-          runs: [{ id: "output:2026-01-01_00-00-00", started_at: 100, source: "cron_output" }],
+          runs: [{ id: "cron_audit_20260101_000000", started_at: 100, source: "cron" }],
           offset: 0,
           limit: 30,
           has_more: false,
@@ -57,6 +57,9 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
       return new Response(JSON.stringify(value));
     }),
   );
+}
+it("puts Scheduled below Projects and keeps run refresh in screen options", async () => {
+  setup();
   const factory = nativeSession.useNativeSession;
   const send = vi.fn(async () => {});
   vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
@@ -79,33 +82,47 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
   await wrapper.get(".composer textarea").setValue("Do not send here");
   expect(wrapper.get('[aria-label="Send message"]').attributes("disabled")).toBeDefined();
   expect(send).not.toHaveBeenCalled();
+  expect(
+    wrapper.findAll(".scheduled-page button").some((button) => button.text() === "Refresh"),
+  ).toBe(false);
+  const refresh = vi.spyOn(api, "scheduled");
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
+  await flushPromises();
+  expect(refresh).toHaveBeenCalled();
+  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
   await flushPromises();
+  expect(wrapper.find(".project-back").exists()).toBe(false);
+  const refreshRuns = vi.spyOn(api, "scheduledRuns");
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
+  await flushPromises();
+  expect(refreshRuns).toHaveBeenCalledWith("", "audit", 0, expect.any(AbortSignal));
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
   await flushPromises();
-  const create = vi.spyOn(api, "create").mockRejectedValueOnce(new Error("private details"));
-  await wrapper
-    .findAll("button")
-    .find((row) => row.text() === "Open a chat about this run")!
-    .trigger("click");
+  const refreshOutput = vi.spyOn(api, "scheduledOutput");
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
   await flushPromises();
-  await flushPromises();
-  expect(wrapper.get('.scheduled-page [role="alert"]').text()).toContain("Could not open a chat");
-  expect(wrapper.text()).not.toContain("private details");
-  create.mockRestore();
-  await wrapper
-    .findAll("button")
-    .find((row) => row.text() === "Open a chat about this run")!
-    .trigger("click");
-  await flushPromises();
-  await flushPromises();
-  expect(wrapper.find(".scheduled-page").exists()).toBe(false);
-  expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toContain(
-    "Saved security audit",
+  expect(refreshOutput).toHaveBeenCalledWith(
+    "",
+    "audit",
+    "cron_audit_20260101_000000",
+    expect.any(AbortSignal),
   );
-  expect(location.hash).toContain("/chat/new_chat");
+  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  const create = vi.spyOn(api, "create");
+  expect(wrapper.find(".project-back").exists()).toBe(false);
+  expect(wrapper.text()).not.toContain("Open a chat about this run");
+  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.find(".scheduled-page").exists()).toBe(true);
+  expect(create).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
   await wrapper.get("#profile-field").setValue("beta");
   await flushPromises();
@@ -119,25 +136,53 @@ it("puts Scheduled below Projects, gates sending and drafts a separate chat", as
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
   await flushPromises();
-  let finish!: (value: { id: string }) => void;
-  vi.spyOn(api, "create").mockImplementation(
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.find(".scheduled-page").exists()).toBe(true);
+  expect(routeUrl().searchParams.get("profile")).toBe("beta");
+  expect(create).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+it.each([{ messages: [], output: "Saved output without a session" }, { messages: [] }])(
+  "does not offer Resume session without a persisted session: %j",
+  async (output) => {
+    setup();
+    vi.spyOn(api, "scheduledOutput").mockResolvedValue(output);
+    history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
+    const wrapper = mount(App);
+    await flushPromises();
+    await flushPromises();
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+    expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
+    await wrapper.get('[aria-label="Screen options"]').trigger("keydown", { key: "Escape" });
+    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    wrapper.unmount();
+  },
+);
+it("gates refresh during loading and clears resume while navigating away from a run", async () => {
+  setup();
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/cron_audit_20260101_000000");
+  const wrapper = mount(App);
+  await flushPromises();
+  await flushPromises();
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  let finish!: (value: { jobs: [] }) => void;
+  vi.spyOn(api, "scheduled").mockImplementation(
     () =>
       new Promise((resolve) => {
         finish = resolve;
       }),
   );
-  await wrapper
-    .findAll("button")
-    .find((row) => row.text() === "Open a chat about this run")!
-    .trigger("click");
+  await wrapper.get(".scheduled-nav").trigger("click");
   await flushPromises();
+  await wrapper.get('[aria-label="Screen options"]').trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
+  finish({ jobs: [] });
   await flushPromises();
-  await wrapper.get("#profile-field").setValue("");
-  await flushPromises();
-  expect(wrapper.get(".drawer-chat").attributes("disabled")).toBeUndefined();
-  finish({ id: "stale_profile_draft" });
-  await flushPromises();
-  expect(routeSession()).toBeNull();
-  expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe("");
+  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });
