@@ -49,6 +49,9 @@ body {
 .composer {
   margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
+.chathermes-embedded.keyboard-visible .composer {
+  margin-bottom: 0;
+}
 .composer-body {
   display: flex;
   flex-direction: column;

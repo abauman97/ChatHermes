@@ -3,6 +3,7 @@ type HostReact = {
   useRef: (initial: HTMLDivElement | null) => { current: HTMLDivElement | null };
   useEffect: (effect: () => (() => void) | void, deps: unknown[]) => void;
 };
+import { watchMobileKeyboardSpacing } from "./mobile-keyboard";
 declare const __CHATHERMES_APP_ASSET__: string;
 declare global {
   interface Window {
@@ -58,6 +59,7 @@ function ChatHermesPlugin() {
     const overlay = document.createElement("div");
     overlay.className = "chathermes-plugin chathermes-embedded";
     document.body.append(overlay);
+    const stopKeyboardSpacing = watchMobileKeyboardSpacing(overlay);
     const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
     const previousViewport = viewport?.content;
     const ownedViewport = viewport || document.createElement("meta");
@@ -87,6 +89,7 @@ function ChatHermesPlugin() {
     return () => {
       disposed = true;
       app?.unmount();
+      stopKeyboardSpacing();
       overlay.remove();
       ownedHeadTags.forEach((tag) => tag.remove());
       if (viewport) viewport.content = previousViewport!;
