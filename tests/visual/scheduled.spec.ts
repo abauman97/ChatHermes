@@ -184,7 +184,7 @@ test("scheduled page menu refreshes each view and resumes a persisted session", 
   const plugin = page.locator(".chathermes-embedded");
   const options = plugin.getByRole("button", { name: "Screen options", exact: true });
   const refresh = plugin.getByRole("menuitem", { name: "Refresh", exact: true });
-  const resume = plugin.getByRole("menuitem", { name: "Resume session", exact: true });
+  const resume = plugin.getByRole("menuitem", { name: "Resume Session", exact: true });
   const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
   const screenshot = async (name: string) => {
     expect(await plugin.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
@@ -239,6 +239,7 @@ test("scheduled page menu refreshes each view and resumes a persisted session", 
   await refreshView("output");
   await options.click();
   await expect(resume).toBeEnabled();
+  await expect(plugin.locator('[data-test="resume-scheduled-session"]')).toHaveCount(1);
   await screenshot("resume-session-menu");
   await options.press("Escape");
   await expect(plugin.getByRole("menu")).toHaveCount(0);

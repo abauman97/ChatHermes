@@ -161,7 +161,7 @@ it("shows only the final assistant result from a saved session", async () => {
   expect(wrapper.text()).toContain("Final result");
   expect(wrapper.text()).not.toContain("Original prompt");
   expect(wrapper.text()).not.toContain("Intermediate response");
-  expect(wrapper.find('[aria-label="Run options"]').exists()).toBe(false);
+  expect(wrapper.vm.$.exposed?.sessionId?.value).toBe("cron_audit_20260102_000000");
   wrapper.unmount();
 });
 

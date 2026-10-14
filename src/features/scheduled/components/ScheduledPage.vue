@@ -121,7 +121,8 @@ function retry() {
   else if (job.value) void loadRuns();
   else void loadJobs();
 }
-defineExpose({ retry, loading });
+const sessionId = computed(() => output.value?.session_id);
+defineExpose({ retry, loading, sessionId });
 let stopSelection: (() => void) | undefined;
 onMounted(async () => {
   await router.isReady();

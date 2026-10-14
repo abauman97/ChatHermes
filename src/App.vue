@@ -74,6 +74,7 @@ function screenLink(name: RouteName, extra: Record<string, string> = {}) {
 type ScheduledPageActions = {
   retry: () => void;
   loading: boolean;
+  sessionId?: string;
 };
 const scheduledComponent = ref<ScheduledPageActions | null>(null);
 const scheduledDiscussionError = ref("");
@@ -1311,6 +1312,15 @@ onUnmounted(() => {
                 @click="scheduledComponent?.retry()"
               >
                 Refresh
+              </button>
+              <button
+                v-if="scheduledComponent?.sessionId"
+                role="menuitem"
+                data-test="resume-scheduled-session"
+                :disabled="offline || creating || scheduledComponent.loading"
+                @click="recentSession(scheduledComponent.sessionId)"
+              >
+                Resume Session
               </button>
             </template>
             <template v-else-if="projectsPage">

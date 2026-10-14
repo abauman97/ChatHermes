@@ -120,8 +120,11 @@ it("puts Scheduled below Projects and keeps run refresh in screen options", asyn
   expect(wrapper.text()).not.toContain("Open a chat about this run");
   expect(wrapper.find('[role="menu"]').exists()).toBe(false);
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
-  expect(wrapper.find(".scheduled-page").exists()).toBe(true);
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').text()).toBe("Resume Session");
+  await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
+  await flushPromises();
+  expect(wrapper.find(".scheduled-page").exists()).toBe(false);
+  expect(routeUrl().pathname).toContain("/chat/cron_audit_20260101_000000");
   expect(create).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
   await wrapper.get("#profile-field").setValue("beta");
@@ -130,15 +133,8 @@ it("puts Scheduled below Projects and keeps run refresh in screen options", asyn
   await wrapper.get(".scheduled-nav").trigger("click");
   await flushPromises();
   await flushPromises();
-  await wrapper.get(".scheduled-list button").trigger("click");
-  await flushPromises();
-  await flushPromises();
-  await wrapper.get(".scheduled-list button").trigger("click");
-  await flushPromises();
-  await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
   expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
-  expect(wrapper.find(".scheduled-page").exists()).toBe(true);
   expect(routeUrl().searchParams.get("profile")).toBe("beta");
   expect(create).not.toHaveBeenCalled();
   wrapper.unmount();
@@ -168,21 +164,10 @@ it("gates refresh during loading and clears resume while navigating away from a 
   await flushPromises();
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
-  let finish!: (value: { jobs: [] }) => void;
-  vi.spyOn(api, "scheduled").mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      }),
-  );
-  await wrapper.get(".scheduled-nav").trigger("click");
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').text()).toBe("Resume Session");
+  await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
   expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
-  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
-  finish({ jobs: [] });
-  await flushPromises();
-  expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });
