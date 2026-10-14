@@ -518,16 +518,17 @@ body {
 }
 .scheduled-list {
   display: grid;
-  gap: 14px;
+  gap: 6px;
   margin-bottom: 20px;
 }
 .scheduled-list > button {
   display: flex;
   align-items: center;
-  gap: 16px;
-  border: 1px dashed #424242;
-  border-radius: 24px;
-  padding: 20px;
+  gap: 12px;
+  min-height: 56px;
+  border: 1px solid #303030;
+  border-radius: 12px;
+  padding: 10px 14px;
   text-align: left;
 }
 .scheduled-list > button:hover {
@@ -540,13 +541,13 @@ body {
 }
 .scheduled-list strong {
   font-weight: 500;
-  font-size: 18px;
+  font-size: 16px;
 }
 .scheduled-list small {
   display: block;
   color: #a3a3a3;
-  font-size: 15px;
-  margin-top: 8px;
+  font-size: 13px;
+  margin-top: 2px;
 }
 .scheduled-page :focus-visible {
   outline: 2px solid #b4b4b4;

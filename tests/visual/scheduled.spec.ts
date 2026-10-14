@@ -1,7 +1,8 @@
+/// <reference types="node" />
 import { signIn } from "./login";
 import { expect, test } from "@playwright/test";
 
-test("Scheduled native history, saved output, pagination and discussion draft", async ({
+test("Scheduled native history, saved output, pagination and session resume menu", async ({
   page,
 }, testInfo) => {
   await signIn(page);
@@ -33,6 +34,11 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
     .click();
   const runs = plugin.getByRole("navigation", { name: "Job runs" }).getByRole("button");
   await expect(runs).toHaveCount(30);
+  await expect(plugin.locator(".project-back")).toHaveCount(0);
+  await expect(plugin.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
+  await plugin.getByRole("button", { name: "Screen options", exact: true }).click();
+  await plugin.getByRole("menuitem", { name: "Refresh", exact: true }).click();
+  await expect(runs).toHaveCount(30);
   const jobId = decodeURIComponent(new URL(page.url()).hash.slice(1).split("?")[0].split("/")[2]!);
   const history = await (
     await page.request.get(
@@ -54,6 +60,8 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
   await expect(plugin.locator(".message.assistant")).toContainText(
     "Synthetic persisted agent output",
   );
+  await expect(plugin.locator(".project-back")).toHaveCount(0);
+  await expect(plugin.getByRole("button", { name: "Open a chat about this run" })).toHaveCount(0);
   await expect(plugin.locator(".activity[open]")).toHaveCount(0);
   expect(await plugin.locator(".transcript").evaluate((element) => element.scrollTop)).toBe(0);
   await plugin.locator(".work-summary").click();
@@ -68,7 +76,7 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
   });
   await expect(plugin.locator(".message.assistant")).toContainText("Check 29: passed.");
   expect(await plugin.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await plugin.getByRole("button", { name: "← Security Audit", exact: true }).click();
+  await page.goBack();
   await runs.nth(1).click();
   await expect(plugin.locator(".message.assistant")).toContainText("Synthetic saved output");
   await page.reload();
@@ -77,15 +85,21 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
     animations: "disabled",
     path: testInfo.outputPath("scheduled-saved-output.png"),
   });
-  await plugin.getByRole("button", { name: "Open a chat about this run" }).click();
-  await expect(textarea).toHaveValue(
-    /Discuss this scheduled job run\.[\s\S]*Synthetic saved output/,
+  await plugin.getByRole("button", { name: "Screen options", exact: true }).click();
+  await expect(plugin.getByRole("menuitem", { name: "Resume session", exact: true })).toHaveCount(
+    0,
   );
+  await plugin.getByRole("menuitem", { name: "Refresh", exact: true }).click();
+  await expect(plugin.locator(".message.assistant")).toContainText("Synthetic saved output");
+  await page.goBack();
+  await runs.first().click();
+  await plugin.getByRole("button", { name: "Screen options", exact: true }).click();
+  await plugin.getByRole("menuitem", { name: "Resume session", exact: true }).click();
   await expect(plugin.locator(".scheduled-page")).toHaveCount(0);
-  await expect(plugin.locator(".message.user")).toHaveCount(0);
+  await expect(textarea).toHaveValue("");
   await page.screenshot({
     animations: "disabled",
-    path: testInfo.outputPath("scheduled-chat-draft.png"),
+    path: testInfo.outputPath("scheduled-resumed-session.png"),
   });
   const composer = plugin.locator(".composer");
   await plugin.getByRole("button", { name: "Attachment options" }).click();
@@ -142,8 +156,8 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
   await expect(plugin.locator(".message.assistant")).toContainText(
     "Synthetic saved output for test-profile",
   );
-  await plugin.getByRole("button", { name: "← Security Audit", exact: true }).click();
-  await plugin.getByRole("button", { name: "← Scheduled", exact: true }).click();
+  await page.goBack();
+  await page.goBack();
   await plugin.getByRole("combobox", { name: "Job status" }).selectOption("paused");
   await plugin
     .getByRole("navigation", { name: "Scheduled jobs" })
@@ -160,4 +174,163 @@ test("Scheduled native history, saved output, pagination and discussion draft", 
     animations: "disabled",
     path: testInfo.outputPath("scheduled-failed-run.png"),
   });
+});
+
+// Seed "Issue 97 menu review" with a native run and saved Markdown in the
+// disposable Hermes container using its cron and SessionDB helpers.
+test("scheduled page menu refreshes each view and resumes a persisted session", async ({
+  page,
+}, info) => {
+  // Exercise the host-loaded artifact, not just the source component. A previous
+  // deployment included the new app bundle but index.js still imported an old one.
+  const loadedBundles: string[] = [];
+  page.on("response", (response) => {
+    if (/\/dashboard-plugins\/chathermes\/dist\/assets\/app-[^/]+\.js$/.test(response.url()))
+      loadedBundles.push(response.url());
+  });
+  await signIn(page, "/chathermes#/scheduled");
+  expect(loadedBundles).toHaveLength(1);
+  const loadedBundle = await page.request.get(loadedBundles[0]!);
+  expect(loadedBundle.ok()).toBe(true);
+  const bundle = await loadedBundle.text();
+  expect(bundle.match(/resume-scheduled-session/g) || []).toHaveLength(1);
+  expect(bundle.match(/Resume Session/g) || []).toHaveLength(1);
+  const plugin = page.locator(".chathermes-embedded");
+  const options = plugin.getByRole("button", { name: "Screen options", exact: true });
+  const refresh = plugin.getByRole("menuitem", { name: "Refresh", exact: true });
+  const resume = plugin.getByRole("menuitem", { name: "Resume Session", exact: true });
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const screenshot = async (name: string) => {
+    expect(await plugin.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ animations: "disabled", path: info.outputPath(name + ".png") });
+  };
+  const refreshView = async (endpoint: string) => {
+    await expect(plugin.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
+    await options.click();
+    await expect(refresh).toBeEnabled();
+    await screenshot("menu-" + endpoint);
+    const response = page.waitForResponse(
+      (response) => new URL(response.url()).pathname.endsWith(endpoint) && response.ok(),
+    );
+    await refresh.click();
+    await response;
+    await expect(plugin.getByRole("menu")).toHaveCount(0);
+    await expect(options).toBeFocused();
+  };
+  await refreshView("scheduled");
+  await composer.click();
+  await expect(composer).toBeFocused();
+  await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  await plugin.getByRole("combobox", { name: "Job status" }).selectOption("paused");
+  await expect(plugin.getByRole("navigation", { name: "Scheduled jobs" })).toContainText(
+    "Issue 97 paused review",
+  );
+  await plugin.getByRole("combobox", { name: "Job status" }).selectOption("active");
+  await plugin
+    .getByRole("navigation", { name: "Scheduled jobs" })
+    .getByRole("button", { name: /Issue 97 menu review/ })
+    .click();
+  await expect(plugin.locator(".project-back")).toHaveCount(0);
+  const runs = plugin.getByRole("navigation", { name: "Job runs" }).getByRole("button");
+  await expect(runs).toHaveCount(2);
+  await refreshView("runs");
+  const outputResponse = page.waitForResponse(
+    (response) => new URL(response.url()).pathname.endsWith("/scheduled/output") && response.ok(),
+  );
+  await runs.first().click();
+  const output = await (await outputResponse).json();
+  expect(output.session_id).toBeTruthy();
+  await expect(plugin.locator(".message.assistant")).toContainText("Synthetic scheduled report");
+  await expect(plugin.locator(".project-back")).toHaveCount(0);
+  await expect(plugin.getByRole("button", { name: "Open a chat about this run" })).toHaveCount(0);
+  await expect(plugin.locator(".activity")).toHaveCount(0);
+  await plugin.locator(".transcript").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(plugin.locator(".message.assistant")).toContainText("Check 39: passed.");
+  await refreshView("output");
+  await options.click();
+  await expect(resume).toBeEnabled();
+  await expect(resume).toHaveCount(1);
+  await expect(plugin.locator('[data-test="resume-scheduled-session"]')).toHaveCount(1);
+  await screenshot("resume-session-menu");
+  await options.press("Escape");
+  await expect(plugin.getByRole("menu")).toHaveCount(0);
+  await expect(options).toBeFocused();
+  let releaseOutput!: () => void;
+  const outputGate = new Promise<void>((resolve) => {
+    releaseOutput = resolve;
+  });
+  await page.route(
+    "**/scheduled/output?*",
+    async (route) => {
+      const response = await route.fetch();
+      await outputGate;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  await options.click();
+  await refresh.click();
+  await expect(plugin.getByRole("status")).toContainText("Loading scheduled history");
+  await options.click();
+  await expect(refresh).toBeDisabled();
+  await expect(resume).toHaveCount(0);
+  await composer.click();
+  await expect(composer).toBeFocused();
+  releaseOutput();
+  await expect(plugin.getByRole("status")).toHaveCount(0);
+  await options.click();
+  await expect(resume).toHaveCount(1);
+  await options.press("Escape");
+  const newChats: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/chat/sessions"))
+      newChats.push(request.url());
+  });
+  await options.click();
+  await resume.click();
+  await expect(page).toHaveURL((url) =>
+    url.hash.startsWith("#/chat/" + encodeURIComponent(output.session_id)),
+  );
+  await expect(plugin.locator(".scheduled-page")).toHaveCount(0);
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Synthetic scheduled report",
+  );
+  await expect(composer).toHaveValue("");
+  expect(newChats).toEqual([]);
+  await screenshot("resumed-session");
+  await page.goBack();
+  await expect(plugin.locator(".scheduled-page")).toBeVisible();
+  await page.goBack();
+  await expect(runs).toHaveCount(2);
+  await runs.last().click();
+  await expect(plugin.locator(".message.assistant")).toContainText("Synthetic saved menu report");
+  await refreshView("output");
+  await options.click();
+  await expect(resume).toHaveCount(0);
+  await options.press("Escape");
+  await page.reload();
+  await expect(plugin.locator(".message.assistant")).toContainText("Synthetic saved menu report");
+  await plugin.getByRole("button", { name: "Attachment options" }).click();
+  await plugin.locator('input[aria-label="Upload files"]').setInputFiles({
+    name: "menu-review.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Synthetic menu review attachment"),
+  });
+  await expect(plugin.locator(".composer")).toContainText("menu-review.txt");
+  await plugin.locator("input[capture]").setInputFiles({
+    name: "menu-camera.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(plugin.locator(".composer img")).toBeVisible();
+  await composer.click();
+  await expect(composer).toBeFocused();
+  await screenshot("saved-output-attachments");
 });

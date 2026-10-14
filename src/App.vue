@@ -71,7 +71,43 @@ async function navigate(
 function screenLink(name: RouteName, extra: Record<string, string> = {}) {
   return destination(name, profile.value, session.value, projectId.value, extra);
 }
+type ScheduledPageActions = {
+  retry: () => void;
+  loading: boolean;
+  sessionId?: string;
+};
+const scheduledComponent = ref<ScheduledPageActions | null>(null);
 const scheduledDiscussionError = ref("");
+async function discussScheduled(text: string) {
+  if (offline.value || creating.value) return;
+  const p = profile.value,
+    owner = profileGeneration,
+    revision = navigationRevision;
+  creating.value = true;
+  scheduledDiscussionError.value = "";
+  try {
+    const made = await api.create(p);
+    if (
+      owner !== profileGeneration ||
+      p !== profile.value ||
+      revision !== navigationRevision ||
+      !scheduledPage.value
+    )
+      return;
+    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
+    await chooseSession(made.id, "");
+    if (owner === profileGeneration && p === profile.value && session.value === made.id)
+      suggestedPrompt.value = text;
+  } catch {
+    if (owner === profileGeneration && p === profile.value)
+      scheduledDiscussionError.value = "Could not open a chat. Please try again.";
+  } finally {
+    if (owner === profileGeneration) creating.value = false;
+  }
+}
+function setScheduledComponent(component: unknown) {
+  scheduledComponent.value = component as ScheduledPageActions | null;
+}
 const projectConfirmation = ref<"delete" | "archive">(),
   projectConfirmCancel = ref<HTMLButtonElement>();
 const projectBusy = ref(false),
@@ -201,33 +237,6 @@ function showProjectArtifacts(artifacts: boolean) {
     ...(screenLink(artifacts ? "project-artifacts" : "project") as object),
     params: { projectId: projectId.value },
   });
-}
-async function discussScheduled(text: string) {
-  if (offline.value || creating.value) return;
-  const p = profile.value,
-    owner = profileGeneration,
-    revision = navigationRevision;
-  creating.value = true;
-  scheduledDiscussionError.value = "";
-  try {
-    const made = await api.create(p);
-    if (
-      owner !== profileGeneration ||
-      p !== profile.value ||
-      revision !== navigationRevision ||
-      !scheduledPage.value
-    )
-      return;
-    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
-    await chooseSession(made.id, "");
-    if (owner === profileGeneration && p === profile.value && session.value === made.id)
-      suggestedPrompt.value = text;
-  } catch {
-    if (owner === profileGeneration && p === profile.value)
-      scheduledDiscussionError.value = "Could not open a chat. Please try again.";
-  } finally {
-    if (owner === profileGeneration) creating.value = false;
-  }
 }
 function cancelChat() {
   native.close();
@@ -907,6 +916,7 @@ const pageProps = computed(() => {
       offline: offline.value,
       discussionError: scheduledDiscussionError.value,
       onDiscuss: discussScheduled,
+      onOpenSession: recentSession,
     };
   if (projectsPage.value)
     return {
@@ -1294,7 +1304,26 @@ onUnmounted(() => {
             >
               New Project Chat
             </button>
-            <template v-if="projectsPage">
+            <template v-if="scheduledPage">
+              <button
+                role="menuitem"
+                data-test="refresh-scheduled"
+                :disabled="!scheduledComponent || scheduledComponent.loading"
+                @click="scheduledComponent?.retry()"
+              >
+                Refresh
+              </button>
+              <button
+                v-if="scheduledComponent?.sessionId"
+                role="menuitem"
+                data-test="resume-scheduled-session"
+                :disabled="offline || creating || scheduledComponent.loading"
+                @click="recentSession(scheduledComponent.sessionId)"
+              >
+                Resume Session
+              </button>
+            </template>
+            <template v-else-if="projectsPage">
               <button
                 role="menuitemradio"
                 :aria-checked="!archivedProjects"
@@ -1402,7 +1431,12 @@ onUnmounted(() => {
       >
         <template #page>
           <RouterView v-slot="{ Component }">
-            <component :is="Component" :key="profile" v-bind="pageProps" />
+            <component
+              :is="Component"
+              :ref="scheduledPage ? setScheduledComponent : undefined"
+              :key="profile"
+              v-bind="pageProps"
+            />
           </RouterView>
         </template>
       </ChatInterface>
