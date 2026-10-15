@@ -8905,7 +8905,7 @@ var im = ["open"], am = {
 						ref_key: "pill",
 						ref: w,
 						type: "button",
-						class: "model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-white disabled:opacity-55",
+						class: "model-pill flex h-[30px] min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-0 text-base text-white disabled:opacity-55",
 						"aria-label": "Choose model",
 						"aria-haspopup": "dialog",
 						"aria-expanded": S.value,

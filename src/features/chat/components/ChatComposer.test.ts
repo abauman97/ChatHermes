@@ -72,6 +72,23 @@ describe("composer", () => {
       wrapper.unmount();
     }
   });
+  it("keeps the model selector 30px high, content-sized and readable beside the buttons", () => {
+    const wrapper = mount(ChatComposer, {
+      props: { disabled: false, sending: false, model: "example-model" },
+    });
+    try {
+      const picker = wrapper.get(".model-pill");
+      expect(picker.classes()).toEqual(
+        expect.arrayContaining(["h-[30px]", "flex", "items-center", "px-3", "py-0", "text-base"]),
+      );
+      expect(picker.classes()).not.toContain("size-[30px]");
+      expect(picker.classes()).not.toContain("w-[30px]");
+      expect(picker.text()).toBe("example-model");
+      expect(wrapper.get(".composer-controls").classes()).toContain("items-center");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("adds goal and plan slash commands to the next message and shows the active mode", async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");

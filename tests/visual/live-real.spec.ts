@@ -19,6 +19,17 @@ test("composer empty focus is one line inline with Send and grows with text", as
     await expect(button).toHaveCSS("width", "30px");
     await expect(button).toHaveCSS("height", "30px");
   }
+  await expect(picker).toHaveCSS("height", "30px");
+  await expect(picker).toHaveCSS("font-size", "16px");
+  const selector = (await picker.boundingBox())!;
+  expect(selector.width).toBeGreaterThan(30);
+  for (const button of [attach, send]) {
+    const box = (await button.boundingBox())!;
+    expect(Math.abs(selector.y + selector.height / 2 - box.y - box.height / 2)).toBeLessThanOrEqual(
+      1,
+    );
+  }
+  await page.screenshot({ path: info.outputPath("composer-model-selector.png") });
   await area.focus();
   await expect(area).toBeFocused();
   await expect(area).toHaveValue("");
