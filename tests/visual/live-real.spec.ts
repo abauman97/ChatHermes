@@ -1,6 +1,56 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("composer spacing follows only input focus on mobile and resets on blur and remount", async ({
+  page,
+}) => {
+  await signIn(page);
+  const composer = page.locator(".chathermes-embedded .composer");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  const viewport = page.viewportSize()!;
+  for (const width of [390, 700, 701, 1280]) {
+    await page.setViewportSize({ width, height: viewport.height });
+    await area.evaluate((element) => element.blur());
+    const normalMargin = await composer.evaluate(
+      (element) => getComputedStyle(element).marginBottom,
+    );
+    expect(parseFloat(normalMargin)).toBeGreaterThanOrEqual(width <= 700 ? 12 : 24);
+    // Focus alone must reduce mobile spacing, with no viewport height change.
+    await area.focus();
+    await expect(composer).toHaveCSS("margin-bottom", width <= 700 ? "0px" : normalMargin);
+    await area.evaluate((element) => element.blur());
+    await expect(composer).toHaveCSS("margin-bottom", normalMargin);
+    await composer.getByRole("button", { name: "Choose model", exact: true }).focus();
+    await expect(composer).toHaveCSS("margin-bottom", normalMargin);
+    // A different editable in the dashboard must not change composer spacing.
+    await page.evaluate(() => {
+      const input = document.createElement("input");
+      input.id = "spacing-test-input";
+      document.body.append(input);
+      input.focus();
+    });
+    await expect(page.locator("#spacing-test-input")).toBeFocused();
+    await expect(composer).toHaveCSS("margin-bottom", normalMargin);
+    await page.locator("#spacing-test-input").evaluate((element) => element.remove());
+  }
+  await page.setViewportSize(viewport);
+  await area.focus();
+  await page
+    .locator('a[href="/sessions"]')
+    .first()
+    .evaluate((element: HTMLAnchorElement) => element.click());
+  await expect(composer).toHaveCount(0);
+  await page
+    .locator('a[href="/chathermes"]')
+    .first()
+    .evaluate((element: HTMLAnchorElement) => element.click());
+  await expect(composer).toBeVisible();
+  await expect(area).not.toBeFocused();
+  expect(
+    await composer.evaluate((element) => parseFloat(getComputedStyle(element).marginBottom)),
+  ).toBeGreaterThanOrEqual(viewport.width <= 700 ? 12 : 24);
+});
+
 test("composer empty focus is one line inline with Send and grows with text", async ({
   page,
 }, info) => {
