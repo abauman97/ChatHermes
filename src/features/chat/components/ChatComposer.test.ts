@@ -3,6 +3,77 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ChatComposer from "./ChatComposer.vue";
 describe("composer", () => {
+  it("holds the compact state through blur, then clears it on cancellation without sending", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    try {
+      const area = wrapper.get("textarea").element as HTMLTextAreaElement;
+      area.focus();
+      await wrapper.vm.$nextTick();
+      await wrapper.get("textarea").setValue("draft");
+      await wrapper.get(".send-button").trigger("pointerdown", { pointerId: 7 });
+      area.blur(); // iOS may report no related target when its button does not focus.
+      await wrapper.vm.$nextTick();
+      expect(wrapper.classes()).toContain("composer-send-press");
+      expect(wrapper.get(".attach-button").isVisible()).toBe(false);
+      expect(wrapper.emitted("send")).toBeUndefined();
+      document.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 7, bubbles: true }));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.classes()).not.toContain("composer-send-press");
+      expect(wrapper.get(".attach-button").isVisible()).toBe(true);
+      expect(wrapper.emitted("send")).toBeUndefined();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("sends only on completed click and keeps the textarea ready for the next draft", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    try {
+      const area = wrapper.get("textarea").element as HTMLTextAreaElement;
+      await wrapper.get("textarea").setValue("first");
+      area.focus();
+      await wrapper.get(".send-button").trigger("pointerdown", { pointerId: 8 });
+      area.blur();
+      expect(wrapper.emitted("send")).toBeUndefined();
+      await wrapper.get(".send-button").trigger("click");
+      expect(wrapper.emitted("send")).toEqual([["first", []]]);
+      expect(document.activeElement).toBe(area);
+      expect(wrapper.classes()).not.toContain("composer-send-press");
+      await wrapper.get(".send-button").trigger("click");
+      expect(wrapper.emitted("send")).toHaveLength(1);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("waits for click before steering or stopping a run", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: true, stoppable: true },
+    });
+    try {
+      const area = wrapper.get("textarea").element as HTMLTextAreaElement;
+      const button = wrapper.get(".send-button");
+      await wrapper.get("textarea").setValue("guide");
+      area.focus();
+      await button.trigger("pointerdown", { pointerId: 9 });
+      expect(wrapper.emitted("steer")).toBeUndefined();
+      await button.trigger("click");
+      expect(wrapper.emitted("steer")).toEqual([["guide"]]);
+      expect(wrapper.emitted("send")).toBeUndefined();
+      await button.trigger("pointerdown", { pointerId: 10 });
+      expect(wrapper.emitted("stop")).toBeUndefined();
+      await button.trigger("click");
+      expect(wrapper.emitted("stop")).toHaveLength(1);
+      expect(wrapper.emitted("steer")).toHaveLength(1);
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("hides attachment options while editing and restores them only after focus leaves the composer", async () => {
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,

@@ -38,8 +38,11 @@ const files = ref<HTMLInputElement>(),
   camera = ref<HTMLInputElement>();
 const textarea = ref<HTMLTextAreaElement>(),
   form = ref<HTMLFormElement>(),
+  sendButton = ref<HTMLButtonElement>(),
   editing = ref(false);
 let resizeObserver: ResizeObserver | undefined;
+let sendPointerId: number | null = null;
+let sendPressCleanup: ReturnType<typeof setTimeout> | undefined;
 function resizeInput() {
   const area = textarea.value;
   if (!area) return;
@@ -62,8 +65,48 @@ function resizeOnFocusChange() {
   void nextTick(resizeInput);
 }
 function leaveComposer(event: FocusEvent) {
+  if (sendPointerId !== null) return;
   if (!(event.relatedTarget instanceof Node) || !form.value?.contains(event.relatedTarget))
     editing.value = false;
+}
+function startSendPress(event: PointerEvent) {
+  if (sendPointerId !== null || document.activeElement !== textarea.value) return;
+  sendPointerId = event.pointerId;
+  // Apply before the browser's focus default action can move the button.
+  form.value?.classList.add("composer-send-press");
+  document.addEventListener("pointerup", endSendPress);
+  document.addEventListener("pointercancel", endSendPress);
+}
+function keepInputFocus(event: MouseEvent) {
+  if (document.activeElement === textarea.value) event.preventDefault();
+}
+function finishSendPress(restoreFocus = false) {
+  if (sendPressCleanup) clearTimeout(sendPressCleanup);
+  sendPressCleanup = undefined;
+  if (sendPointerId === null) return;
+  sendPointerId = null;
+  document.removeEventListener("pointerup", endSendPress);
+  document.removeEventListener("pointercancel", endSendPress);
+  form.value?.classList.remove("composer-send-press");
+  if (restoreFocus) textarea.value?.focus();
+  if (document.activeElement !== textarea.value && !form.value?.contains(document.activeElement))
+    editing.value = false;
+}
+function endSendPress(event: PointerEvent) {
+  if (event.pointerId !== sendPointerId) return;
+  if (event.type === "pointercancel" || !event.composedPath().includes(sendButton.value!)) {
+    finishSendPress();
+    return;
+  }
+  // A canceled gesture has no click; a completed click clears this first.
+  sendPressCleanup = setTimeout(() => finishSendPress(), 500);
+}
+function clickSend() {
+  if (props.sending) {
+    if (value.value.trim()) send();
+    else if (props.stoppable) emit("stop");
+  } else send();
+  finishSendPress(true);
 }
 watch(value, () => resizeInput(), { flush: "post" });
 onMounted(() => {
@@ -80,7 +123,10 @@ onMounted(() => {
     if (textarea.value) resizeObserver.observe(textarea.value);
   }
 });
-onBeforeUnmount(() => resizeObserver?.disconnect());
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  finishSendPress();
+});
 watch(
   () => props.suggestedPrompt,
   (text) => {
@@ -443,6 +489,7 @@ defineExpose({ stageFiles });
           </svg>
         </button>
         <button
+          ref="sendButton"
           class="send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55"
           type="button"
           :disabled="buttonDisabled"
@@ -450,7 +497,9 @@ defineExpose({ stageFiles });
             sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'
           "
           :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'"
-          @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()"
+          @pointerdown="startSendPress"
+          @mousedown="keepInputFocus"
+          @click="clickSend"
         >
           <svg
             v-if="sending && !value.trim()"

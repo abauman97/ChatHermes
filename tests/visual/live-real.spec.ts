@@ -1,6 +1,50 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("first Send stays under a mobile press and submits once", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile");
+  await signIn(page);
+  const composer = page.locator(".chathermes-embedded .composer");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  const send = composer.getByRole("button", { name: "Send message", exact: true });
+  const prompt = "Reply with one short greeting.";
+  await area.fill(prompt);
+  await expect(area).toBeFocused();
+  const before = (await send.boundingBox())!;
+  const x = before.x + before.width / 2;
+  const y = before.y + before.height * 0.8;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  // iOS can blur the textarea without focusing the button during this press.
+  await area.evaluate((element) => element.blur());
+  const during = (await send.boundingBox())!;
+  expect(during.y).toBeCloseTo(before.y, 0);
+  expect(
+    await page.evaluate(
+      ([px, py]) => document.elementFromPoint(px, py)?.closest(".send-button") !== null,
+      [x, y],
+    ),
+  ).toBe(true);
+  await page.mouse.up();
+  await expect(page.locator(".chathermes-embedded .message.user")).toHaveCount(1);
+  await expect(page.locator(".chathermes-embedded .message.user").first()).toContainText(prompt);
+  await page.screenshot({ path: info.outputPath("first-send-mobile.png") });
+});
+
+test("first mobile touch Send submits once", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile");
+  await signIn(page);
+  const composer = page.locator(".chathermes-embedded .composer");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  const send = composer.getByRole("button", { name: "Send message", exact: true });
+  const prompt = "Reply with one short greeting.";
+  await area.fill(prompt);
+  const box = (await send.boundingBox())!;
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height * 0.8);
+  await expect(page.locator(".chathermes-embedded .message.user")).toHaveCount(1);
+  await expect(page.locator(".chathermes-embedded .message.user").first()).toContainText(prompt);
+});
+
 test("composer spacing follows only input focus on mobile and resets on blur and remount", async ({
   page,
 }) => {

@@ -64,34 +64,34 @@ body {
   }
 }
 @media (max-width: 700px) {
-  .chathermes-embedded .composer:has(.composer-input:focus) {
+  .chathermes-embedded .composer:is(:has(.composer-input:focus), .composer-send-press) {
     margin-bottom: 0;
   }
-  .composer:has(.composer-input:focus) .composer-body {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .composer-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 30px;
     align-items: end;
     gap: 8px;
   }
-  .composer:has(.composer-input:focus) .composer-controls {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .composer-controls {
     display: contents;
   }
-  .composer:has(.composer-input:focus) .composer-input {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .composer-input {
     grid-column: 1;
     grid-row: 1;
     min-height: 0;
   }
-  .composer:has(.composer-input:focus) .send-button {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .send-button {
     grid-column: 2;
     grid-row: 1;
   }
-  .composer:has(.composer-input:focus) .model-pill {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .model-pill {
     display: none;
   }
-  .composer:has(.composer-input:focus) .composer-hint:empty {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .composer-hint:empty {
     display: none;
   }
-  .composer:has(.composer-input:focus) .composer-hint {
+  .composer:is(:has(.composer-input:focus), .composer-send-press) .composer-hint {
     grid-column: 1 / -1;
     grid-row: 2;
   }
