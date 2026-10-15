@@ -56,6 +56,10 @@ function resizeInput() {
 function focusInput() {
   editing.value = true;
   pickerOpen.value = false;
+  resizeOnFocusChange();
+}
+function resizeOnFocusChange() {
+  void nextTick(resizeInput);
 }
 function leaveComposer(event: FocusEvent) {
   if (!(event.relatedTarget instanceof Node) || !form.value?.contains(event.relatedTarget))
@@ -373,6 +377,7 @@ defineExpose({ stageFiles });
         :placeholder="projectName ? `Message ${projectName}` : 'Message Hermes…'"
         class="composer-input min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-6 text-white outline-none placeholder:text-[#b4b4b4]"
         @focus="focusInput"
+        @blur="resizeOnFocusChange"
       />
       <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
       <input
@@ -386,7 +391,8 @@ defineExpose({ stageFiles });
       />
       <div class="composer-controls flex items-center gap-3">
         <button
-          class="attach-button grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55"
+          v-show="!editing"
+          class="attach-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#424242] p-0 text-white disabled:opacity-55"
           type="button"
           aria-label="Attachment options"
           :aria-expanded="attachmentsOpen"
@@ -396,7 +402,17 @@ defineExpose({ stageFiles });
             attachmentsOpen = !attachmentsOpen;
           "
         >
-          +
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            class="size-5"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
         <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">
           {{ reading ? "Preparing attachments…" : reason || "" }}
@@ -427,7 +443,7 @@ defineExpose({ stageFiles });
           </svg>
         </button>
         <button
-          class="send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55"
+          class="send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55"
           type="button"
           :disabled="buttonDisabled"
           :aria-label="

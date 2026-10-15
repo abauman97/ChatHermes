@@ -21,7 +21,7 @@ var r = {}, i = [], a = () => {}, o = () => !1, s = (e) => e.charCodeAt(0) === 1
 }, d = Object.prototype.hasOwnProperty, f = (e, t) => d.call(e, t), p = Array.isArray, m = (e) => C(e) === "[object Map]", h = (e) => C(e) === "[object Set]", g = (e) => C(e) === "[object Date]", _ = (e) => typeof e == "function", v = (e) => typeof e == "string", y = (e) => typeof e == "symbol", b = (e) => typeof e == "object" && !!e, x = (e) => (b(e) || _(e)) && _(e.then) && _(e.catch), S = Object.prototype.toString, C = (e) => S.call(e), w = (e) => C(e).slice(8, -1), ee = (e) => C(e) === "[object Object]", T = (e) => v(e) && e !== "NaN" && e[0] !== "-" && "" + parseInt(e, 10) === e, E = /* @__PURE__ */ n(",key,ref,ref_for,ref_key,onVnodeBeforeMount,onVnodeMounted,onVnodeBeforeUpdate,onVnodeUpdated,onVnodeBeforeUnmount,onVnodeUnmounted"), D = (e) => {
 	let t = /* @__PURE__ */ Object.create(null);
 	return ((n) => t[n] || (t[n] = e(n)));
-}, O = /-\w/g, k = D((e) => e.replace(O, (e) => e.slice(1).toUpperCase())), te = /\B([A-Z])/g, A = D((e) => e.replace(te, "-$1").toLowerCase()), ne = D((e) => e.charAt(0).toUpperCase() + e.slice(1)), re = D((e) => e ? `on${ne(e)}` : ""), j = (e, t) => !Object.is(e, t), ie = (e, ...t) => {
+}, O = /-\w/g, k = D((e) => e.replace(O, (e) => e.slice(1).toUpperCase())), te = /\B([A-Z])/g, ne = D((e) => e.replace(te, "-$1").toLowerCase()), A = D((e) => e.charAt(0).toUpperCase() + e.slice(1)), re = D((e) => e ? `on${A(e)}` : ""), j = (e, t) => !Object.is(e, t), ie = (e, ...t) => {
 	for (let n = 0; n < e.length; n++) e[n](...t);
 }, ae = (e, t, n, r = !1) => {
 	Object.defineProperty(e, t, {
@@ -1273,14 +1273,14 @@ function vr(e, t, n = !0, r = !1) {
 		let n = i.type;
 		if (e === hr) {
 			let e = wa(n, !1);
-			if (e && (e === t || e === k(t) || e === ne(k(t)))) return n;
+			if (e && (e === t || e === k(t) || e === A(k(t)))) return n;
 		}
 		let a = yr(i[e] || n[e], t) || yr(i.appContext[e], t);
 		return !a && r ? n : a;
 	}
 }
 function yr(e, t) {
-	return e && (e[t] || e[k(t)] || e[ne(k(t))]);
+	return e && (e[t] || e[k(t)] || e[A(k(t))]);
 }
 function br(e, t, n, r) {
 	let i, a = n && n[r], o = p(e);
@@ -1400,7 +1400,7 @@ var kr = !0;
 function Ar(e) {
 	let t = Pr(e), n = e.proxy, r = e.ctx;
 	kr = !1, t.beforeCreate && Mr(t.beforeCreate, e, "bc");
-	let { data: i, computed: o, methods: s, watch: c, provide: l, inject: u, created: d, beforeMount: f, mounted: m, beforeUpdate: h, updated: g, activated: v, deactivated: y, beforeDestroy: x, beforeUnmount: S, destroyed: C, unmounted: w, render: ee, renderTracked: T, renderTriggered: E, errorCaptured: D, serverPrefetch: O, expose: k, inheritAttrs: te, components: A, directives: ne, filters: re } = t;
+	let { data: i, computed: o, methods: s, watch: c, provide: l, inject: u, created: d, beforeMount: f, mounted: m, beforeUpdate: h, updated: g, activated: v, deactivated: y, beforeDestroy: x, beforeUnmount: S, destroyed: C, unmounted: w, render: ee, renderTracked: T, renderTriggered: E, errorCaptured: D, serverPrefetch: O, expose: k, inheritAttrs: te, components: ne, directives: A, filters: re } = t;
 	if (u && jr(u, r, null), s) for (let e in s) {
 		let t = s[e];
 		_(t) && (r[e] = t.bind(n));
@@ -1444,7 +1444,7 @@ function Ar(e) {
 			});
 		} else e.exposed ||= {};
 	}
-	ee && e.render === a && (e.render = ee), te != null && (e.inheritAttrs = te), A && (e.components = A), ne && (e.directives = ne), O && Kn(e);
+	ee && e.render === a && (e.render = ee), te != null && (e.inheritAttrs = te), ne && (e.components = ne), A && (e.directives = A), O && Kn(e);
 }
 function jr(e, t, n = a) {
 	p(e) && (e = zr(e));
@@ -1623,13 +1623,13 @@ function Kr(e, t) {
 		return c;
 	};
 }
-var qr = null, Jr = (e, t) => t === "modelValue" || t === "model-value" ? e.modelModifiers : e[`${t}Modifiers`] || e[`${k(t)}Modifiers`] || e[`${A(t)}Modifiers`];
+var qr = null, Jr = (e, t) => t === "modelValue" || t === "model-value" ? e.modelModifiers : e[`${t}Modifiers`] || e[`${k(t)}Modifiers`] || e[`${ne(t)}Modifiers`];
 function Yr(e, t, ...n) {
 	if (e.isUnmounted) return;
 	let i = e.vnode.props || r, a = n, o = t.startsWith("update:"), s = o && Jr(i, t.slice(7));
 	s && (s.trim && (a = n.map((e) => v(e) ? e.trim() : e)), s.number && (a = a.map(oe)));
 	let c, l = i[c = re(t)] || i[c = re(k(t))];
-	!l && o && (l = i[c = re(A(t))]), l && on(l, e, 6, a);
+	!l && o && (l = i[c = re(ne(t))]), l && on(l, e, 6, a);
 	let u = i[c + "Once"];
 	if (u) {
 		if (!e.emitted) e.emitted = {};
@@ -1652,7 +1652,7 @@ function Zr(e, t, n = !1) {
 	return !a && !s ? (b(e) && r.set(e, null), null) : (p(a) ? a.forEach((e) => o[e] = null) : l(o, a), b(e) && r.set(e, o), o);
 }
 function Qr(e, t) {
-	return !e || !s(t) ? !1 : (t = t.slice(2), t = t === "Once" ? t : t.replace(/Once$/, ""), f(e, t[0].toLowerCase() + t.slice(1)) || f(e, A(t)) || f(e, t));
+	return !e || !s(t) ? !1 : (t = t.slice(2), t = t === "Once" ? t : t.replace(/Once$/, ""), f(e, t[0].toLowerCase() + t.slice(1)) || f(e, ne(t)) || f(e, t));
 }
 function $r(e) {
 	let { type: t, vnode: n, proxy: r, withProxy: i, propsOptions: [a], slots: o, attrs: s, emit: l, render: u, renderCache: d, props: f, data: p, setupState: m, ctx: h, inheritAttrs: g } = e, _ = Dn(e), v, y;
@@ -1752,7 +1752,7 @@ function ui(e, t, n, r) {
 	} else {
 		di(e, t, i, a) && (l = !0);
 		let r;
-		for (let a in s) (!t || !f(t, a) && ((r = A(a)) === a || !f(t, r))) && (c ? n && (n[a] !== void 0 || n[r] !== void 0) && (i[a] = fi(c, s, a, void 0, e, !0)) : delete i[a]);
+		for (let a in s) (!t || !f(t, a) && ((r = ne(a)) === a || !f(t, r))) && (c ? n && (n[a] !== void 0 || n[r] !== void 0) && (i[a] = fi(c, s, a, void 0, e, !0)) : delete i[a]);
 		if (a !== s) for (let e in a) (!t || !f(t, e)) && (delete a[e], l = !0);
 	}
 	l && et(e.attrs, "set", "");
@@ -1789,7 +1789,7 @@ function fi(e, t, n, r, i, a) {
 			} else r = e;
 			i.ce && i.ce._setProp(n, r);
 		}
-		o[0] && (a && !e ? r = !1 : o[1] && (r === "" || r === A(n)) && (r = !0));
+		o[0] && (a && !e ? r = !1 : o[1] && (r === "" || r === ne(n)) && (r = !0));
 	}
 	return r;
 }
@@ -1888,9 +1888,9 @@ function Ei(e, t) {
 				e ?? x(t, n, r, s);
 				break;
 			case U:
-				A(e, t, n, r, a, o, s, c, l);
+				ne(e, t, n, r, a, o, s, c, l);
 				break;
-			default: f & 1 ? w(e, t, n, r, a, o, s, c, l) : f & 6 ? ne(e, t, n, r, a, o, s, c, l) : (f & 64 || f & 128) && u.process(e, t, n, r, a, o, s, c, l, ve);
+			default: f & 1 ? w(e, t, n, r, a, o, s, c, l) : f & 6 ? A(e, t, n, r, a, o, s, c, l) : (f & 64 || f & 128) && u.process(e, t, n, r, a, o, s, c, l, ve);
 		}
 		d != null && a ? Yn(d, e && e.ref, o, t || e, !t) : d == null && e && e.ref != null && Yn(e.ref, null, o, e, !0);
 	}, y = (e, t, n, r) => {
@@ -1981,10 +1981,10 @@ function Ei(e, t) {
 			}
 			"value" in n && c(e, "value", t.value, n.value, a);
 		}
-	}, A = (e, t, n, r, i, a, s, c, l) => {
+	}, ne = (e, t, n, r, i, a, s, c, l) => {
 		let d = t.el = e ? e.el : u(""), f = t.anchor = e ? e.anchor : u(""), { patchFlag: p, dynamicChildren: m, slotScopeIds: h } = t;
 		h && (c = c ? c.concat(h) : h), e == null ? (o(d, n, r), o(f, n, r), D(t.children || [], n, f, i, a, s, c, l)) : p > 0 && p & 64 && m && e.dynamicChildren && e.dynamicChildren.length === m.length ? (k(e.dynamicChildren, m, n, i, a, s, c), (t.key != null || i && t === i.subTree) && Ai(e, t, !0)) : se(e, t, n, f, i, a, s, c, l);
-	}, ne = (e, t, n, r, i, a, o, s, c) => {
+	}, A = (e, t, n, r, i, a, o, s, c) => {
 		t.slotScopeIds = s, e == null ? t.shapeFlag & 512 ? i.ctx.activate(t, n, r, o, c) : re(t, n, r, i, a, o, c) : j(e, t, c);
 	}, re = (e, t, n, r, i, a, o) => {
 		let s = e.component = ca(e, r, i);
@@ -2728,7 +2728,7 @@ function Ka(e, t, n) {
 	else if (n ??= "", t.startsWith("--")) Ga.test(n) ? e.setProperty(t, n.replace(Ga, ""), "important") : e.setProperty(t, n);
 	else {
 		let r = Ya(e, t);
-		Ga.test(n) ? e.setProperty(A(r), n.replace(Ga, ""), "important") : e[r] = n;
+		Ga.test(n) ? e.setProperty(ne(r), n.replace(Ga, ""), "important") : e[r] = n;
 	}
 }
 var qa = [
@@ -2741,7 +2741,7 @@ function Ya(e, t) {
 	if (n) return n;
 	let r = k(t);
 	if (r !== "filter" && r in e) return Ja[t] = r;
-	r = ne(r);
+	r = A(r);
 	for (let n = 0; n < qa.length; n++) {
 		let i = qa[n] + r;
 		if (i in e) return Ja[t] = i;
@@ -2795,7 +2795,7 @@ var io = /(Once|Passive|Capture)$/, ao = /^on:?(?:Once|Passive|Capture)$/;
 function oo(e) {
 	let t, n;
 	for (; (n = e.match(io)) && !ao.test(e);) t ||= {}, e = e.slice(0, e.length - n[1].length), t[n[1].toLowerCase()] = !0;
-	return [e[2] === ":" ? e.slice(3) : A(e.slice(2)), t];
+	return [e[2] === ":" ? e.slice(3) : ne(e.slice(2)), t];
 }
 var so = 0, co = /* @__PURE__ */ Promise.resolve(), lo = () => so ||= (co.then(() => so = 0), Date.now());
 function uo(e, t) {
@@ -3004,7 +3004,7 @@ var Ao = [
 	let n = e._withKeys ||= {}, r = t.join(".");
 	return n[r] || (n[r] = ((n) => {
 		if (!("key" in n)) return;
-		let r = A(n.key);
+		let r = ne(n.key);
 		if (t.some((e) => e === r || No[e] === r)) return e(n);
 	}));
 }, Fo = /* @__PURE__ */ l({ patchProp: po }, Fa), Io;
@@ -4107,15 +4107,15 @@ function Is(e) {
 			return r === d && (i.value = "Response ended; saved history could not be reconciled. Refresh history before sending again."), !1;
 		}
 	}
-	async function A(e, t) {
+	async function ne(e, t) {
 		(!h || S !== e || C !== t) && (se(), S = e, C = t, h = !0, c.value = Ns(S, C)), await j();
 	}
-	function ne() {
+	function A() {
 		d++, p++, u?.close(), u = void 0, m = void 0, f = !1, r.value = !1, o.value = "stale";
 	}
 	function re(e, t) {
 		let n = g !== e || _ !== t;
-		return g = e, _ = t, !g || !_ ? (h && o.value !== "stale" && ne(), Promise.resolve()) : n ? j() : m || Promise.resolve();
+		return g = e, _ = t, !g || !_ ? (h && o.value !== "stale" && A(), Promise.resolve()) : n ? j() : m || Promise.resolve();
 	}
 	function j() {
 		if (!h || !g || !_ || o.value === "ready") return Promise.resolve();
@@ -4160,7 +4160,7 @@ function Is(e) {
 				if (e === d) {
 					if (t === "closed") {
 						let e = o.value === "ready";
-						ne(), i.value = n || "Session connection lost. Reconnect to restore this session.", a.value = "Disconnected · backend state will be checked on reconnect";
+						A(), i.value = n || "Session connection lost. Reconnect to restore this session.", a.value = "Disconnected · backend state will be checked on reconnect";
 						let t = d;
 						e && queueMicrotask(() => {
 							d === t && h && o.value === "stale" && j();
@@ -4183,7 +4183,7 @@ function Is(e) {
 			try {
 				if (await w.ensure(), e === d && o.value !== "ready") throw new ps("Native session reconstruction did not become ready");
 			} catch {
-				e === d && (ne(), i.value = "Could not reconnect this session. Retry when the dashboard is available.");
+				e === d && (A(), i.value = "Could not reconnect this session. Retry when the dashboard is available.");
 			} finally {
 				e === d && (m = void 0);
 			}
@@ -4218,7 +4218,7 @@ function Is(e) {
 		}
 	}
 	function se() {
-		ne(), h = !1, x = "", t.value = [], n.value = !1, r.value = !1, s.value = [], c.value = !1, i.value = "", a.value = "", v = void 0, y = void 0, b = [];
+		A(), h = !1, x = "", t.value = [], n.value = !1, r.value = !1, s.value = [], c.value = !1, i.value = "", a.value = "", v = void 0, y = void 0, b = [];
 	}
 	function ce() {
 		if (!u || o.value !== "ready") throw new ps("Session is read-only until reconnected", "rejected");
@@ -4234,7 +4234,7 @@ function Is(e) {
 		approval: l,
 		requests: s,
 		uncertain: c,
-		attach: A,
+		attach: ne,
 		submit: ie,
 		close: se,
 		hydrate: te,
@@ -8658,9 +8658,12 @@ var im = ["open"], am = {
 			e.style.height = `${a}px`, e.style.overflowY = r > 8 * i ? "auto" : "hidden";
 		}
 		function v() {
-			h.value = !0, x.value = !1;
+			h.value = !0, S.value = !1, y();
 		}
-		function y(e) {
+		function y() {
+			gn(_);
+		}
+		function b(e) {
 			(!(e.relatedTarget instanceof Node) || !m.value?.contains(e.relatedTarget)) && (h.value = !1);
 		}
 		Fn(a, () => _(), { flush: "post" }), or(() => {
@@ -8674,61 +8677,61 @@ var im = ["open"], am = {
 		}), lr(() => g?.disconnect()), Fn(() => r.suggestedPrompt, (e) => {
 			e && (a.value = e);
 		}, { immediate: !0 });
-		let b = X(() => (r.models || []).filter((e) => e.parent !== null)), x = /* @__PURE__ */ B(!1), S = /* @__PURE__ */ B(null), C = /* @__PURE__ */ B(), w = /* @__PURE__ */ B(), ee = Gn(), T = X(() => r.imagesSupported === !1 && c.value.some((e) => e.type.startsWith("image/"))), E = X(() => r.sending || r.modelsLoading), D = X(() => r.providers?.find((e) => e.slug === S.value)), O = X(() => D.value?.name || "Model routes"), k = X(() => {
-			let e = D.value, t = e ? e.models : b.value.map((e) => e.id);
+		let x = X(() => (r.models || []).filter((e) => e.parent !== null)), S = /* @__PURE__ */ B(!1), C = /* @__PURE__ */ B(null), w = /* @__PURE__ */ B(), ee = /* @__PURE__ */ B(), T = Gn(), E = X(() => r.imagesSupported === !1 && c.value.some((e) => e.type.startsWith("image/"))), D = X(() => r.sending || r.modelsLoading), O = X(() => r.providers?.find((e) => e.slug === C.value)), k = X(() => O.value?.name || "Model routes"), te = X(() => {
+			let e = O.value, t = e ? e.models : x.value.map((e) => e.id);
 			return [.../* @__PURE__ */ new Set([...(e?.is_current || !r.providers?.length) && r.defaultModel ? [r.defaultModel] : [], ...t])];
 		});
-		async function te() {
-			await gn(), x.value && w.value?.querySelector("button")?.focus();
+		async function ne() {
+			await gn(), S.value && ee.value?.querySelector("button")?.focus();
 		}
 		function A() {
-			x.value && (x.value = !1, C.value?.focus());
+			S.value && (S.value = !1, w.value?.focus());
 		}
-		function ne() {
-			if (x.value) {
+		function re() {
+			if (S.value) {
 				A();
 				return;
 			}
-			E.value || (s.value = !1, S.value = null, x.value = !0, te());
+			D.value || (s.value = !1, C.value = null, S.value = !0, ne());
 		}
-		function re(e) {
-			S.value = e, te();
+		function j(e) {
+			C.value = e, ne();
 		}
-		function j() {
-			S.value = null, te();
-		}
-		function ie(e) {
-			E.value || (i("update:provider", S.value || ""), i("update:model", D.value?.is_current && e === r.defaultModel ? "" : e), A());
+		function ie() {
+			C.value = null, ne();
 		}
 		function ae(e) {
-			let t = e.composedPath();
-			w.value && !t.includes(w.value) && C.value && !t.includes(C.value) && A();
+			D.value || (i("update:provider", C.value || ""), i("update:model", O.value?.is_current && e === r.defaultModel ? "" : e), A());
 		}
 		function oe(e) {
-			if (x.value && (e.key === "Escape" && (e.preventDefault(), A()), e.key === "Tab")) {
-				let t = Array.from(w.value?.querySelectorAll("button") || []), n = e.shiftKey ? t.at(-1) : t[0];
+			let t = e.composedPath();
+			ee.value && !t.includes(ee.value) && w.value && !t.includes(w.value) && A();
+		}
+		function se(e) {
+			if (S.value && (e.key === "Escape" && (e.preventDefault(), A()), e.key === "Tab")) {
+				let t = Array.from(ee.value?.querySelectorAll("button") || []), n = e.shiftKey ? t.at(-1) : t[0];
 				document.activeElement === (e.shiftKey ? t[0] : t.at(-1)) && (e.preventDefault(), n?.focus());
 			}
 		}
-		Fn(E, (e) => {
+		Fn(D, (e) => {
 			e && A();
 		}), Fn(() => r.providers, () => A()), or(() => {
-			document.addEventListener("click", ae), document.addEventListener("keydown", oe);
+			document.addEventListener("click", oe), document.addEventListener("keydown", se);
 		}), lr(() => {
-			document.removeEventListener("click", ae), document.removeEventListener("keydown", oe);
+			document.removeEventListener("click", oe), document.removeEventListener("keydown", se);
 		});
-		let se = X(() => r.sending ? !r.stoppable || !!a.value.trim() && (u.value || c.value.some((e) => !!e.uploadError) || T.value) : r.disabled || u.value || c.value.some((e) => !!e.uploadError) || T.value || !a.value.trim() && !c.value.length);
-		function ce() {
-			if (se.value) return;
+		let ce = X(() => r.sending ? !r.stoppable || !!a.value.trim() && (u.value || c.value.some((e) => !!e.uploadError) || E.value) : r.disabled || u.value || c.value.some((e) => !!e.uploadError) || E.value || !a.value.trim() && !c.value.length);
+		function le() {
+			if (ce.value) return;
 			if (r.sending && a.value.trim()) {
 				i("steer", a.value.trim()), a.value = "";
 				return;
 			}
-			if (r.disabled || r.sending || u.value || c.value.some((e) => !!e.uploadError) || T.value) return;
+			if (r.disabled || r.sending || u.value || c.value.some((e) => !!e.uploadError) || E.value) return;
 			let e = a.value.trim();
 			(e || c.value.length) && (i("send", o.value ? `/${o.value}\n${e}` : e, [...c.value]), a.value = "", c.value = [], s.value = !1, o.value = null);
 		}
-		async function le(e) {
+		async function ue(e) {
 			if (e.length <= 1398104) return e;
 			let t = new Image();
 			await new Promise((n, r) => {
@@ -8747,33 +8750,33 @@ var im = ["open"], am = {
 			}
 			throw Error("This image is too large to send.");
 		}
-		let ue = 0;
+		let de = 0;
 		lr(() => {
-			ue++;
+			de++;
 		});
-		async function de(e) {
-			let t = ue;
+		async function fe(e) {
+			let t = de;
 			try {
 				let n = await Z.upload(r.profile || "", e);
-				if (t !== ue) return;
+				if (t !== de) return;
 				e.path = n.path, e.uploadError = void 0;
 			} catch {
-				t === ue && (e.uploadError = "Upload failed. Retry or remove this file.");
+				t === de && (e.uploadError = "Upload failed. Retry or remove this file.");
 			}
 		}
-		async function fe(e) {
+		async function pe(e) {
 			if (!u.value) {
 				u.value = !0;
 				try {
-					await de(e);
+					await fe(e);
 				} finally {
 					u.value = !1;
 				}
 			}
 		}
-		async function pe(e) {
+		async function M(e) {
 			if (u.value) return;
-			let t = ue;
+			let t = de;
 			u.value = !0, l.value = "", s.value = !1;
 			try {
 				for (let n of e) try {
@@ -8783,32 +8786,32 @@ var im = ["open"], am = {
 						let r = new FileReader();
 						r.onload = () => e(String(r.result)), r.onerror = () => t(/* @__PURE__ */ Error("Could not read file.")), r.onabort = () => t(/* @__PURE__ */ Error("File reading was cancelled. Try again.")), r.readAsDataURL(n);
 					});
-					if (n.type.startsWith("image/") && (e = await le(e)), t !== ue) return;
+					if (n.type.startsWith("image/") && (e = await ue(e)), t !== de) return;
 					let r = n.type.startsWith("image/") ? e.slice(5, e.indexOf(";")) : n.type || "application/octet-stream", i = {
 						name: n.name,
 						type: r,
 						data: e,
 						size: n.size
 					};
-					c.value.push(i), await de(i);
+					c.value.push(i), await fe(i);
 				} catch (e) {
-					if (t !== ue) return;
+					if (t !== de) return;
 					l.value = e instanceof Error ? e.message : "Could not read file.";
 				}
 			} finally {
-				t === ue && (u.value = !1);
+				t === de && (u.value = !1);
 			}
 		}
-		async function M(e) {
+		async function N(e) {
 			let t = e.target;
-			await pe(Array.from(t.files || [])), t.value = "";
+			await M(Array.from(t.files || [])), t.value = "";
 		}
-		return t({ stageFiles: pe }), (t, n) => (W(), G("form", {
+		return t({ stageFiles: M }), (t, n) => (W(), G("form", {
 			ref_key: "form",
 			ref: m,
 			class: me([{ "composer-editing": h.value }, "composer relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:mb-6 min-[701px]:w-[calc(100%-48px)]"]),
-			onFocusout: y,
-			onSubmit: Mo(ce, ["prevent"])
+			onFocusout: b,
+			onSubmit: Mo(le, ["prevent"])
 		}, [
 			c.value.length ? (W(), G("div", zm, [(W(!0), G(U, null, br(c.value, (e, t) => (W(), G("div", {
 				key: t,
@@ -8826,7 +8829,7 @@ var im = ["open"], am = {
 					type: "button",
 					class: "text-red-200 underline",
 					disabled: u.value,
-					onClick: (t) => fe(e),
+					onClick: (t) => pe(e),
 					"aria-label": `Retry upload ${e.name}`
 				}, " Retry upload", 8, Hm)) : Y("v-if", !0),
 				q("button", {
@@ -8840,10 +8843,10 @@ var im = ["open"], am = {
 				class: "ml-2 underline",
 				onClick: n[0] ||= (e) => o.value = null
 			}, "Turn off")])) : Y("v-if", !0),
-			T.value ? (W(), G("p", Gm, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
+			E.value ? (W(), G("p", Gm, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
 			l.value ? (W(), G("p", Km, F(l.value), 1)) : Y("v-if", !0),
 			q("div", qm, [
-				n[12] ||= q("label", {
+				n[13] ||= q("label", {
 					class: "sr-only",
 					for: "prompt"
 				}, "Message Hermes", -1),
@@ -8856,7 +8859,8 @@ var im = ["open"], am = {
 					maxlength: "65536",
 					placeholder: e.projectName ? `Message ${e.projectName}` : "Message Hermes…",
 					class: "composer-input min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-6 text-white outline-none placeholder:text-[#b4b4b4]",
-					onFocus: v
+					onFocus: v,
+					onBlur: y
 				}, null, 40, Jm), [[So, a.value]]),
 				q("input", {
 					ref_key: "files",
@@ -8865,7 +8869,7 @@ var im = ["open"], am = {
 					multiple: "",
 					hidden: "",
 					"aria-label": "Upload files",
-					onChange: M
+					onChange: N
 				}, null, 544),
 				q("input", {
 					ref_key: "camera",
@@ -8875,11 +8879,11 @@ var im = ["open"], am = {
 					capture: "environment",
 					hidden: "",
 					"aria-label": "Take a photo",
-					onChange: M
+					onChange: N
 				}, null, 544),
 				q("div", Ym, [
-					q("button", {
-						class: "attach-button grid size-10 shrink-0 place-items-center rounded-full bg-[#424242] text-3xl text-white disabled:opacity-55",
+					kn(q("button", {
+						class: "attach-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#424242] p-0 text-white disabled:opacity-55",
 						type: "button",
 						"aria-label": "Attachment options",
 						"aria-expanded": s.value,
@@ -8887,20 +8891,28 @@ var im = ["open"], am = {
 						onClick: n[2] ||= (e) => {
 							A(), s.value = !s.value;
 						}
-					}, " + ", 8, Xm),
+					}, [...n[9] ||= [q("svg", {
+						viewBox: "0 0 24 24",
+						fill: "none",
+						stroke: "currentColor",
+						"stroke-width": "2",
+						"stroke-linecap": "round",
+						class: "size-5",
+						"aria-hidden": "true"
+					}, [q("path", { d: "M12 5v14M5 12h14" })], -1)]], 8, Xm), [[Ba, !h.value]]),
 					q("p", Zm, F(u.value ? "Preparing attachments…" : e.reason || ""), 1),
 					q("button", {
 						ref_key: "pill",
-						ref: C,
+						ref: w,
 						type: "button",
 						class: "model-pill flex min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-2 text-base text-white disabled:opacity-55",
 						"aria-label": "Choose model",
 						"aria-haspopup": "dialog",
-						"aria-expanded": x.value,
-						"aria-controls": V(ee),
-						disabled: E.value,
-						onClick: ne
-					}, [q("span", $m, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[9] ||= q("svg", {
+						"aria-expanded": S.value,
+						"aria-controls": V(T),
+						disabled: D.value,
+						onClick: re
+					}, [q("span", $m, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[10] ||= q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
@@ -8909,38 +8921,38 @@ var im = ["open"], am = {
 						"aria-hidden": "true"
 					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, Qm),
 					q("button", {
-						class: "send-button grid size-11 shrink-0 place-items-center rounded-full bg-[#2563eb] text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
+						class: "send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
 						type: "button",
-						disabled: se.value,
+						disabled: ce.value,
 						"aria-label": e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
-						onClick: n[3] ||= (t) => e.sending ? a.value.trim() ? ce() : e.stoppable && i("stop") : ce()
-					}, [e.sending && !a.value.trim() ? (W(), G("svg", th, [...n[10] ||= [q("rect", {
+						onClick: n[3] ||= (t) => e.sending ? a.value.trim() ? le() : e.stoppable && i("stop") : le()
+					}, [e.sending && !a.value.trim() ? (W(), G("svg", th, [...n[11] ||= [q("rect", {
 						x: "6",
 						y: "6",
 						width: "12",
 						height: "12",
 						rx: "2"
-					}, null, -1)]])) : (W(), G("svg", nh, [...n[11] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 8, eh)
+					}, null, -1)]])) : (W(), G("svg", nh, [...n[12] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 8, eh)
 				])
 			]),
-			x.value ? (W(), G("div", {
+			S.value ? (W(), G("div", {
 				key: 4,
-				id: V(ee),
+				id: V(T),
 				ref_key: "panel",
-				ref: w,
+				ref: ee,
 				role: "dialog",
 				"aria-modal": "true",
-				"aria-label": S.value === null ? "Choose provider" : O.value,
+				"aria-label": C.value === null ? "Choose provider" : k.value,
 				class: "model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl"
 			}, [q("div", ih, [
-				S.value === null ? Y("v-if", !0) : (W(), G("button", {
+				C.value === null ? Y("v-if", !0) : (W(), G("button", {
 					key: 0,
 					type: "button",
 					"aria-label": "Back to providers",
 					class: "picker-back rounded-full p-2 hover:bg-[#424242]",
-					onClick: j
-				}, [...n[13] ||= [q("svg", {
+					onClick: ie
+				}, [...n[14] ||= [q("svg", {
 					viewBox: "0 0 24 24",
 					fill: "none",
 					stroke: "currentColor",
@@ -8948,31 +8960,31 @@ var im = ["open"], am = {
 					class: "size-5",
 					"aria-hidden": "true"
 				}, [q("path", { d: "m15 18-6-6 6-6" })], -1)]])),
-				q("h2", ah, F(S.value === null ? "Choose provider" : O.value), 1),
+				q("h2", ah, F(C.value === null ? "Choose provider" : k.value), 1),
 				q("button", {
 					type: "button",
 					"aria-label": "Close model picker",
 					class: "rounded-full px-3 py-2 hover:bg-[#424242]",
 					onClick: A
 				}, " × ")
-			]), q("div", oh, [S.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
+			]), q("div", oh, [C.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
 				key: e.slug,
 				type: "button",
 				class: "provider-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 				"data-provider": e.slug,
-				onClick: (t) => re(e.slug)
+				onClick: (t) => j(e.slug)
 			}, [q("span", ch, F(e.name), 1), e.is_current ? (W(), G("span", lh, "Current")) : Y("v-if", !0)], 8, sh))), 128)), q("button", {
 				type: "button",
 				class: "provider-option w-full rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 				"data-provider": "",
-				onClick: n[4] ||= (e) => re("")
-			}, " Model routes ")], 64)) : (W(), G(U, { key: 1 }, [(W(!0), G(U, null, br(k.value, (t) => (W(), G("button", {
+				onClick: n[4] ||= (e) => j("")
+			}, " Model routes ")], 64)) : (W(), G(U, { key: 1 }, [(W(!0), G(U, null, br(te.value, (t) => (W(), G("button", {
 				key: t,
 				type: "button",
 				class: "model-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 				"data-model": t,
-				onClick: (e) => ie(t)
-			}, [q("span", dh, F(t), 1), (e.provider || "") === S.value && t === (e.model || e.defaultModel) ? (W(), G("span", fh, "✓")) : Y("v-if", !0)], 8, uh))), 128)), k.value.length ? Y("v-if", !0) : (W(), G("p", ph, "No models available"))], 64))])], 8, rh)) : Y("v-if", !0),
+				onClick: (e) => ae(t)
+			}, [q("span", dh, F(t), 1), (e.provider || "") === C.value && t === (e.model || e.defaultModel) ? (W(), G("span", fh, "✓")) : Y("v-if", !0)], 8, uh))), 128)), te.value.length ? Y("v-if", !0) : (W(), G("p", ph, "No models available"))], 64))])], 8, rh)) : Y("v-if", !0),
 			s.value ? (W(), G("div", mh, [
 				q("button", {
 					type: "button",
@@ -9234,7 +9246,7 @@ var im = ["open"], am = {
 		}), lr(() => {
 			document.removeEventListener("dragenter", a), document.removeEventListener("dragover", o), document.removeEventListener("dragleave", s), document.removeEventListener("drop", c);
 		});
-		let { view: l, scope: u, composer: d, actions: f } = yc(), { profile: p, session: m, settingsPage: h, scheduledPage: g, offline: _, canStream: v, models: y, providers: b, modelsLoading: x, model: S, provider: C, defaultModel: w, suggestedPrompt: ee } = u, { messages: T, loading: E, busy: D, approvalPending: O, active: k, reconnect: te, error: A, unavailable: ne, connection: re, status: j } = l;
+		let { view: l, scope: u, composer: d, actions: f } = yc(), { profile: p, session: m, settingsPage: h, scheduledPage: g, offline: _, canStream: v, models: y, providers: b, modelsLoading: x, model: S, provider: C, defaultModel: w, suggestedPrompt: ee } = u, { messages: T, loading: E, busy: D, approvalPending: O, active: k, reconnect: te, error: ne, unavailable: A, connection: re, status: j } = l;
 		return (t, i) => (W(), G("div", Ph, [
 			r.value && !e.showPage ? (W(), G("div", Fh, " Drop files to attach ")) : Y("v-if", !0),
 			V(_) ? (W(), G("div", Ih, " You are offline. Messages cannot be loaded or sent. ")) : Y("v-if", !0),
@@ -9243,14 +9255,14 @@ var im = ["open"], am = {
 				class: "ml-3 underline",
 				onClick: i[0] ||= (...e) => V(f).retry && V(f).retry(...e)
 			}, " Reconnect ")) : Y("v-if", !0)])) : Y("v-if", !0),
-			!V(h) && !V(g) && V(A) ? (W(), G("div", Rh, [
-				J(F(V(A)) + " ", 1),
+			!V(h) && !V(g) && V(ne) ? (W(), G("div", Rh, [
+				J(F(V(ne)) + " ", 1),
 				V(m) ? (W(), G("button", {
 					key: 0,
 					class: "underline",
 					onClick: i[1] ||= (...e) => V(f).retry && V(f).retry(...e)
 				}, F(V(te) ? "Retry connection" : "Refresh history"), 1)) : Y("v-if", !0),
-				V(ne) ? (W(), G("button", {
+				V(A) ? (W(), G("button", {
 					key: 1,
 					class: "ml-3 underline",
 					onClick: i[2] ||= (...e) => V(f).resolve && V(f).resolve(...e)
@@ -9363,7 +9375,7 @@ function Vh(e) {
 //#region src/features/chat/composables/useChatController.ts
 function Hh(e, t) {
 	let { profile: n, session: r, messages: i, chatLoading: a, chatError: o, canStream: s, scheduledPage: c, projectView: l, projectsPage: u, projectPage: d, settingsPage: f, selectedProject: p, creating: m, offline: h, models: g, providers: _, modelsLoading: v, model: y, provider: b, defaultModel: x, suggestedPrompt: S } = t, C = s, w = X(() => C.value ? e.messages.value : i.value), ee = X(() => e.busy.value || e.uncertain.value), T = X(() => C.value ? e.loading.value : a.value), E = X(() => C.value ? e.error.value : o.value), D = X(() => !!e.approval.value), O = X(() => C.value && !!r.value && e.connection.value !== "ready"), k = X(() => e.uncertain.value), te = X(() => e.busy.value);
-	async function A(i, a) {
+	async function ne(i, a) {
 		if (c.value || ee.value || m.value || D.value || h.value || !s.value || v.value || (l.value || !r.value) && !await t.createSession()) return;
 		let o = t.generation(), u = n.value, d = [{
 			type: "text",
@@ -9401,8 +9413,8 @@ function Hh(e, t) {
 			o === t.generation() && !e.uncertain.value && (e.error.value = n instanceof Error ? n.message : "Message not submitted", S.value = i);
 		}
 	}
-	async function ne(e, t = []) {
-		C.value && await A(e, t);
+	async function A(e, t = []) {
+		C.value && await ne(e, t);
 	}
 	async function re() {
 		if (C.value) {
@@ -9447,7 +9459,7 @@ function Hh(e, t) {
 		disabled: !!(d.value || c.value || u.value || l.value && p.value?.archived || l.value && (!p.value || !p.value.isNoProject && !Ls(p.value)) || h.value || m.value || v.value || T.value || D.value || k.value || O.value || !s.value),
 		reason: c.value ? "Open a chat to discuss a run." : u.value ? "Select a project or start a new chat." : l.value && p.value?.archived ? "Restore this project to start a new chat." : l.value && p.value && !p.value.isNoProject && !Ls(p.value) ? "This Project has no workspace." : h.value ? "Offline · sending is unavailable." : D.value ? "Approval is pending in Hermes." : s.value ? void 0 : "Streaming turns are unavailable for this profile."
 	})), ce = {
-		send: ne,
+		send: A,
 		stop: re,
 		steer: j,
 		answerFor: (e) => {
@@ -10521,19 +10533,19 @@ function R_(e) {
 			}).catch($h);
 		});
 	}
-	let te = e_(), A = e_(), ne;
+	let te = e_(), ne = e_(), A;
 	function re(e, t, n) {
 		ie(e);
-		let r = A.list();
+		let r = ne.list();
 		return r.length ? r.forEach((r) => r(e, t, n)) : console.error(e), Promise.reject(e);
 	}
 	function j() {
-		return ne && c.value !== jg ? Promise.resolve() : new Promise((e, t) => {
+		return A && c.value !== jg ? Promise.resolve() : new Promise((e, t) => {
 			te.add([e, t]);
 		});
 	}
 	function ie(e) {
-		return ne || (ne = !e, k(), te.list().forEach(([t, n]) => e ? n(e) : t()), te.reset()), e;
+		return A || (A = !e, k(), te.list().forEach(([t, n]) => e ? n(e) : t()), te.reset()), e;
 	}
 	function ae(t, n, r, i) {
 		let { scrollBehavior: a } = e;
@@ -10559,7 +10571,7 @@ function R_(e) {
 		beforeEach: a.add,
 		beforeResolve: o.add,
 		afterEach: s.add,
-		onError: A.add,
+		onError: ne.add,
 		isReady: j,
 		install(e) {
 			e.component("RouterLink", A_), e.component("RouterView", L_), e.config.globalProperties.$router = le, Object.defineProperty(e.config.globalProperties, "$route", {
@@ -10574,7 +10586,7 @@ function R_(e) {
 			e.provide(Zg, le), e.provide(Qg, /* @__PURE__ */ Pt(t)), e.provide($g, c);
 			let n = e.unmount;
 			ce.add(e), e.unmount = function() {
-				ce.delete(e), ce.size < 1 && (l = jg, O && O(), O = null, c.value = jg, se = !1, ne = !1), n();
+				ce.delete(e), ce.size < 1 && (l = jg, O && O(), O = null, c.value = jg, se = !1, A = !1), n();
 			};
 		}
 	};
@@ -10666,7 +10678,7 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 		function C(e) {
 			b.value = e;
 		}
-		let w = /* @__PURE__ */ B(), ee = /* @__PURE__ */ B(), T = /* @__PURE__ */ B(!1), E = /* @__PURE__ */ B(""), D = /* @__PURE__ */ B(""), O = /* @__PURE__ */ B([]), k = /* @__PURE__ */ B(), te = /* @__PURE__ */ B(!1), A = /* @__PURE__ */ B(!1), ne = /* @__PURE__ */ B(""), re = /* @__PURE__ */ B(""), j = /* @__PURE__ */ B([]), ie = /* @__PURE__ */ B(!1), ae = X(() => (c.value || !!N.value) && !s.value && !o.value && !!D.value && !!k.value && !k.value.isNoProject), oe = X(() => D.value ? k.value ? Rs(k.value) : [] : he.value.filter((e) => !j.value.includes(e.id))), se, ce;
+		let w = /* @__PURE__ */ B(), ee = /* @__PURE__ */ B(), T = /* @__PURE__ */ B(!1), E = /* @__PURE__ */ B(""), D = /* @__PURE__ */ B(""), O = /* @__PURE__ */ B([]), k = /* @__PURE__ */ B(), te = /* @__PURE__ */ B(!1), ne = /* @__PURE__ */ B(!1), A = /* @__PURE__ */ B(""), re = /* @__PURE__ */ B(""), j = /* @__PURE__ */ B([]), ie = /* @__PURE__ */ B(!1), ae = X(() => (c.value || !!N.value) && !s.value && !o.value && !!D.value && !!k.value && !k.value.isNoProject), oe = X(() => D.value ? k.value ? Rs(k.value) : [] : he.value.filter((e) => !j.value.includes(e.id))), se, ce;
 		function ue() {
 			se?.(), se = void 0, typeof EventSource < "u" && (se = Z.projectEvents(M.value, de));
 		}
@@ -10733,14 +10745,14 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 			let e = new AbortController();
 			fe = e;
 			let t = M.value;
-			te.value = !ie.value, ne.value = "";
+			te.value = !ie.value, A.value = "";
 			try {
 				let n = await Z.projects(t, e.signal);
 				if (e !== fe || t !== M.value) return;
 				if (!Array.isArray(n.projects) || n.projects.some((e) => !e || typeof e.id != "string" || typeof e.label != "string")) throw Error("Invalid Hermes Projects response");
 				O.value = n.projects, j.value = n.scoped_session_ids || [], ie.value = !0;
 			} catch {
-				e === fe && !e.signal.aborted && (ne.value = "Could not load Projects.");
+				e === fe && !e.signal.aborted && (A.value = "Could not load Projects.");
 			} finally {
 				e === fe && (te.value = !1);
 			}
@@ -10751,14 +10763,14 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 			pe = e;
 			let t = M.value, n = D.value;
 			if (n) {
-				A.value = !k.value, re.value = "";
+				ne.value = !k.value, re.value = "";
 				try {
 					let r = await Z.project(t, n, e.signal);
 					e === pe && !e.signal.aborted && t === M.value && n === D.value && (k.value = r);
 				} catch (t) {
 					e === pe && !e.signal.aborted && (re.value = t instanceof Uo && t.status === 404 ? "Project no longer exists. Return to Other chats." : "Could not load this Project. Retry or return to Other chats.");
 				} finally {
-					e === pe && (A.value = !1);
+					e === pe && (ne.value = !1);
 				}
 			}
 		}
@@ -10857,7 +10869,7 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 				Se.value = "Invalid profile name";
 				return;
 			}
-			Me.value = "", De.value = !1, xt.value = !1, St++, w.value = void 0, ie.value = !1, se?.(), se = void 0, clearTimeout(ce), j.value = [], et(), fe?.abort(), pe?.abort(), D.value = "", T.value = !1, E.value = "", k.value = void 0, O.value = [], re.value = "", ne.value = "", A.value = !1, M.value = e, N.value = "", he.value = [], ge.value = [], _e.value = {}, Te.value = [], Oe.value = [], ke.value = "", L.value = "", Ee.value = "", Ae.value = !0, Se.value = "", Ce.value = "", ve.value = 0, ye.value = !1;
+			Me.value = "", De.value = !1, xt.value = !1, St++, w.value = void 0, ie.value = !1, se?.(), se = void 0, clearTimeout(ce), j.value = [], et(), fe?.abort(), pe?.abort(), D.value = "", T.value = !1, E.value = "", k.value = void 0, O.value = [], re.value = "", A.value = "", ne.value = !1, M.value = e, N.value = "", he.value = [], ge.value = [], _e.value = {}, Te.value = [], Oe.value = [], ke.value = "", L.value = "", Ee.value = "", Ae.value = !0, Se.value = "", Ce.value = "", ve.value = 0, ye.value = !1;
 			let t = ++He;
 			ue(), nt(), mt(), Promise.allSettled([Z.models(e), Z.modelOptions(e)]).then(([e, n]) => {
 				t === He && (e.status === "fulfilled" && (Te.value = e.value.data || [], Ee.value = e.value.default_model || ""), n.status === "fulfilled" && Array.isArray(n.value.providers) && (Oe.value = n.value.providers.filter((e) => e.models.length || e.is_current), ke.value = Oe.value.find((e) => e.is_current)?.slug || n.value.provider || "", Ee.value = n.value.model || Ee.value), Ae.value = !1);
@@ -10965,7 +10977,7 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 			let t = W_(n.query.profile);
 			if ((!m || t !== M.value) && (m = !0, h = gt(t), await h, e !== f) || (await h, e !== f)) return;
 			let i = typeof n.params.sessionId == "string" ? n.params.sessionId : W_(n.query.session), a = typeof n.params.projectId == "string" ? n.params.projectId : W_(n.query.project), o = () => O.value.find((e) => e.sessionIds?.includes(i) || Rs(e).some((e) => e.id === i)), s = a || r.value === "chat" && o()?.id || "";
-			if (s !== D.value && (pe?.abort(), D.value = s, k.value = void 0, re.value = "", A.value = !1, s && it()), i !== N.value && (i ? await _t(i) : ($e(), N.value = "", ge.value = [], Me.value = "")), i && !a && r.value === "chat" && !ie.value) {
+			if (s !== D.value && (pe?.abort(), D.value = s, k.value = void 0, re.value = "", ne.value = !1, s && it()), i !== N.value && (i ? await _t(i) : ($e(), N.value = "", ge.value = [], Me.value = "")), i && !a && r.value === "chat" && !ie.value) {
 				if (await tt, e !== f || t !== M.value || i !== N.value) return;
 				let n = o();
 				n && n.id !== D.value && (D.value = n.id, k.value = n, it());
@@ -11077,7 +11089,7 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 			projects: O.value,
 			archived: u.value,
 			loading: te.value,
-			error: ne.value || E.value,
+			error: A.value || E.value,
 			busy: T.value,
 			offline: P.value,
 			onSelect: at,
@@ -11089,7 +11101,7 @@ var J_ = { class: "app-shell flex min-h-dvh bg-black font-sans text-white dark:b
 			selectedProject: k.value,
 			projectPage: l.value,
 			projectArtifacts: a.value,
-			projectLoading: A.value,
+			projectLoading: ne.value,
 			projectError: re.value,
 			manageError: E.value,
 			projectBusy: T.value,
