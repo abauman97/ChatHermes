@@ -49,9 +49,6 @@ body {
 .composer {
   margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
-.chathermes-embedded.keyboard-visible .composer {
-  margin-bottom: 0;
-}
 .composer-body {
   display: flex;
   flex-direction: column;
@@ -67,6 +64,9 @@ body {
   }
 }
 @media (max-width: 700px) {
+  .chathermes-embedded .composer:has(.composer-input:focus) {
+    margin-bottom: 0;
+  }
   .composer:has(.composer-input:focus) .composer-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 30px;
