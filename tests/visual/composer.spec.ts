@@ -21,12 +21,8 @@ test("composer newlines, mobile focus layout, eight-row scrolling and send recov
   await expect(area).toBeFocused();
   if (info.project.name === "mobile") {
     await expect(picker).toBeHidden();
-    const [input, plus, button] = await Promise.all([
-      area.boundingBox(),
-      attach.boundingBox(),
-      send.boundingBox(),
-    ]);
-    expect(plus!.x + plus!.width).toBeLessThan(input!.x);
+    await expect(attach).toBeHidden();
+    const [input, button] = await Promise.all([area.boundingBox(), send.boundingBox()]);
     expect(input!.x + input!.width).toBeLessThan(button!.x);
     expect(Math.abs(input!.y + input!.height - button!.y - button!.height)).toBeLessThan(2);
   } else await expect(picker).toBeVisible();
@@ -87,6 +83,9 @@ test("composer newlines, mobile focus layout, eight-row scrolling and send recov
   await area.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(area).toBeFocused();
+  await expect(attach).toBeHidden();
+  await area.evaluate((element) => element.blur());
+  await expect(attach).toBeVisible();
   await attach.click();
   await composer.locator('input[aria-label="Upload files"]').setInputFiles({
     name: "composer.txt",

@@ -3,6 +3,92 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ChatComposer from "./ChatComposer.vue";
 describe("composer", () => {
+  it("hides attachment options while editing and restores them only after focus leaves the composer", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      const attachment = wrapper.get('[aria-label="Attachment options"]');
+      expect(attachment.isVisible()).toBe(true);
+      (wrapper.get("textarea").element as HTMLTextAreaElement).focus();
+      await wrapper.vm.$nextTick();
+      expect(attachment.isVisible()).toBe(false);
+      await wrapper.get("textarea").setValue("draft");
+      (wrapper.get(".send-button").element as HTMLButtonElement).focus();
+      await wrapper.vm.$nextTick();
+      expect(attachment.isVisible()).toBe(false);
+      await wrapper.get(".send-button").trigger("click");
+      expect(wrapper.emitted("send")).toEqual([["draft", []]]);
+      outside.focus();
+      await wrapper.vm.$nextTick();
+      expect(attachment.isVisible()).toBe(true);
+      await attachment.trigger("click");
+      expect(attachment.attributes("aria-expanded")).toBe("true");
+      expect(wrapper.find('[data-mode="goal"]').exists()).toBe(true);
+    } finally {
+      wrapper.unmount();
+      outside.remove();
+    }
+  });
+  it("restores attachment options when textarea focus leaves without a related target, including during a run", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: true, sending: true, stoppable: true },
+    });
+    try {
+      const area = wrapper.get("textarea").element as HTMLTextAreaElement;
+      const attachment = wrapper.get(".attach-button");
+      area.focus();
+      await wrapper.vm.$nextTick();
+      expect(attachment.isVisible()).toBe(false);
+      expect(area.disabled).toBe(false);
+      area.blur();
+      await wrapper.vm.$nextTick();
+      expect(attachment.isVisible()).toBe(true);
+      expect(attachment.attributes("disabled")).toBeDefined();
+      await wrapper.setProps({ disabled: false, sending: false });
+      expect(attachment.attributes("disabled")).toBeUndefined();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("uses exact 30px square buttons with centered icons and a symmetric plus glyph", () => {
+    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    try {
+      for (const selector of [".attach-button", ".send-button"]) {
+        expect(wrapper.get(selector).classes()).toEqual(
+          expect.arrayContaining(["size-[30px]", "shrink-0", "grid", "place-items-center", "p-0"]),
+        );
+      }
+      const plus = wrapper.get(".attach-button svg");
+      expect(plus.attributes("viewBox")).toBe("0 0 24 24");
+      expect(plus.classes()).toContain("size-5");
+      expect(plus.get("path").attributes("d")).toBe("M12 5v14M5 12h14");
+      expect(plus.attributes("aria-hidden")).toBe("true");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("keeps the model selector 30px high, content-sized and readable beside the buttons", () => {
+    const wrapper = mount(ChatComposer, {
+      props: { disabled: false, sending: false, model: "example-model" },
+    });
+    try {
+      const picker = wrapper.get(".model-pill");
+      expect(picker.classes()).toEqual(
+        expect.arrayContaining(["h-[30px]", "flex", "items-center", "px-3", "py-0", "text-base"]),
+      );
+      expect(picker.classes()).not.toContain("size-[30px]");
+      expect(picker.classes()).not.toContain("w-[30px]");
+      expect(picker.text()).toBe("example-model");
+      expect(wrapper.get(".composer-controls").classes()).toContain("items-center");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("adds goal and plan slash commands to the next message and shows the active mode", async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
@@ -38,6 +124,41 @@ describe("composer", () => {
     expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
     expect(wrapper.get(".send-button").attributes("type")).toBe("button");
     wrapper.unmount();
+  });
+  it("recalculates an empty input on focus and blur and keeps growing with draft content", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    try {
+      const area = wrapper.get("textarea").element as HTMLTextAreaElement;
+      area.style.lineHeight = "24px";
+      area.style.padding = "4px";
+      let height = 64;
+      Object.defineProperty(area, "scrollHeight", { get: () => height });
+      // jsdom has no layout: model the dimensions supplied by the mobile focus CSS.
+      height = 32;
+      area.focus();
+      await wrapper.vm.$nextTick();
+      expect(area.value).toBe("");
+      expect(area.style.height).toBe("32px");
+      expect(wrapper.get(".attach-button").isVisible()).toBe(false);
+      await wrapper.get("textarea").setValue("short");
+      expect(area.style.height).toBe("32px");
+      height = 80;
+      await wrapper.get("textarea").setValue("first\nsecond\nthird");
+      expect(area.style.height).toBe("80px");
+      height = 32;
+      await wrapper.get("textarea").setValue("");
+      expect(area.style.height).toBe("32px");
+      height = 64;
+      area.blur();
+      await wrapper.vm.$nextTick();
+      expect(area.style.height).toBe("64px");
+      expect(wrapper.get(".attach-button").isVisible()).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
   });
   it("resizes for drafts, caps at eight rows and shrinks after sending", async () => {
     const wrapper = mount(ChatComposer, {

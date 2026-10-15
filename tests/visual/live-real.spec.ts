@@ -1,6 +1,75 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("composer empty focus is one line inline with Send and grows with text", async ({
+  page,
+}, info) => {
+  await signIn(page);
+  const composer = page.locator(".chathermes-embedded .composer");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  const send = composer.getByRole("button", { name: "Send message", exact: true });
+  const attach = composer.getByRole("button", { name: "Attachment options" });
+  const picker = composer.getByRole("button", { name: "Choose model", exact: true });
+  const inputHeight = () => area.evaluate((element) => element.getBoundingClientRect().height);
+  await area.evaluate((element) => element.blur());
+  await expect(attach).toBeVisible();
+  await expect(picker).toBeVisible();
+  const unfocusedHeight = await inputHeight();
+  for (const button of [attach, send]) {
+    await expect(button).toHaveCSS("width", "30px");
+    await expect(button).toHaveCSS("height", "30px");
+  }
+  await expect(picker).toHaveCSS("height", "30px");
+  await expect(picker).toHaveCSS("font-size", "16px");
+  const selector = (await picker.boundingBox())!;
+  expect(selector.width).toBeGreaterThan(30);
+  for (const button of [attach, send]) {
+    const box = (await button.boundingBox())!;
+    expect(Math.abs(selector.y + selector.height / 2 - box.y - box.height / 2)).toBeLessThanOrEqual(
+      1,
+    );
+  }
+  await page.screenshot({ path: info.outputPath("composer-model-selector.png") });
+  await area.focus();
+  await expect(area).toBeFocused();
+  await expect(area).toHaveValue("");
+  await expect(attach).toBeHidden();
+  const singleLineHeight = await area.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return (
+      parseFloat(style.lineHeight) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+    );
+  });
+  if (info.project.name === "mobile") {
+    await expect.poll(inputHeight).toBe(singleLineHeight);
+    await expect(picker).toBeHidden();
+    const input = (await area.boundingBox())!;
+    const button = (await send.boundingBox())!;
+    expect(input.x + input.width).toBeLessThan(button.x);
+    expect(Math.abs(input.y + input.height / 2 - button.y - button.height / 2)).toBeLessThanOrEqual(
+      1,
+    );
+  } else {
+    await expect.poll(inputHeight).toBe(unfocusedHeight);
+    await expect(picker).toBeVisible();
+  }
+  await page.screenshot({ path: info.outputPath("composer-empty-focused.png") });
+  const focusedHeight = await inputHeight();
+  await area.fill("short draft");
+  await expect.poll(inputHeight).toBe(focusedHeight);
+  await area.fill("A naturally wrapping draft with enough words to grow the composer. ".repeat(12));
+  await expect.poll(inputHeight).toBeGreaterThan(focusedHeight);
+  await page.screenshot({ path: info.outputPath("composer-wrapped-focused.png") });
+  await area.fill("first\nsecond\nthird\nfourth");
+  await expect.poll(inputHeight).toBeGreaterThan(focusedHeight);
+  await area.fill("");
+  await expect.poll(inputHeight).toBe(focusedHeight);
+  await area.evaluate((element) => element.blur());
+  await expect.poll(inputHeight).toBe(unfocusedHeight);
+  await expect(attach).toBeVisible();
+  await expect(picker).toBeVisible();
+});
+
 test("disposable dashboard composer, attachments and real native response", async ({
   page,
 }, info) => {

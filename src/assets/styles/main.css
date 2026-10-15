@@ -67,35 +67,31 @@ body {
   }
 }
 @media (max-width: 700px) {
-  .composer-editing .composer-body {
+  .composer:has(.composer-input:focus) .composer-body {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 1fr) 30px;
     align-items: end;
     gap: 8px;
   }
-  .composer-editing .composer-controls {
+  .composer:has(.composer-input:focus) .composer-controls {
     display: contents;
   }
-  .composer-editing .composer-input {
-    grid-column: 2;
-    grid-row: 1;
-    min-height: 44px;
-  }
-  .composer-editing .attach-button {
+  .composer:has(.composer-input:focus) .composer-input {
     grid-column: 1;
     grid-row: 1;
+    min-height: 0;
   }
-  .composer-editing .send-button {
-    grid-column: 3;
+  .composer:has(.composer-input:focus) .send-button {
+    grid-column: 2;
     grid-row: 1;
   }
-  .composer-editing .model-pill {
+  .composer:has(.composer-input:focus) .model-pill {
     display: none;
   }
-  .composer-editing .composer-hint:empty {
+  .composer:has(.composer-input:focus) .composer-hint:empty {
     display: none;
   }
-  .composer-editing .composer-hint {
+  .composer:has(.composer-input:focus) .composer-hint {
     grid-column: 1 / -1;
     grid-row: 2;
   }
