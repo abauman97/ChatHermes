@@ -20,7 +20,7 @@ describe("composer", () => {
       (wrapper.get(".send-button").element as HTMLButtonElement).focus();
       await wrapper.vm.$nextTick();
       expect(attachment.isVisible()).toBe(false);
-      await wrapper.get(".send-button").trigger("click");
+      await wrapper.get("form").trigger("submit.prevent");
       expect(wrapper.emitted("send")).toEqual([["draft", []]]);
       outside.focus();
       await wrapper.vm.$nextTick();
@@ -95,13 +95,13 @@ describe("composer", () => {
     await wrapper.get('[data-mode="goal"]').trigger("click");
     expect(wrapper.get('[role="status"]').text()).toContain("Goal mode");
     await wrapper.get("textarea").setValue("finish the migration");
-    await wrapper.get(".send-button").trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("send")?.[0]).toEqual(["/goal\nfinish the migration", []]);
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
     await wrapper.get('[data-mode="plan"]').trigger("click");
     await wrapper.get("textarea").setValue("refactor the parser");
-    await wrapper.get(".send-button").trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
     wrapper.unmount();
   });
@@ -120,9 +120,9 @@ describe("composer", () => {
       expect(event.defaultPrevented).toBe(false);
     }
     expect(wrapper.emitted("send")).toBeUndefined();
-    await wrapper.get(".send-button").trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
-    expect(wrapper.get(".send-button").attributes("type")).toBe("button");
+    expect(wrapper.get(".send-button").attributes("type")).toBe("submit");
     wrapper.unmount();
   });
   it("recalculates an empty input on focus and blur and keeps growing with draft content", async () => {
@@ -202,7 +202,7 @@ describe("composer availability", () => {
     expect(button.attributes("aria-label")).toBe("Stop response");
     await wrapper.get("textarea").setValue("  follow this direction  ");
     expect(button.attributes("aria-label")).toBe("Guide this run");
-    await button.trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("steer")).toEqual([["follow this direction"]]);
     expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("");
     expect(wrapper.emitted("stop")).toBeUndefined();
@@ -218,7 +218,7 @@ describe("composer availability", () => {
     expect(button.attributes("disabled")).toBeDefined();
     await wrapper.setProps({ sending: false });
     expect(button.attributes("disabled")).toBeUndefined();
-    await button.trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("send")).toEqual([["draft", []]]);
     wrapper.unmount();
   });
@@ -248,7 +248,7 @@ describe("composer availability", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(wrapper.get('[role="alert"]').text()).toContain("cancelled");
       expect(wrapper.get(".send-button").attributes("disabled")).toBeUndefined();
-      await wrapper.get(".send-button").trigger("click");
+      await wrapper.get("form").trigger("submit.prevent");
       expect(wrapper.emitted("send")).toEqual([["draft", []]]);
     } finally {
       wrapper.unmount();
@@ -258,7 +258,7 @@ describe("composer availability", () => {
   it("retains ordinary send behavior outside a run", async () => {
     const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
     await wrapper.get("textarea").setValue("hello");
-    await wrapper.get(".send-button").trigger("click");
+    await wrapper.get("form").trigger("submit.prevent");
     expect(wrapper.emitted("send")?.[0]).toEqual(["hello", []]);
     expect(wrapper.emitted("steer")).toBeUndefined();
   });
