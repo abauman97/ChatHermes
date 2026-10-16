@@ -63,7 +63,7 @@ function ChatHermesPlugin() {
     const ownedViewport = viewport || document.createElement("meta");
     ownedViewport.name = "viewport";
     ownedViewport.content =
-      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content";
     if (!viewport) document.head.append(ownedViewport);
     const preventGesture = (event: Event) => event.preventDefault();
     overlay.addEventListener("gesturestart", preventGesture, { passive: false });

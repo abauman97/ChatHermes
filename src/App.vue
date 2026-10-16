@@ -1004,7 +1004,9 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div class="app-shell flex min-h-dvh bg-black font-sans text-white dark:bg-black dark:text-white">
+  <div
+    class="app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white"
+  >
     <aside
       ref="sidebar"
       class="sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-1 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white"
@@ -1197,7 +1199,7 @@ onUnmounted(() => {
       @click.capture="drawerSwipe.click"
       @click="closeDrawer"
     />
-    <main class="main-panel flex h-dvh min-w-0 flex-1 flex-col">
+    <main class="main-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <header class="topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8">
         <button
           ref="menuButton"
@@ -1440,6 +1442,10 @@ onUnmounted(() => {
           </RouterView>
         </template>
       </ChatInterface>
+      <footer
+        class="app-footer h-[calc(12px+env(safe-area-inset-bottom,0px))] shrink-0 bg-black min-[701px]:h-[calc(24px+env(safe-area-inset-bottom,0px))]"
+        aria-hidden="true"
+      />
     </main>
   </div>
 </template>

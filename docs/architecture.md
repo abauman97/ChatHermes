@@ -4,6 +4,35 @@ ChatHermes mounts Vue through the Hermes React dashboard plugin SDK. `main.ts`
 creates an app per mount; `plugin-entry.ts` owns host integration and viewport
 restoration. Each app installs a fresh Vue Router 4 instance. There is no standalone application or global store.
 
+## Mobile shell and keyboard behavior
+
+The shell follows SWOL's bounded flex layout: a `100dvh` frame with the header
+and empty safe-area footer outside the scrolling content. `ChatInterface` bounds
+the active page or transcript and keeps the composer in a separate, nonshrinking
+dock. The footer owns `env(safe-area-inset-bottom, 0px)` even when the composer is
+hidden, plus the normal 12px/mobile or 24px/desktop bottom gap. The composer has
+zero bottom margin and meets the top of the footer.
+Input focus may compact the composer, but never removes safe-area spacing.
+
+While mounted, the plugin adds `interactive-widget=resizes-content` to its owned
+viewport configuration and restores the host's original configuration on unmount.
+On supporting browsers, layout viewport resizing lifts the composer using CSS,
+without keyboard state or viewport listeners. The footer also follows the resized
+viewport: CSS alone cannot guarantee a footer behind the keyboard while the
+composer independently rises above it. Browsers ignoring the viewport option may
+cover the composer or pan the visual viewport. `dvh` alone does not fix this.
+See the [Chrome viewport documentation](https://developer.chrome.com/blog/viewport-resize-behavior)
+and [WebKit support tracking](https://bugs.webkit.org/show_bug.cgi?id=259770).
+
+`vh` uses the large viewport size; it does not capture the viewport at load time.
+Clamping `dvh` with `vh` does not prevent resizing when the layout viewport itself
+changes, including keyboard resizing under `interactive-widget=resizes-content`.
+
+Shortened browser viewports and simulated footer heights verify layout only.
+Physical iPhone Safari and Android Chrome testing is required to establish actual
+keyboard behavior for a specific browser release, including dismissal while an
+input remains focused, reopening, and rotation.
+
 ## Where code belongs
 
 | Location                             | Ownership                                                                                                                                        |

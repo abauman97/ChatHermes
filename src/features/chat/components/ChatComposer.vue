@@ -321,7 +321,7 @@ defineExpose({ stageFiles });
     ref="form"
     :class="{ 'composer-editing': editing }"
     @focusout="leaveComposer"
-    class="composer relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:mb-6 min-[701px]:w-[calc(100%-48px)]"
+    class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
   >
     <div v-if="attachments.length" class="flex flex-wrap gap-2 px-2 pb-2">
@@ -420,7 +420,7 @@ defineExpose({ stageFiles });
         <button
           ref="pill"
           type="button"
-          class="model-pill flex h-[30px] min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-0 text-base text-white disabled:opacity-55"
+          class="model-pill flex h-[30px] min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-0 text-[16px] text-white disabled:opacity-55"
           aria-label="Choose model"
           aria-haspopup="dialog"
           :aria-expanded="pickerOpen"

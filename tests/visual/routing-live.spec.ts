@@ -16,10 +16,15 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
   const plugin = page.locator(".chathermes-embedded"),
     area = plugin.getByRole("textbox", { name: "Message Hermes" });
   await expect(plugin).toBeVisible();
+  await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
+    "content",
+    /interactive-widget=resizes-content/,
+  );
   await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
   await area.fill("Keep this route draft");
   await area.evaluate((el) => {
     el.setAttribute("data-routing-instance", "original");
+    el.blur();
   });
   await plugin.getByRole("button", { name: "Attachment options" }).click();
   await plugin.locator('input[aria-label="Upload files"]').setInputFiles({
@@ -57,6 +62,8 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
     await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
   await plugin.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(plugin.locator(".settings-page")).toBeVisible();
+  await expect(plugin.locator(".app-footer")).toBeAttached();
+  await expect(plugin.locator(".composer")).toBeHidden();
   await expect(page).toHaveURL(/#\/settings/);
   await page.screenshot({ path: info.outputPath("routing-settings.png") });
   await plugin.getByRole("button", { name: "Close settings" }).click();

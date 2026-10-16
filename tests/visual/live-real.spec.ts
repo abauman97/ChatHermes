@@ -1,9 +1,81 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
-test("composer spacing follows only input focus on mobile and resets on blur and remount", async ({
+test("bounded shell keeps chrome outside content scrolling and reserves footer space", async ({
   page,
-}) => {
+}, info) => {
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const header = plugin.locator(".topbar");
+  const footer = plugin.locator(".app-footer");
+  const composer = plugin.locator(".composer");
+  const transcript = plugin.locator(".transcript");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  await expect(header).toHaveCSS("display", "flex");
+  await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
+    "content",
+    /interactive-widget=resizes-content/,
+  );
+  // Synthetic space exercises a nonzero footer, not a device safe-area inset.
+  await page.addStyleTag({ content: ".app-footer { height: 34px; }" });
+  await expect(footer).toHaveCSS("height", "34px");
+  await area.fill("Keep this shell draft");
+  await transcript.evaluate((element) => {
+    const content = document.createElement("div");
+    content.style.cssText = "min-height: 2000px; flex-shrink: 0";
+    content.textContent = "Synthetic long content for shell scrolling";
+    const last = document.createElement("p");
+    last.textContent = "End of shell layout probe";
+    element.append(content, last);
+  });
+  const headerBefore = (await header.boundingBox())!;
+  const footerBefore = (await footer.boundingBox())!;
+  const composerBefore = (await composer.boundingBox())!;
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect(await transcript.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(transcript.getByText("End of shell layout probe")).toBeInViewport();
+  expect(await header.boundingBox()).toEqual(headerBefore);
+  expect(await footer.boundingBox()).toEqual(footerBefore);
+  expect(await composer.boundingBox()).toEqual(composerBefore);
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("shell-scrolled.png") });
+
+  const original = page.viewportSize()!;
+  // A shorter viewport checks flex behavior, not OS virtual-keyboard support.
+  await page.setViewportSize({ width: original.width, height: 420 });
+  await expect(area).toBeFocused();
+  await expect(area).toHaveValue("Keep this shell draft");
+  const shortHeader = (await header.boundingBox())!;
+  const shortFooter = (await footer.boundingBox())!;
+  const shortComposer = (await composer.boundingBox())!;
+  expect(shortHeader.y).toBe(headerBefore.y);
+  expect(shortFooter.y + shortFooter.height).toBeCloseTo(420, 0);
+  expect(shortComposer.y + shortComposer.height).toBeCloseTo(shortFooter.y, 0);
+  expect(
+    await plugin
+      .locator(".app-shell")
+      .evaluate((element) => element.scrollHeight > element.clientHeight),
+  ).toBe(false);
+  await page.screenshot({ path: info.outputPath("shell-short-viewport.png") });
+  await page.setViewportSize(original);
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await plugin.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(composer).toBeHidden();
+  await expect(footer).toHaveCSS("height", "34px");
+  const settings = plugin.locator(".settings-page");
+  await expect(settings).toBeVisible();
+  await settings.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  expect(await footer.boundingBox()).toEqual(footerBefore);
+  expect(await header.boundingBox()).toEqual(headerBefore);
+  await page.screenshot({ path: info.outputPath("shell-settings-footer.png") });
+});
+
+test("composer spacing stays independent of focus and survives remount", async ({ page }) => {
   await signIn(page);
   const composer = page.locator(".chathermes-embedded .composer");
   const area = composer.getByRole("textbox", { name: "Message Hermes" });
@@ -14,10 +86,14 @@ test("composer spacing follows only input focus on mobile and resets on blur and
     const normalMargin = await composer.evaluate(
       (element) => getComputedStyle(element).marginBottom,
     );
-    expect(parseFloat(normalMargin)).toBeGreaterThanOrEqual(width <= 700 ? 12 : 24);
-    // Focus alone must reduce mobile spacing, with no viewport height change.
+    expect(normalMargin).toBe("0px");
+    const footerHeight = await page
+      .locator(".app-footer")
+      .evaluate((element) => element.getBoundingClientRect().height);
+    expect(footerHeight).toBeGreaterThanOrEqual(width <= 700 ? 12 : 24);
+    // Focus is not keyboard visibility, including when using a hardware keyboard.
     await area.focus();
-    await expect(composer).toHaveCSS("margin-bottom", width <= 700 ? "0px" : normalMargin);
+    await expect(composer).toHaveCSS("margin-bottom", normalMargin);
     await area.evaluate((element) => element.blur());
     await expect(composer).toHaveCSS("margin-bottom", normalMargin);
     await composer.getByRole("button", { name: "Choose model", exact: true }).focus();
@@ -48,7 +124,7 @@ test("composer spacing follows only input focus on mobile and resets on blur and
   await expect(area).not.toBeFocused();
   expect(
     await composer.evaluate((element) => parseFloat(getComputedStyle(element).marginBottom)),
-  ).toBeGreaterThanOrEqual(viewport.width <= 700 ? 12 : 24);
+  ).toBe(0);
 });
 
 test("composer empty focus is one line inline with Send and grows with text", async ({

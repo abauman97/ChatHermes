@@ -31,23 +31,17 @@ body {
   z-index: 10000;
   background: #000;
 }
-.chathermes-embedded .app-shell {
-  height: 100dvh;
-  min-height: 0;
-}
-.chathermes-embedded .main-panel {
-  height: 100dvh;
-}
 .topbar {
   padding-top: env(safe-area-inset-top);
   height: calc(68px + env(safe-area-inset-top));
 }
+/* The host also defines .topbar as a grid; keep the plugin header's flex layout. */
+.chathermes-embedded .topbar {
+  display: flex;
+}
 .sidebar {
   padding-top: max(16px, env(safe-area-inset-top));
   padding-bottom: max(16px, env(safe-area-inset-bottom));
-}
-.composer {
-  margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 .composer-body {
   display: flex;
@@ -58,15 +52,7 @@ body {
   max-height: calc(8lh + 0.5rem);
   overflow-y: hidden;
 }
-@media (min-width: 701px) {
-  .composer {
-    margin-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  }
-}
 @media (max-width: 700px) {
-  .chathermes-embedded .composer:has(.composer-input:focus) {
-    margin-bottom: 0;
-  }
   .composer:has(.composer-input:focus) .composer-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 30px;

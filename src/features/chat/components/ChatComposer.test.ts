@@ -79,7 +79,7 @@ describe("composer", () => {
     try {
       const picker = wrapper.get(".model-pill");
       expect(picker.classes()).toEqual(
-        expect.arrayContaining(["h-[30px]", "flex", "items-center", "px-3", "py-0", "text-base"]),
+        expect.arrayContaining(["h-[30px]", "flex", "items-center", "px-3", "py-0", "text-[16px]"]),
       );
       expect(picker.classes()).not.toContain("size-[30px]");
       expect(picker.classes()).not.toContain("w-[30px]");

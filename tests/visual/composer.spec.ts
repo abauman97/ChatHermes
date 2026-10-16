@@ -58,7 +58,8 @@ test("composer newlines, mobile focus layout, eight-row scrolling and send recov
     await expect(area).toBeFocused();
     await expect(picker).toBeHidden();
     const box = (await composer.boundingBox())!;
-    expect(Math.abs(420 - box.y - box.height)).toBeLessThan(1);
+    const footer = (await page.locator(".app-footer").boundingBox())!;
+    expect(Math.abs(footer.y - box.y - box.height)).toBeLessThan(1);
     await page.screenshot({ path: info.outputPath("composer-short-viewport.png") });
     await page.setViewportSize(viewport);
   }
