@@ -51,7 +51,6 @@ function resizeInput() {
   const height =
     Math.max(parseFloat(style.minHeight) || 0, Math.min(contentHeight, 8 * lineHeight)) + padding;
   area.style.height = `${height}px`;
-  area.style.overflowY = contentHeight > 8 * lineHeight ? "auto" : "hidden";
 }
 function focusInput() {
   editing.value = true;
@@ -319,9 +318,8 @@ defineExpose({ stageFiles });
 <template>
   <form
     ref="form"
-    :class="{ 'composer-editing': editing }"
     @focusout="leaveComposer"
-    class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
+    class="composer relative mx-auto mb-1 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
   >
     <div v-if="attachments.length" class="flex flex-wrap gap-2 px-2 pb-2">

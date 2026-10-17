@@ -147,6 +147,7 @@ test("ChatHermes PWA branding tags are injected on mount and cleaned up on host 
   const appleIconLink = page.locator('link[rel="apple-touch-icon"]');
   const appleTitle = page.locator('meta[name="apple-mobile-web-app-title"]');
   await expect(manifestLink).toHaveAttribute("href", pluginAssets + "manifest.webmanifest");
+  await expect(manifestLink).toHaveAttribute("crossorigin", "use-credentials");
   await expect(appleIconLink).toHaveAttribute("href", pluginAssets + "apple-touch-icon.png");
   await expect(appleTitle).toHaveAttribute("content", "ChatHermes");
   await page

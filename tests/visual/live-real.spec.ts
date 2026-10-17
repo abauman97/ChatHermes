@@ -1,6 +1,56 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("landscape touch composer fits and scrolls above the keyboard layer", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "mobile", "Touch-screen layout regression");
+  await page.setViewportSize({ width: 760, height: 336 });
+  await signIn(page);
+  const header = page.locator(".chathermes-embedded .topbar");
+  const footer = page.locator(".app-footer");
+  const composer = page.locator(".composer");
+  const area = composer.getByRole("textbox", { name: "Message Hermes" });
+  const headerBefore = (await header.boundingBox())!;
+  const footerBefore = (await footer.boundingBox())!;
+  await page.addStyleTag({ content: ".app-shell { --app-keyboard-inset: 200px; }" });
+  await area.fill(Array.from({ length: 12 }, (_, index) => `Landscape row ${index}`).join("\n"));
+  await expect
+    .poll(async () => {
+      const box = (await composer.boundingBox())!;
+      return Math.round(box.y + box.height);
+    })
+    .toBe(136);
+  const box = (await composer.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(headerBefore.y + headerBefore.height);
+  expect(await header.boundingBox()).toEqual(headerBefore);
+  expect(await footer.boundingBox()).toEqual(footerBefore);
+  const scroll = await area.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scroll).toBeGreaterThan(0);
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("landscape-keyboard-layer.png") });
+});
+
+test("Chrome loads the authenticated standalone ChatHermes manifest", async ({ page }) => {
+  await signIn(page);
+  const session = await page.context().newCDPSession(page);
+  try {
+    // Use Chrome's manifest loader: page.request.get would hide missing credentials.
+    const manifest = await session.send("Page.getAppManifest");
+    expect(manifest.errors).toEqual([]);
+    expect(JSON.parse(manifest.data || "{}")).toMatchObject({
+      name: "ChatHermes",
+      start_url: "/chathermes",
+      display: "standalone",
+    });
+  } finally {
+    await session.detach();
+  }
+});
+
 test("bounded shell keeps chrome outside content scrolling and reserves footer space", async ({
   page,
 }, info) => {
@@ -14,10 +64,10 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
   await expect(header).toHaveCSS("display", "flex");
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
     "content",
-    /interactive-widget=resizes-content/,
+    /interactive-widget=resizes-visual/,
   );
   // Synthetic space exercises a nonzero footer, not a device safe-area inset.
-  await page.addStyleTag({ content: ".app-footer { height: 34px; }" });
+  await page.addStyleTag({ content: ".app-shell { --app-footer-height: 34px; }" });
   await expect(footer).toHaveCSS("height", "34px");
   await area.fill("Keep this shell draft");
   await transcript.evaluate((element) => {
@@ -41,6 +91,30 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
   expect(await composer.boundingBox()).toEqual(composerBefore);
   await expect(area).toBeFocused();
   await page.screenshot({ path: info.outputPath("shell-scrolled.png") });
+
+  // Exercise the independent chat layer without pretending this opens an OS
+  // keyboard. The Android regression check verifies the real CSS environment inset.
+  const keyboardInset = await page.addStyleTag({
+    content: ".app-shell { --app-keyboard-inset: 220px; }",
+  });
+  await expect
+    .poll(async () => {
+      const box = (await composer.boundingBox())!;
+      return Math.round(box.y + box.height);
+    })
+    .toBe(page.viewportSize()!.height - 220);
+  expect(await header.boundingBox()).toEqual(headerBefore);
+  expect(await footer.boundingBox()).toEqual(footerBefore);
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("shell-keyboard-layer.png") });
+  await keyboardInset.evaluate((element) => element.parentNode?.removeChild(element));
+  await expect
+    .poll(async () => {
+      const box = (await composer.boundingBox())!;
+      return Math.round(box.y + box.height);
+    })
+    .toBe(Math.round(footerBefore.y));
+  await expect(area).toBeFocused();
 
   const original = page.viewportSize()!;
   // A shorter viewport checks flex behavior, not OS virtual-keyboard support.
