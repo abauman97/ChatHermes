@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("Chrome loads the authenticated standalone ChatHermes manifest", async ({ page }) => {
+  await signIn(page);
+  const session = await page.context().newCDPSession(page);
+  try {
+    // Use Chrome's manifest loader: page.request.get would hide missing credentials.
+    const manifest = await session.send("Page.getAppManifest");
+    expect(manifest.errors).toEqual([]);
+    expect(JSON.parse(manifest.data || "{}")).toMatchObject({
+      name: "ChatHermes",
+      start_url: "/chathermes",
+      display: "standalone",
+    });
+  } finally {
+    await session.detach();
+  }
+});
+
 test("bounded shell keeps chrome outside content scrolling and reserves footer space", async ({
   page,
 }, info) => {

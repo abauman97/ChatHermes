@@ -17,7 +17,15 @@ const appUrl = new URL(
   (document.currentScript as HTMLScriptElement | null)?.src || location.href,
 ).href;
 const pwaHeadTags = [
-  ["link", { rel: "manifest", href: "/api/plugins/chathermes/assets/dist/manifest.webmanifest" }],
+  [
+    "link",
+    {
+      rel: "manifest",
+      href: "/api/plugins/chathermes/assets/dist/manifest.webmanifest",
+      // Manifest requests omit dashboard cookies unless credentials are explicit.
+      crossorigin: "use-credentials",
+    },
+  ],
   [
     "link",
     {

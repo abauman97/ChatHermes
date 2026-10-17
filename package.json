@@ -16,7 +16,11 @@
     "live:stop": "sh tests/docker/run.sh stop",
     "live:visual": "npm run live && npm run test:visual",
     "test:docker": "python3 -m unittest discover -s tests/docker -p \"test_*.py\"",
-    "prepare": "vp config"
+    "prepare": "vp config",
+    "test:live": "npm run live",
+    "live:android": "sh tests/docker/android.sh",
+    "live:android:stop": "sh tests/docker/android.sh stop",
+    "test:live:android": "npm run live && npm run live:android"
   },
   "dependencies": {
     "markdown-it": "^15.0.2",

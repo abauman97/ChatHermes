@@ -32,6 +32,10 @@ npm run build
 npm run live
 # Optional: rebuild, launch, and run desktop/mobile Playwright checks
 npm run live:visual
+# Optional: start Hermes and install the plugin PWA in disposable Android 14
+npm run test:live:android
+# Remove the Android device after testing
+npm run live:android:stop
 ```
 
 The launcher builds from the latest official Hermes image and starts one disposable

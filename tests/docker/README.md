@@ -94,3 +94,61 @@ The older browser suites remain available with `npm run test:visual:legacy`.
 They require a separately supplied dashboard with their deterministic replies,
 secondary profiles, Projects and scheduled fixtures. They are not part of the
 default disposable workflow, which starts with an empty Hermes home.
+
+## Disposable Android 14 device
+
+On a Linux Docker daemon with working `/dev/kvm` hardware acceleration and enough
+RAM for an Android emulator, run:
+
+```sh
+npm run test:live:android  # builds/starts Hermes, then boots and installs on Android
+# Or reuse the already-running live Hermes instance:
+npm run live:android
+# Open http://127.0.0.1:6080/?autoconnect=true&resize=scale
+npm run live:android:stop
+npm run live:stop
+```
+
+`test:live` is an alias for `live`. Android uses
+[`budtmo/docker-android:emulator_14.0`](https://github.com/budtmo/docker-android)
+with the Samsung Galaxy S10 device profile and noVNC controls. The first image
+pull and emulator boot can take several minutes. Install the repository's Node
+dependencies first; the installer uses Playwright to sign in to the real Hermes
+dashboard with the synthetic test account. No desktop Chromium download is
+needed for this path. Rebuild Hermes with `npm run live` after plugin changes;
+an older test image may lack the credentialed manifest link required for installation.
+
+The launcher forwards Android's `http://localhost:9119/chathermes` through ADB to
+the existing Hermes container. Localhost gives Chrome a secure context for the
+plugin's existing manifest and service worker without changing authentication,
+adding a separate app, disabling certificate checks, or publishing the gateway.
+It uses Chrome's native **Install app / Add to Home screen** flow, waits for Android
+to persist the icon, cold-starts ChatHermes from the home screen, and requires
+`display-mode: standalone` before
+reporting success. Chrome builds that cannot install the PWA fail and remove the
+device; a browser shortcut alone does not count as a successful installation.
+Chrome must be able to reach any services required by its installation flow.
+
+The shell launcher is `tests/docker/android.sh`. It runs the emulator with `--rm`,
+Docker logging disabled, no volume or bind mounts, and no saved snapshots outside
+its container. The launcher rejects images that introduce inherited
+mounts. Device state, browser sessions, downloads, and installed apps disappear
+when stopped. Startup/install failures and interruption during setup remove the
+owned device. A successful launch leaves it running for interactive tests until
+`live:android:stop`; stop Android before restarting/stopping Hermes. Hermes data
+remains governed by its own disposable launcher. Neither stop command removes
+containers owned by another instance.
+
+Use the same `CHATHERMES_INSTANCE` as Hermes. Optional
+`CHATHERMES_ANDROID_VNC_PORT` (default `6080`) and
+`CHATHERMES_ANDROID_CDP_PORT` (default `9223`) allow concurrent devices. Both ports
+bind only to daemon loopback; CDP grants browser control and must stay private.
+For a remote Docker daemon, forward both ports to matching local ports over SSH
+before launching Android. KVM must exist on the daemon host, not the client.
+No ADB port is published. Docker images remain cached normally; application and
+device data are not exported to the checkout or host volumes.
+
+Once installed, use noVNC to check keyboard/composer focus, scrolling, file and
+camera attachments, profile/model selects, and active/completed disclosures.
+This interactive device path does not replace the desktop/mobile Playwright
+suite or automatically send a model request.
