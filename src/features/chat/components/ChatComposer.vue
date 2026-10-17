@@ -52,6 +52,11 @@ function resizeInput() {
     Math.max(parseFloat(style.minHeight) || 0, Math.min(contentHeight, 8 * lineHeight)) + padding;
   area.style.height = `${height}px`;
 }
+// Keep the keyboard and focus-dependent layout stable until Send receives its click.
+// Keyboard activation still uses the button's normal focus and click behavior.
+function preserveInputFocus(event: PointerEvent) {
+  if (event.button === 0 && document.activeElement === textarea.value) event.preventDefault();
+}
 function focusInput() {
   editing.value = true;
   pickerOpen.value = false;
@@ -313,13 +318,13 @@ async function attach(event: Event) {
   await stageFiles(Array.from(input.files || []));
   input.value = "";
 }
-defineExpose({ stageFiles });
+defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
 </script>
 <template>
   <form
     ref="form"
     @focusout="leaveComposer"
-    class="composer relative mx-auto mb-1 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
+    class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
   >
     <div v-if="attachments.length" class="flex flex-wrap gap-2 px-2 pb-2">
@@ -448,6 +453,7 @@ defineExpose({ stageFiles });
             sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'
           "
           :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'"
+          @pointerdown="preserveInputFocus"
           @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()"
         >
           <svg

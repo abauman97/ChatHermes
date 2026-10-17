@@ -405,6 +405,67 @@ describe("conversation scroll lifecycle", () => {
     return element;
   }
 
+  it("moves focus from the composer to the sent message and streaming turn, and resumes following", async () => {
+    const input = document.createElement("textarea");
+    document.body.append(input);
+    const wrapper = mount(ChatTranscript, {
+      attachTo: document.body,
+      props: { messages: history, progress: [], draft: "", loading: false },
+    });
+    try {
+      const element = dimensions(wrapper);
+      element.scrollTop = 100;
+      await wrapper.get(".transcript").trigger("scroll");
+      input.focus();
+      (wrapper.vm as unknown as { focusLatestMessage: () => void }).focusLatestMessage();
+      expect(document.activeElement).toBe(element);
+      expect(element.scrollTop).toBe(2400);
+      await wrapper.setProps({
+        messages: [...history, { id: "new", role: "user", content: "New prompt" }],
+      });
+      expect(document.activeElement).toBe(wrapper.findAll(".message.user").at(-1)!.element);
+      await wrapper.setProps({ working: true });
+      const turn = wrapper.findAll(".assistant-turn").at(-1)!.element;
+      expect(document.activeElement).toBe(turn);
+      Object.defineProperty(element, "scrollHeight", { value: 3000, configurable: true });
+      await wrapper.setProps({
+        blocks: [{ id: "answer", kind: "text", content: "Streaming reply" }],
+      });
+      expect(document.activeElement).toBe(turn);
+      expect(element.scrollTop).toBe(3000);
+      expect(wrapper.find(latest).exists()).toBe(false);
+    } finally {
+      wrapper.unmount();
+      input.remove();
+    }
+  });
+
+  it("does not take focus back from a new draft or force following after the reader scrolls up", async () => {
+    const input = document.createElement("textarea");
+    document.body.append(input);
+    const wrapper = mount(ChatTranscript, {
+      attachTo: document.body,
+      props: { messages: history, progress: [], draft: "", loading: false },
+    });
+    try {
+      const element = dimensions(wrapper);
+      (wrapper.vm as unknown as { focusLatestMessage: () => void }).focusLatestMessage();
+      await nextTick();
+      input.focus();
+      await wrapper.setProps({ working: true, draft: "First delta" });
+      expect(document.activeElement).toBe(input);
+      element.scrollTop = 100;
+      await wrapper.get(".transcript").trigger("scroll");
+      Object.defineProperty(element, "scrollHeight", { value: 3000, configurable: true });
+      await wrapper.setProps({ draft: "Another delta" });
+      expect(document.activeElement).toBe(input);
+      expect(element.scrollTop).toBe(100);
+    } finally {
+      wrapper.unmount();
+      input.remove();
+    }
+  });
+
   it("scrolls history already present on mount after the DOM is ready", async () => {
     const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(2400);
     const viewport = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);

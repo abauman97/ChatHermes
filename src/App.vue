@@ -1442,10 +1442,7 @@ onUnmounted(() => {
           </RouterView>
         </template>
       </ChatInterface>
-      <footer
-        class="app-footer h-[var(--app-footer-height)] shrink-0 bg-black"
-        aria-hidden="true"
-      />
+      <footer class="app-footer shrink-0 bg-black" aria-hidden="true" />
     </main>
   </div>
 </template>

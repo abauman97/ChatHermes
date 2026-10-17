@@ -1,11 +1,43 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { Attachment } from "../../../types/hermes";
 import { useChat } from "../context";
 import ChatTranscript from "../../../components/ChatTranscript.vue";
 import ChatComposer from "./ChatComposer.vue";
 import LiveRequest from "./LiveRequest.vue";
 const props = defineProps<{ showPage: boolean; hideComposer?: boolean }>();
 const picker = ref<InstanceType<typeof ChatComposer>>();
+const transcript = ref<InstanceType<typeof ChatTranscript>>();
+let pendingFocus = false;
+function focusConversation() {
+  if (transcript.value) transcript.value.focusLatestMessage();
+  else {
+    // Project home creates the conversation asynchronously.
+    picker.value?.blurInput();
+    pendingFocus = true;
+  }
+}
+watch(
+  transcript,
+  (current) => {
+    if (!current || !pendingFocus) return;
+    pendingFocus = false;
+    if (document.activeElement === document.body) current.focusLatestMessage();
+  },
+  { flush: "post" },
+);
+async function sendMessage(text: string, attachments: Attachment[]) {
+  focusConversation();
+  try {
+    await actions.send(text, attachments);
+  } finally {
+    pendingFocus = false;
+  }
+}
+async function steerMessage(text: string) {
+  focusConversation();
+  await actions.steer(text);
+}
 const dragging = ref(0);
 function acceptsFiles(event: DragEvent) {
   return (
@@ -126,6 +158,7 @@ const {
       <slot v-if="showPage" name="page" />
       <ChatTranscript
         v-else
+        ref="transcript"
         :profile="profile"
         :session-id="session"
         :messages="viewMessages"
@@ -162,8 +195,8 @@ const {
         :suggested-prompt="suggestedPrompt"
         :reason="composer.reason"
         @stop="actions.stop"
-        @steer="actions.steer"
-        @send="actions.send"
+        @steer="steerMessage"
+        @send="sendMessage"
       />
     </div>
   </div>

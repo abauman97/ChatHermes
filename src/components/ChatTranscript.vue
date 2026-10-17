@@ -31,6 +31,26 @@ const transcript = ref<HTMLElement>();
 const content = ref<HTMLElement>();
 const following = ref(props.followInitially !== false);
 const atBottom = ref(true);
+let focusedMessage: HTMLElement | undefined;
+function focusLatestIfOwned() {
+  const element = transcript.value;
+  if (!element || !following.value) return;
+  if (document.activeElement !== element && document.activeElement !== focusedMessage) return;
+  const latest = content.value?.querySelectorAll<HTMLElement>("[data-chat-message]");
+  const target = latest?.[latest.length - 1] || element;
+  if (document.activeElement !== target) target.focus({ preventScroll: true });
+  focusedMessage = target;
+}
+function focusLatestMessage() {
+  // Move focus during the Send click so iOS can dismiss its keyboard. Keep
+  // following while session creation and the optimistic message arrive later.
+  transcript.value?.focus({ preventScroll: true });
+  scrollToLatest();
+  void nextTick(() => {
+    layoutChanged();
+  });
+}
+defineExpose({ focusLatestMessage });
 // Empty history marks a new conversation. Background reloads of existing
 // history must preserve the reader's position, even when loading toggles.
 let awaitingHistory = !props.messages.length && props.followInitially !== false;
@@ -51,8 +71,10 @@ function scrollToLatest() {
   measureBottom();
 }
 function layoutChanged() {
-  if (following.value) scrollToLatest();
-  else measureBottom();
+  if (following.value) {
+    scrollToLatest();
+    focusLatestIfOwned();
+  } else measureBottom();
 }
 async function disclosureChanged() {
   await nextTick();
@@ -95,6 +117,7 @@ watch(
     <div
       ref="transcript"
       class="transcript flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-6 text-white min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9"
+      tabindex="-1"
       role="log"
       aria-label="Conversation"
       aria-live="polite"
@@ -117,6 +140,8 @@ watch(
         <template v-for="entry in entries" :key="entry.key">
           <UserMessage
             v-if="entry.kind === 'user'"
+            data-chat-message
+            tabindex="-1"
             :message="entry.message"
             :profile="profile"
             :session-id="sessionId"
@@ -130,6 +155,8 @@ watch(
           </div>
           <AssistantTurn
             v-else
+            data-chat-message
+            tabindex="-1"
             :entry="entry"
             :profile="profile"
             :session-id="sessionId"
@@ -141,6 +168,8 @@ watch(
         <div
           v-if="working && !entries.some((entry) => entry.kind === 'turn' && entry.working)"
           class="assistant-turn"
+          data-chat-message
+          tabindex="-1"
         >
           <TurnWork :activities="progress" :working="true" :approval-pending="approvalPending" />
         </div>
@@ -151,7 +180,12 @@ watch(
           v-if="!entries.some((entry) => entry.kind === 'turn' && entry.working)"
           name="request"
         />
-        <article v-if="draft && !blocks?.length" class="message assistant w-full self-start">
+        <article
+          v-if="draft && !blocks?.length"
+          class="message assistant w-full self-start"
+          data-chat-message
+          tabindex="-1"
+        >
           <div
             class="message-content markdown-content break-words text-base leading-7"
             v-html="renderMarkdown(draft)"

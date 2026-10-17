@@ -9,6 +9,14 @@ RUNNER = Path(__file__).with_name("android.sh").resolve()
 
 
 class AndroidLauncherTest(unittest.TestCase):
+    def test_browser_target_recovery(self):
+        result = subprocess.run(
+            ["node", "--test", str(RUNNER.with_name("android-browser.test.mjs")),
+             str(RUNNER.with_name("android-pwa.test.mjs"))],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def run_launcher(self, mode="start", **overrides):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

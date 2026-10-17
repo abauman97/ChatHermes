@@ -1,4 +1,6 @@
 import { chromium } from "@playwright/test";
+import { openDashboard } from "./android-browser.mjs";
+import { openInstalledApp } from "./android-pwa.mjs";
 import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -74,6 +76,7 @@ async function tap(pattern, timeout = 15000, packageName) {
         const bounds = node[0].match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/);
         if (bounds && label.some((text) => pattern.test(text))) {
           const [, x1, y1, x2, y2] = bounds.map(Number);
+          if (x2 <= x1 || y2 <= y1 || node[0].includes('enabled="false"')) continue;
           adb(
             "shell",
             "input",
@@ -99,15 +102,10 @@ try {
   } catch {
     /* Not all Chrome versions show the Android notification introduction. */
   }
-  const context = browser.contexts()[0];
-  const page = context.pages()[0] || (await context.newPage());
-  page.setDefaultTimeout(30000);
   console.log("Signing in to the disposable Hermes dashboard...");
-  await page.goto("http://localhost:9119/chathermes");
-  await page.getByLabel("Username").fill("tester");
-  await page.getByLabel("Password", { exact: true }).fill("chathermes-local-test");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByRole("button", { name: "Choose model", exact: true }).waitFor();
+  const dashboard = await openDashboard(browser, connectChrome);
+  browser = dashboard.browser;
+  const { context, page } = dashboard;
   await page.locator('link[rel="manifest"]').waitFor({ state: "attached" });
   // Inspect Chrome's own fetch, which can differ from an authenticated page fetch.
   const session = await context.newCDPSession(page);
@@ -153,60 +151,13 @@ try {
     if (!pinned) await delay(500);
   }
   if (!pinned) throw new Error("Android did not persist the installed ChatHermes icon");
+  const controls = { adb, tap, connectChrome };
+  // Android persisting a shortcut does not establish that Chrome has finished
+  // initializing its installed app. Verify first launch before killing Chrome.
+  console.log("Verifying the installed app's first launch...");
+  browser = await openInstalledApp(browser, controls);
   console.log("Cold-starting the installed home-screen app...");
-  await browser.close();
-  browser = undefined;
-  // Pinning can return Chrome to the foreground after HOME was requested.
-  // A cold start also verifies the app survives beyond its installation tab.
-  adb("shell", "am", "force-stop", "com.android.chrome");
-  adb(
-    "shell",
-    "am",
-    "start",
-    "-W",
-    "-a",
-    "android.intent.action.MAIN",
-    "-c",
-    "android.intent.category.HOME",
-  );
-  // Launcher may put new icons on a second page instead of the default home.
-  const dimensions = adb("shell", "wm", "size").match(/(\d+)x(\d+)/);
-  if (!dimensions) throw new Error("Android screen dimensions unavailable");
-  const [, width, height] = dimensions.map(Number);
-  let opened = false;
-  for (let screen = 0; screen < 4 && !opened; screen++) {
-    try {
-      await tap(/^ChatHermes$/i, 15000, "com.google.android.apps.nexuslauncher");
-      opened = true;
-    } catch {
-      adb(
-        "shell",
-        "input",
-        "swipe",
-        String(Math.round(width * 0.8)),
-        String(Math.round(height * 0.5)),
-        String(Math.round(width * 0.2)),
-        String(Math.round(height * 0.5)),
-        "300",
-      );
-    }
-  }
-  if (!opened) throw new Error("Installed ChatHermes launcher icon unavailable");
-  browser = await connectChrome();
-  // A regular browser shortcut is insufficient: verify the installed standalone window.
-  const deadline = Date.now() + 30000;
-  let installed = false;
-  while (Date.now() < deadline && !installed) {
-    for (const candidate of browser.contexts().flatMap((item) => item.pages())) {
-      if (!candidate.url().startsWith("http://localhost:9119/chathermes")) continue;
-      installed = await candidate
-        .evaluate(() => matchMedia("(display-mode: standalone)").matches)
-        .catch(() => false);
-      if (installed) break;
-    }
-    if (!installed) await delay(500);
-  }
-  if (!installed) throw new Error("Chrome did not launch an installed standalone PWA");
+  browser = await openInstalledApp(browser, controls, { coldStart: true });
 } finally {
   // Disconnect without terminating Chrome or the installed application.
   await browser?.close();

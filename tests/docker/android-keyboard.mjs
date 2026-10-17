@@ -40,7 +40,7 @@ try {
   }
   assert.ok(page, "Open the installed ChatHermes app before running this check");
   await page.locator(".composer-input").waitFor();
-  assert.equal(await page.evaluate(() => navigator.virtualKeyboard?.overlaysContent), true);
+  assert.notEqual(await page.evaluate(() => navigator.virtualKeyboard?.overlaysContent), true);
   await mkdir(output, { recursive: true });
   const cdp = await page.context().newCDPSession(page);
   const area = page.locator(".composer-input");
@@ -56,7 +56,6 @@ try {
           bottom: rect.bottom,
         };
       };
-      const keyboard = navigator.virtualKeyboard.boundingRect;
       return {
         viewport: {
           width: innerWidth,
@@ -67,9 +66,6 @@ try {
         header: bounds(".topbar"),
         footer: bounds(".app-footer"),
         composer: bounds(".composer"),
-        // The emulator uses a full-width, bottom-docked keyboard. Older Chrome
-        // reports an incorrect boundingRect.y, but its height and CSS inset agree.
-        keyboard: { top: innerHeight - keyboard.height, height: keyboard.height },
         focused: document.activeElement === document.querySelector(".composer-input"),
         margin: getComputedStyle(document.querySelector(".composer")).marginBottom,
       };
@@ -81,20 +77,24 @@ try {
   };
   const closeTo = (actual, expected, message) =>
     assert.ok(Math.abs(actual - expected) < 1, `${message}: ${actual} vs ${expected}`);
-  const stationary = (actual, before) => {
-    for (const region of ["header", "footer", "viewport"])
-      for (const key of Object.keys(before[region]))
-        closeTo(actual[region][key], before[region][key], `${region}.${key} moved`);
+  const focusedLayout = (actual) => {
+    assert.equal(actual.focused, true);
     assert.equal(actual.margin, "0px");
+    closeTo(actual.footer.height, 4, "Focused mobile footer must be 4px");
+    closeTo(actual.composer.bottom, actual.footer.y, "Composer must meet footer");
+    closeTo(actual.footer.bottom, actual.viewport.height, "Footer must meet resized viewport");
   };
-  const waitKeyboard = (shown) =>
-    page.waitForFunction(
-      (visible) => navigator.virtualKeyboard.boundingRect.height > 0 === visible,
-      shown,
-    );
+  const keyboardShown = () =>
+    /mInputShown=true/.test(adb("shell", "dumpsys", "input_method").toString());
+  const waitKeyboard = async (shown) => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (keyboardShown() === shown) return;
+      await delay(100);
+    }
+    assert.fail(`Keyboard visibility did not become ${shown}`);
+  };
   const dismissKeyboard = async () => {
-    if (await page.evaluate(() => navigator.virtualKeyboard.boundingRect.height > 0))
-      adb("shell", "input", "keyevent", "KEYCODE_BACK");
+    if (keyboardShown()) adb("shell", "input", "keyevent", "KEYCODE_BACK");
     await waitKeyboard(false);
   };
   const tapComposer = async () => {
@@ -122,16 +122,15 @@ try {
     closeTo(before.composer.bottom, before.footer.y, "Closed composer must meet footer");
     await tapComposer();
     const open = await snapshot(`${name}-open`);
-    stationary(open, before);
+    focusedLayout(open);
+    assert.ok(open.viewport.height < before.viewport.height, "Keyboard must resize content");
     assert.equal(open.focused, true);
-    closeTo(open.composer.bottom, open.keyboard.top, "Composer must meet keyboard");
     const draft = Array.from({ length: 12 }, (_, index) => `Keyboard draft row ${index + 1}`).join(
       "\n",
     );
     await area.fill(draft);
     const grown = await snapshot(`${name}-grown`);
-    stationary(grown, before);
-    closeTo(grown.composer.bottom, grown.keyboard.top, "Growing composer must meet keyboard");
+    focusedLayout(grown);
     assert.ok(
       grown.composer.y >= grown.header.bottom,
       "Growing composer must stay below the header",
@@ -153,25 +152,20 @@ try {
     await waitKeyboard(false);
     await delay(400);
     const dismissed = await snapshot(`${name}-dismissed-focused`);
-    stationary(dismissed, before);
+    focusedLayout(dismissed);
     assert.equal(dismissed.focused, true);
     assert.equal(await area.inputValue(), draft);
     closeTo(dismissed.composer.bottom, dismissed.footer.y, "Dismissed composer must meet footer");
     await area.fill("Keyboard draft preserved");
     await tapComposer();
     const reopened = await snapshot(`${name}-reopened`);
-    stationary(reopened, before);
-    closeTo(
-      reopened.composer.bottom,
-      reopened.keyboard.top,
-      "Reopened composer must meet keyboard",
-    );
+    focusedLayout(reopened);
     await dismissKeyboard();
     await area.fill("");
     await dismissKeyboard();
     await area.evaluate((element) => element.blur());
     console.log(
-      `${name}: header/footer stationary; composer follows real keyboard, growth, dismissal and reopening`,
+      `${name}: resized viewport and 4px focused footer survive keyboard opening, growth, dismissal and reopening`,
     );
   };
   adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1");
