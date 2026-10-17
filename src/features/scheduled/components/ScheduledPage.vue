@@ -40,6 +40,13 @@ function state(row: ScheduledJob) {
 function date(seconds: number) {
   return seconds > 0 ? new Date(seconds * 1000).toLocaleString() : "Run date unavailable";
 }
+function lastRun(timestamp?: string) {
+  if (!timestamp) return "Never run";
+  const started = new Date(timestamp);
+  return Number.isNaN(started.getTime())
+    ? "Last run date unavailable"
+    : `Last run: ${started.toLocaleString()}`;
+}
 function selection(jobId?: string, runId?: string) {
   return router.push({
     name: runId ? "scheduled-run" : jobId ? "scheduled-job" : "scheduled",
@@ -211,7 +218,8 @@ onUnmounted(() => {
         <button v-for="row in rows" :key="row.id" class="scheduled-job-row" @click="selectJob(row)">
           <span
             ><strong>{{ row.name || row.id }}</strong
-            ><small>{{ row.schedule_display || "Scheduled job" }}</small></span
+            ><small>{{ row.schedule_display || "Scheduled job" }}</small
+            ><small>{{ lastRun(row.last_run_at) }}</small></span
           ><span aria-hidden="true">›</span>
         </button>
       </nav>

@@ -16,7 +16,12 @@ const mount: typeof vueMount = (component, options = {}) =>
 import ScheduledPage from "./ScheduledPage.vue";
 import { api } from "../../../services/hermes-api";
 beforeEach(() => history.replaceState({}, "", "/chathermes#/scheduled"));
-const job = { id: "audit", name: "Security Audit", state: "active" };
+const job = {
+  id: "audit",
+  name: "Security Audit",
+  state: "active",
+  last_run_at: "2026-10-17T14:30:00+00:00",
+};
 const recent = { id: "cron_audit_20260102_000000", started_at: 200, ended_at: 210, source: "cron" };
 afterEach(() => {
   vi.restoreAllMocks();
@@ -26,8 +31,8 @@ function setup() {
   vi.spyOn(api, "scheduled").mockResolvedValue({
     jobs: [
       job,
-      { ...job, id: "paused", name: "Paused audit", state: "paused" },
-      { ...job, id: "done", name: "Completed audit", state: "completed" },
+      { ...job, id: "paused", name: "Paused audit", state: "paused", last_run_at: undefined },
+      { ...job, id: "done", name: "Completed audit", state: "completed", last_run_at: "invalid" },
     ],
   });
   vi.spyOn(api, "scheduledRuns").mockResolvedValue({
@@ -44,11 +49,15 @@ it("filters jobs, pages history, renders real output without return or discussio
   setup();
   const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
   await flushPromises();
-  expect(wrapper.get('[aria-label="Scheduled jobs"]').text()).toBe("Security AuditScheduled job›");
+  expect(wrapper.get('[aria-label="Scheduled jobs"]').text()).toBe(
+    `Security AuditScheduled jobLast run: ${new Date(job.last_run_at).toLocaleString()}›`,
+  );
   await wrapper.get("select").setValue("paused");
   expect(wrapper.text()).toContain("Paused audit");
+  expect(wrapper.get(".scheduled-job-row").text()).toContain("Never run");
   await wrapper.get("select").setValue("completed");
   expect(wrapper.text()).toContain("Completed audit");
+  expect(wrapper.get(".scheduled-job-row").text()).toContain("Last run date unavailable");
   await wrapper.get("select").setValue("active");
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
