@@ -1443,7 +1443,7 @@ onUnmounted(() => {
         </template>
       </ChatInterface>
       <footer
-        class="app-footer h-[calc(12px+env(safe-area-inset-bottom,0px))] shrink-0 bg-black min-[701px]:h-[calc(24px+env(safe-area-inset-bottom,0px))]"
+        class="app-footer h-[var(--app-footer-height)] shrink-0 bg-black"
         aria-hidden="true"
       />
     </main>

@@ -6,6 +6,11 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
 }, info) => {
   await signIn(page, "/sessions");
   const viewport = await page.locator('meta[name="viewport"]').getAttribute("content");
+  const keyboardOverlay = await page.evaluate(
+    () =>
+      (navigator as Navigator & { virtualKeyboard?: { overlaysContent: boolean } }).virtualKeyboard
+        ?.overlaysContent,
+  );
   await page.evaluate(() => {
     document.documentElement.dataset.routingProbe = "same-document";
   });
@@ -18,8 +23,15 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
   await expect(plugin).toBeVisible();
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
     "content",
-    /interactive-widget=resizes-content/,
+    /interactive-widget=resizes-visual/,
   );
+  expect(
+    await page.evaluate(
+      () =>
+        (navigator as Navigator & { virtualKeyboard?: { overlaysContent: boolean } })
+          .virtualKeyboard?.overlaysContent,
+    ),
+  ).toBe(keyboardOverlay === undefined ? undefined : true);
   await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
   await area.fill("Keep this route draft");
   await area.evaluate((el) => {
@@ -84,6 +96,13 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
     .evaluate((el: HTMLAnchorElement) => el.click());
   await expect(plugin).toHaveCount(0);
   expect(await page.locator('meta[name="viewport"]').getAttribute("content")).toBe(viewport);
+  expect(
+    await page.evaluate(
+      () =>
+        (navigator as Navigator & { virtualKeyboard?: { overlaysContent: boolean } })
+          .virtualKeyboard?.overlaysContent,
+    ),
+  ).toBe(keyboardOverlay);
   expect(await page.evaluate(() => document.documentElement.dataset.routingProbe)).toBeUndefined(); // reload created a fresh document
   await page
     .locator('a[href="/chathermes"]')

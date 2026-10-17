@@ -51,7 +51,6 @@ function resizeInput() {
   const height =
     Math.max(parseFloat(style.minHeight) || 0, Math.min(contentHeight, 8 * lineHeight)) + padding;
   area.style.height = `${height}px`;
-  area.style.overflowY = contentHeight > 8 * lineHeight ? "auto" : "hidden";
 }
 function focusInput() {
   editing.value = true;

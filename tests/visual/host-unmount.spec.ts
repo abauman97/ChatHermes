@@ -23,7 +23,7 @@ test("host navigation unmounts the plugin and restores viewport settings", async
     "maximum-scale=1",
   );
   expect(await page.locator('meta[name="viewport"]').getAttribute("content")).toContain(
-    "interactive-widget=resizes-content",
+    "interactive-widget=resizes-visual",
   );
   expect(
     await plugin

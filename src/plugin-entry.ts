@@ -68,11 +68,17 @@ function ChatHermesPlugin() {
     document.body.append(overlay);
     const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
     const previousViewport = viewport?.content;
+    const keyboard = (navigator as Navigator & { virtualKeyboard?: { overlaysContent: boolean } })
+      .virtualKeyboard;
+    const previousKeyboardOverlay = keyboard?.overlaysContent;
     const ownedViewport = viewport || document.createElement("meta");
     ownedViewport.name = "viewport";
     ownedViewport.content =
-      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content";
+      "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual";
     if (!viewport) document.head.append(ownedViewport);
+    // Keep the shell behind the keyboard; CSS keyboard insets lift only chat content.
+    // This is a mount-time browser option, not keyboard detection or geometry state.
+    if (keyboard) keyboard.overlaysContent = true;
     const preventGesture = (event: Event) => event.preventDefault();
     overlay.addEventListener("gesturestart", preventGesture, { passive: false });
     let app: { mount: (element: HTMLDivElement) => void; unmount: () => void } | undefined;
@@ -97,6 +103,7 @@ function ChatHermesPlugin() {
       app?.unmount();
       overlay.remove();
       ownedHeadTags.forEach((tag) => tag.remove());
+      if (keyboard) keyboard.overlaysContent = previousKeyboardOverlay!;
       if (viewport) viewport.content = previousViewport!;
       else ownedViewport.remove();
     };

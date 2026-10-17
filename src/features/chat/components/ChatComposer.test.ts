@@ -175,11 +175,9 @@ describe("composer", () => {
     height = 300;
     await wrapper.get("textarea").setValue("long draft");
     expect(area.style.height).toBe("200px");
-    expect(area.style.overflowY).toBe("auto");
     height = 32;
     await wrapper.get(".send-button").trigger("click");
     expect(area.style.height).toBe("32px");
-    expect(area.style.overflowY).toBe("hidden");
     wrapper.unmount();
   });
 });

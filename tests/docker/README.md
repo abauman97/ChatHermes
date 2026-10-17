@@ -152,3 +152,16 @@ Once installed, use noVNC to check keyboard/composer focus, scrolling, file and
 camera attachments, profile/model selects, and active/completed disclosures.
 This interactive device path does not replace the desktop/mobile Playwright
 suite or automatically send a model request.
+
+For a repeatable real-keyboard geometry check after opening the installed app:
+
+```sh
+node tests/docker/android-keyboard.mjs chathermes-INSTANCE-android 9223
+```
+
+Replace `INSTANCE` with the launcher's instance name. The check uses CDP touch
+input and Android's actual software keyboard in portrait and landscape. It
+asserts that the header and footer stay fixed while the composer follows keyboard
+opening, draft growth, dismissal with focus retained, and reopening. It restores
+the device's rotation and hardware-keyboard settings afterward. Screenshots and
+geometry evidence stay in ignored `tests/visual-output/android-keyboard/`.

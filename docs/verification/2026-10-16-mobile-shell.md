@@ -1,5 +1,8 @@
 # Mobile application shell
 
+The keyboard behavior below was superseded by the real-device fix documented in
+`2026-10-16-keyboard-layers.md`.
+
 Implemented the bounded flex shell using SWOL's `src/App.vue` as the reference.
 The header and empty safe-area footer sit outside the content scroll region;
 the composer has its own nonshrinking dock. The footer owns the bottom safe-area
