@@ -8655,7 +8655,7 @@ var im = ["open"], am = {
 			let t = getComputedStyle(e), n = parseFloat(t.paddingTop || "0") + parseFloat(t.paddingBottom || "0");
 			e.style.height = "0px";
 			let r = e.scrollHeight - n, i = parseFloat(t.lineHeight) || 24, a = Math.max(parseFloat(t.minHeight) || 0, Math.min(r, 8 * i)) + n;
-			e.style.height = `${a}px`, e.style.overflowY = r > 8 * i ? "auto" : "hidden";
+			e.style.height = `${a}px`;
 		}
 		function v() {
 			h.value = !0, S.value = !1, y();
@@ -8774,7 +8774,7 @@ var im = ["open"], am = {
 				}
 			}
 		}
-		async function M(e) {
+		async function me(e) {
 			if (u.value) return;
 			let t = de;
 			u.value = !0, l.value = "", s.value = !1;
@@ -8802,15 +8802,15 @@ var im = ["open"], am = {
 				t === de && (u.value = !1);
 			}
 		}
-		async function N(e) {
+		async function M(e) {
 			let t = e.target;
-			await M(Array.from(t.files || [])), t.value = "";
+			await me(Array.from(t.files || [])), t.value = "";
 		}
-		return t({ stageFiles: M }), (t, n) => (W(), G("form", {
+		return t({ stageFiles: me }), (t, n) => (W(), G("form", {
 			ref_key: "form",
 			ref: m,
-			class: me([{ "composer-editing": h.value }, "composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"]),
 			onFocusout: b,
+			class: "composer relative mx-auto mb-1 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]",
 			onSubmit: Mo(le, ["prevent"])
 		}, [
 			c.value.length ? (W(), G("div", zm, [(W(!0), G(U, null, br(c.value, (e, t) => (W(), G("div", {
@@ -8869,7 +8869,7 @@ var im = ["open"], am = {
 					multiple: "",
 					hidden: "",
 					"aria-label": "Upload files",
-					onChange: N
+					onChange: M
 				}, null, 544),
 				q("input", {
 					ref_key: "camera",
@@ -8879,7 +8879,7 @@ var im = ["open"], am = {
 					capture: "environment",
 					hidden: "",
 					"aria-label": "Take a photo",
-					onChange: N
+					onChange: M
 				}, null, 544),
 				q("div", Ym, [
 					kn(q("button", {
@@ -9013,7 +9013,7 @@ var im = ["open"], am = {
 					}
 				}, " Plan mode ")
 			])) : Y("v-if", !0)
-		], 34));
+		], 544));
 	}
 }), gh = {
 	key: 0,
@@ -11471,7 +11471,7 @@ var X_ = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					"hide-composer"
 				]),
 				t[45] ||= q("footer", {
-					class: "app-footer h-[calc(12px+env(safe-area-inset-bottom,0px))] shrink-0 bg-black min-[701px]:h-[calc(24px+env(safe-area-inset-bottom,0px))]",
+					class: "app-footer h-[var(--app-footer-height)] shrink-0 bg-black",
 					"aria-hidden": "true"
 				}, null, -1)
 			])
