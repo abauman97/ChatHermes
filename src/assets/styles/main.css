@@ -31,18 +31,12 @@ body {
   z-index: 10000;
   background: #000;
 }
-.app-shell {
-  --app-footer-height: calc(12px + env(safe-area-inset-bottom, 0px));
-  --app-keyboard-inset: env(keyboard-inset-height, 0px);
-}
-/* The OS keyboard covers the fixed shell footer. Reserve its overlap inside the
-   chat layer so the composer meets the keyboard and only the transcript shrinks. */
-.chat-interface {
-  padding-bottom: max(0px, calc(var(--app-keyboard-inset) - var(--app-footer-height)));
+.app-footer {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 701px) {
-  .app-shell {
-    --app-footer-height: calc(24px + env(safe-area-inset-bottom, 0px));
+  .app-footer {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
 }
 .topbar {
@@ -67,6 +61,9 @@ body {
   overflow-y: auto;
 }
 @media (max-width: 700px), (hover: none) and (max-height: 500px) {
+  .main-panel:has(.composer-input:focus) > .app-footer {
+    padding-bottom: 4px;
+  }
   .composer:has(.composer-input:focus) .composer-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 30px;
@@ -80,14 +77,11 @@ body {
     grid-column: 1;
     grid-row: 1;
     min-height: 0;
-    /* Leave room for the fixed header and composer controls in phone landscape.
+    /* Leave room for the header and composer controls in phone landscape.
        CSS may cap the textarea before the normal eight-row autosize limit. */
     max-height: min(
       calc(8lh + 0.5rem),
-      max(
-        calc(1lh + 0.5rem),
-        calc(100dvh - var(--app-keyboard-inset, 0px) - 68px - env(safe-area-inset-top, 0px) - 32px)
-      )
+      max(calc(1lh + 0.5rem), calc(100dvh - 68px - env(safe-area-inset-top, 0px) - 32px))
     );
   }
   .composer:has(.composer-input:focus) .send-button {

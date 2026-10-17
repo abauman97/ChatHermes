@@ -1,4 +1,5 @@
 import { chromium } from "@playwright/test";
+import { openDashboard } from "./android-browser.mjs";
 import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -99,15 +100,10 @@ try {
   } catch {
     /* Not all Chrome versions show the Android notification introduction. */
   }
-  const context = browser.contexts()[0];
-  const page = context.pages()[0] || (await context.newPage());
-  page.setDefaultTimeout(30000);
   console.log("Signing in to the disposable Hermes dashboard...");
-  await page.goto("http://localhost:9119/chathermes");
-  await page.getByLabel("Username").fill("tester");
-  await page.getByLabel("Password", { exact: true }).fill("chathermes-local-test");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByRole("button", { name: "Choose model", exact: true }).waitFor();
+  const dashboard = await openDashboard(browser, connectChrome);
+  browser = dashboard.browser;
+  const { context, page } = dashboard;
   await page.locator('link[rel="manifest"]').waitFor({ state: "attached" });
   // Inspect Chrome's own fetch, which can differ from an authenticated page fetch.
   const session = await context.newCDPSession(page);

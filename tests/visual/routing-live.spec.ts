@@ -23,7 +23,7 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
   await expect(plugin).toBeVisible();
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
     "content",
-    /interactive-widget=resizes-visual/,
+    /interactive-widget=resizes-content/,
   );
   expect(
     await page.evaluate(
@@ -31,7 +31,7 @@ test("canonical routing preserves drafts, attachments, and host traversal", asyn
         (navigator as Navigator & { virtualKeyboard?: { overlaysContent: boolean } })
           .virtualKeyboard?.overlaysContent,
     ),
-  ).toBe(keyboardOverlay === undefined ? undefined : true);
+  ).toBe(keyboardOverlay);
   await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
   await area.fill("Keep this route draft");
   await area.evaluate((el) => {

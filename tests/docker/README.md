@@ -117,6 +117,10 @@ dependencies first; the installer uses Playwright to sign in to the real Hermes
 dashboard with the synthetic test account. No desktop Chromium download is
 needed for this path. Rebuild Hermes with `npm run live` after plugin changes;
 an older test image may lack the credentialed manifest link required for installation.
+Fresh Chrome can close its initial tab during sign-in. The installer reconnects
+and reloads the authenticated dashboard for up to three attempts when a tab or
+browser connection closes. It reuses successful authentication; dashboard readiness
+timeouts still fail the launch and clean up the device.
 
 The launcher forwards Android's `http://localhost:9119/chathermes` through ADB to
 the existing Hermes container. Localhost gives Chrome a secure context for the
@@ -161,7 +165,8 @@ node tests/docker/android-keyboard.mjs chathermes-INSTANCE-android 9223
 
 Replace `INSTANCE` with the launcher's instance name. The check uses CDP touch
 input and Android's actual software keyboard in portrait and landscape. It
-asserts that the header and footer stay fixed while the composer follows keyboard
-opening, draft growth, dismissal with focus retained, and reopening. It restores
+asserts that the browser resizes the content for the keyboard and the focused
+composer retains a 4px footer through draft growth, dismissal with focus retained,
+and reopening. It restores
 the device's rotation and hardware-keyboard settings afterward. Screenshots and
 geometry evidence stay in ignored `tests/visual-output/android-keyboard/`.

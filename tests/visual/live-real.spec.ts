@@ -1,37 +1,24 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
-test("landscape touch composer fits and scrolls above the keyboard layer", async ({
-  page,
-}, info) => {
-  test.skip(info.project.name !== "mobile", "Touch-screen layout regression");
-  await page.setViewportSize({ width: 760, height: 336 });
+test("landscape touch composer fits and scrolls in a reduced viewport", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "Phone landscape uses the touch composer layout");
+  await page.setViewportSize({ width: 844, height: 240 });
   await signIn(page);
-  const header = page.locator(".chathermes-embedded .topbar");
-  const footer = page.locator(".app-footer");
-  const composer = page.locator(".composer");
+  const composer = page.locator(".chathermes-embedded .composer");
   const area = composer.getByRole("textbox", { name: "Message Hermes" });
-  const headerBefore = (await header.boundingBox())!;
-  const footerBefore = (await footer.boundingBox())!;
-  await page.addStyleTag({ content: ".app-shell { --app-keyboard-inset: 200px; }" });
   await area.fill(Array.from({ length: 12 }, (_, index) => `Landscape row ${index}`).join("\n"));
-  await expect
-    .poll(async () => {
-      const box = (await composer.boundingBox())!;
-      return Math.round(box.y + box.height);
-    })
-    .toBe(136);
   const box = (await composer.boundingBox())!;
-  expect(box.y).toBeGreaterThanOrEqual(headerBefore.y + headerBefore.height);
-  expect(await header.boundingBox()).toEqual(headerBefore);
-  expect(await footer.boundingBox()).toEqual(footerBefore);
-  const scroll = await area.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-    return element.scrollTop;
-  });
-  expect(scroll).toBeGreaterThan(0);
+  expect(box.y).toBeGreaterThanOrEqual(68);
+  expect(box.y + box.height).toBeCloseTo(236, 0);
+  expect(
+    await area.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    }),
+  ).toBeGreaterThan(0);
   await expect(area).toBeFocused();
-  await page.screenshot({ path: info.outputPath("landscape-keyboard-layer.png") });
+  await page.screenshot({ path: info.outputPath("landscape-short-viewport.png") });
 });
 
 test("Chrome loads the authenticated standalone ChatHermes manifest", async ({ page }) => {
@@ -64,11 +51,13 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
   await expect(header).toHaveCSS("display", "flex");
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute(
     "content",
-    /interactive-widget=resizes-visual/,
+    /interactive-widget=resizes-content/,
   );
   // Synthetic space exercises a nonzero footer, not a device safe-area inset.
-  await page.addStyleTag({ content: ".app-shell { --app-footer-height: 34px; }" });
-  await expect(footer).toHaveCSS("height", "34px");
+  await page.addStyleTag({
+    content: ".main-panel > .app-footer { padding-bottom: 34px !important; }",
+  });
+  await expect(footer).toHaveCSS("padding-bottom", "34px");
   await area.fill("Keep this shell draft");
   await transcript.evaluate((element) => {
     const content = document.createElement("div");
@@ -92,30 +81,6 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
   await expect(area).toBeFocused();
   await page.screenshot({ path: info.outputPath("shell-scrolled.png") });
 
-  // Exercise the independent chat layer without pretending this opens an OS
-  // keyboard. The Android regression check verifies the real CSS environment inset.
-  const keyboardInset = await page.addStyleTag({
-    content: ".app-shell { --app-keyboard-inset: 220px; }",
-  });
-  await expect
-    .poll(async () => {
-      const box = (await composer.boundingBox())!;
-      return Math.round(box.y + box.height);
-    })
-    .toBe(page.viewportSize()!.height - 220);
-  expect(await header.boundingBox()).toEqual(headerBefore);
-  expect(await footer.boundingBox()).toEqual(footerBefore);
-  await expect(area).toBeFocused();
-  await page.screenshot({ path: info.outputPath("shell-keyboard-layer.png") });
-  await keyboardInset.evaluate((element) => element.parentNode?.removeChild(element));
-  await expect
-    .poll(async () => {
-      const box = (await composer.boundingBox())!;
-      return Math.round(box.y + box.height);
-    })
-    .toBe(Math.round(footerBefore.y));
-  await expect(area).toBeFocused();
-
   const original = page.viewportSize()!;
   // A shorter viewport checks flex behavior, not OS virtual-keyboard support.
   await page.setViewportSize({ width: original.width, height: 420 });
@@ -138,7 +103,7 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
     await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
   await plugin.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(composer).toBeHidden();
-  await expect(footer).toHaveCSS("height", "34px");
+  await expect(footer).toHaveCSS("padding-bottom", "34px");
   const settings = plugin.locator(".settings-page");
   await expect(settings).toBeVisible();
   await settings.evaluate((element) => {
@@ -149,7 +114,7 @@ test("bounded shell keeps chrome outside content scrolling and reserves footer s
   await page.screenshot({ path: info.outputPath("shell-settings-footer.png") });
 });
 
-test("composer spacing stays independent of focus and survives remount", async ({ page }) => {
+test("footer padding follows mobile textarea focus and resets on remount", async ({ page }) => {
   await signIn(page);
   const composer = page.locator(".chathermes-embedded .composer");
   const area = composer.getByRole("textbox", { name: "Message Hermes" });
@@ -165,11 +130,19 @@ test("composer spacing stays independent of focus and survives remount", async (
       .locator(".app-footer")
       .evaluate((element) => element.getBoundingClientRect().height);
     expect(footerHeight).toBeGreaterThanOrEqual(width <= 700 ? 12 : 24);
-    // Focus is not keyboard visibility, including when using a hardware keyboard.
+    // Footer padding follows textarea focus; the composer margin stays constant.
     await area.focus();
+    await expect(page.locator(".app-footer")).toHaveCSS(
+      "padding-bottom",
+      width <= 700 ? "4px" : "24px",
+    );
     await expect(composer).toHaveCSS("margin-bottom", normalMargin);
     await area.evaluate((element) => element.blur());
     await expect(composer).toHaveCSS("margin-bottom", normalMargin);
+    await expect(page.locator(".app-footer")).toHaveCSS(
+      "padding-bottom",
+      width <= 700 ? "12px" : "24px",
+    );
     await composer.getByRole("button", { name: "Choose model", exact: true }).focus();
     await expect(composer).toHaveCSS("margin-bottom", normalMargin);
     // A different editable in the dashboard must not change composer spacing.
@@ -199,6 +172,64 @@ test("composer spacing stays independent of focus and survives remount", async (
   expect(
     await composer.evaluate((element) => parseFloat(getComputedStyle(element).marginBottom)),
   ).toBe(0);
+});
+
+test("Send stays under the pointer and submits once without blurring the textarea", async ({
+  page,
+}, info) => {
+  let submissions = 0;
+  page.on("websocket", (socket) =>
+    socket.on("framesent", (event) => {
+      const frame = JSON.parse(String(event.payload));
+      if (frame.method === "chat.submit") submissions++;
+    }),
+  );
+  await signIn(page);
+  const plugin = page.locator(".chathermes-embedded");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const send = plugin.getByRole("button", { name: "Send message", exact: true });
+  await area.fill("Check stable send tap");
+  await expect(send).toBeEnabled();
+  // Keep the original composer mounted so focus can be checked after the click.
+  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
+    data: {},
+  });
+  const body = await created.json();
+  await page.goto(
+    `/chathermes?profile=default#/chat/${encodeURIComponent((body.session || body).id)}`,
+  );
+  await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
+  await area.fill("Check stable send tap");
+  await plugin.locator(".composer").evaluate((element) => {
+    const state = { blurs: 0 };
+    (window as unknown as { sendProbe: typeof state }).sendProbe = state;
+    element.querySelector("textarea")!.addEventListener("blur", () => state.blurs++);
+  });
+  const before = (await send.boundingBox())!;
+  const x = before.x + before.width / 2,
+    y = before.y + before.height / 2;
+  if (info.project.name === "mobile") {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    await expect(area).toBeFocused();
+    expect(await send.boundingBox()).toEqual(before);
+    await page.screenshot({ path: info.outputPath("send-touch-held.png") });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await cdp.detach();
+  } else {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await expect(area).toBeFocused();
+    expect(await send.boundingBox()).toEqual(before);
+    await page.mouse.up();
+  }
+  await expect(area).toBeFocused();
+  await expect(area).toHaveValue("");
+  await expect.poll(() => submissions).toBe(1);
+  await expect(plugin.locator(".message.user")).toHaveCount(1);
+  expect(await page.evaluate(() => (window as unknown as { sendProbe: object }).sendProbe)).toEqual(
+    { blurs: 0 },
+  );
 });
 
 test("composer empty focus is one line inline with Send and grows with text", async ({
