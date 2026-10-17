@@ -1,4 +1,5 @@
 name: Build Plugin Assets
+
 on:
   push:
     branches: [main]
@@ -14,9 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # The push also requires main's rules to permit this token to write directly.
-  # contents: write does not bypass a rule requiring pull requests.
-  contents: write
+  contents: read
 
 concurrency:
   group: build-assets-main
@@ -27,12 +26,25 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ChatHermes
+          permission-contents: write
+
       - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -43,15 +55,22 @@ jobs:
 
       - name: Build, verify, and push plugin assets
         shell: bash
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          APP_USER_ID: ${{ steps.app-token.outputs.app-user-id }}
         run: |
           set -euo pipefail
+
           DIST="plugin/chathermes/dashboard/dist"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Identify commits as the installed GitHub App.
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email \
+            "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
           for attempt in 1 2 3; do
-            # This is a disposable runner checkout. Rebuild rather than rebase
-            # generated assets onto sources they were not built from.
+            # Rebuild from the latest main commit rather than
+            # rebasing generated assets onto different sources.
             git fetch origin +refs/heads/main:refs/remotes/origin/main
             git reset --hard origin/main
             BUILD_SHA=$(git rev-parse HEAD)
@@ -59,6 +78,7 @@ jobs:
             npm ci
             npm run build
 
+            # Verify required plugin assets.
             test -s "$DIST/index.js"
             test -s "$DIST/style.css"
             test -s "$DIST/manifest.webmanifest"
@@ -68,29 +88,40 @@ jobs:
             test -s "$DIST/icons/icon-512.png"
             compgen -G "$DIST/assets/app-*.js" > /dev/null
 
+            # Force-add generated assets ignored by .gitignore.
             git add -A -f -- "$DIST"
+
+            # Check whether main changed during the build.
             git fetch origin +refs/heads/main:refs/remotes/origin/main
+
             if [ "$BUILD_SHA" != "$(git rev-parse origin/main)" ]; then
               echo "main advanced during build; rebuilding (attempt $attempt/3)."
               continue
             fi
+
             if git diff --cached --quiet; then
               echo "Build assets are unchanged."
               exit 0
             fi
 
             git commit -m "chore(build): update compiled dashboard assets"
-            # A normal push rejects an update if main advances after the check.
+
+            # Push using the GitHub App installation token.
+            # The App has bypass access to main's PR requirement.
             if git push origin HEAD:main; then
+              echo "Compiled assets pushed successfully."
               exit 0
             fi
+
             git fetch origin +refs/heads/main:refs/remotes/origin/main
+
             if [ "$BUILD_SHA" = "$(git rev-parse origin/main)" ]; then
-              echo "::error::Push rejected; check Actions write permissions and main branch rules."
+              echo "::error::Push rejected. Check GitHub App permissions and ruleset bypass."
               exit 1
             fi
+
             echo "main advanced before push; rebuilding (attempt $attempt/3)."
           done
 
-          echo "::error::main kept advancing; rerun the workflow to build the latest assets."
+          echo "::error::main kept advancing; rerun the workflow."
           exit 1
