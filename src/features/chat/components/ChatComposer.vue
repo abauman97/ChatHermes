@@ -318,7 +318,6 @@ defineExpose({ stageFiles });
 <template>
   <form
     ref="form"
-    :class="{ 'composer-editing': editing }"
     @focusout="leaveComposer"
     class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
