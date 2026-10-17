@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from "vue";
 
 const controls =
-  'button, a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex], [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
+  'button, a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex]:not([data-chat-message]):not(.transcript), [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
 
 /** Local touch handlers only: opening belongs to the transcript, never the viewport. */
 export function useDrawerSwipe(

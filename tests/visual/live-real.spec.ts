@@ -174,9 +174,7 @@ test("footer padding follows mobile textarea focus and resets on remount", async
   ).toBe(0);
 });
 
-test("Send stays under the pointer and submits once without blurring the textarea", async ({
-  page,
-}, info) => {
+test("Send stays under the pointer then focuses the latest message", async ({ page }, info) => {
   let submissions = 0;
   page.on("websocket", (socket) =>
     socket.on("framesent", (event) => {
@@ -223,13 +221,141 @@ test("Send stays under the pointer and submits once without blurring the textare
     expect(await send.boundingBox()).toEqual(before);
     await page.mouse.up();
   }
-  await expect(area).toBeFocused();
+  await expect(area).not.toBeFocused();
   await expect(area).toHaveValue("");
   await expect.poll(() => submissions).toBe(1);
   await expect(plugin.locator(".message.user")).toHaveCount(1);
-  expect(await page.evaluate(() => (window as unknown as { sendProbe: object }).sendProbe)).toEqual(
-    { blurs: 0 },
+  await expect
+    .poll(() =>
+      plugin.locator(".transcript").evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      plugin
+        .locator(".transcript")
+        .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight),
+    )
+    .toBeLessThanOrEqual(2);
+  await expect(plugin.locator(".app-footer")).toHaveCSS(
+    "padding-bottom",
+    info.project.name === "mobile" ? "12px" : "24px",
   );
+  await page.screenshot({ path: info.outputPath("send-focused-message.png") });
+  expect(await page.evaluate(() => (window as unknown as { sendProbe: object }).sendProbe)).toEqual(
+    { blurs: 1 },
+  );
+});
+
+test("sent message focus follows streamed content and respects a new draft and manual scroll", async ({
+  page,
+}, info) => {
+  await signIn(page);
+  const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
+    data: {},
+  });
+  const body = await created.json();
+  const sessionId = (body.session || body).id;
+  let sendFrame: ((frame: object) => void) | undefined;
+  let runtime = "";
+  let seq = 0;
+  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+    const server = socket.connectToServer();
+    const attachIds = new Set<string>();
+    socket.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (frame.method === "chat.attach") attachIds.add(frame.id);
+      if (frame.method === "chat.submit") {
+        socket.send(
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { outcome: "accepted" } }),
+        );
+      } else server.send(message);
+    });
+    server.onMessage((message) => {
+      const frame = JSON.parse(String(message));
+      if (attachIds.has(frame.id) && frame.result) {
+        runtime = frame.result.session_id;
+        sendFrame = (frame) => socket.send(JSON.stringify(frame));
+      }
+      socket.send(message);
+    });
+  });
+  await page.goto(`/chathermes?profile=default#/chat/${encodeURIComponent(sessionId)}`);
+  await page.reload();
+  const plugin = page.locator(".chathermes-embedded");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const transcript = plugin.locator(".transcript");
+  const bottomGap = () =>
+    transcript.evaluate(
+      (element) => element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+  await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
+  await expect.poll(() => !!sendFrame).toBe(true);
+  await area.fill("Follow the latest answer");
+  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(area).not.toBeFocused();
+  const event = (type: string, payload: object = {}) =>
+    sendFrame!({
+      jsonrpc: "2.0",
+      method: "event",
+      params: { session_id: runtime, seq: ++seq, type, payload },
+    });
+  event("message.start");
+  for (let chunk = 0; chunk < 3; chunk++) {
+    event("message.delta", {
+      text: Array.from({ length: 12 }, (_, index) => `Stream ${chunk} row ${index}\n\n`).join(""),
+    });
+    await expect(plugin.locator(".assistant-turn").last()).toBeFocused();
+    await expect.poll(bottomGap).toBeLessThanOrEqual(2);
+  }
+  await page.screenshot({ path: info.outputPath("send-stream-following.png") });
+  await area.fill("A new draft stays editable");
+  event("message.delta", { text: "Arriving while drafting\n\n" });
+  await expect(area).toBeFocused();
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Arriving while drafting",
+  );
+  await transcript.evaluate((element) => {
+    element.scrollTop = 100;
+    element.dispatchEvent(new Event("scroll"));
+  });
+  event("message.delta", { text: "More arriving output\n\n" });
+  await expect(plugin.locator(".message.assistant").last()).toContainText("More arriving output");
+  expect(await transcript.evaluate((element) => element.scrollTop)).toBe(100);
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("send-stream-reading-history.png") });
+});
+
+test("project home send hands focus to the newly mounted conversation", async ({ page }, info) => {
+  await signIn(page);
+  let project: { id: string } | undefined;
+  // Native project discovery can lag behind creation of the first sessions.
+  await expect
+    .poll(
+      async () => {
+        const tree = await (await page.request.get("/api/plugins/chathermes/projects")).json();
+        project = tree.projects.find((item: { isNoProject?: boolean }) => item.isNoProject);
+        return project?.id;
+      },
+      { timeout: 15000 },
+    )
+    .toBeTruthy();
+  await page.goto(`/chathermes?profile=default#/projects/${encodeURIComponent(project!.id)}`);
+  const plugin = page.locator(".chathermes-embedded");
+  const area = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await expect(plugin.locator(".transcript")).toHaveCount(0);
+  await area.fill("Check project send focus");
+  const send = plugin.getByRole("button", { name: "Send message", exact: true });
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(area).not.toBeFocused();
+  await expect(plugin.locator(".message.user").last()).toContainText("Check project send focus");
+  await expect
+    .poll(() =>
+      plugin.locator(".transcript").evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
+  await page.screenshot({ path: info.outputPath("project-send-focused-message.png") });
 });
 
 test("composer empty focus is one line inline with Send and grows with text", async ({
@@ -384,6 +510,12 @@ test("disposable dashboard composer, attachments and real native response", asyn
   await expect(send).toBeEnabled();
   await send.click();
   await expect(plugin.locator(".message.user").last()).toContainText(prompt);
+  await expect(area).not.toBeFocused();
+  await expect
+    .poll(() =>
+      plugin.locator(".transcript").evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
   await area.fill("draft while responding");
   await expect(area).toBeFocused();
   // Fast or repeated calls may already be summarized by the time the draft is

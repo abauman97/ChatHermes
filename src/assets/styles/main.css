@@ -182,6 +182,11 @@ body {
 .markdown-content {
   min-width: 0;
 }
+/* Message focus is a reading destination; controls keep their own focus rings. */
+.transcript:focus,
+.transcript [data-chat-message]:focus {
+  outline: none;
+}
 .markdown-content {
   overflow-wrap: anywhere;
 }

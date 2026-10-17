@@ -318,7 +318,7 @@ async function attach(event: Event) {
   await stageFiles(Array.from(input.files || []));
   input.value = "";
 }
-defineExpose({ stageFiles });
+defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
 </script>
 <template>
   <form
