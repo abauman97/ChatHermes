@@ -1,0 +1,191 @@
+"""Run with PYTHONPATH=<pinned Hermes source>:plugin python -m pytest tests/cron_delivery.test.py.
+
+Uses disposable native Hermes stores; no gateway, browser, TUI, or provider.
+"""
+import asyncio
+import shutil
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def runtime(tmp_path, monkeypatch):
+    pytest.importorskip('cron.execution_identity')
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'plugin'))
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', 'https://dashboard.example.test')
+    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from cron.jobs import use_cron_store
+    import chathermes
+    from chathermes import cron_delivery as delivery
+    token = set_hermes_home_override(tmp_path)
+    with use_cron_store(tmp_path):
+        yield tmp_path, chathermes, delivery
+    reset_hermes_home_override(token)
+
+
+def _execution(home, job):
+    from cron.executions import create_execution, mark_execution_running
+    from cron.execution_identity import enter_cron_execution
+    record = create_execution(job['id'], source='direct')
+    record = mark_execution_running(record['id'])
+    token = enter_cron_execution(job, record['id'], record)
+    return record, token
+
+
+def test_native_discovery_and_home_target(runtime, monkeypatch):
+    home, _, delivery = runtime
+    monkeypatch.setenv('CHATHERMES_HOME_CHANNEL', 'scheduled')
+    from hermes_cli.plugins import PluginManager
+    from gateway.platform_registry import platform_registry
+    from cron.scheduler_delivery import _is_known_delivery_platform, _resolve_delivery_targets
+    source = Path(delivery.__file__).parent
+    shutil.copytree(source, home / 'plugins' / 'chathermes', ignore=shutil.ignore_patterns('dist', '__pycache__'))
+    (home / 'config.yaml').write_text('plugins:\n  enabled: [chathermes]\n')
+    manager = PluginManager()
+    manager.discover_and_load()
+    entry = platform_registry.get('chathermes')
+    assert entry and callable(entry.standalone_sender_fn)
+    assert entry.cron_deliver_env_var == 'CHATHERMES_HOME_CHANNEL'
+    assert _is_known_delivery_platform('chathermes')
+    assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes'})[0]['chat_id'] == 'scheduled'
+    assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes:device_1'})[0]['chat_id'] == 'device_1'
+
+
+def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from cron.jobs import save_job_output
+    from cron.execution_identity import exit_cron_execution
+    job = {'id': 'audit', 'name': 'Audit'}
+    execution, token = _execution(home, job)
+    try:
+        output = save_job_output('audit', 'native saved result')
+        calls = []
+        monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *args, **kwargs: calls.append((args, kwargs)) or True)
+        result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'result'))
+        assert result['success'] is True
+        assert calls[0][0][0] == 'default'
+        assert calls[0][1]['target'] == {'job_id': 'audit', 'run_id': 'output:' + output.stem}
+        assert calls[0][1]['destination'] is None
+        again = asyncio.run(delivery.standalone_send(None, '_device_1', 'result'))
+        assert again['success'] is True
+        assert calls[-1][1]['destination'] == '_device_1'
+        assert list(output.parent.glob('*.md')) == [output]
+        monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *args, **kwargs: False)
+        assert 'error' in asyncio.run(delivery.standalone_send(None, 'scheduled', 'result'))
+    finally:
+        exit_cron_execution(token)
+
+
+def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from cron import delivery_queue
+    from cron.executions import finish_execution
+    from cron.execution_identity import exit_cron_execution
+    from cron.jobs import save_job_output
+    job = {'id': 'audit', 'name': 'Audit', 'deliver': 'chathermes'}
+    execution, token = _execution(home, job)
+    exit_cron_execution(token)
+    save_job_output('audit', 'native result')
+    finish_execution(execution['id'], success=True)
+    delivery_queue.enqueue(execution['id'], job, 'result')
+    sends = []
+    monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append(kw) or True)
+    def send(queued_job, content, for_failure):
+        result = asyncio.run(delivery.standalone_send(None, 'scheduled', content))
+        assert result.get('success'), result
+        return None
+    assert delivery_queue.drain(send) == 1
+    delivery_queue.enqueue(execution['id'], job, 'result')
+    assert delivery_queue.drain(send) == 0
+    assert len(sends) == 1
+    assert delivery_queue.get_status(execution['id'])['status'] == 'delivered'
+    assert delivery._queued_execution(home, 'result') is None
+
+
+def test_unattributed_or_ambiguous_delivery_fails_closed(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from cron import delivery_queue
+    sends = []
+    monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append(kw) or True)
+    assert 'error' in asyncio.run(delivery.standalone_send(None, 'scheduled', 'no identity'))
+    for i in range(2):
+        delivery_queue.enqueue(str(i) * 32, {'id': 'job' + str(i)}, 'same result')
+        delivery_queue.claim_next()
+    assert delivery._queued_execution(home, 'same result') is None
+    assert 'error' in asyncio.run(delivery.standalone_send(None, '../other', 'same result'))
+    monkeypatch.setattr(delivery, '_queued_execution', lambda *a: (_ for _ in ()).throw(RuntimeError('SECRET')))
+    result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'result'))
+    assert result == {'error': 'ChatHermes cron delivery unavailable'}
+    assert not sends
+
+
+def test_scheduler_routes_wrapped_queue_payload_without_live_adapter(runtime, monkeypatch):
+    home, plugin, delivery = runtime
+    monkeypatch.setenv('CHATHERMES_HOME_CHANNEL', 'scheduled')
+    from gateway.platform_registry import PlatformEntry, platform_registry
+    from cron.scheduler_delivery import _deliver_result
+    from cron import delivery_queue
+    from cron.executions import finish_execution
+    from cron.execution_identity import exit_cron_execution
+    from cron.jobs import save_job_output
+    from types import SimpleNamespace
+    plugin.register(SimpleNamespace(register_platform=lambda **kw: platform_registry.register(PlatformEntry(**kw))))
+    job = {'id': 'audit', 'name': 'Audit', 'deliver': 'chathermes', 'execution_id': ''}
+    execution, token = _execution(home, job)
+    exit_cron_execution(token)
+    job['execution_id'] = execution['id']
+    save_job_output('audit', 'native result')
+    finish_execution(execution['id'], success=True)
+    delivery_queue.enqueue(execution['id'], job, 'result')
+    sends = []
+    monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append(kw) or True)
+    errors = []
+    def send(job, content, failure):
+        result = _deliver_result(job, content, adapters={})
+        errors.append(result)
+        return result
+    assert delivery_queue.drain(send) == 1
+    assert errors == [None]
+    assert len(sends) == 1
+
+
+def test_install_does_not_enable_or_redirect_existing_tui_cron(runtime, monkeypatch):
+    home, plugin, _ = runtime
+    from gateway.platform_registry import PlatformEntry, platform_registry
+    from gateway.config import load_gateway_config, Platform
+    from types import SimpleNamespace
+    monkeypatch.delenv('CHATHERMES_HOME_CHANNEL', raising=False)
+    plugin.register(SimpleNamespace(register_platform=lambda **kw: platform_registry.register(PlatformEntry(**kw))))
+    config = load_gateway_config()
+    assert Platform('chathermes') not in config.get_connected_platforms()
+    assert config.get_home_channel(Platform('chathermes')) is None
+
+
+def test_named_profile_reads_shared_push_store_and_routes_own_history(runtime, monkeypatch):
+    root, _, delivery = runtime
+    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
+    from cron.jobs import use_cron_store, save_job_output
+    from cron.execution_identity import exit_cron_execution
+    named = root / 'profiles' / 'beta'
+    named.mkdir(parents=True)
+    (root / 'config.yaml').touch()
+    monkeypatch.setenv('HERMES_HOME', str(named))
+    override = set_hermes_home_override(named)
+    try:
+        with use_cron_store(named):
+            execution, token = _execution(named, {'id': 'audit'})
+            try:
+                output = save_job_output('audit', 'beta only')
+                calls = []
+                monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: calls.append((a, kw)) or True)
+                result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'result'))
+                assert result.get('success'), result
+                assert calls[0][0][0] == 'beta'
+                assert calls[0][1]['target']['run_id'] == 'output:' + output.stem
+                assert delivery.push_sender.push_store._home() == root
+            finally:
+                exit_cron_execution(token)
+    finally:
+        reset_hermes_home_override(override)

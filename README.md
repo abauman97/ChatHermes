@@ -27,6 +27,8 @@ npm test
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r tests/requirements.txt
+# Install ChatHermes plugin dependencies plus Python test tooling for its cron tests
+pip install -e 'plugin/chathermes[dev]'
 npm run test:api
 npm run build
 npm run live

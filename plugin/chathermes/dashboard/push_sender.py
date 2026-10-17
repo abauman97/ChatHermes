@@ -1,4 +1,5 @@
 """Optional Web Push delivery; transport and storage failures are isolated."""
+import hashlib
 import json
 import logging
 import re
@@ -130,14 +131,15 @@ def diagnostic(stage, profile, session_id, kind, **fields):
 
 BODIES = {'turn.complete': 'Hermes finished responding.', 'approval': 'Hermes needs your approval.',
           'clarify': 'Hermes has a question.', 'attention': 'Hermes needs attention.',
-          'test': 'This is a ChatHermes test notification.'}
+          'test': 'This is a ChatHermes test notification.',
+          'scheduled': 'A scheduled result is ready.'}
 
 
 # Leave room below the Web Push 4096-byte encrypted record limit for encryption.
 MAX_PAYLOAD_BYTES = 3000
 
 
-def notification_payload(profile, session_id, kind, message=None):
+def notification_payload(profile, session_id, kind, message=None, target=None):
     # Native message.complete.text is authoritative, including rewritten finals.
     # Missing completion text remains empty; never invent an assistant response.
     body = message if isinstance(message, str) else ('' if kind == 'turn.complete' else BODIES[kind])
@@ -146,6 +148,10 @@ def notification_payload(profile, session_id, kind, message=None):
     title = profile if isinstance(profile, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile) else 'ChatHermes'
     data = {'type': kind, 'title': title, 'profile': profile,
             'session_id': session_id, 'tag': f'chathermes:{profile}:{session_id}:{kind}'}
+    if target is not None:
+        data.update(target)
+        identity = hashlib.sha256(f"{target['job_id']}:{target['run_id']}".encode()).hexdigest()
+        data['tag'] = f"chathermes:{profile}:{identity}:scheduled"
     def encode(text):
         return json.dumps({**data, 'body': text}, ensure_ascii=False, separators=(',', ':'))
     # Bound initial work too: no message can fit more than this many code points.
@@ -176,22 +182,29 @@ def notify(profile, session_id, kind, dedupe_id, request=None, message=None):
         return False
 
 
-def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None):
+def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None, *, target=None, destination=None):
     if kind not in BODIES or not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile):
         diagnostic('deliver.invalid', profile, session_id, kind)
         return
-    if not isinstance(session_id, str) or (not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id) and not (kind == 'test' and session_id == '')):
+    if not isinstance(session_id, str) or (not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id) and not (kind in ('test', 'scheduled') and session_id == '')):
         diagnostic('deliver.invalid', profile, session_id, kind)
         return
     report = lambda stage, **fields: diagnostic(stage, profile, session_id, kind, **fields)
     failure_stage = 'subscriptions'
     try:
         rows = push_store.subscriptions(profile)
+        if destination is not None:
+            rows = [row for row in rows if row['id'] == destination]
+            if not rows:
+                return False
         failure_stage = 'configuration'
         configuration = push_store.config()
         report('deliver.config', matching_enabled=len(rows), available=bool(configuration.get('available')))
-        if not configuration.get('available') or not rows:
-            return
+        # The native result is already durable; push is optional without subscriptions.
+        if not rows:
+            return True
+        if not configuration.get('available'):
+            return False
         failure_stage = 'dependencies'
         from pywebpush import webpush
         from py_vapid import Vapid
@@ -201,8 +214,9 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None):
             failure_stage = 'vapid_key_load'
             vapid = Vapid.from_pem(data['vapid']['private_key'].encode())
         failure_stage = 'payload_build'
-        payload = notification_payload(profile, session_id, kind, message)
+        payload = notification_payload(profile, session_id, kind, message, target)
         subject = push_store.vapid_subject(request)
+        delivered = True
         for row in rows:
             report('pywebpush.attempt', subscription=row.get('id'), attempted=True)
             try:
@@ -213,6 +227,7 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None):
                 status = getattr(response, 'status_code', None)
                 report('pywebpush.result', attempted=True, success=True, http_status=status if type(status) is int else None)
             except Exception as error:
+                delivered = False
                 status = getattr(getattr(error, 'response', None), 'status_code', None)
                 status = status if type(status) is int else None
                 response = getattr(error, 'response', None)
@@ -224,5 +239,7 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None):
                         report('deliver.expired', http_status=status, removed=True)
                     except Exception as removal_error:
                         report('deliver.expired', http_status=status, removed=False, **_failure_details(removal_error, 'expired_remove'))
+        return delivered
     except Exception as error:
         report('deliver.failure', **_failure_details(error, failure_stage))
+        return False

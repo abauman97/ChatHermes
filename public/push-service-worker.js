@@ -28,11 +28,19 @@ function routeSession(value) {
     if (url.origin !== self.location.origin || url.pathname !== APP_URL) return null;
     if (!url.hash.startsWith("#/")) return null;
     const hash = new URL(url.hash.slice(1), self.location.origin);
+    const scheduled = /^\/scheduled\/([^/]+)\/([^/]+)$/.exec(hash.pathname);
     const match = /^\/chat\/([^/]+)$/.exec(hash.pathname);
-    if (!match || hash.searchParams.getAll("profile").length > 1) return null;
+    if ((!match && !scheduled) || hash.searchParams.getAll("profile").length > 1) return null;
     const params = hash.searchParams,
-      session = decodeURIComponent(match[1]);
+      session = match ? decodeURIComponent(match[1]) : "";
     const profile = params.get("profile") || "default";
+    if (scheduled) {
+      const job = decodeURIComponent(scheduled[1]),
+        run = decodeURIComponent(scheduled[2]);
+      if (!validScheduled(job, run) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(profile))
+        return null;
+      return { profile, session: "", job, run };
+    }
     if (
       !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(profile) ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(session)
@@ -44,16 +52,32 @@ function routeSession(value) {
   }
 }
 
+function validScheduled(job, run) {
+  return (
+    typeof job === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(job) &&
+    typeof run === "string" &&
+    (/^output:\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(run) ||
+      /^execution:[a-f0-9]{32}$/.test(run))
+  );
+}
+
 function visibleSession(data) {
   if (
     data?.type !== "chathermes.session" ||
-    data.connected !== true ||
+    (data.connected !== true && data.scheduled !== true) ||
     data.visible !== true ||
     typeof data.url !== "string"
   )
     return null;
   const route = routeSession(data.url);
-  return route && route.profile === data.profile && route.session === data.session ? route : null;
+  return route &&
+    route.profile === data.profile &&
+    (route.job
+      ? data.scheduled === true && route.job === data.job && route.run === data.run
+      : data.connected === true && route.session === data.session)
+    ? route
+    : null;
 }
 
 async function windowClients() {
@@ -106,7 +130,8 @@ async function visibleSessions(onVisible = () => false) {
   }
   return sessions;
 }
-const matches = (a, b) => a.profile === b.profile && a.session === b.session;
+const matches = (a, b) =>
+  a.profile === b.profile && a.session === b.session && a.job === b.job && a.run === b.run;
 async function closeVisibleNotifications(target) {
   // Fetch first: a pending notification lookup must not age a positive reply.
   const notifications = await self.registration.getNotifications().catch(() => []);
@@ -149,7 +174,10 @@ self.addEventListener("push", (event) => {
   } catch {
     return;
   }
-  if (!data || !["turn.complete", "approval", "clarify", "attention", "test"].includes(data.type))
+  if (
+    !data ||
+    !["turn.complete", "approval", "clarify", "attention", "test", "scheduled"].includes(data.type)
+  )
     return;
   const profile =
     typeof data.profile === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(data.profile)
@@ -162,23 +190,37 @@ self.addEventListener("push", (event) => {
     typeof data.session_id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(data.session_id)
       ? data.session_id
       : "";
-  if (!session && data.type !== "test") return;
+  const scheduled = data.type === "scheduled";
+  if (scheduled && (!profile || !validScheduled(data.job_id, data.run_id))) return;
+  if (!session && data.type !== "test" && !scheduled) return;
   const url = new URL(APP_URL, self.location.origin);
   url.searchParams.set("profile", profile || "default");
   const query = new URLSearchParams(profile ? { profile } : {});
   url.hash =
-    (session ? "/chat/" + encodeURIComponent(session) : "/") + (query.size ? "?" + query : "");
+    (scheduled
+      ? "/scheduled/" + encodeURIComponent(data.job_id) + "/" + encodeURIComponent(data.run_id)
+      : session
+        ? "/chat/" + encodeURIComponent(session)
+        : "/") + (query.size ? "?" + query : "");
   event.waitUntil(
     enqueue(async () => {
       if (data.type !== "test" && profile) {
-        if (await closeVisibleNotifications({ profile, session })) return;
+        if (
+          await closeVisibleNotifications(
+            scheduled
+              ? { profile, session: "", job: data.job_id, run: data.run_id }
+              : { profile, session },
+          )
+        )
+          return;
       }
       await self.registration.showNotification(title, {
         body: typeof data.body === "string" ? Array.from(data.body).slice(0, 3000).join("") : "",
         tag:
-          typeof data.tag === "string" && /^chathermes:[A-Za-z0-9_-]{1,220}$/.test(data.tag)
+          typeof data.tag === "string" && /^chathermes:[A-Za-z0-9_:-]{1,300}$/.test(data.tag)
             ? data.tag
             : `chathermes:${profile}:${session}:${data.type}`,
+        renotify: false,
         data: { url: url.href },
         icon: "/api/plugins/chathermes/assets/dist/icons/icon-192.png",
         badge: "/api/plugins/chathermes/assets/dist/icons/icon-192.png",

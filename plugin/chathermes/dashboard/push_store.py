@@ -16,8 +16,8 @@ _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
 
 def _home():
-    from hermes_constants import get_process_hermes_home
-    return Path(get_process_hermes_home()).resolve()
+    from hermes_constants import get_process_hermes_home, get_default_hermes_root
+    return Path(get_default_hermes_root(home=get_process_hermes_home())).resolve()
 
 
 def _path():
