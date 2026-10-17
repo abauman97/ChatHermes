@@ -12398,7 +12398,12 @@ var Mv = {
 		function b(e) {
 			return e > 0 ? (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString() : "Run date unavailable";
 		}
-		function x(e, t) {
+		function x(e) {
+			if (!e) return "Never run";
+			let t = new Date(e);
+			return Number.isNaN(t.getTime()) ? "Last run date unavailable" : `Last run: ${t.toLocaleString()}`;
+		}
+		function S(e, t) {
 			return i.push({
 				name: t ? "scheduled-run" : e ? "scheduled-job" : "scheduled",
 				params: {
@@ -12408,7 +12413,7 @@ var Mv = {
 				query: r.query
 			});
 		}
-		async function S(e) {
+		async function C(e) {
 			g?.abort();
 			let t = new AbortController();
 			g = t, f.value = !0, p.value = "";
@@ -12420,26 +12425,26 @@ var Mv = {
 				g === t && (f.value = !1);
 			}
 		}
-		async function C() {
-			await S(async (e) => {
+		async function w() {
+			await C(async (e) => {
 				let t = await Z.scheduled(n.profile, e);
 				if (!Array.isArray(t.jobs)) throw Error("Invalid scheduled jobs response");
 				e.aborted || (o.value = t.jobs);
 			});
 		}
-		async function w(e, t = !1) {
-			if (!t) return x(e.id);
-			s.value = e, l.value = void 0, u.value = void 0, c.value = [], h.value = 0, m.value = !1, await ee();
+		async function ee(e, t = !1) {
+			if (!t) return S(e.id);
+			s.value = e, l.value = void 0, u.value = void 0, c.value = [], h.value = 0, m.value = !1, await T();
 		}
-		async function ee(e = !1) {
-			await S(async (t) => {
+		async function T(e = !1) {
+			await C(async (t) => {
 				let r = await Z.scheduledRuns(n.profile, s.value.id, e ? h.value : 0, t);
 				t.aborted || (c.value = e ? [...c.value, ...r.runs.filter((e) => !c.value.some((t) => t.id === e.id))] : r.runs, h.value = r.offset + r.runs.length, m.value = r.has_more);
 			});
 		}
-		async function T(e, t = !1) {
-			if (!t) return x(s.value.id, e.id);
-			l.value = e, u.value = void 0, await S(async (t) => {
+		async function E(e, t = !1) {
+			if (!t) return S(s.value.id, e.id);
+			l.value = e, u.value = void 0, await C(async (t) => {
 				let r = await Z.scheduledOutput(n.profile, s.value.id, e.id, t);
 				t.aborted || (u.value = r, typeof r.started_at == "number" && (l.value = {
 					...e,
@@ -12447,31 +12452,31 @@ var Mv = {
 				}));
 			});
 		}
-		function E() {
-			l.value ? T(l.value, !0) : s.value ? ee() : C();
+		function D() {
+			l.value ? E(l.value, !0) : s.value ? T() : w();
 		}
 		t({
-			retry: E,
+			retry: D,
 			loading: f,
 			sessionId: X(() => u.value?.session_id)
 		});
-		let D;
+		let O;
 		or(async () => {
-			await i.isReady(), !O && (D = Fn(() => [
+			await i.isReady(), !k && (O = Fn(() => [
 				n.profile,
 				r.params.jobId,
 				r.params.runId
 			], async () => {
 				let e = ++a, t = String(r.params.jobId || ""), n = String(r.params.runId || "");
-				if (s.value = void 0, l.value = void 0, u.value = void 0, await C(), e !== a || g?.signal.aborted) return;
+				if (s.value = void 0, l.value = void 0, u.value = void 0, await w(), e !== a || g?.signal.aborted) return;
 				let i = o.value.find((e) => e.id === t);
 				if (t && !i) {
 					p.value = "This scheduled job is no longer available.";
 					return;
 				}
 				if (i) {
-					if (d.value = y(i), await w(i, !0), e !== a || g?.signal.aborted) return;
-					n && await T(c.value.find((e) => e.id === n) || {
+					if (d.value = y(i), await ee(i, !0), e !== a || g?.signal.aborted) return;
+					n && await E(c.value.find((e) => e.id === n) || {
 						id: n,
 						started_at: 0,
 						source: "cron"
@@ -12479,9 +12484,9 @@ var Mv = {
 				}
 			}, { immediate: !0 }));
 		});
-		let O = !1;
+		let k = !1;
 		return ur(() => {
-			O = !0, D?.(), a++, g?.abort();
+			k = !0, O?.(), a++, g?.abort();
 		}), (e, t) => (W(), G("section", Nb, [q("div", Pb, [q("div", Fb, [
 			q("div", Ib, [q("h2", null, F(s.value?.name || s.value?.id || "Scheduled"), 1)]),
 			s.value ? (W(), G("p", Rb, F(l.value ? b(l.value.started_at) : "Run history · newest first"), 1)) : (W(), G("label", Lb, [t[3] ||= J("Show ", -1), kn(q("select", {
@@ -12495,7 +12500,7 @@ var Mv = {
 			f.value ? (W(), G("p", zb, "Loading scheduled history…")) : Y("v-if", !0),
 			p.value ? (W(), G("p", Bb, [J(F(p.value) + " ", 1), q("button", {
 				class: "underline",
-				onClick: E
+				onClick: D
 			}, "Retry")])) : Y("v-if", !0)
 		])]), l.value && v.value.length ? (W(), K(Rm, {
 			key: l.value.id,
@@ -12509,12 +12514,16 @@ var Mv = {
 			s.value ? Y("v-if", !0) : (W(), G("nav", Ub, [(W(!0), G(U, null, br(_.value, (e) => (W(), G("button", {
 				key: e.id,
 				class: "scheduled-job-row",
-				onClick: (t) => w(e)
-			}, [q("span", null, [q("strong", null, F(e.name || e.id), 1), q("small", null, F(e.schedule_display || "Scheduled job"), 1)]), t[4] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, Wb))), 128))])),
+				onClick: (t) => ee(e)
+			}, [q("span", null, [
+				q("strong", null, F(e.name || e.id), 1),
+				q("small", null, F(e.schedule_display || "Scheduled job"), 1),
+				q("small", null, F(x(e.last_run_at)), 1)
+			]), t[4] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, Wb))), 128))])),
 			!f.value && !p.value && s.value && !l.value && !c.value.length ? (W(), G("p", Gb, " No runs yet. ")) : Y("v-if", !0),
 			s.value && !l.value ? (W(), G("nav", Kb, [(W(!0), G(U, null, br(c.value, (e) => (W(), G("button", {
 				key: e.id,
-				onClick: (t) => T(e)
+				onClick: (t) => E(e)
 			}, [q("span", null, [
 				q("strong", null, F(b(e.started_at)), 1),
 				q("small", null, F(e.title || "Job run"), 1),
@@ -12524,7 +12533,7 @@ var Mv = {
 				key: 4,
 				class: "project-button",
 				disabled: f.value,
-				onClick: t[1] ||= (e) => ee(!0)
+				onClick: t[1] ||= (e) => T(!0)
 			}, " Load older runs ", 8, Jb)) : Y("v-if", !0),
 			l.value && u.value && !v.value.length ? (W(), G("p", Yb, " No output was saved for this run. ")) : Y("v-if", !0)
 		]))]));
