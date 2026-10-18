@@ -183,14 +183,17 @@ self.addEventListener("push", (event) => {
     typeof data.profile === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(data.profile)
       ? data.profile
       : "";
-  const title = profile || "ChatHermes";
+  const scheduled = data.type === "scheduled";
+  const title =
+    scheduled && typeof data.title === "string" && data.title.trim()
+      ? Array.from(data.title).slice(0, 200).join("")
+      : profile || "ChatHermes";
   // Accept queued legacy payloads, but never display a title for another profile.
-  if (data.title !== title && data.title !== "ChatHermes") return;
+  if (!scheduled && data.title !== title && data.title !== "ChatHermes") return;
   const session =
     typeof data.session_id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(data.session_id)
       ? data.session_id
       : "";
-  const scheduled = data.type === "scheduled";
   if (scheduled && (!profile || !validScheduled(data.job_id, data.run_id))) return;
   if (!session && data.type !== "test" && !scheduled) return;
   const url = new URL(APP_URL, self.location.origin);
@@ -231,13 +234,19 @@ self.addEventListener("push", (event) => {
 });
 self.addEventListener("notificationclick", (event) => {
   // Keep the notification until the destination session is visible.
-  const target = new URL(event.notification.data?.url || APP_URL, self.location.origin);
+  let target;
+  try {
+    target = new URL(event.notification.data?.url || APP_URL, self.location.origin);
+  } catch {
+    return;
+  }
   if (
     target.origin !== self.location.origin ||
     target.pathname !== APP_URL ||
     !target.hash.startsWith("#/")
   )
     return;
+  if (target.hash.startsWith("#/scheduled/") && !routeSession(target.href)) return;
   event.waitUntil(
     (async () => {
       const clients = await windowClients();

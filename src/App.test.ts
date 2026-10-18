@@ -1343,13 +1343,32 @@ it("switches an already-open viewer for canonical notification links and ignores
     return owner;
   });
   mockFetch(
-    vi.fn(async (input) =>
-      json(
+    vi.fn(async (input) => {
+      const url = new URL(input, location.origin);
+      if (url.pathname.endsWith("/scheduled/output")) {
+        expect(url.searchParams.get("profile")).toBe("beta");
+        expect(url.searchParams.get("job_id")).toBe("audit");
+        expect(url.searchParams.get("run_id")).toBe("output:2025-01-01_00-00-00");
+        return json({
+          messages: [],
+          output: "Exact older scheduled result " + "Full output. ".repeat(400) + "RESULT END",
+        });
+      }
+      if (url.pathname.endsWith("/scheduled/runs"))
+        return json({
+          runs: [{ id: "output:2026-01-01_00-00-00", started_at: 200, source: "cron_output" }],
+          offset: 0,
+          limit: 30,
+          has_more: true,
+        });
+      if (url.pathname.endsWith("/scheduled"))
+        return json({ jobs: [{ id: "audit", name: "Security Audit", state: "completed" }] });
+      return json(
         input.includes("/capabilities")
           ? { features: { native_chat: true } }
           : { sessions: [], total: 0 },
-      ),
-    ),
+      );
+    }),
   );
   history.replaceState({}, "", "/chathermes?profile=alpha#/chat/one?profile=alpha");
   const wrapper = mount(App);
@@ -1371,6 +1390,14 @@ it("switches an already-open viewer for canonical notification links and ignores
   expect(owner.attach).toHaveBeenLastCalledWith("alpha", "two");
   expect(routeUrl().pathname).toBe("/chat/two");
   expect(nativeSession.useNativeSession).toHaveBeenCalledOnce();
+  dispatch("/chathermes?profile=beta#/scheduled/audit/output%3A2025-01-01_00-00-00?profile=beta");
+  await flushPromises();
+  await flushPromises();
+  expect(routeUrl().pathname).toBe("/scheduled/audit/output%3A2025-01-01_00-00-00");
+  expect(wrapper.get(".scheduled-page").text()).toContain("Security Audit");
+  expect(wrapper.get(".scheduled-page").text()).toContain("Exact older scheduled result");
+  expect(wrapper.get(".scheduled-page").text()).toContain("RESULT END");
+  expect(wrapper.get(".topbar-profile").text()).toBe("beta");
   wrapper.unmount();
 });
 

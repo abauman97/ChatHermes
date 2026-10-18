@@ -37,6 +37,7 @@ function harness() {
   }
   const getNotifications = vi.fn(async () => notifications);
   const matchAll = vi.fn(async () => clients);
+  const openWindow = vi.fn();
   runInNewContext(worker, {
     URL,
     MessageChannel: Channel,
@@ -48,7 +49,7 @@ function harness() {
       addEventListener: (type: string, fn: any) => {
         handlers[type] = fn;
       },
-      clients: { matchAll, openWindow: vi.fn() },
+      clients: { matchAll, openWindow },
       registration: { showNotification: show, getNotifications },
     },
   });
@@ -80,6 +81,7 @@ function harness() {
   const update = () => dispatch("message", { source: client, data: state });
   return {
     client,
+    openWindow,
     show,
     getNotifications,
     matchAll,
@@ -568,6 +570,7 @@ describe("visible session notifications", () => {
 
 describe("scheduled results", () => {
   const result = {
+    title: "Security Audit",
     type: "scheduled",
     session_id: "",
     job_id: "audit",
@@ -585,8 +588,34 @@ describe("scheduled results", () => {
     );
     expect(options.tag).toBe(result.tag);
     expect(options.renotify).toBe(false);
+    expect(h.show.mock.calls[0]![0]).toBe("Security Audit");
+    await h.dispatch("notificationclick", { notification: h.notifications[0] });
+    expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(options.data.url);
     await h.push(result);
     expect(h.show.mock.calls[1]![1].tag).toBe(options.tag);
+  });
+  it("focuses an existing client and sends the exact canonical result URL", async () => {
+    const h = harness();
+    h.client.url = origin + "/chathermes?profile=beta#/settings?profile=beta";
+    await h.push(result);
+    await h.dispatch("notificationclick", { notification: h.notifications[0] });
+    expect(h.client.focus).toHaveBeenCalledOnce();
+    expect(h.client.postMessage).toHaveBeenCalledWith({
+      type: "chathermes.navigate",
+      url: h.notifications[0].data.url,
+    });
+    expect(h.openWindow).not.toHaveBeenCalled();
+  });
+  it.each([
+    "https://other.test/chathermes#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha",
+    origin + "/chathermes#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha&profile=beta",
+    origin + "/chathermes#/scheduled/%2E%2E/bad?profile=alpha",
+    "http://[invalid",
+  ])("ignores invalid scheduled click URLs %s", async (url) => {
+    const h = harness();
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(h.client.focus).not.toHaveBeenCalled();
+    expect(h.openWindow).not.toHaveBeenCalled();
   });
   it("suppresses only the exact visible scheduled result, without a chat connection", async () => {
     const h = harness();

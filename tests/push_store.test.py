@@ -316,6 +316,30 @@ def test_assistant_payload_size_title_and_safe_unicode(message):
     assert json.loads(sender.notification_payload('alpha', 'session', 'turn.complete'))['body'] == ''
 
 
+@pytest.mark.parametrize('message', ['Exact result', '', '😀' * 5000, '\n"\\' * 5000, '漢字' * 5000, '\ud800' * 5000])
+def test_scheduled_payload_includes_metadata_in_byte_budget_and_marks_truncation(message):
+    spec = importlib.util.spec_from_file_location('sender_scheduled_payload', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sender)
+    target = {'job_id': 'j' * 160, 'run_id': 'output:2026-01-01_00-00-00'}
+    raw = sender.notification_payload('p' * 64, '', 'scheduled', message, target, 'Audit 😀\ud800' * 100)
+    assert len(raw.encode('utf-8')) <= 3000
+    payload = json.loads(raw)
+    assert payload['job_id'] == target['job_id']
+    assert payload['run_id'] == target['run_id']
+    assert len(payload['title']) == 200
+    assert payload['title'].endswith('…')
+    normalized = message.encode('utf-8', errors='replace').decode('utf-8')
+    if payload['body'] != normalized:
+        suffix = '… [truncated — open Scheduled for full output]'
+        assert payload['body'].endswith(suffix)
+        prefix = payload['body'][:-len(suffix)]
+        assert normalized.startswith(prefix)
+        # One more code point cannot fit, even for JSON-escaped or multibyte text.
+        larger = {**payload, 'body': normalized[:len(prefix) + 1] + suffix}
+        assert len(json.dumps(larger, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > 3000
+
+
 def test_provider_diagnostics_cannot_echo_assistant_message(caplog):
     from types import SimpleNamespace
     import logging

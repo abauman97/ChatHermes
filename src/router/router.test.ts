@@ -13,6 +13,25 @@ beforeEach(() =>
 );
 afterEach(() => vi.restoreAllMocks());
 describe("plugin routing", () => {
+  it.each(["output:2025-01-01_00-00-00", "execution:" + "a".repeat(32)])(
+    "routes canonical scheduled notifications to the exact run %s and hash profile",
+    async (runId) => {
+      const router = createChatHermesRouter(createMemoryHistory());
+      const target = resolvePluginUrl(
+        location.origin +
+          "/chathermes?profile=stale#/scheduled/audit/" +
+          encodeURIComponent(runId) +
+          "?profile=beta",
+      );
+      expect(target).toBeDefined();
+      await router.push(target!);
+      expect(router.currentRoute.value).toMatchObject({
+        name: "scheduled-run",
+        params: { jobId: "audit", runId },
+        query: { profile: "beta" },
+      });
+    },
+  );
   it.each([
     ["/", "home"],
     ["/chat/s1", "chat"],
