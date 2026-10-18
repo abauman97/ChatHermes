@@ -29,8 +29,10 @@ def _enabled():
     # HTTP middleware is not run for WS upgrades. Check runtime enablement,
     # including after accept. Fail closed if the host integration changes.
     from hermes_cli.plugins_cmd import _get_enabled_set, _get_disabled_set
-    from hermes_cli.web_server_profiles import _config_profile_scope
-    with _config_profile_scope(None):
+    from hermes_cli.web_server_profiles import _config_profile_scope, _hermes_home_scope
+    from hermes_constants import get_process_hermes_home
+    # None preserves an outer request's home; enablement belongs to the host.
+    with _hermes_home_scope(get_process_hermes_home()), _config_profile_scope(None):
         return 'chathermes' in _get_enabled_set() and 'chathermes' not in _get_disabled_set()
 
 
