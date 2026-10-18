@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 dependencies = ["pywebpush==2.5.0", "py-vapid==1.9.4"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>8"]
 
 # Hermes serves the sibling dashboard directory; this wheel only installs deps.
 [tool.setuptools]
