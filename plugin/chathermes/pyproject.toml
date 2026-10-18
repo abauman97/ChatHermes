@@ -1,13 +1,14 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "chathermes-dashboard-dependencies"
+# Hermes copies buildable plugin projects into a per-profile dependency workspace.
+# Keep this metadata-only so the manager can safely uniquify each copy.
 version = "1.0.0"
 description = "Runtime dependencies for the Hermes ChatHermes dashboard plugin"
 requires-python = ">=3.11"
 dependencies = ["pywebpush==2.5.0", "py-vapid==1.9.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
 
 # Hermes serves the sibling dashboard directory; this wheel only installs deps.
 [tool.setuptools]

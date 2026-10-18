@@ -142,3 +142,26 @@ describe("mounted plugin session handshake", () => {
     expect(reply).not.toHaveBeenCalled();
   });
 });
+
+it("reports a scheduled result independently of the native chat connection", () => {
+  expect(
+    sessionMessage(
+      {
+        profile: "alpha",
+        session: "old_chat",
+        connected: false,
+        chat: false,
+        scheduled: { job: "audit", run: "output:2026-01-01_00-00-00" },
+      },
+      "https://chat.test/chathermes#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha",
+      "visible",
+    ),
+  ).toMatchObject({
+    session: "",
+    connected: false,
+    scheduled: true,
+    job: "audit",
+    run: "output:2026-01-01_00-00-00",
+    visible: true,
+  });
+});

@@ -19,6 +19,34 @@ Enable the Hermes API server with a strong `platforms.api_server.key`; the
 plugin uses native gateway RPC for chat, authenticated API history, and `httpx`
 in the dashboard runtime. The repo ships built plugin assets for drop-in installation.
 
+### Enable Cron delivery
+
+To make ChatHermes available in Hermes's Cron **Deliver to** menu, configure an
+explicit destination in the same profile's `config.yaml`. Keep any other
+entries already present under `plugins.enabled`:
+
+```yaml
+plugins:
+  enabled:
+    - chathermes
+platforms:
+  chathermes:
+    enabled: true
+    home_channel:
+      platform: chathermes
+      chat_id: scheduled
+      name: Scheduled results
+```
+
+Alternatively, set `CHATHERMES_HOME_CHANNEL=scheduled` in that profile's
+`.env`. The `scheduled` destination targets all enabled ChatHermes push devices
+in the profile; use a push subscription ID instead to target one device.
+Restart the Hermes dashboard after configuring the destination, then choose
+**ChatHermes** in Cron's **Deliver to** selector. This saves
+`deliver=chathermes`; installation alone does not configure a destination, and
+existing Cron jobs are not changed automatically. A push subscription must be
+enabled in ChatHermes for the notification to reach a device.
+
 ## Develop and test
 
 ```sh
@@ -27,6 +55,8 @@ npm test
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r tests/requirements.txt
+# Install ChatHermes plugin dependencies plus Python test tooling for its cron tests
+pip install -e 'plugin/chathermes[dev]'
 npm run test:api
 npm run build
 npm run live

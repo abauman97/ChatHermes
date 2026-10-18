@@ -565,3 +565,50 @@ describe("visible session notifications", () => {
     expect(h.notifications[0].body).toHaveLength(200);
   });
 });
+
+describe("scheduled results", () => {
+  const result = {
+    type: "scheduled",
+    session_id: "",
+    job_id: "audit",
+    run_id: "output:2026-01-01_00-00-00",
+    tag: "chathermes:alpha:audit:scheduled",
+  };
+  it("opens the existing scheduled result and replaces duplicate tags without renotify", async () => {
+    const h = harness();
+    h.setClients([]);
+    await h.push(result);
+    const options = h.show.mock.calls[0]![1];
+    expect(options.data.url).toBe(
+      origin +
+        "/chathermes?profile=alpha#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha",
+    );
+    expect(options.tag).toBe(result.tag);
+    expect(options.renotify).toBe(false);
+    await h.push(result);
+    expect(h.show.mock.calls[1]![1].tag).toBe(options.tag);
+  });
+  it("suppresses only the exact visible scheduled result, without a chat connection", async () => {
+    const h = harness();
+    h.patch({
+      url: origin + "/chathermes#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha",
+      session: "",
+      connected: false,
+      scheduled: true,
+      job: "audit",
+      run: result.run_id,
+    });
+    await h.push(result);
+    expect(h.show).not.toHaveBeenCalled();
+    await h.push({ ...result, run_id: "output:2026-01-02_00-00-00" });
+    expect(h.show).toHaveBeenCalledOnce();
+  });
+  it.each([{ job_id: "../audit" }, { run_id: "output:../secret" }, { profile: "beta" }])(
+    "does not confuse invalid or other-profile destinations %j",
+    async (change) => {
+      const h = harness();
+      await h.push({ ...result, ...change });
+      expect(h.show).toHaveBeenCalledTimes(change.profile ? 1 : 0);
+    },
+  );
+});

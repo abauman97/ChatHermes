@@ -882,6 +882,10 @@ const notificationSession = computed(() => ({
     !projectsPage.value &&
     !projectView.value &&
     !projectPage.value,
+  scheduled:
+    scheduledPage.value && route.params.jobId && route.params.runId
+      ? { job: String(route.params.jobId), run: String(route.params.runId) }
+      : undefined,
   connected: nativeMode.value && native.connection.value === "ready" && !offline.value,
 }));
 watch(notificationSession, () => pushClient?.publish(), { flush: "post" });

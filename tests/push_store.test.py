@@ -345,3 +345,32 @@ def test_payload_profile_title_preserves_identity_and_test_body(profile, title, 
     assert payload['session_id'] == session
     assert payload['tag'] == f'chathermes:{profile}:{session}:{kind}'
     assert payload['body'] == ('' if kind == 'turn.complete' else sender.BODIES[kind])
+
+
+def test_scheduled_push_scopes_destination_uses_stable_result_tag_and_reports_failure(tmp_path, monkeypatch):
+    import pywebpush
+    from types import SimpleNamespace
+    sender_spec = importlib.util.spec_from_file_location('sender_scheduled', Path(store.__file__).with_name('push_sender.py'))
+    sender = importlib.util.module_from_spec(sender_spec)
+    sender_spec.loader.exec_module(sender)
+    monkeypatch.setattr(sender, 'push_store', store)
+    monkeypatch.setattr(store, '_path', lambda: tmp_path / 'push.json')
+    one = store.upsert('alpha', {'endpoint': 'https://push.test/one', 'keys': {'p256dh': 'key', 'auth': 'auth'}})
+    two = store.upsert('alpha', {'endpoint': 'https://push.test/two', 'keys': {'p256dh': 'key', 'auth': 'auth'}})
+    other = store.upsert('beta', {'endpoint': 'https://push.test/other', 'keys': {'p256dh': 'key', 'auth': 'auth'}})
+    target = {'job_id': 'audit', 'run_id': 'output:2026-01-01_00-00-00'}
+    sent = []
+    monkeypatch.setattr(pywebpush, 'webpush', lambda subscription, payload, **kw: sent.append((subscription, json.loads(payload))) or SimpleNamespace(status_code=201))
+    assert sender._deliver('alpha', '', 'scheduled', 'run', target=target, destination=one['id']) is True
+    assert [row[0]['endpoint'] for row in sent] == ['https://push.test/one']
+    payload = sent[0][1]
+    assert {key: payload[key] for key in target} == target
+    assert payload['body'] == 'A scheduled result is ready.'
+    assert sender._deliver('alpha', '', 'scheduled', 'retry', target=target, destination=one['id']) is True
+    assert sent[-1][1]['tag'] == payload['tag']
+    assert sender._deliver('alpha', '', 'scheduled', 'run', target=target, destination=other['id']) is False
+    def fail(*args, **kwargs):
+        raise RuntimeError('do not leak subscription secrets')
+    monkeypatch.setattr(pywebpush, 'webpush', fail)
+    assert sender._deliver('alpha', '', 'scheduled', 'run', target=target, destination=two['id']) is False
+    assert sender._deliver('unsubscribed', '', 'scheduled', 'run', target=target) is True

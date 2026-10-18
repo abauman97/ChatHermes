@@ -3,6 +3,7 @@ export interface PluginSessionState {
   session: string;
   connected: boolean;
   chat: boolean;
+  scheduled?: { job: string; run: string };
 }
 
 export function sessionMessage(
@@ -16,6 +17,9 @@ export function sessionMessage(
     visible: visibility === "visible",
     profile: state.profile || "default",
     session: state.chat ? state.session : "",
+    ...(state.scheduled
+      ? { scheduled: true, job: state.scheduled.job, run: state.scheduled.run }
+      : {}),
     connected: state.chat && !!state.session && state.connected,
   };
 }

@@ -11,6 +11,12 @@ toolsets:
   - hermes-cli
   - browser
 platforms:
+  chathermes:
+    enabled: true
+    home_channel:
+      platform: chathermes
+      chat_id: scheduled
+      name: Scheduled results
   api_server:
     enabled: true
     host: 127.0.0.1
