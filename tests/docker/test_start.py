@@ -44,6 +44,9 @@ class RuntimeConfigTest(unittest.TestCase):
             self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
             self.assertEqual(config["providers"]["chathermes-test"]["base_url"], self.env["TEST_LLM_API_BASE_URL"])
             self.assertEqual(config["platforms"]["api_server"]["port"], 8643)
+            self.assertTrue(config["platforms"]["chathermes"]["enabled"])
+            self.assertEqual(config["platforms"]["chathermes"]["home_channel"]["chat_id"], "scheduled")
+            self.assertIn("chathermes", config["plugins"]["enabled"])
             self.assertFalse(config["gateway"]["multiplex_profiles"])
             self.assertTrue((home / "plugins/chathermes/dashboard/test.js").exists())
             for filename in ("config.yaml", ".env"):

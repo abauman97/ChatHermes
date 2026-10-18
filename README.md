@@ -135,6 +135,28 @@ returns a compatibility message when these helpers are unavailable. Deleted
 jobs or pruned output cannot be recovered. Scheduling and job mutation remain
 in Hermes's native dashboard.
 
+To list ChatHermes in Hermes's Cron delivery dropdown, enable the `chathermes`
+plugin and configure an explicit destination in the profile's `config.yaml`:
+
+```yaml
+plugins:
+  enabled: [chathermes] # Keep any other enabled plugins.
+platforms:
+  chathermes:
+    enabled: true
+    home_channel:
+      platform: chathermes
+      chat_id: scheduled
+      name: Scheduled results
+```
+
+Alternatively, set `CHATHERMES_HOME_CHANNEL=scheduled` in the profile's `.env`.
+`scheduled` targets enabled push devices in that profile; a push subscription ID
+targets one device. Select `ChatHermes` in the native Cron form to save
+`deliver=chathermes`. No inbound adapter or channel is required. Installation
+alone does not configure a destination or redirect existing cron jobs. The
+disposable Docker fixture explicitly opts in to `scheduled`.
+
 ## Navigation links
 
 ChatHermes uses canonical hash routes, for example

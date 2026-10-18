@@ -48,6 +48,10 @@ def test_native_discovery_and_home_target(runtime, monkeypatch):
     entry = platform_registry.get('chathermes')
     assert entry and callable(entry.standalone_sender_fn)
     assert entry.cron_deliver_env_var == 'CHATHERMES_HOME_CHANNEL'
+    from hermes_cli.web_routers.cron import get_cron_delivery_targets
+    target = next(t for t in asyncio.run(get_cron_delivery_targets())['targets'] if t['id'] == 'chathermes')
+    assert target['name'] == 'ChatHermes'
+    assert target['home_target_set'] is True
     assert _is_known_delivery_platform('chathermes')
     assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes'})[0]['chat_id'] == 'scheduled'
     assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes:device_1'})[0]['chat_id'] == 'device_1'
@@ -161,6 +165,51 @@ def test_install_does_not_enable_or_redirect_existing_tui_cron(runtime, monkeypa
     config = load_gateway_config()
     assert Platform('chathermes') not in config.get_connected_platforms()
     assert config.get_home_channel(Platform('chathermes')) is None
+    from cron.scheduler_delivery import cron_delivery_targets, _resolve_delivery_targets
+    assert 'chathermes' not in {t['id'] for t in cron_delivery_targets()}
+    assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes'}) == []
+    assert _resolve_delivery_targets({'id': 'audit', 'deliver': 'origin'}) == []
+
+
+@pytest.mark.parametrize('enabled, destination, visible', [
+    (None, 'scheduled', False),
+    (True, 'scheduled', True),
+    (True, 'device_1', True),
+    (False, 'scheduled', False),
+    (True, None, False),
+])
+def test_discovered_yaml_home_is_a_native_cron_ui_target(runtime, monkeypatch, enabled, destination, visible):
+    home, _, delivery = runtime
+    monkeypatch.delenv('CHATHERMES_HOME_CHANNEL', raising=False)
+    from hermes_cli.plugins import PluginManager
+    from gateway.platform_registry import platform_registry
+    from cron.scheduler_delivery import _resolve_delivery_targets
+    from hermes_cli.web_routers.cron import get_cron_delivery_targets
+    from gateway.config import load_gateway_config, Platform
+    shutil.copytree(Path(delivery.__file__).parent, home / 'plugins' / 'chathermes',
+                    ignore=shutil.ignore_patterns('dist', '__pycache__'))
+    block = 'plugins:\n  enabled: [chathermes]\nplatforms:\n  chathermes:\n'
+    if enabled is not None:
+        block += f'    enabled: {str(enabled).lower()}\n'
+    if destination:
+        block += ('    home_channel:\n      platform: chathermes\n'
+                  f'      chat_id: {destination}\n      name: Scheduled results\n')
+    (home / 'config.yaml').write_text(block)
+    PluginManager().discover_and_load()
+    entry = platform_registry.get('chathermes')
+    assert entry and entry.adapter_factory(None) is None
+    targets = asyncio.run(get_cron_delivery_targets())['targets']
+    target = next((t for t in targets if t['id'] == 'chathermes'), None)
+    assert bool(target) is visible
+    assert targets[0]['id'] == 'local'
+    if visible:
+        config = load_gateway_config().platforms[Platform('chathermes')]
+        assert entry.is_connected(config)
+        assert target['name'] == 'ChatHermes'
+        assert target['home_target_set'] is True
+        assert target['home_env_var'] == 'CHATHERMES_HOME_CHANNEL'
+        resolved = _resolve_delivery_targets({'id': 'audit', 'deliver': 'chathermes'})
+        assert [(t['platform'], t['chat_id']) for t in resolved] == [('chathermes', destination)]
 
 
 def test_named_profile_reads_shared_push_store_and_routes_own_history(runtime, monkeypatch):
@@ -189,3 +238,21 @@ def test_named_profile_reads_shared_push_store_and_routes_own_history(runtime, m
                 exit_cron_execution(token)
     finally:
         reset_hermes_home_override(override)
+
+
+def test_cron_display_name_changes_only_matching_target_and_wraps_once(runtime, monkeypatch):
+    _, plugin, _ = runtime
+    from cron import scheduler_delivery
+    targets = [
+        {'id': 'chathermes', 'name': 'Chathermes', 'home_target_set': True,
+         'home_env_var': 'CHATHERMES_HOME_CHANNEL'},
+        {'id': 'telegram', 'name': 'Telegram', 'home_target_set': False, 'home_env_var': None},
+        {'id': 'bot_chat:chathermes', 'name': 'Bot Chat (chathermes)'},
+    ]
+    monkeypatch.setattr(scheduler_delivery, 'cron_delivery_targets', lambda: targets)
+    plugin._register_cron_display_name()
+    wrapped = scheduler_delivery.cron_delivery_targets
+    plugin._register_cron_display_name()
+    assert scheduler_delivery.cron_delivery_targets is wrapped
+    assert wrapped() == [dict(targets[0], name='ChatHermes'), *targets[1:]]
+    assert targets[0]['name'] == 'Chathermes'

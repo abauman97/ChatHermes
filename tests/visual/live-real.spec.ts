@@ -1,6 +1,63 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test("native Cron form discovers ChatHermes and saves its delivery platform", async ({
+  page,
+}, info) => {
+  await signIn(page, "/cron");
+  const dismiss = page.getByRole("button", { name: "Dismiss", exact: true });
+  if (await dismiss.isVisible()) await dismiss.click();
+  const targets = await page.request.get("/api/cron/delivery-targets?profile=default");
+  expect(targets.ok()).toBeTruthy();
+  expect((await targets.json()).targets).toContainEqual({
+    id: "chathermes",
+    name: "ChatHermes",
+    home_target_set: true,
+    home_env_var: "CHATHERMES_HOME_CHANNEL",
+  });
+  await page.getByRole("button", { name: "Create", exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator("#cron-deliver")).toContainText("Local");
+  await dialog.locator("#cron-name").fill(`issue133-${info.project.name}`);
+  await dialog.locator("#cron-prompt").fill("Synthetic Cron delivery registration check");
+  await dialog.locator("#cron-deliver").click();
+  const option = page.getByRole("option", { name: "ChatHermes", exact: true });
+  await expect(option).toBeVisible();
+  await option.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("cron-chathermes-dropdown.png") });
+  await option.click();
+  await expect(dialog.locator("#cron-deliver")).toContainText("ChatHermes");
+  await page.screenshot({ path: info.outputPath("cron-chathermes-selected.png") });
+  const saved = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/cron/jobs" &&
+      response.request().method() === "POST",
+  );
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  const response = await saved;
+  expect(response.ok()).toBeTruthy();
+  expect(response.request().postDataJSON().deliver).toBe("chathermes");
+  const job = await response.json();
+  try {
+    expect(job.deliver).toBe("chathermes");
+    await expect(dialog).toBeHidden();
+    const jobs = await page.request.get("/api/cron/jobs?profile=default");
+    expect(jobs.ok()).toBeTruthy();
+    expect(await jobs.json()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: job.id, deliver: "chathermes" })]),
+    );
+    await page.getByText(`issue133-${info.project.name}`, { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath("cron-chathermes-saved.png") });
+  } finally {
+    if (job.id) {
+      const removed = await page.request.delete(
+        `/api/cron/jobs/${encodeURIComponent(job.id)}?profile=default`,
+      );
+      expect(removed.ok()).toBeTruthy();
+    }
+  }
+});
+
 test("landscape touch composer fits and scrolls in a reduced viewport", async ({ page }, info) => {
   test.skip(info.project.name !== "mobile", "Phone landscape uses the touch composer layout");
   await page.setViewportSize({ width: 844, height: 240 });
