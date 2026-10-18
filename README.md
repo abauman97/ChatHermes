@@ -42,7 +42,8 @@ platforms:
       name: Scheduled results
 ```
 
-The `platforms.chathermes` entry enables ChatHermes and configures its Cron
+The `plugins.enabled` entry enables ChatHermes and the
+`platforms.chathermes` entry enables the platform and configures its Cron
 destination in that profile. Alternatively, set
 `CHATHERMES_HOME_CHANNEL=scheduled` in that profile's `.env`; the `plugins`
 enablement is still required. The `scheduled` destination targets all enabled
