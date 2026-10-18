@@ -21,9 +21,13 @@ in the dashboard runtime. The repo ships built plugin assets for drop-in install
 
 ### Enable Cron delivery
 
-To make ChatHermes available in Hermes's Cron **Deliver to** menu, configure an
-explicit destination in the same profile's `config.yaml`. Keep any other
-entries already present under `plugins.enabled`:
+To make ChatHermes available in Hermes's Cron **Deliver to** menu, the plugin
+must be enabled in the profile that owns the Cron job. Plugin files installed
+in the default profile can be globally available, but plugin enablement,
+platform configuration, and Cron jobs are profile-scoped. Repeat these steps
+for each profile that should send ChatHermes notifications. In that profile's
+`config.yaml`, keep any existing entries under `plugins.enabled` and add
+`chathermes`:
 
 ```yaml
 plugins:
@@ -38,14 +42,17 @@ platforms:
       name: Scheduled results
 ```
 
-Alternatively, set `CHATHERMES_HOME_CHANNEL=scheduled` in that profile's
-`.env`. The `scheduled` destination targets all enabled ChatHermes push devices
-in the profile; use a push subscription ID instead to target one device.
-Restart the Hermes dashboard after configuring the destination, then choose
-**ChatHermes** in Cron's **Deliver to** selector. This saves
-`deliver=chathermes`; installation alone does not configure a destination, and
-existing Cron jobs are not changed automatically. A push subscription must be
-enabled in ChatHermes for the notification to reach a device.
+The `platforms.chathermes` entry enables ChatHermes and configures its Cron
+destination in that profile. Alternatively, set
+`CHATHERMES_HOME_CHANNEL=scheduled` in that profile's `.env`; the `plugins`
+enablement is still required. The `scheduled` destination targets all enabled
+ChatHermes push devices in the profile; use a push subscription ID instead to
+target one device. Restart the Hermes dashboard after enabling the plugin and
+configuring the destination, then choose **ChatHermes** in Cron's **Deliver
+to** selector. This saves `deliver=chathermes`; installation alone does not
+configure the destination, and existing Cron jobs are not changed
+automatically. A push subscription must be enabled in ChatHermes for the
+notification to reach a device.
 
 ## Develop and test
 
