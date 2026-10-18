@@ -4363,6 +4363,11 @@ function Zs(e, t, n = document.visibilityState) {
 		visible: n === "visible",
 		profile: e.profile || "default",
 		session: e.chat ? e.session : "",
+		...e.scheduled ? {
+			scheduled: !0,
+			job: e.scheduled.job,
+			run: e.scheduled.run
+		} : {},
 		connected: e.chat && !!e.session && e.connected
 	};
 }
@@ -11101,6 +11106,10 @@ var X_ = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			profile: N.value,
 			session: P.value,
 			chat: !d.value && !o.value && !i.value && !s.value && !c.value && !l.value,
+			scheduled: o.value && n.params.jobId && n.params.runId ? {
+				job: String(n.params.jobId),
+				run: String(n.params.runId)
+			} : void 0,
 			connected: Ze.value && Ye.connection.value === "ready" && !xe.value
 		}));
 		Fn(Ht, () => Vt?.publish(), { flush: "post" });
