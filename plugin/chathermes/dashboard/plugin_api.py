@@ -144,8 +144,10 @@ async def push_unsubscribe(request: Request, identity: str):
 def _gateway_settings():
     from hermes_cli.config import load_config
 
-    from hermes_cli.web_server_profiles import _config_profile_scope
-    with _config_profile_scope(None):
+    from hermes_cli.web_server_profiles import _config_profile_scope, _hermes_home_scope
+    from hermes_constants import get_process_hermes_home
+    # The gateway listener belongs to the dashboard host, even in a profile request.
+    with _hermes_home_scope(get_process_hermes_home()), _config_profile_scope(None):
         config = load_config() or {}
     server = (config.get("platforms") or {}).get("api_server") or {}
     host = server.get("host") or os.environ.get("API_SERVER_HOST") or "127.0.0.1"
