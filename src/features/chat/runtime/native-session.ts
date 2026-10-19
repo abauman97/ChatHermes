@@ -55,6 +55,7 @@ export function useNativeSession(onSettled: () => void) {
     hasCorrections: boolean;
   }[] = [];
   let pendingAttempt = "";
+  const admitting = new Set<string>();
   let p = "",
     s = "",
     pendingInput = false,
@@ -434,6 +435,7 @@ export function useNativeSession(onSettled: () => void) {
     user!.content = preview ?? content;
     pendingInput = true;
     pendingAttempt = attempt;
+    admitting.add(attempt);
     const optimisticId = user!.id;
     let dispatched = false;
     try {
@@ -464,6 +466,8 @@ export function useNativeSession(onSettled: () => void) {
         error.value =
           "Submission outcome unknown. Inspect history and native state before sending again.";
       throw cause;
+    } finally {
+      admitting.delete(attempt);
     }
   }
   const profileFor = (target: NativeViewer) => target.profile;
@@ -471,13 +475,39 @@ export function useNativeSession(onSettled: () => void) {
     if (!selected) return;
     if (connection.value !== "ready") await reconnect();
     if (connection.value !== "ready") return;
-    if (busy.value) {
-      error.value = "Hermes is still working; sending remains locked.";
-      return;
-    }
-    if (await hydrate()) {
-      settleNativeOutcome(p, s);
-      uncertain.value = false;
+    if (admitting.has(pendingAttempt)) return;
+    const current = generation,
+      target = viewer!,
+      boundary = target.boundary;
+    try {
+      // Retained chat.input is a display boundary recorded before dispatch,
+      // not proof of native activity. Recheck Hermes even if replay set busy.
+      // Keep the projection: replacing it could lose an unpersisted prompt.
+      const state = await target.rpc<{
+        running: boolean;
+        queued: boolean;
+        delegating: boolean;
+      }>("chat.state");
+      if (current !== generation || target.boundary !== boundary || admitting.has(pendingAttempt))
+        return;
+      if (state.running !== false || state.queued || state.delegating) {
+        error.value = "Hermes is still working; sending remains locked.";
+        return;
+      }
+      busy.value = false;
+      if (
+        (await hydrate()) &&
+        current === generation &&
+        target.boundary === boundary &&
+        !busy.value
+      ) {
+        settleNativeOutcome(p, s);
+        uncertain.value = nativeOutcome(p, s);
+        if (!uncertain.value) error.value = "";
+      }
+    } catch {
+      if (current === generation)
+        error.value = "Could not verify native session state; sending remains locked.";
     }
   }
   function close() {

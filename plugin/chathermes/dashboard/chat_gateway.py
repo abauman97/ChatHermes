@@ -15,7 +15,7 @@ def capabilities():
         'reviewed_source': SOURCE_PIN,
         'admission': True,
         'mode': 'native-retained',
-        'operations': ['chat.capabilities', 'gateway.ping', 'chat.attach', 'chat.submit', 'chat.replay', 'chat.stop', 'chat.steer', 'chat.answer', 'chat.reconciled'],
+        'operations': ['chat.capabilities', 'gateway.ping', 'chat.attach', 'chat.state', 'chat.submit', 'chat.replay', 'chat.stop', 'chat.steer', 'chat.answer', 'chat.reconciled'],
         'limits': {'frame_bytes': MAX_FRAME_BYTES, 'socket_seconds': SOCKET_LIFETIME},
         'blockers': ['durable_idempotent_admission'],
         'features': {'busy_send': 'explicit', 'server_requests': ['approval', 'clarify'],

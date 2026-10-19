@@ -6,7 +6,11 @@ import { nativeOutcome } from "./native-admission";
 import type { NativeHooks } from "./native-chat";
 import { NativeError } from "./native-chat";
 
-const fake = vi.hoisted(() => ({ hooks: undefined as NativeHooks | undefined, rpc: vi.fn() }));
+const fake = vi.hoisted(() => ({
+  hooks: undefined as NativeHooks | undefined,
+  rpc: vi.fn(),
+  boundary: 10,
+}));
 vi.mock("./native-chat", async (importOriginal) => {
   const original = await importOriginal<typeof import("./native-chat")>();
   return {
@@ -14,7 +18,9 @@ vi.mock("./native-chat", async (importOriginal) => {
     NativeViewer: class {
       profile = "alpha";
       stored = "one";
-      boundary = 10;
+      get boundary() {
+        return fake.boundary;
+      }
       constructor(_profile: string, _stored: string, hooks: NativeHooks) {
         fake.hooks = hooks;
       }
@@ -37,8 +43,149 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   fake.rpc.mockReset();
+  fake.boundary = 10;
 });
 describe("native session state", () => {
+  it.each([false, true])(
+    "explicitly resolves an idle native session with an unterminated retained input (reload: %s)",
+    async (reload) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      fake.rpc.mockImplementation(async (method) => {
+        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
+        if (method === "chat.state") return { running: false, queued: false };
+        return { settled: false };
+      });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      const preview = [
+        { type: "text", text: "Keep this question" },
+        { type: "text", text: "📎 note.txt" },
+      ];
+      await expect(
+        session.submit("Keep this question", "Keep this question", {}, preview),
+      ).rejects.toThrow("Lost acknowledgement");
+      if (reload) {
+        session.close();
+        await session.attach("alpha", "one");
+        // Owner.begin retains this before prompt.submit. No native terminal
+        // event is guaranteed when that dispatch fails or times out.
+        fake.hooks!.input("Keep this question", false);
+      }
+      await session.hydrate();
+      expect(session.busy.value).toBe(true);
+      expect(session.uncertain.value).toBe(true);
+      await session.resolveUncertainty();
+      expect(session.uncertain.value).toBe(false);
+      expect(session.busy.value).toBe(false);
+      expect(nativeOutcome("alpha", "one")).toBe(false);
+      expect(session.error.value).toBe("");
+      expect(session.messages.value.map((row) => row.content)).toEqual([
+        reload ? "Keep this question" : preview,
+      ]);
+      expect(fake.rpc.mock.calls.filter(([method]) => method === "chat.submit")).toHaveLength(1);
+      session.close();
+    },
+  );
+  it.each(["running", "queued", "delegating", "missing", "unavailable", "history failure"])(
+    "keeps uncertainty when the native check reports %s",
+    async (state) => {
+      const history = vi.spyOn(api, "messages").mockResolvedValue([]);
+      fake.rpc.mockImplementation(async (method) => {
+        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
+        if (method === "chat.state") {
+          if (state === "unavailable") throw new Error("unavailable");
+          return {
+            running: state === "missing" ? undefined : state === "running",
+            queued: state === "queued",
+            delegating: state === "delegating",
+          };
+        }
+        return { settled: false };
+      });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await expect(session.submit("Question", "Question", {})).rejects.toThrow();
+      if (state === "history failure") history.mockRejectedValue(new Error("unavailable"));
+      await session.resolveUncertainty();
+      expect(session.uncertain.value).toBe(true);
+      expect(nativeOutcome("alpha", "one")).toBe(true);
+      expect(session.messages.value.map((row) => row.content)).toEqual(["Question"]);
+      expect(fake.rpc.mock.calls.filter(([method]) => method === "chat.submit")).toHaveLength(1);
+      session.close();
+    },
+  );
+  it("does not resolve an admission that is still awaiting acknowledgement", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    let acknowledge!: () => void;
+    fake.rpc.mockImplementation((method) =>
+      method === "chat.submit"
+        ? new Promise<void>((resolve) => {
+            acknowledge = resolve;
+          })
+        : Promise.resolve({ settled: false }),
+    );
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    const sending = session.submit("Question", "Question", {});
+    await session.resolveUncertainty();
+    expect(session.uncertain.value).toBe(true);
+    expect(fake.rpc.mock.calls.some(([method]) => method === "chat.state")).toBe(false);
+    acknowledge();
+    await sending;
+    session.close();
+  });
+  it.each(["state", "history"])(
+    "does not settle a new selection while the old %s check is pending",
+    async (phase) => {
+      const history = vi.spyOn(api, "messages").mockResolvedValue([]);
+      fake.rpc.mockImplementation(async (method) => {
+        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
+        return { settled: false, running: false };
+      });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await expect(session.submit("Question", "Question", {})).rejects.toThrow();
+      let finish!: () => void;
+      if (phase === "state")
+        fake.rpc.mockImplementationOnce(
+          () => new Promise((resolve) => (finish = () => resolve({ running: false }))),
+        );
+      else
+        history.mockImplementationOnce(
+          () => new Promise((resolve) => (finish = () => resolve([]))),
+        );
+      const resolution = session.resolveUncertainty();
+      // Allow the native check to reach hydration before changing selection.
+      await Promise.resolve();
+      session.close();
+      await session.attach("alpha", "one");
+      finish();
+      await resolution;
+      expect(session.uncertain.value).toBe(true);
+      expect(nativeOutcome("alpha", "one")).toBe(true);
+      session.close();
+    },
+  );
+  it("does not overwrite activity arriving during the native state check", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    fake.rpc.mockImplementation(async (method) => {
+      if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
+      if (method === "chat.state") {
+        fake.boundary++;
+        fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
+        return { running: false };
+      }
+      return { settled: false };
+    });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    await expect(session.submit("Question", "Question", {})).rejects.toThrow();
+    await session.resolveUncertainty();
+    expect(session.busy.value).toBe(true);
+    expect(session.uncertain.value).toBe(true);
+    expect(nativeOutcome("alpha", "one")).toBe(true);
+    session.close();
+  });
   it("steering preserves earlier activity and routes its late tool completion once", async () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     fake.rpc.mockResolvedValue({ settled: false });

@@ -67,6 +67,12 @@ class Channel:
         if not self.runtime:
             raise HTTPException(409, 'Attach a session first')
         scoped = {'profile': self.profile, 'session_id': self.runtime}
+        if method == 'chat.state':
+            if params:
+                raise HTTPException(422, 'Invalid state params')
+            live = await self.transport.call('session.activate', {**scoped, 'omit_messages': True})
+            return {'running': live.get('running'), 'queued': bool(live.get('queued')),
+                    'delegating': bool(self.owner and self.owner.children)}
         if method == 'chat.history':
             if params:
                 raise HTTPException(422, 'Invalid history params')

@@ -944,20 +944,58 @@ async def test_native_facade_requires_explicit_busy_queue(monkeypatch):
 
 
 @run_async
+@pytest.mark.parametrize('state', ['idle', 'running', 'queued', 'delegating', 'unavailable'])
+async def test_native_state_reads_only_attached_profile_activity(monkeypatch, state):
+    import sys, types
+    monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    calls = []
+    class Transport:
+        async def call(self, method, params):
+            calls.append((method, params))
+            if state == 'unavailable':
+                raise RuntimeError('private runtime detail')
+            return {'running': state == 'running',
+                    'queued': {'text': 'private queued content'} if state == 'queued' else None,
+                    'messages': ['private history'], 'info': {'api_key': KEY}}
+    channel = plugin._native_channel.Channel(plugin, Transport(), 'alpha')
+    frame = {'jsonrpc': '2.0', 'id': 'state', 'method': 'chat.state', 'params': {}}
+    assert (await channel.handle(frame))['error']['code'] == 409
+    channel.runtime = 'attached-runtime'
+    channel.owner = types.SimpleNamespace(lock=asyncio.Lock(), children={'child'} if state == 'delegating' else set())
+    invalid = await channel.handle({**frame, 'params': {'profile': 'foreign', 'session_id': 'foreign'}})
+    assert invalid['error']['code'] == 422
+    assert calls == []
+    result = await channel.handle(frame)
+    assert calls == [('session.activate', {'profile': 'alpha', 'session_id': 'attached-runtime', 'omit_messages': True})]
+    if state == 'unavailable':
+        assert result['error']['code'] == 503
+        assert 'private runtime detail' not in str(result)
+    else:
+        assert result['result'] == {'running': state == 'running', 'queued': state == 'queued',
+                                    'delegating': state == 'delegating'}
+    assert KEY not in str(result) and 'private queued content' not in str(result) and 'private history' not in str(result)
+
+
+@run_async
 @pytest.mark.parametrize('error_code', [409, 503])
 async def test_native_submit_timeout_is_unknown_not_rejected(monkeypatch, error_code):
     import sys
     import types
     monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server_requests=types.SimpleNamespace()))
+    calls = []
     class Transport:
         async def call(self, method, params):
+            calls.append(method)
             if method == 'session.activate':
                 return {'running': False}
             raise plugin.HTTPException(error_code, 'Hermes gateway RPC unavailable')
     channel = plugin._native_channel.Channel(plugin, Transport(), 'default')
     channel.runtime = 'runtime'
+    channel.owner = types.SimpleNamespace(lock=asyncio.Lock(),
+        begin=lambda snapshot, text, **kwargs: calls.append('retained.input'))
     result = await channel.handle({'jsonrpc': '2.0', 'id': 'send', 'method': 'chat.submit', 'params': {'input': 'hello'}})
     assert result['error']['outcome'] == 'unknown'
+    assert calls == ['session.activate', 'retained.input', 'prompt.submit']
 
 
 @run_async
