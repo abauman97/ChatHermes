@@ -80,6 +80,7 @@ def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
         assert calls[0][1]['title'] == 'Audit'
         assert 'native saved result' in calls[0][1]['message']
         assert calls[0][1]['message'] != 'result'
+        assert not (home / 'state.db').exists()
         again = asyncio.run(delivery.standalone_send(None, '_device_1', 'result'))
         assert again['success'] is True
         assert calls[-1][1]['destination'] == '_device_1'
@@ -90,7 +91,8 @@ def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
         exit_cron_execution(token)
 
 
-def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch):
+@pytest.mark.parametrize('has_session', [False, True])
+def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch, has_session):
     home, _, delivery = runtime
     from cron import delivery_queue
     from cron.executions import finish_execution
@@ -99,7 +101,9 @@ def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch):
     job = {'id': 'audit', 'name': 'Audit', 'deliver': 'chathermes'}
     execution, token = _execution(home, job)
     exit_cron_execution(token)
-    save_job_output('audit', 'native result')
+    output = save_job_output('audit', 'native result')
+    if has_session:
+        _cron_session(home, 'cron_audit_20261019_102136', 'Agent result')
     finish_execution(execution['id'], success=True)
     delivery_queue.enqueue(execution['id'], job, 'result')
     sends = []
@@ -112,6 +116,8 @@ def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch):
     delivery_queue.enqueue(execution['id'], job, 'result')
     assert delivery_queue.drain(send) == 0
     assert len(sends) == 1
+    expected = 'cron_audit_20261019_102136' if has_session else 'output:' + output.stem
+    assert sends[0]['target'] == {'job_id': 'audit', 'run_id': expected}
     assert delivery_queue.get_status(execution['id'])['status'] == 'delivered'
     assert delivery._queued_execution(home, 'result') is None
 
@@ -323,3 +329,174 @@ def test_delivery_rejects_job_owned_only_by_another_profile(runtime, monkeypatch
         assert not sends
     finally:
         exit_cron_execution(token)
+
+
+def _cron_session(home, session_id, content, started_at=None):
+    from hermes_state import SessionDB
+    db = SessionDB(db_path=home / 'state.db')
+    try:
+        db.create_session(session_id, source='cron')
+        db.append_message(session_id, 'assistant', content)
+        if started_at is not None:
+            db._write_sql('UPDATE sessions SET started_at = ? WHERE id = ?', (started_at, session_id))
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize('profile', ['default', 'beta'])
+@pytest.mark.parametrize('has_session', [True, False])
+def test_notification_deep_link_opens_profile_transcript_or_script_output(runtime, monkeypatch, profile, has_session):
+    root, _, delivery = runtime
+    from cron.jobs import use_cron_store, save_job_output, save_jobs
+    from cron.execution_identity import exit_cron_execution
+    from hermes_cli.web_server_cron import _cron_store_scope
+    from chathermes.dashboard import plugin_api
+
+    (root / 'config.yaml').touch()
+    named = root / 'profiles' / 'beta'
+    named.mkdir(parents=True)
+    (named / 'config.yaml').touch()
+    home = root if profile == 'default' else named
+    other = named if profile == 'default' else root
+    session_id = 'cron_audit_20261019_102136'
+    job = {'id': 'audit', 'name': 'Own job', 'no_agent': not has_session}
+    with _cron_store_scope(other):
+        save_jobs([dict(job, name='Other private job')])
+        _cron_session(other, session_id, 'Other private transcript')
+        save_job_output('audit', 'Other private output')
+    with _cron_store_scope(home), use_cron_store(home):
+        execution, token = _execution(home, job)
+        try:
+            output = save_job_output('audit', 'Own saved output')
+            if has_session:
+                _cron_session(home, session_id, 'Own final answer scoped-gateway-secret')
+            else:
+                _cron_session(home, 'cron_other_20261019_102136', 'Unrelated job')
+            original = output.read_bytes()
+            sends = []
+            monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append((a, kw)) or True)
+            result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'Untrusted wrapper'))
+            assert result.get('success'), result
+            args, notification = sends[0]
+            run_id = session_id if has_session else 'output:' + output.stem
+            assert args[0] == profile
+            assert notification['target'] == {'job_id': 'audit', 'run_id': run_id}
+            assert notification['title'] == 'Own job'
+            expected = 'Own final answer [redacted]' if has_session else 'Own saved output'
+            assert notification['message'] == expected
+            history = plugin_api._scheduled_runs_sync(profile, home, 'audit', 0, 30)
+            assert run_id in [run['id'] for run in history['runs']]
+            opened = plugin_api._scheduled_output_sync(profile, home, 'audit', run_id)
+            if has_session:
+                assert opened['messages'][-1]['content'] == 'Own final answer scoped-gateway-secret'
+            else:
+                assert opened['output'] == 'Own saved output'
+            assert output.read_bytes() == original
+        finally:
+            exit_cron_execution(token)
+
+
+@pytest.mark.parametrize('matches', [0, 1, 2])
+def test_deep_link_matches_execution_window_and_exact_job(runtime, monkeypatch, matches):
+    home, _, delivery = runtime
+    from datetime import datetime
+    from cron import executions
+    from cron.execution_identity import exit_cron_execution
+    from chathermes.dashboard import plugin_api
+    execution, token = _execution(home, {'id': 'audit'})
+    exit_cron_execution(token)
+    start = datetime.fromisoformat(execution['claimed_at']).timestamp()
+    # Include a fractional claim to exercise whole-second output filenames.
+    start = int(start) + 0.5
+    monkeypatch.setattr(executions, 'get_execution', lambda identifier: dict(
+        execution, claimed_at=datetime.fromtimestamp(start).isoformat(),
+        finished_at=datetime.fromtimestamp(start + 10).isoformat()))
+    _cron_session(home, 'cron_audit_20261019_102100', 'Old', start - 100)
+    _cron_session(home, 'cron_audit_20261019_102200', 'Next run', start + 11)
+    _cron_session(home, 'cron_audit_other_20261019_102136', 'Different job', start + 1)
+    for i in range(matches):
+        _cron_session(home, f'cron_audit_20261019_10213{i}', 'Matching', start + 1 + i)
+    # A doc from the claim's second is valid; a later fire's doc is excluded.
+    monkeypatch.setattr(plugin_api, '_scheduled_docs', lambda *a: [
+        {'id': 'output:2026-10-19_10-21-36', 'started_at': int(start)},
+        {'id': 'output:2026-10-19_10-22-00', 'started_at': start + 11}])
+    if matches > 1:
+        with pytest.raises(ValueError, match='Ambiguous cron session'):
+            delivery._result(home, 'audit', execution['id'])
+    else:
+        expected = 'cron_audit_20261019_102130' if matches else 'output:2026-10-19_10-21-36'
+        assert delivery._result(home, 'audit', execution['id'])['run_id'] == expected
+
+
+def test_matching_transcript_precedes_ambiguous_output(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from cron.execution_identity import exit_cron_execution
+    from chathermes.dashboard import plugin_api
+    execution, token = _execution(home, {'id': 'audit'})
+    exit_cron_execution(token)
+    session_id = 'cron_audit_20261019_102136'
+    _cron_session(home, session_id, 'Final answer')
+    def unexpected_docs(*args):
+        pytest.fail('Saved output should only be read when no transcript matches')
+    monkeypatch.setattr(plugin_api, '_scheduled_docs', unexpected_docs)
+    assert delivery._result(home, 'audit', execution['id'])['run_id'] == session_id
+
+
+def test_deep_link_pages_session_history_and_closes_reader(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from datetime import datetime
+    from cron.execution_identity import exit_cron_execution
+    import hermes_cli.web_server_sessions as sessions
+    execution, token = _execution(home, {'id': 'audit'})
+    exit_cron_execution(token)
+    start = datetime.fromisoformat(execution['claimed_at']).timestamp()
+    session_id = 'cron_audit_20261019_102136'
+    (home / 'state.db').touch()
+    offsets = []
+    closed = []
+    class SessionDB:
+        def list_cron_job_runs(self, job_id, limit, offset):
+            assert job_id == 'audit' and limit == 500
+            offsets.append(offset)
+            return ([{'id': 'cron_audit_20261018_102136', 'started_at': start - 100}] * 500
+                    if offset == 0 else [{'id': session_id, 'started_at': start + 1}])
+        def close(self):
+            closed.append(True)
+    monkeypatch.setattr(sessions, '_open_session_db_for_profile', lambda *a, **kw: SessionDB())
+    assert delivery._result(home, 'audit', execution['id'])['run_id'] == session_id
+    assert offsets == [0, 500]
+    assert closed == [True]
+
+
+def test_deep_link_rejects_mismatched_profile_home(runtime):
+    home, _, delivery = runtime
+    from cron.execution_identity import exit_cron_execution
+    execution, token = _execution(home, {'id': 'audit'})
+    exit_cron_execution(token)
+    (home / 'config.yaml').touch()
+    named = home / 'profiles' / 'beta'
+    named.mkdir(parents=True)
+    (named / 'config.yaml').touch()
+    with pytest.raises(ValueError, match='profile does not match'):
+        delivery._result(home, 'audit', execution['id'], profile='beta')
+
+
+@pytest.mark.parametrize('count', [0, 2])
+def test_deep_link_missing_or_ambiguous_saved_output(runtime, monkeypatch, count):
+    home, _, delivery = runtime
+    from datetime import datetime
+    from cron.execution_identity import exit_cron_execution
+    from chathermes.dashboard import plugin_api
+    execution, token = _execution(home, {'id': 'audit', 'no_agent': True})
+    exit_cron_execution(token)
+    start = datetime.fromisoformat(execution['claimed_at']).timestamp()
+    monkeypatch.setattr(plugin_api, '_scheduled_docs', lambda *a: [
+        {'id': f'output:2026-10-19_10-21-3{i}', 'started_at': start + i}
+        for i in range(count)])
+    if count:
+        with pytest.raises(ValueError, match='Ambiguous cron output'):
+            delivery._result(home, 'audit', execution['id'])
+    else:
+        assert delivery._result(home, 'audit', execution['id']) == {
+            'job_id': 'audit', 'run_id': 'execution:' + execution['id']}
+    assert not (home / 'state.db').exists()
