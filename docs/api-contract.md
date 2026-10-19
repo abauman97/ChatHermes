@@ -37,6 +37,7 @@ not the retained native execution. Frames are limited to 29 MiB.
 | JSON-RPC operation                  | Contract                                                                                                                                                         |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `chat.attach`                       | `{session_id: stored_id}`; verify profile, resume stored conversation (reuse retained runtime); compact image history plus recovery boundary                     |
+| `chat.state`                        | Empty params; read attached native activity through `session.activate` with `omit_messages`; return only running, queued and delegating flags                    |
 | `chat.replay`                       | `{offset,through}`; fixed captured spool boundary, pages of raw native frames; offset and epoch checks                                                           |
 | `chat.reconciled`                   | `{through}`; retire retained frames only after history hydration, native settlement, delegation settlement and matching boundary                                 |
 | `chat.submit`                       | `{input,model?,provider?,queued?,admission_id?}`; validate input and runtime selection, reject busy unless explicitly queued, invoke native `prompt.submit` once |
@@ -87,6 +88,11 @@ the browser stores a profile/session/attempt uncertainty marker. Acknowledgement
 clears only its attempt; known pre-dispatch rejection unlocks the composer.
 Timeout/lost acknowledgement stays locked across reload and never auto-resubmits.
 The user must inspect history and native state before explicitly ending verification.
+Explicit resolution checks native activity even when a retained input left the
+browser busy. It requires an idle native session and successful history hydration,
+preserves uncovered displayed content, and never submits a prompt. Pending
+admission, queued work, delegation, failed checks, changed selection, and arriving
+retained events keep sending locked.
 
 Full recovery applies to plugin-owned turns observed from admission, while this
 dashboard process survives and recovery storage succeeds. Already-running external
