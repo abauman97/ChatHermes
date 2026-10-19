@@ -19,6 +19,9 @@ def runtime(tmp_path, monkeypatch):
     from cron.jobs import use_cron_store
     import chathermes
     from chathermes import cron_delivery as delivery
+    from chathermes.dashboard import plugin_api
+    monkeypatch.setattr(plugin_api, '_gateway_settings', lambda: ('http://gateway.test', 'scoped-gateway-secret'))
+    monkeypatch.setattr(plugin_api, '_profile_gateway_key', lambda profile: 'scoped-gateway-secret')
     token = set_hermes_home_override(tmp_path)
     with use_cron_store(tmp_path):
         yield tmp_path, chathermes, delivery
@@ -26,6 +29,8 @@ def runtime(tmp_path, monkeypatch):
 
 
 def _execution(home, job):
+    from cron.jobs import save_jobs
+    save_jobs([job])
     from cron.executions import create_execution, mark_execution_running
     from cron.execution_identity import enter_cron_execution
     record = create_execution(job['id'], source='direct')
@@ -72,6 +77,9 @@ def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
         assert calls[0][0][0] == 'default'
         assert calls[0][1]['target'] == {'job_id': 'audit', 'run_id': 'output:' + output.stem}
         assert calls[0][1]['destination'] is None
+        assert calls[0][1]['title'] == 'Audit'
+        assert 'native saved result' in calls[0][1]['message']
+        assert calls[0][1]['message'] != 'result'
         again = asyncio.run(delivery.standalone_send(None, '_device_1', 'result'))
         assert again['success'] is True
         assert calls[-1][1]['destination'] == '_device_1'
@@ -233,6 +241,8 @@ def test_named_profile_reads_shared_push_store_and_routes_own_history(runtime, m
                 assert result.get('success'), result
                 assert calls[0][0][0] == 'beta'
                 assert calls[0][1]['target']['run_id'] == 'output:' + output.stem
+                assert calls[0][1]['title'] == 'audit'
+                assert 'beta only' in calls[0][1]['message']
                 assert delivery.push_sender.push_store._home() == root
             finally:
                 exit_cron_execution(token)
@@ -256,3 +266,60 @@ def test_cron_display_name_changes_only_matching_target_and_wraps_once(runtime, 
     assert scheduler_delivery.cron_delivery_targets is wrapped
     assert wrapped() == [dict(targets[0], name='ChatHermes'), *targets[1:]]
     assert targets[0]['name'] == 'Chathermes'
+
+
+@pytest.mark.parametrize('saved', [False, True])
+def test_notification_reads_safe_scoped_result_without_changing_history(runtime, monkeypatch, saved):
+    home, _, delivery = runtime
+    from cron.jobs import save_job_output
+    from cron.execution_identity import exit_cron_execution
+    from chathermes.dashboard import plugin_api
+    job = {'id': 'audit', 'name': 'Audit scoped-gateway-secret'}
+    execution, token = _execution(home, job)
+    try:
+        text = 'Whole result scoped-gateway-secret ' + '漢字😀' * 4000 + ' END'
+        path = save_job_output('audit', text) if saved else None
+        original = path.read_bytes() if path else None
+        original_reader = plugin_api._scheduled_output_sync
+        if not saved:
+            monkeypatch.setattr(plugin_api, '_scheduled_output_sync', lambda *args: {
+                'messages': [{'role': 'assistant', 'content': 'first'},
+                             {'role': 'assistant', 'content': text}]})
+        sends = []
+        monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append(kw) or True)
+        result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'Untrusted transport wrapper SECRET'))
+        assert result.get('success'), result
+        sent = sends[0]
+        assert sent['title'] == 'Audit [redacted]'
+        assert 'scoped-gateway-secret' not in sent['message']
+        assert 'Untrusted transport' not in sent['message']
+        if saved:
+            assert sent['message'].endswith(' END')
+            assert '[redacted]' in sent['message']
+            assert path.read_bytes() == original
+            assert plugin_api._scheduled_output_sync('default', home, 'audit', sent['target']['run_id'])['output'].endswith(' END')
+        else:
+            assert sent['message'].endswith(' END')
+            assert '[redacted]' in sent['message']
+            assert sent['target']['run_id'] == 'execution:' + execution['id']
+    finally:
+        exit_cron_execution(token)
+
+
+def test_delivery_rejects_job_owned_only_by_another_profile(runtime, monkeypatch):
+    home, _, delivery = runtime
+    from cron.execution_identity import exit_cron_execution
+    from cron.jobs import save_jobs, use_cron_store
+    execution, token = _execution(home, {'id': 'audit', 'name': 'Private title'})
+    try:
+        save_jobs([], replace=True)
+        named = home / 'profiles' / 'beta'
+        named.mkdir(parents=True)
+        with use_cron_store(named):
+            save_jobs([{'id': 'audit', 'name': 'Other profile private title'}])
+        sends = []
+        monkeypatch.setattr(delivery.push_sender, '_deliver', lambda *a, **kw: sends.append(kw) or True)
+        assert 'error' in asyncio.run(delivery.standalone_send(None, 'scheduled', 'Private output'))
+        assert not sends
+    finally:
+        exit_cron_execution(token)

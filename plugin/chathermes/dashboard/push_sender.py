@@ -139,13 +139,17 @@ BODIES = {'turn.complete': 'Hermes finished responding.', 'approval': 'Hermes ne
 MAX_PAYLOAD_BYTES = 3000
 
 
-def notification_payload(profile, session_id, kind, message=None, target=None):
+def notification_payload(profile, session_id, kind, message=None, target=None, title=None):
     # Native message.complete.text is authoritative, including rewritten finals.
     # Missing completion text remains empty; never invent an assistant response.
     body = message if isinstance(message, str) else ('' if kind == 'turn.complete' else BODIES[kind])
     body = body.encode('utf-8', errors='replace').decode('utf-8')
     # Display identity must not rewrite the profile used for delivery/routing.
-    title = profile if isinstance(profile, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile) else 'ChatHermes'
+    if kind == 'scheduled' and isinstance(title, str) and title.strip():
+        title = title.encode('utf-8', errors='replace').decode('utf-8')
+        title = title[:199] + '…' if len(title) > 200 else title
+    else:
+        title = profile if isinstance(profile, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile) else 'ChatHermes'
     data = {'type': kind, 'title': title, 'profile': profile,
             'session_id': session_id, 'tag': f'chathermes:{profile}:{session_id}:{kind}'}
     if target is not None:
@@ -159,13 +163,14 @@ def notification_payload(profile, session_id, kind, message=None, target=None):
     if len(body) <= MAX_PAYLOAD_BYTES and len(encode(candidate).encode('utf-8')) <= MAX_PAYLOAD_BYTES:
         return encode(candidate)
     low, high = 0, len(candidate)
+    suffix = '… [truncated — open Scheduled for full output]' if kind == 'scheduled' else '…'
     while low < high:
         mid = (low + high + 1) // 2
-        if len(encode(candidate[:mid] + '…').encode('utf-8')) <= MAX_PAYLOAD_BYTES:
+        if len(encode(candidate[:mid] + suffix).encode('utf-8')) <= MAX_PAYLOAD_BYTES:
             low = mid
         else:
             high = mid - 1
-    return encode(candidate[:low] + '…')
+    return encode(candidate[:low] + suffix)
 
 
 def notify(profile, session_id, kind, dedupe_id, request=None, message=None):
@@ -182,7 +187,7 @@ def notify(profile, session_id, kind, dedupe_id, request=None, message=None):
         return False
 
 
-def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None, *, target=None, destination=None):
+def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None, *, target=None, destination=None, title=None):
     if kind not in BODIES or not isinstance(profile, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', profile):
         diagnostic('deliver.invalid', profile, session_id, kind)
         return
@@ -214,7 +219,7 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None, *
             failure_stage = 'vapid_key_load'
             vapid = Vapid.from_pem(data['vapid']['private_key'].encode())
         failure_stage = 'payload_build'
-        payload = notification_payload(profile, session_id, kind, message, target)
+        payload = notification_payload(profile, session_id, kind, message, target, title)
         subject = push_store.vapid_subject(request)
         delivered = True
         for row in rows:

@@ -82,10 +82,24 @@ def _send(chat_id, message, thread_id, media_files):
     if identity is None:
         return {'error': 'ChatHermes delivery requires an unambiguous native cron execution'}
     target = _result(home, *identity)
-    # Body stays generic: the authenticated Scheduled reader already redacts output.
+    from cron.scheduler_delivery import _cron_display_name, _redact_cron_payload
+    from .dashboard.plugin_api import (_scheduled_job, _scheduled_output_sync,
+                                       _profile_gateway_key, _gateway_settings, _safe_body)
+    job = _scheduled_job(profile, target['job_id'])
+    result = _scheduled_output_sync(profile, home, target['job_id'], target['run_id'])
+    # Read the exact durable result that ScheduledPage opens, never the transport
+    # wrapper, model-supplied identity, or another run's latest output.
+    gateway_key = (_gateway_settings()[1] if profile == 'default' else _profile_gateway_key(profile)) or ''
+    def safe(text):
+        text = _safe_body(text.encode('utf-8', errors='replace'), gateway_key).decode('utf-8')
+        return _redact_cron_payload(text, 'notification content')
+    title = safe(_cron_display_name(job))
+    assistant_result = next((row.get('content') for row in reversed(result.get('messages') or [])
+                             if row.get('role') == 'assistant' and row.get('content')), None)
+    body = safe(assistant_result or result.get('output') or 'No output was saved for this run.')
     # Media remains in Hermes history; no file is uploaded to the push provider.
     key = hashlib.sha256(f'{profile}:{identity[1]}:{chat_id}'.encode()).hexdigest()
-    ok = push_sender._deliver(profile, '', 'scheduled', key, target=target,
+    ok = push_sender._deliver(profile, '', 'scheduled', key, message=body, title=title, target=target,
                               destination=None if chat_id == 'scheduled' else chat_id)
     if not ok:
         return {'error': 'ChatHermes push delivery unavailable or failed'}
