@@ -2,6 +2,80 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const dashboardUrl = "http://localhost:9119/chathermes";
 
+// Retry transient Android activity and CDP startup failures against a deadline.
+async function untilReady(operation, message, options = {}) {
+  const { timeout = 60000, now = Date.now, wait = delay } = options;
+  const deadline = now() + timeout;
+  let cause;
+  while (now() < deadline) {
+    try {
+      return await operation(Math.min(5000, deadline - now()));
+    } catch (error) {
+      cause = error;
+      const remaining = deadline - now();
+      if (remaining > 0) await wait(Math.min(1000, remaining));
+    }
+  }
+  throw new Error(message, { cause });
+}
+
+export async function startChrome(adb, connectChrome, options) {
+  const start = (...args) => {
+    const output = adb("shell", "am", "start", "-W", ...args);
+    // am start can report a failure while adb itself exits successfully.
+    if (/Error:|Status:\s*(?!ok\b)\S+/i.test(output)) {
+      throw new Error("Android activity did not start");
+    }
+  };
+  await untilReady(
+    () => {
+      // Initialize HOME before Chrome caches pin-shortcut support.
+      adb(
+        "shell",
+        "cmd",
+        "package",
+        "set-home-activity",
+        "com.google.android.apps.nexuslauncher/.NexusLauncherActivity",
+      );
+      start("-a", "android.intent.action.MAIN", "-c", "android.intent.category.HOME");
+    },
+    "Android launcher unavailable",
+    options,
+  );
+  await untilReady(
+    () => {
+      adb("shell", "am", "force-stop", "com.android.chrome");
+      adb("shell", "am", "set-debug-app", "--persistent", "com.android.chrome");
+      adb(
+        "shell",
+        "echo 'chrome --no-first-run --disable-fre --no-default-browser-check' > /data/local/tmp/chrome-command-line",
+      );
+      start("-a", "android.intent.action.VIEW", "-d", dashboardUrl, "com.android.chrome");
+    },
+    "Android Chrome did not start",
+    options,
+  );
+  return connectChrome();
+}
+
+export async function waitForChrome(endpoint, connect, options = {}) {
+  const { request = fetch } = options;
+  return untilReady(
+    async (timeout) => {
+      // The TCP proxy can accept connections before Chrome creates its socket.
+      const response = await request(`${endpoint}/json/version`, {
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!response.ok || !(await response.json()).webSocketDebuggerUrl) {
+        throw new Error("Chrome debugging endpoint not ready");
+      }
+      return connect(endpoint, { timeout });
+    },
+    "Chrome debugging unavailable",
+    options,
+  );
+}
+
 export async function openDashboard(browser, connectChrome) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let page;

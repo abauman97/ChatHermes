@@ -1,5 +1,5 @@
 import { chromium } from "@playwright/test";
-import { openDashboard } from "./android-browser.mjs";
+import { startChrome, waitForChrome, openDashboard } from "./android-browser.mjs";
 import { openInstalledApp } from "./android-pwa.mjs";
 import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -12,54 +12,13 @@ const adb = (...args) =>
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-// Initialize the image's launcher before Chrome caches pin-shortcut support.
-// sys.boot_completed can arrive before the default HOME activity is ready.
-adb(
-  "shell",
-  "cmd",
-  "package",
-  "set-home-activity",
-  "com.google.android.apps.nexuslauncher/.NexusLauncherActivity",
-);
-adb(
-  "shell",
-  "am",
-  "start",
-  "-W",
-  "-a",
-  "android.intent.action.MAIN",
-  "-c",
-  "android.intent.category.HOME",
-);
-
-// This test-only flag skips Chrome onboarding on the image's fresh, rooted AVD.
-adb("shell", "am", "force-stop", "com.android.chrome");
-adb("shell", "am", "set-debug-app", "--persistent", "com.android.chrome");
-adb(
-  "shell",
-  "echo 'chrome --no-first-run --disable-fre --no-default-browser-check' > /data/local/tmp/chrome-command-line",
-);
-adb(
-  "shell",
-  "am",
-  "start",
-  "-a",
-  "android.intent.action.VIEW",
-  "-d",
-  "http://localhost:9119/chathermes",
-  "com.android.chrome",
-);
-async function connectChrome() {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    try {
-      return await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2000 });
-    } catch {
-      await delay(1000);
-    }
-  }
-  throw new Error("Chrome debugging unavailable");
-}
-let browser = await connectChrome();
+// Android boot completion does not guarantee HOME or Chrome is ready.
+const endpoint = `http://127.0.0.1:${port}`;
+const connectChrome = () =>
+  waitForChrome(endpoint, (url, options) => chromium.connectOverCDP(url, options));
+// Open Chrome before probing CDP: on a fresh AVD, adb boot completion leaves
+// Chrome's debugging socket absent until its first activity is launched.
+let browser = await startChrome(adb, connectChrome);
 
 // Use accessibility labels for Chrome/Android UI, never device-specific coordinates.
 async function tap(pattern, timeout = 15000, packageName) {
