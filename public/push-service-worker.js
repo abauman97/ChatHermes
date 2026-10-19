@@ -256,6 +256,14 @@ self.addEventListener("notificationclick", (event) => {
           new URL(client.url).pathname === APP_URL
         ) {
           await client.focus();
+          if (typeof client.navigate === "function") {
+            try {
+              await client.navigate(target.href);
+              return;
+            } catch {
+              // Keep the focused PWA open rather than creating a duplicate.
+            }
+          }
           client.postMessage({ type: "chathermes.navigate", url: target.href });
           return;
         }

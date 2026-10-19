@@ -21,6 +21,9 @@ function harness() {
     id: "tab",
     url: origin + "/old-spa-url",
     visibilityState: "visible",
+    navigate: vi.fn(async (url: string) => {
+      client.url = url;
+    }),
     focused: false,
     postMessage: vi.fn((_message: any, ports: any[]) => {
       if (state && ports) ports[0].postMessage(state);
@@ -313,7 +316,7 @@ describe("visible session notifications", () => {
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
     expect(h.notifications[0].close).not.toHaveBeenCalled();
     expect(h.client.focus).toHaveBeenCalledOnce();
-    expect(h.client.postMessage).toHaveBeenCalledWith({ type: "chathermes.navigate", url: route });
+    expect(h.client.navigate).toHaveBeenCalledWith(route);
   });
   it("accepts default profile and ignores stale WindowClient URL and focus", async () => {
     const h = harness();
@@ -597,6 +600,22 @@ describe("scheduled results", () => {
   it("focuses an existing client and sends the exact canonical result URL", async () => {
     const h = harness();
     h.client.url = origin + "/chathermes?profile=beta#/settings?profile=beta";
+    h.client.navigate = vi.fn(async (url: string) => {
+      h.client.url = url;
+    });
+    await h.push(result);
+    await h.dispatch("notificationclick", { notification: h.notifications[0] });
+    expect(h.client.focus).toHaveBeenCalledOnce();
+    expect(h.client.navigate).toHaveBeenCalledWith(h.notifications[0].data.url);
+    expect(h.client.url).toBe(h.notifications[0].data.url);
+    expect(h.openWindow).not.toHaveBeenCalled();
+  });
+  it("does not open a second window when an existing client cannot navigate", async () => {
+    const h = harness();
+    h.client.navigate = vi.fn(async () => {
+      throw new Error("navigation rejected");
+    });
+    h.client.url = origin + "/chathermes#/settings?profile=alpha";
     await h.push(result);
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
     expect(h.client.focus).toHaveBeenCalledOnce();
@@ -604,6 +623,15 @@ describe("scheduled results", () => {
       type: "chathermes.navigate",
       url: h.notifications[0].data.url,
     });
+    expect(h.openWindow).not.toHaveBeenCalled();
+  });
+  it("does not open a second window when navigate is unavailable", async () => {
+    const h = harness();
+    delete (h.client as any).navigate;
+    h.client.url = origin + "/chathermes#/settings?profile=alpha";
+    await h.push(result);
+    await h.dispatch("notificationclick", { notification: h.notifications[0] });
+    expect(h.client.focus).toHaveBeenCalledOnce();
     expect(h.openWindow).not.toHaveBeenCalled();
   });
   it.each([
