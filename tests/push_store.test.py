@@ -127,6 +127,8 @@ def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, mon
     assert payload['body'] == 'Actual assistant message 😀'
     assert payload['profile'] == 'alpha'
     assert payload['session_id'] == 'session_123'
+    # The worker alone builds canonical URLs from these structured identities.
+    assert set(payload) == {'type', 'title', 'body', 'profile', 'session_id', 'tag'}
     assert payload['tag'] == 'chathermes:alpha:session_123:turn.complete'
     assert options['vapid_claims'] == {'aud': 'https://push.test',
         'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
@@ -390,6 +392,7 @@ def test_scheduled_push_scopes_destination_uses_stable_result_tag_and_reports_fa
     payload = sent[0][1]
     assert {key: payload[key] for key in target} == target
     assert payload['body'] == 'A scheduled result is ready.'
+    assert set(payload) == {'type', 'title', 'body', 'profile', 'session_id', 'tag', 'job_id', 'run_id'}
     assert sender._deliver('alpha', '', 'scheduled', 'retry', target=target, destination=one['id']) is True
     assert sent[-1][1]['tag'] == payload['tag']
     assert sender._deliver('alpha', '', 'scheduled', 'run', target=target, destination=other['id']) is False

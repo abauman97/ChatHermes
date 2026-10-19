@@ -122,6 +122,44 @@ def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch, has
     assert delivery._queued_execution(home, 'result') is None
 
 
+@pytest.mark.parametrize('source', ['output', 'session', 'execution'])
+def test_cron_push_emits_structured_route_identity_without_legacy_url(runtime, monkeypatch, source):
+    import json
+    import pywebpush
+    from types import SimpleNamespace
+    from cron.execution_identity import exit_cron_execution
+    from cron.jobs import save_job_output
+
+    home, _, delivery = runtime
+    sender = delivery.push_sender
+    monkeypatch.setattr(sender.push_store, '_path', lambda: home / 'push.json')
+    sender.push_store.upsert('default', {
+        'endpoint': 'https://push.test/cron', 'keys': {'p256dh': 'key', 'auth': 'auth'}})
+    execution, token = _execution(home, {'id': 'audit', 'name': 'Audit', 'deliver': 'chathermes'})
+    run_id = 'execution:' + execution['id']
+    if source == 'output':
+        run_id = 'output:' + save_job_output('audit', 'Saved result').stem
+    elif source == 'session':
+        run_id = 'cron_audit_20261019_102136'
+        _cron_session(home, run_id, 'Transcript result')
+    sent = []
+    monkeypatch.setattr(pywebpush, 'webpush', lambda subscription, payload, **kw:
+                        sent.append(json.loads(payload)) or SimpleNamespace(status_code=201))
+    try:
+        result = asyncio.run(delivery.standalone_send(None, 'scheduled', 'result'))
+        assert result.get('success'), result
+        assert len(sent) == 1
+        assert sent[0]['type'] == 'scheduled'
+        assert sent[0]['profile'] == 'default'
+        assert sent[0]['session_id'] == ''
+        assert sent[0]['job_id'] == 'audit'
+        assert sent[0]['run_id'] == run_id
+        # No query-format URL can bypass the worker's canonical URL builder.
+        assert set(sent[0]) == {'type', 'title', 'body', 'profile', 'session_id', 'tag', 'job_id', 'run_id'}
+    finally:
+        exit_cron_execution(token)
+
+
 def test_unattributed_or_ambiguous_delivery_fails_closed(runtime, monkeypatch):
     home, _, delivery = runtime
     from cron import delivery_queue

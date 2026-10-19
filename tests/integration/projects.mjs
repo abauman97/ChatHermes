@@ -70,7 +70,7 @@ try {
     expect(frames).not.toContain("Isolated Hermes reply");
     stage = `${name}: UI resume and screenshots`;
     await page.goto(
-      `/chathermes?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`,
+      `/chathermes?profile=default#/chat/${encodeURIComponent(session.id)}?profile=default&project=${encodeURIComponent(project.id)}`,
     );
     await expect(plugin.locator(".message.assistant").last()).toContainText(
       "ChatHermes integration verified",

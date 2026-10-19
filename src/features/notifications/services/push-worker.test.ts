@@ -104,7 +104,7 @@ function harness() {
   };
 }
 describe("visible session notifications", () => {
-  it("does not recognize removed query routes for viewer attestation or notification navigation", async () => {
+  it("rejects query-only URLs for viewer attestation and notification navigation", async () => {
     const h = harness();
     h.patch({ url: origin + "/chathermes?profile=alpha&session=one" });
     await h.push();
@@ -113,6 +113,8 @@ describe("visible session notifications", () => {
       notification: { data: { url: origin + "/chathermes?profile=alpha&session=one" } },
     });
     expect(h.client.focus).not.toHaveBeenCalled();
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    expect(h.openWindow).not.toHaveBeenCalled();
   });
   it("attests canonical chat hashes despite stale outer routing query", async () => {
     const h = harness();
@@ -121,6 +123,57 @@ describe("visible session notifications", () => {
     });
     await h.push();
     expect(h.show).not.toHaveBeenCalled();
+  });
+  it("does not match query-only notifications to a canonical viewer", async () => {
+    const h = harness();
+    const close = vi.fn();
+    h.notifications.push({
+      tag: "chathermes:alpha:one:turn.complete",
+      data: { url: origin + "/chathermes?profile=alpha&session=one" },
+      close,
+    });
+    h.patch({ connected: false });
+    await h.update();
+    expect(close).not.toHaveBeenCalled();
+    h.patch({ connected: true });
+    await h.update();
+    expect(close).not.toHaveBeenCalled();
+  });
+  it.each(["turn.complete", "approval", "clarify", "attention", "test"])(
+    "opens a current %s notification in an existing plugin window",
+    async (type) => {
+      const h = harness();
+      h.client.url = origin + "/chathermes?profile=beta#/settings?profile=beta";
+      h.patch({ url: h.client.url, session: "", connected: false });
+      const session = type === "test" ? "" : "one";
+      await h.push({ type, session_id: session });
+      await h.dispatch("notificationclick", { notification: h.notifications[0] });
+      expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(
+        origin + "/chathermes?profile=alpha#" + (session ? "/chat/one" : "/") + "?profile=alpha",
+      );
+      expect(h.openWindow).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    "",
+    "?profile=alpha",
+    "?session=one",
+    "?profile=alpha&session=one",
+    "?view=scheduled&job=audit&scheduled_run=cron_audit_20261019_102136",
+    "?profile=alpha&profile=beta&session=one",
+    "?profile=../bad&session=one",
+    "?session=one&session=two",
+    "?session=",
+    "?session=%2Fone",
+    "?view=scheduled&session=one",
+  ])("rejects query-only notification links %s", async (query) => {
+    const h = harness();
+    await h.dispatch("notificationclick", {
+      notification: { data: { url: origin + "/chathermes" + query } },
+    });
+    expect(h.client.focus).not.toHaveBeenCalled();
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    expect(h.openWindow).not.toHaveBeenCalled();
   });
   it.each([
     "/settings?session=one",
@@ -580,6 +633,55 @@ describe("scheduled results", () => {
     run_id: "output:2026-01-01_00-00-00",
     tag: "chathermes:alpha:audit:scheduled",
   };
+  it.each([
+    "output:2026-01-01_00-00-00",
+    "cron_audit_20261019_102136",
+    "execution:" + "a".repeat(32),
+  ])("displays, opens, and closes the exact native run %s", async (run) => {
+    const h = harness();
+    h.patch({ visible: false });
+    await h.push({ ...result, run_id: run });
+    expect(h.show).toHaveBeenCalledOnce();
+    const url =
+      origin +
+      "/chathermes?profile=alpha#/scheduled/audit/" +
+      encodeURIComponent(run) +
+      "?profile=alpha";
+    expect(h.notifications[0].data.url).toBe(url);
+    await h.dispatch("notificationclick", { notification: h.notifications[0] });
+    expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(url);
+    h.patch({
+      url,
+      session: "",
+      connected: false,
+      scheduled: true,
+      job: "audit",
+      run,
+      visible: true,
+    });
+    await h.update();
+    expect(h.notifications[0].close).toHaveBeenCalledOnce();
+    await h.push({ ...result, run_id: run });
+    expect(h.show).toHaveBeenCalledOnce();
+    await h.push({
+      ...result,
+      run_id: run
+        .replace("00-00-00", "00-00-01")
+        .replace("102136", "102137")
+        .replace("aaaa", "bbbb"),
+    });
+    expect(h.show).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    "cron_other_20261019_102136",
+    "cron_audit_20261019_102136_child",
+    "cron_audit_20261019_10213",
+    "../secret",
+  ])("rejects a transcript outside the exact job run: %s", async (run_id) => {
+    const h = harness();
+    await h.push({ ...result, run_id });
+    expect(h.show).not.toHaveBeenCalled();
+  });
   it("opens the existing scheduled result and replaces duplicate tags without renotify", async () => {
     const h = harness();
     h.setClients([]);
