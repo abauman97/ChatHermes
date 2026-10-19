@@ -712,6 +712,25 @@ describe("scheduled results", () => {
     expect(h.client.url).toBe(h.notifications[0].data.url);
     expect(h.openWindow).not.toHaveBeenCalled();
   });
+  it.each([false, true])(
+    "still routes an existing client when focus is denied (navigate rejects: %s)",
+    async (navigationDenied) => {
+      const h = harness();
+      h.client.url = origin + "/chathermes#/settings?profile=alpha";
+      h.client.focus.mockRejectedValue(new DOMException("Focus denied", "InvalidAccessError"));
+      if (navigationDenied) h.client.navigate.mockRejectedValue(new Error("Navigation denied"));
+      await h.push(result);
+      await h.dispatch("notificationclick", { notification: h.notifications[0] });
+      expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(h.notifications[0].data.url);
+      if (navigationDenied)
+        expect(h.client.postMessage).toHaveBeenCalledWith({
+          type: "chathermes.navigate",
+          url: h.notifications[0].data.url,
+        });
+      else expect(h.client.url).toBe(h.notifications[0].data.url);
+      expect(h.openWindow).not.toHaveBeenCalled();
+    },
+  );
   it("does not open a second window when an existing client cannot navigate", async () => {
     const h = harness();
     h.client.navigate = vi.fn(async () => {

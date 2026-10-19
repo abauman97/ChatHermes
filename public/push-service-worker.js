@@ -256,13 +256,18 @@ self.addEventListener("notificationclick", (event) => {
           new URL(client.url).origin === target.origin &&
           new URL(client.url).pathname === APP_URL
         ) {
-          await client.focus();
+          try {
+            await client.focus();
+          } catch {
+            // Activation restrictions can deny focus. Routing the existing
+            // client must still run; it does not require focus permission.
+          }
           if (typeof client.navigate === "function") {
             try {
               await client.navigate(target.href);
               return;
             } catch {
-              // Keep the focused PWA open rather than creating a duplicate.
+              // Keep the existing PWA open rather than creating a duplicate.
             }
           }
           client.postMessage({ type: "chathermes.navigate", url: target.href });
