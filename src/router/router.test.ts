@@ -13,7 +13,11 @@ beforeEach(() =>
 );
 afterEach(() => vi.restoreAllMocks());
 describe("plugin routing", () => {
-  it.each(["output:2025-01-01_00-00-00", "execution:" + "a".repeat(32)])(
+  it.each([
+    "output:2025-01-01_00-00-00",
+    "execution:" + "a".repeat(32),
+    "cron_audit_20261019_102136",
+  ])(
     "routes canonical scheduled notifications to the exact run %s and hash profile",
     async (runId) => {
       const router = createChatHermesRouter(createMemoryHistory());

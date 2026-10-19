@@ -58,7 +58,8 @@ function validScheduled(job, run) {
     /^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(job) &&
     typeof run === "string" &&
     (/^output:\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(run) ||
-      /^execution:[a-f0-9]{32}$/.test(run))
+      /^execution:[a-f0-9]{32}$/.test(run) ||
+      new RegExp("^cron_" + job + "_\\d{8}_\\d{6}$").test(run))
   );
 }
 
