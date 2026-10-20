@@ -12,6 +12,24 @@ A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
+For a named profile that needs ChatHermes as a Cron delivery target, link the
+installed plugin into that profile and enable/configure it there as well. For
+example, with Hermes data under `/opt/data`:
+
+```sh
+mkdir -p /opt/data/profiles/developer/plugins
+ln -s /opt/data/plugins/chathermes \
+  /opt/data/profiles/developer/plugins/chathermes
+hermes -p developer plugins enable chathermes
+hermes -p developer config set platforms.chathermes.enabled true
+hermes -p developer config set platforms.chathermes.home_channel '<developer-destination>'
+```
+
+Substitute the target profile and its own home-channel destination. Inspect an
+existing `plugins/chathermes` path before linking; do not overwrite it. Each
+profile needs its own destination and push subscription. See
+**Enable Cron delivery** below for details and verification steps.
+
 Hermes installs the dependencies declared by the shipped
 `plugin/chathermes/pyproject.toml` in its managed runtime; use the dependency
 consent prompt during install. Restart the dashboard and open **ChatHermes**.
