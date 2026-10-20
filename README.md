@@ -12,6 +12,32 @@ A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
+### Install with your agent
+
+Paste this prompt into Hermes Agent to install ChatHermes and configure the
+profiles you choose. The agent should read this README's **Install** and
+**Enable Cron delivery** sections for exact setup details:
+
+> Install ChatHermes from `abauman97/ChatHermes#plugin/chathermes` using the
+> documented Hermes plugin installation procedure. Then configure ChatHermes as
+> a Cron delivery target in these profiles: `<profile names>`.
+>
+> Read the ChatHermes README installation and Cron-delivery instructions first.
+> For each named profile, ensure runtime plugin discovery can find ChatHermes;
+> if appropriate, symlink the default plugin installation into that profile as
+> documented. Preserve any existing plugin installation and configuration—do
+> not overwrite paths or replace existing `plugins.enabled` entries. Enable the
+> plugin and configure that profile's own ChatHermes destination. Ask me for any
+> required destination or permission choice you cannot determine safely. Restart
+> only the necessary Hermes service, then verify plugin discovery and Cron
+> target availability in each requested profile. Do not create a test Cron job
+> or send a notification unless I ask. Report what changed and what remains
+> unverified.
+
+Replace `<profile names>` with the profiles to configure (for example,
+`default, developer`). The agent should ask before making changes if it cannot
+identify the repository README, profile home paths, or safe plugin target.
+
 Hermes installs the dependencies declared by the shipped
 `plugin/chathermes/pyproject.toml` in its managed runtime; use the dependency
 consent prompt during install. Restart the dashboard and open **ChatHermes**.
