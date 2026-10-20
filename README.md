@@ -12,25 +12,31 @@ A mobile-friendly chat plugin for the Hermes dashboard. Dashboard authentication
 hermes plugins install abauman97/ChatHermes#plugin/chathermes --enable
 ```
 
-For a named profile that needs ChatHermes as a Cron delivery target, link the
-installed plugin into that profile and enable/configure it there as well. For
-example, with Hermes data under `/opt/data`:
+### Install with your agent
 
-```sh
-mkdir -p /opt/data/profiles/developer/plugins
-ln -s /opt/data/plugins/chathermes \
-  /opt/data/profiles/developer/plugins/chathermes
-hermes -p developer plugins enable chathermes
-hermes -p developer config set platforms.chathermes.enabled true
-hermes -p developer config set platforms.chathermes.home_channel '<developer-destination>'
-```
+Paste this prompt into Hermes Agent to install ChatHermes and configure the
+profiles you choose. The agent should read this README's **Install** and
+**Enable Cron delivery** sections for exact setup details:
 
-Replace `developer` and the destination with your profile's name and its own
-valid home-channel value. If that profile already has a `plugins/chathermes`
-path, inspect it before linking; do not overwrite an existing installation.
-The symlink shares plugin code only, not profile settings or subscriptions. Each
-profile needs its own destination and enabled push subscription. See **Enable
-Cron delivery** below for the destination format and delivery verification steps.
+> Install ChatHermes from `abauman97/ChatHermes#plugin/chathermes` using the
+> documented Hermes plugin installation procedure. Then configure ChatHermes as
+> a Cron delivery target in these profiles: `<profile names>`.
+>
+> Read the ChatHermes README installation and Cron-delivery instructions first.
+> For each named profile, ensure runtime plugin discovery can find ChatHermes;
+> if appropriate, symlink the default plugin installation into that profile as
+> documented. Preserve any existing plugin installation and configuration—do
+> not overwrite paths or replace existing `plugins.enabled` entries. Enable the
+> plugin and configure that profile's own ChatHermes destination. Ask me for any
+> required destination or permission choice you cannot determine safely. Restart
+> only the necessary Hermes service, then verify plugin discovery and Cron
+> target availability in each requested profile. Do not create a test Cron job
+> or send a notification unless I ask. Report what changed and what remains
+> unverified.
+
+Replace `<profile names>` with the profiles to configure (for example,
+`default, developer`). The agent should ask before making changes if it cannot
+identify the repository README, profile home paths, or safe plugin target.
 
 Hermes installs the dependencies declared by the shipped
 `plugin/chathermes/pyproject.toml` in its managed runtime; use the dependency
