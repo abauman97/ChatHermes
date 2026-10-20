@@ -23,6 +23,16 @@ def run_async(fn):
     return wrapper
 
 
+@pytest.mark.parametrize('body,key,expected', [
+    (b'safe result', '', b'safe result'),
+    (b'', '', b''),
+    (b'key result key', 'key', b'[redacted] result [redacted]'),
+    ('café result'.encode(), '', 'café result'.encode()),
+])
+def test_safe_body_redacts_only_nonempty_credentials(body, key, expected):
+    assert plugin._safe_body(body, key) == expected
+
+
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.setattr(plugin, "_gateway_settings", lambda: ("http://gateway.test", KEY))
