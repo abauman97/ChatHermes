@@ -55,6 +55,47 @@ configure the destination, and existing Cron jobs are not changed
 automatically. A push subscription must be enabled in ChatHermes for the
 notification to reach a device.
 
+When a named profile cannot discover a globally installed ChatHermes plugin,
+its runtime plugin discovery is profile-local. Make the default plugin code
+available in that profile with a symlink, then enable the plugin and configure
+the profile's own destination (do not reuse another profile's settings or
+subscriptions). For a Hermes data root at `/opt/data`, for example:
+
+```sh
+mkdir -p /opt/data/profiles/developer/plugins
+ln -s /opt/data/plugins/chathermes \
+  /opt/data/profiles/developer/plugins/chathermes
+hermes -p developer plugins enable chathermes
+hermes -p developer config set platforms.chathermes.enabled true
+hermes -p developer config set platforms.chathermes.home_channel '<developer-destination>'
+```
+
+Use the intended profile and its valid home-channel value in place of these
+examples. Inspect any existing `plugins/chathermes` path before linking; never
+overwrite an existing installation. The symlink shares code, not profile config
+or subscriptions. Check plugin/config discovery before testing delivery:
+
+```sh
+hermes -p developer plugins list
+hermes -p developer config get platforms.chathermes
+hermes -p developer cron list --all
+```
+
+Create a harmless one-shot job and inspect its execution record:
+
+```sh
+hermes -p developer cron create \
+  --name 'ChatHermes delivery test' --deliver chathermes --repeat 1 \
+  'in 1m' 'Reply exactly: ChatHermes Cron test. No tools.'
+hermes -p developer cron runs <job-id> --limit 5
+hermes -p developer cron list --all
+```
+
+Verify Cron completion, the matching profile-scoped sender attempt, provider
+acceptance, device receipt, and notification click destination as separate
+stages. A successful Cron run or HTTP 201 does not by itself prove receipt or
+correct navigation. Remove only the uniquely named test job after verification.
+
 ## Develop and test
 
 ```sh
