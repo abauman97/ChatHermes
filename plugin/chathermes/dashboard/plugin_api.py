@@ -178,7 +178,8 @@ def _client():
 
 def _safe_body(body: bytes, key: str) -> bytes:
     # A broken gateway must never reflect credentials to the browser.
-    return body.replace(key.encode(), b"[redacted]")
+    # Cron may have no gateway credential; replacing b'' corrupts every byte.
+    return body.replace(key.encode(), b"[redacted]") if key else body
 
 
 def _error_response(upstream, key: str):
