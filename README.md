@@ -25,10 +25,12 @@ hermes -p developer config set platforms.chathermes.enabled true
 hermes -p developer config set platforms.chathermes.home_channel '<developer-destination>'
 ```
 
-Substitute the target profile and its own home-channel destination. Inspect an
-existing `plugins/chathermes` path before linking; do not overwrite it. Each
-profile needs its own destination and push subscription. See
-**Enable Cron delivery** below for details and verification steps.
+Replace `developer` and the destination with your profile's name and its own
+valid home-channel value. If that profile already has a `plugins/chathermes`
+path, inspect it before linking; do not overwrite an existing installation.
+The symlink shares plugin code only, not profile settings or subscriptions. Each
+profile needs its own destination and enabled push subscription. See **Enable
+Cron delivery** below for the destination format and delivery verification steps.
 
 Hermes installs the dependencies declared by the shipped
 `plugin/chathermes/pyproject.toml` in its managed runtime; use the dependency
@@ -72,47 +74,6 @@ to** selector. This saves `deliver=chathermes`; installation alone does not
 configure the destination, and existing Cron jobs are not changed
 automatically. A push subscription must be enabled in ChatHermes for the
 notification to reach a device.
-
-When a named profile cannot discover a globally installed ChatHermes plugin,
-its runtime plugin discovery is profile-local. Make the default plugin code
-available in that profile with a symlink, then enable the plugin and configure
-the profile's own destination (do not reuse another profile's settings or
-subscriptions). For a Hermes data root at `/opt/data`, for example:
-
-```sh
-mkdir -p /opt/data/profiles/developer/plugins
-ln -s /opt/data/plugins/chathermes \
-  /opt/data/profiles/developer/plugins/chathermes
-hermes -p developer plugins enable chathermes
-hermes -p developer config set platforms.chathermes.enabled true
-hermes -p developer config set platforms.chathermes.home_channel '<developer-destination>'
-```
-
-Use the intended profile and its valid home-channel value in place of these
-examples. Inspect any existing `plugins/chathermes` path before linking; never
-overwrite an existing installation. The symlink shares code, not profile config
-or subscriptions. Check plugin/config discovery before testing delivery:
-
-```sh
-hermes -p developer plugins list
-hermes -p developer config get platforms.chathermes
-hermes -p developer cron list --all
-```
-
-Create a harmless one-shot job and inspect its execution record:
-
-```sh
-hermes -p developer cron create \
-  --name 'ChatHermes delivery test' --deliver chathermes --repeat 1 \
-  'in 1m' 'Reply exactly: ChatHermes Cron test. No tools.'
-hermes -p developer cron runs <job-id> --limit 5
-hermes -p developer cron list --all
-```
-
-Verify Cron completion, the matching profile-scoped sender attempt, provider
-acceptance, device receipt, and notification click destination as separate
-stages. A successful Cron run or HTTP 201 does not by itself prove receipt or
-correct navigation. Remove only the uniquely named test job after verification.
 
 ## Develop and test
 
