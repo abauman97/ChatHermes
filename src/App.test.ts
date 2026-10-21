@@ -856,21 +856,25 @@ describe("profile navigation", () => {
     create.resolve(json({ id: "new" }));
     await flushPromises();
     expect(location.hash).toBe("#/chat/existing?profile=alpha");
-    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toContainEqual({ id: "new" });
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).not.toContainEqual({
+      id: "new",
+    });
     wrapper.unmount();
   });
   it.each(["refresh", "pagination"])(
-    "keeps a new draft through delayed lists and refreshes, then reconciles via %s",
+    "keeps a submitted session through delayed lists and refreshes, then reconciles via %s",
     async (source) => {
       const list = deferred<Response>();
       let settle!: () => void;
       const factory = nativeSession.useNativeSession;
-      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
-        settle = callback;
-        const owner = factory(callback);
-        owner.attach = vi.fn(async () => {});
-        return owner;
-      });
+      vi.spyOn(nativeSession, "useNativeSession").mockImplementation(
+        (callback, onCreated, onTitle) => {
+          settle = callback;
+          const owner = factory(callback, onCreated, onTitle);
+          owner.attach = vi.fn(async () => {});
+          return owner;
+        },
+      );
       const read = vi.fn(() => list.promise);
       mockFetch(async (input, init) => {
         if (input.includes("/capabilities")) return json(streaming);
@@ -884,6 +888,10 @@ describe("profile navigation", () => {
       sidebar.vm.$emit("create");
       await flushPromises();
       expect(location.hash).toBe("#/chat/draft?profile=alpha");
+      expect(sidebar.props("sessions")).toEqual([]);
+      const onCreated = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)?.[1];
+      onCreated?.("alpha", "draft");
+      await flushPromises();
       list.resolve(json({ sessions: [{ id: "existing", title: "Existing" }], total: 1 }));
       await flushPromises();
       expect((sidebar.props("sessions") as Session[]).map((row) => row.id)).toEqual([
@@ -895,7 +903,11 @@ describe("profile navigation", () => {
       read.mockImplementation(async () => json({ sessions: [], total: 0 }));
       settle();
       await flushPromises();
-      expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "New draft" }]);
+      expect((sidebar.props("sessions") as Session[])[0]).toMatchObject({ id: "draft" });
+      const onTitle = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)?.[2];
+      onTitle?.("alpha", "draft", "Hermes title");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "Hermes title" }]);
       sidebar.vm.$emit("select", "draft");
       await flushPromises();
       expect(location.hash).toBe("#/chat/draft?profile=alpha");
@@ -915,6 +927,16 @@ describe("profile navigation", () => {
   );
   it("retains a delayed creation only in its owning profile without navigating", async () => {
     const create = deferred<Response>();
+    let onCreated: ((profile: string, stored: string) => void) | undefined;
+    const factory = nativeSession.useNativeSession;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback, created, title) => {
+      onCreated = created;
+      const owner = factory(callback, created, title);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+      });
+      return owner;
+    });
     mockFetch(async (input, init) => {
       if (input.includes("/capabilities")) return json({});
       if (init?.method === "POST") return create.promise;
@@ -927,6 +949,8 @@ describe("profile navigation", () => {
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
     create.resolve(json({ id: "alpha-draft" }));
+    await flushPromises();
+    onCreated?.("alpha", "alpha-draft");
     await flushPromises();
     expect(routeUrl().searchParams.get("profile")).toBe("beta");
     expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([]);
@@ -941,6 +965,16 @@ describe("profile navigation", () => {
   it.each(["archive", "delete"])(
     "does not resurrect an unlisted draft after %s",
     async (action) => {
+      const factory = nativeSession.useNativeSession;
+      let onCreated: ((profile: string, stored: string) => void) | undefined;
+      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback, created, title) => {
+        onCreated = created;
+        const owner = factory(callback, created, title);
+        owner.attach = vi.fn(async () => {
+          owner.connection.value = "ready";
+        });
+        return owner;
+      });
       mockFetch(async (input, init) => {
         if (input.includes("/capabilities")) return json({});
         if (init?.method === "POST") return json({ id: "draft" });
@@ -950,6 +984,9 @@ describe("profile navigation", () => {
       await flushPromises();
       const sidebar = wrapper.findComponent(SessionSidebar);
       sidebar.vm.$emit("create");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([]);
+      onCreated?.("alpha", "draft");
       await flushPromises();
       expect(sidebar.props("sessions")).toEqual([{ id: "draft" }]);
       sidebar.vm.$emit(action, "draft");

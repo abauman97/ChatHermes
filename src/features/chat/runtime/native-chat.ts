@@ -35,6 +35,7 @@ export interface NativeHooks {
     display?: DisplayMetadata,
   ) => void;
   requests: (requests: OpenRequestEntry[]) => void;
+  created?: () => void;
   connection: (state: "connecting" | "recovering" | "open" | "closed", error?: string) => void;
   recovered: () => void;
 }
@@ -51,6 +52,7 @@ export class NativeViewer {
   private held: Frame[] = [];
   private offset = 0;
   private runtime = "";
+  private draftInputSeen = false;
   private failed = false;
   private abort = new AbortController();
   private cancelOpening?: () => void;
@@ -191,6 +193,7 @@ export class NativeViewer {
     )
       throw new NativeError("Invalid native recovery snapshot");
     this.runtime = snapshot.session_id;
+    this.draftInputSeen = snapshot.messages.some((message) => message.role === "user");
     this.offset = snapshot.recovery.complete
       ? snapshot.recovery.start || 0
       : snapshot.recovery.through;
@@ -244,7 +247,11 @@ export class NativeViewer {
         this.hooks.requests([...this.requestEntries.values()]);
       }
       this.hooks.event(event);
-    } else if (frame.method === "chat.input" || frame.method === "chat.correction")
+    } else if (frame.method === "chat.input" || frame.method === "chat.correction") {
+      if (frame.method === "chat.input" && !this.draftInputSeen) {
+        this.draftInputSeen = true;
+        this.hooks.created?.();
+      }
       this.hooks.input(
         String(frame.params?.text || ""),
         frame.method === "chat.correction",
@@ -254,7 +261,7 @@ export class NativeViewer {
           display_metadata: frame.params?.display_metadata,
         },
       );
-    else if (frame.method === "chat.unsupported")
+    } else if (frame.method === "chat.unsupported")
       this.hooks.connection("open", "Unavailable in ChatHermes: " + frame.params?.method);
   }
   private disconnected(message?: string) {

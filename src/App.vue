@@ -198,10 +198,31 @@ const pushBusy = ref(false),
   pushMessage = ref("");
 let pushGeneration = 0;
 const settingsButton = ref<HTMLButtonElement | null>(null);
-const native = useNativeSession(() => {
-  refreshProjects();
-  void loadSessions();
-});
+const unlistedSessions = new Map<string, Map<string, Session>>();
+function rememberCreatedSession(p: string, draft: string | Pick<Session, "id" | "title">) {
+  let pending = unlistedSessions.get(p);
+  if (!pending) unlistedSessions.set(p, (pending = new Map()));
+  const session = typeof draft === "string" ? { id: draft } : draft;
+  const made: Session = { ...pending.get(session.id), ...session };
+  pending.set(made.id, made);
+  if (p === profile.value)
+    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
+}
+function persistNativeTitle(p: string, id: string, title: string) {
+  const pending = unlistedSessions.get(p)?.get(id);
+  if (!pending) return;
+  pending.title = title;
+  if (p === profile.value)
+    sessions.value = [pending, ...sessions.value.filter((row) => row.id !== id)];
+}
+const native = useNativeSession(
+  () => {
+    refreshProjects();
+    void loadSessions();
+  },
+  rememberCreatedSession,
+  persistNativeTitle,
+);
 const chat = useChatController(native, {
   profile,
   session,
@@ -395,16 +416,6 @@ async function manageProject(action: ProjectAction, fields: Record<string, strin
     if (owner === profileGeneration) projectBusy.value = false;
   }
 }
-// Native drafts are resumable before they have a durable REST row. Keep only
-// unlisted creations, by profile, until a list response acknowledges them.
-const unlistedSessions = new Map<string, Map<string, Session>>();
-function rememberCreatedSession(p: string, made: Session) {
-  let pending = unlistedSessions.get(p);
-  if (!pending) unlistedSessions.set(p, (pending = new Map()));
-  pending.set(made.id, made);
-  if (p === profile.value)
-    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
-}
 async function loadSessions(more = false) {
   listAbort?.abort();
   const controller = new AbortController();
@@ -590,7 +601,6 @@ async function createSession(unscoped = false) {
       model.value = "";
     }
     const made = scope ? await api.projectCreate(id, scope) : await api.create(id);
-    rememberCreatedSession(id, made);
     if (
       current !== generation ||
       profile.value !== id ||

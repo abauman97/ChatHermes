@@ -24,7 +24,11 @@ import type {
 } from "../../../vendor/hermes/gateway-contract.generated.ts";
 
 /** One state owner for TUI chat execution and recovery. */
-export function useNativeSession(onSettled: () => void) {
+export function useNativeSession(
+  onSettled: () => void,
+  onCreated?: (profile: string, stored: string) => void,
+  onTitle?: (profile: string, stored: string, title: string) => void,
+) {
   const messages = ref<Message[]>([]),
     busy = ref(false),
     loading = ref(false),
@@ -308,6 +312,12 @@ export function useNativeSession(onSettled: () => void) {
         deliver(() => {
           const data = (event.payload || {}) as Record<string, unknown>;
           const text = typeof data.text === "string" ? data.text : "";
+          if (
+            (event.type === "session.title" || event.type === "session.info") &&
+            typeof data.title === "string"
+          ) {
+            onTitle?.(p, s, data.title);
+          }
           if (event.type === "message.start") {
             busy.value = true;
             status.value =
@@ -365,6 +375,7 @@ export function useNativeSession(onSettled: () => void) {
         deliver(() => {
           requests.value = value;
         }),
+      created: () => onCreated?.(p, s),
       connection: (state, notice) => {
         if (current !== generation) return;
         if (state === "closed") {
