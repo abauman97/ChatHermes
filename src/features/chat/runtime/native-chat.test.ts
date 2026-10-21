@@ -8,6 +8,7 @@ const hooks = (): NativeHooks => ({
   event: vi.fn(),
   input: vi.fn(),
   requests: vi.fn(),
+  created: vi.fn(),
   connection: vi.fn(),
   recovered: vi.fn(),
 });
@@ -87,18 +88,40 @@ describe("retained native recovery", () => {
       const h = hooks(),
         viewer = new NativeViewer("a", "stored", h);
       await viewer.ensure();
-      expect(vi.mocked(h.event).mock.calls.map(([e]) => e.type)).toEqual(
-        complete ? ["reasoning.delta", "tool.start", "message.delta"] : ["message.delta"],
-      );
+      (viewer as any).apply({
+        method: "event",
+        params: {
+          session_id: "runtime",
+          type: "session.title",
+          payload: { session_id: "runtime", title: "Generated title" },
+        },
+        chat_offset: 4,
+      });
+      expect(h.event).toHaveBeenCalledTimes(complete ? 4 : 2);
+      (viewer as any).apply({
+        method: "chat.input",
+        params: { text: "first prompt" },
+        chat_offset: 5,
+      });
+      (viewer as any).apply({
+        method: "event",
+        params: {
+          session_id: "runtime",
+          type: "session.title",
+          payload: { session_id: "runtime", title: "Generated title" },
+        },
+        chat_offset: 6,
+      });
+      expect(h.event).toHaveBeenCalledWith(expect.objectContaining({ type: "session.title" }));
       expect(sent).toEqual(complete ? ["chat.attach", "chat.replay"] : ["chat.attach"]);
-      expect(viewer.boundary).toBe(3);
+      expect(viewer.boundary).toBe(6);
       // Corrections have no prompt-admission token; they still reach the reducer.
       (viewer as any).apply({
         method: "chat.correction",
         params: { text: "Use the second approach" },
-        chat_offset: 4,
+        chat_offset: 7,
       });
-      expect(h.input).toHaveBeenCalledWith("Use the second approach", true, undefined, {
+      expect(h.input).toHaveBeenLastCalledWith("Use the second approach", true, undefined, {
         display_kind: undefined,
         display_metadata: undefined,
       });
@@ -262,6 +285,7 @@ it("surfaces secret prompts and keeps their reply on the normal chat.answer rout
     event: vi.fn(),
     input: vi.fn(),
     requests: vi.fn(),
+    created: vi.fn(),
     connection: vi.fn(),
     recovered: vi.fn(),
   };
