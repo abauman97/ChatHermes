@@ -87,6 +87,7 @@ async function discussScheduled(text: string) {
   scheduledDiscussionError.value = "";
   try {
     const made = await api.create(p);
+    rememberCreatedSession(p, made);
     if (
       owner !== profileGeneration ||
       p !== profile.value ||
@@ -94,7 +95,6 @@ async function discussScheduled(text: string) {
       !scheduledPage.value
     )
       return;
-    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
     await chooseSession(made.id, "");
     if (owner === profileGeneration && p === profile.value && session.value === made.id)
       suggestedPrompt.value = text;
@@ -395,6 +395,16 @@ async function manageProject(action: ProjectAction, fields: Record<string, strin
     if (owner === profileGeneration) projectBusy.value = false;
   }
 }
+// Native drafts are resumable before they have a durable REST row. Keep only
+// unlisted creations, by profile, until a list response acknowledges them.
+const unlistedSessions = new Map<string, Map<string, Session>>();
+function rememberCreatedSession(p: string, made: Session) {
+  let pending = unlistedSessions.get(p);
+  if (!pending) unlistedSessions.set(p, (pending = new Map()));
+  pending.set(made.id, made);
+  if (p === profile.value)
+    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
+}
 async function loadSessions(more = false) {
   listAbort?.abort();
   const controller = new AbortController();
@@ -406,12 +416,15 @@ async function loadSessions(more = false) {
     const result = await api.sessions(id, more ? offset.value : 0, controller.signal);
     if (controller !== listAbort || id !== profile.value) return;
     const page = result.sessions;
+    const pending = unlistedSessions.get(id);
+    for (const row of page) pending?.delete(row.id);
+    const unlisted = [...(pending?.values() || [])].reverse();
     sessions.value = more
       ? [
-          ...sessions.value,
+          ...sessions.value.map((row) => page.find((item) => item.id === row.id) || row),
           ...page.filter((item) => !sessions.value.some((existing) => existing.id === item.id)),
         ]
-      : page;
+      : [...unlisted, ...page];
     offset.value =
       typeof result.offset === "number" && typeof result.limit === "number"
         ? result.offset + result.limit
@@ -568,7 +581,8 @@ async function createSession(unscoped = false) {
     scope = unscoped ? "" : projectId.value,
     selected = session.value,
     revision = navigationRevision,
-    current = generation;
+    current = generation,
+    owner = profileGeneration;
   creating.value = true;
   try {
     if (scope && !provider.value) {
@@ -576,6 +590,7 @@ async function createSession(unscoped = false) {
       model.value = "";
     }
     const made = scope ? await api.projectCreate(id, scope) : await api.create(id);
+    rememberCreatedSession(id, made);
     if (
       current !== generation ||
       profile.value !== id ||
@@ -583,7 +598,6 @@ async function createSession(unscoped = false) {
       revision !== navigationRevision
     )
       return;
-    sessions.value = [made, ...sessions.value.filter((item) => item.id !== made.id)];
     // RPC drafts have no DB row until the first prompt; their normal resume path
     // can still hydrate them by stored ID. Keep the same chat components.
     await chooseSession(made.id, scope);
@@ -602,7 +616,7 @@ async function createSession(unscoped = false) {
       else error.value = message;
     }
   } finally {
-    creating.value = false;
+    if (owner === profileGeneration) creating.value = false;
   }
 }
 async function suggest(text: string) {
@@ -638,6 +652,7 @@ async function manageSession(action: "archive" | "delete" | "project", id: strin
     if (action === "archive") await api.archive(p, id);
     else if (action === "delete") await api.deleteSession(p, id);
     else await api.moveSession(p, id, target);
+    if (action !== "project") unlistedSessions.get(p)?.delete(id);
     if (current !== generation || p !== profile.value) return;
     if (session.value === id) {
       if (action === "project")
