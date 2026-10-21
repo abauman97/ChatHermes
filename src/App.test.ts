@@ -16,6 +16,7 @@ const mount: typeof vueMount = (component, options = {}) =>
 import { computed, ref } from "vue";
 import App from "./App.vue";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
+import type { Session } from "./types/hermes";
 import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
 beforeEach(() => {
@@ -855,6 +856,132 @@ describe("profile navigation", () => {
     create.resolve(json({ id: "new" }));
     await flushPromises();
     expect(location.hash).toBe("#/chat/existing?profile=alpha");
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toContainEqual({ id: "new" });
+    wrapper.unmount();
+  });
+  it.each(["refresh", "pagination"])(
+    "keeps a new draft through delayed lists and refreshes, then reconciles via %s",
+    async (source) => {
+      const list = deferred<Response>();
+      let settle!: () => void;
+      const factory = nativeSession.useNativeSession;
+      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+        settle = callback;
+        const owner = factory(callback);
+        owner.attach = vi.fn(async () => {});
+        return owner;
+      });
+      const read = vi.fn(() => list.promise);
+      mockFetch(async (input, init) => {
+        if (input.includes("/capabilities")) return json(streaming);
+        if (init?.method === "POST") return json({ id: "draft", title: "New draft" });
+        if (input.includes("/api/sessions?")) return read();
+        return json({});
+      });
+      const wrapper = mount(App);
+      await flushPromises();
+      const sidebar = wrapper.findComponent(SessionSidebar);
+      sidebar.vm.$emit("create");
+      await flushPromises();
+      expect(location.hash).toBe("#/chat/draft?profile=alpha");
+      list.resolve(json({ sessions: [{ id: "existing", title: "Existing" }], total: 1 }));
+      await flushPromises();
+      expect((sidebar.props("sessions") as Session[]).map((row) => row.id)).toEqual([
+        "draft",
+        "existing",
+      ]);
+      sidebar.vm.$emit("select", "existing");
+      await flushPromises();
+      read.mockImplementation(async () => json({ sessions: [], total: 0 }));
+      settle();
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "New draft" }]);
+      sidebar.vm.$emit("select", "draft");
+      await flushPromises();
+      expect(location.hash).toBe("#/chat/draft?profile=alpha");
+      read.mockImplementation(async () =>
+        json({ sessions: [{ id: "draft", title: "Saved title" }], total: 1 }),
+      );
+      if (source === "pagination") sidebar.vm.$emit("more");
+      else settle();
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "Saved title" }]);
+      read.mockImplementation(async () => json({ sessions: [], total: 0 }));
+      settle();
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([]);
+      wrapper.unmount();
+    },
+  );
+  it("retains a delayed creation only in its owning profile without navigating", async () => {
+    const create = deferred<Response>();
+    mockFetch(async (input, init) => {
+      if (input.includes("/capabilities")) return json({});
+      if (init?.method === "POST") return create.promise;
+      return json({ sessions: [], total: 0 });
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+    const sidebar = wrapper.findComponent(SessionSidebar);
+    sidebar.vm.$emit("create");
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    create.resolve(json({ id: "alpha-draft" }));
+    await flushPromises();
+    expect(routeUrl().searchParams.get("profile")).toBe("beta");
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([]);
+    await wrapper.get(".profile-field").setValue("alpha");
+    await flushPromises();
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([
+      { id: "alpha-draft" },
+    ]);
+    expect(routeUrl().pathname).toBe("/");
+    wrapper.unmount();
+  });
+  it.each(["archive", "delete"])(
+    "does not resurrect an unlisted draft after %s",
+    async (action) => {
+      mockFetch(async (input, init) => {
+        if (input.includes("/capabilities")) return json({});
+        if (init?.method === "POST") return json({ id: "draft" });
+        return json({ sessions: [], total: 0 });
+      });
+      const wrapper = mount(App);
+      await flushPromises();
+      const sidebar = wrapper.findComponent(SessionSidebar);
+      sidebar.vm.$emit("create");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft" }]);
+      sidebar.vm.$emit(action, "draft");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([]);
+      expect(routeUrl().pathname).toBe("/");
+      wrapper.unmount();
+    },
+  );
+  it("does not clear a newer profile's creation state when an older creation finishes", async () => {
+    const alpha = deferred<Response>(),
+      beta = deferred<Response>();
+    mockFetch(async (input, init) => {
+      if (input.includes("/capabilities")) return json({});
+      if (init?.method === "POST")
+        return input.includes("profile=alpha") ? alpha.promise : beta.promise;
+      return json({ sessions: [], total: 0 });
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await wrapper.get(".profile-field").setValue("beta");
+    await flushPromises();
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    alpha.resolve(json({ id: "alpha-draft" }));
+    await flushPromises();
+    expect(wrapper.findComponent(SessionSidebar).props("busy")).toBe(true);
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([]);
+    beta.resolve(json({ id: "beta-draft" }));
+    await flushPromises();
+    expect(wrapper.findComponent(SessionSidebar).props("busy")).toBe(false);
+    expect(location.hash).toBe("#/chat/beta-draft?profile=beta");
     wrapper.unmount();
   });
   it("allows a successful create to select its new session when selection is unchanged", async () => {
