@@ -22,6 +22,8 @@ vi.mock("./native-chat", async (importOriginal) => {
         return fake.boundary;
       }
       constructor(_profile: string, _stored: string, hooks: NativeHooks) {
+        this.profile = _profile;
+        this.stored = _stored;
         fake.hooks = hooks;
       }
       async ensure() {
@@ -46,6 +48,114 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it.each(["start", "ack", "lost ack"])(
+    "ignores early input and refreshes once after persistence via %s",
+    async (first) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      let acknowledge!: () => void;
+      let reject!: (error: Error) => void;
+      fake.rpc.mockImplementation((method) =>
+        method === "chat.submit"
+          ? new Promise<void>((resolve, fail) => {
+              acknowledge = resolve;
+              reject = fail;
+            })
+          : Promise.resolve({ settled: false }),
+      );
+      const created = vi.fn();
+      const session = useNativeSession(vi.fn(), created);
+      await session.attach("alpha", "one");
+      const sending = session.submit("Question", "Question", {});
+      await Promise.resolve();
+      fake.hooks!.input("Question", false);
+      expect(created).not.toHaveBeenCalled();
+      if (first !== "ack") {
+        fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
+        expect(created).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+      }
+      if (first === "lost ack") {
+        reject(new NativeError("Lost acknowledgement"));
+        await expect(sending).rejects.toThrow("Lost acknowledgement");
+      } else {
+        acknowledge();
+        await sending;
+      }
+      expect(created).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+      fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
+      expect(created).toHaveBeenCalledTimes(1);
+      session.close();
+    },
+  );
+  it.each([false, true])(
+    "refreshes on acknowledgement without input (reconnect: %s)",
+    async (reconnect) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      let acknowledge!: () => void;
+      fake.rpc.mockImplementation((method) =>
+        method === "chat.submit"
+          ? new Promise<void>((resolve) => {
+              acknowledge = resolve;
+            })
+          : Promise.resolve({ settled: false }),
+      );
+      const created = vi.fn();
+      const session = useNativeSession(vi.fn(), created);
+      await session.attach("alpha", "one");
+      const sending = session.submit("Question", "Question", {});
+      await Promise.resolve();
+      if (reconnect) {
+        await session.availability(false, true);
+        await session.availability(true, true);
+      }
+      expect(created).not.toHaveBeenCalled();
+      acknowledge();
+      await sending;
+      expect(created).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+      session.close();
+    },
+  );
+  it("ignores acknowledgements and callbacks from an old selection", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    let acknowledge!: () => void;
+    fake.rpc.mockImplementation((method) =>
+      method === "chat.submit"
+        ? new Promise<void>((resolve) => {
+            acknowledge = resolve;
+          })
+        : Promise.resolve({ settled: false }),
+    );
+    const created = vi.fn(),
+      title = vi.fn();
+    const session = useNativeSession(vi.fn(), created, title);
+    await session.attach("alpha", "one");
+    const old = fake.hooks!;
+    const sending = session.submit("Question", "Question", {});
+    await Promise.resolve();
+    await session.attach("beta", "two");
+    acknowledge();
+    await sending;
+    old.event({ type: "message.start", session_id: "runtime" } as any);
+    old.event({ type: "session.title", payload: { title: "Old" } } as any);
+    expect(created).not.toHaveBeenCalled();
+    expect(title).not.toHaveBeenCalled();
+    fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
+    expect(created).toHaveBeenCalledExactlyOnceWith("beta", "two");
+    session.close();
+  });
+  it("preserves pending persistence across reconnection after early input", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    fake.rpc.mockResolvedValue({ settled: false });
+    const created = vi.fn();
+    const session = useNativeSession(vi.fn(), created);
+    await session.attach("alpha", "one");
+    fake.hooks!.input("Question", false);
+    await session.availability(false, true);
+    await session.availability(true, true);
+    expect(created).not.toHaveBeenCalled();
+    fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
+    expect(created).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+    session.close();
+  });
   it.each([false, true])(
     "explicitly resolves an idle native session with an unterminated retained input (reload: %s)",
     async (reload) => {

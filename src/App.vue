@@ -87,7 +87,9 @@ async function discussScheduled(text: string) {
   scheduledDiscussionError.value = "";
   try {
     const made = await api.create(p);
-    rememberCreatedSession(p, made);
+    // RPC creation returns a draft. Only the server list can establish whether
+    // it is durable; native admission refreshes again after the first prompt.
+    refreshNativeSessions(p);
     if (
       owner !== profileGeneration ||
       p !== profile.value ||
@@ -198,30 +200,21 @@ const pushBusy = ref(false),
   pushMessage = ref("");
 let pushGeneration = 0;
 const settingsButton = ref<HTMLButtonElement | null>(null);
-const unlistedSessions = new Map<string, Map<string, Session>>();
-function rememberCreatedSession(p: string, draft: string | Pick<Session, "id" | "title">) {
-  let pending = unlistedSessions.get(p);
-  if (!pending) unlistedSessions.set(p, (pending = new Map()));
-  const session = typeof draft === "string" ? { id: draft } : draft;
-  const made: Session = { ...pending.get(session.id), ...session };
-  pending.set(made.id, made);
-  if (p === profile.value)
-    sessions.value = [made, ...sessions.value.filter((row) => row.id !== made.id)];
+const removedSessions = new Set<string>();
+function refreshNativeSessions(p: string) {
+  if (p === profile.value) void loadSessions();
 }
-function persistNativeTitle(p: string, id: string, title: string) {
-  const pending = unlistedSessions.get(p)?.get(id);
-  if (!pending) return;
-  pending.title = title;
-  if (p === profile.value)
-    sessions.value = [pending, ...sessions.value.filter((row) => row.id !== id)];
+function updateNativeTitle(p: string, id: string, title: string) {
+  if (p !== profile.value) return;
+  sessions.value = sessions.value.map((row) => (row.id === id ? { ...row, title } : row));
 }
 const native = useNativeSession(
   () => {
     refreshProjects();
     void loadSessions();
   },
-  rememberCreatedSession,
-  persistNativeTitle,
+  refreshNativeSessions,
+  updateNativeTitle,
 );
 const chat = useChatController(native, {
   profile,
@@ -416,35 +409,47 @@ async function manageProject(action: ProjectAction, fields: Record<string, strin
     if (owner === profileGeneration) projectBusy.value = false;
   }
 }
+function invalidateSessionList() {
+  listAbort?.abort();
+  listAbort = undefined;
+  loading.value = false;
+}
 async function loadSessions(more = false) {
   listAbort?.abort();
   const controller = new AbortController();
   listAbort = controller;
   const id = profile.value;
+  const listedTitles = new Map(sessions.value.map((row) => [row.id, row.title]));
   loading.value = true;
   error.value = "";
   try {
     const result = await api.sessions(id, more ? offset.value : 0, controller.signal);
-    if (controller !== listAbort || id !== profile.value) return;
-    const page = result.sessions;
-    const pending = unlistedSessions.get(id);
-    for (const row of page) pending?.delete(row.id);
-    const unlisted = [...(pending?.values() || [])].reverse();
+    if (controller !== listAbort || controller.signal.aborted || id !== profile.value) return;
+    const page = result.sessions
+      .filter((row) => !removedSessions.has(row.id))
+      .map((row) => {
+        const current = sessions.value.find((item) => item.id === row.id);
+        return current && listedTitles.has(row.id) && current.title !== listedTitles.get(row.id)
+          ? { ...row, title: current.title }
+          : row;
+      });
     sessions.value = more
       ? [
           ...sessions.value.map((row) => page.find((item) => item.id === row.id) || row),
           ...page.filter((item) => !sessions.value.some((existing) => existing.id === item.id)),
         ]
-      : [...unlisted, ...page];
+      : page;
     offset.value =
       typeof result.offset === "number" && typeof result.limit === "number"
         ? result.offset + result.limit
         : more
-          ? offset.value + page.length
-          : page.length;
+          ? offset.value + result.sessions.length
+          : result.sessions.length;
     hasMore.value =
       result.has_more ??
-      (typeof result.total === "number" ? offset.value < result.total : page.length === 30);
+      (typeof result.total === "number"
+        ? offset.value < result.total
+        : result.sessions.length === 30);
   } catch (cause) {
     if (controller === listAbort && !controller.signal.aborted)
       error.value = cause instanceof Error ? cause.message : "Could not load sessions";
@@ -513,6 +518,7 @@ async function applyProfile(id: string) {
   profile.value = id;
   session.value = "";
   sessions.value = [];
+  removedSessions.clear();
   messages.value = [];
   capabilities.value = {};
   models.value = [];
@@ -656,15 +662,22 @@ async function manageSession(action: "archive" | "delete" | "project", id: strin
   if (offline.value || sessionBusy.value) return;
   const p = profile.value,
     current = generation,
-    mutation = ++sessionMutation;
+    mutation = ++sessionMutation,
+    owner = profileGeneration;
   sessionBusy.value = true;
+  // Retire reads started before the mutation, even if fetch ignores abort.
+  invalidateSessionList();
   try {
     if (action === "archive") await api.archive(p, id);
     else if (action === "delete") await api.deleteSession(p, id);
     else await api.moveSession(p, id, target);
-    if (action !== "project") unlistedSessions.get(p)?.delete(id);
-    if (current !== generation || p !== profile.value) return;
-    if (session.value === id) {
+    if (owner !== profileGeneration || p !== profile.value) return;
+    invalidateSessionList();
+    if (action !== "project") {
+      removedSessions.add(id);
+      sessions.value = sessions.value.filter((row) => row.id !== id);
+    }
+    if (current === generation && session.value === id) {
       if (action === "project")
         await navigate({
           name: "chat",
