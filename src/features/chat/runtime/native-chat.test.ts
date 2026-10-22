@@ -8,7 +8,6 @@ const hooks = (): NativeHooks => ({
   event: vi.fn(),
   input: vi.fn(),
   requests: vi.fn(),
-  created: vi.fn(),
   connection: vi.fn(),
   recovered: vi.fn(),
 });
@@ -285,7 +284,6 @@ it("surfaces secret prompts and keeps their reply on the normal chat.answer rout
     event: vi.fn(),
     input: vi.fn(),
     requests: vi.fn(),
-    created: vi.fn(),
     connection: vi.fn(),
     recovered: vi.fn(),
   };

@@ -46,6 +46,7 @@ export function useNativeSession(
   let viewer: NativeViewer | undefined,
     generation = 0,
     recovering = false,
+    pendingPersistence = false,
     hydrating = 0;
   let reconstruction: Promise<void> | undefined;
   let selected = false;
@@ -70,6 +71,14 @@ export function useNativeSession(
     if (user && turn) user.blocks = turn.blocks;
     messages.value = [...messages.value];
   };
+  function refreshPersistedSession() {
+    if (!pendingPersistence) return;
+    pendingPersistence = false;
+    onCreated?.(p, s);
+  }
+  function refreshSessionTitle(title: string) {
+    if (selected && p && s) onTitle?.(p, s, title);
+  }
   function input(
     text: string,
     correction = false,
@@ -254,6 +263,7 @@ export function useNativeSession(
       p = profile;
       s = stored;
       selected = true;
+      pendingPersistence = true;
       uncertain.value = nativeOutcome(p, s);
     }
     await reconnect();
@@ -316,9 +326,12 @@ export function useNativeSession(
             (event.type === "session.title" || event.type === "session.info") &&
             typeof data.title === "string"
           ) {
-            onTitle?.(p, s, data.title);
+            refreshSessionTitle(data.title);
           }
           if (event.type === "message.start") {
+            // Hermes persists before starting the turn. This also covers an
+            // input from another viewer or a lost submit acknowledgement.
+            refreshPersistedSession();
             busy.value = true;
             status.value =
               user && gatewayDisplay(user) === "status" ? gatewayDisplayText(user) : "Working…";
@@ -375,7 +388,6 @@ export function useNativeSession(
         deliver(() => {
           requests.value = value;
         }),
-      created: () => onCreated?.(p, s),
       connection: (state, notice) => {
         if (current !== generation) return;
         if (state === "closed") {
@@ -457,6 +469,10 @@ export function useNativeSession(
       await target.rpc("chat.submit", { input: prepared, admission_id: attempt, ...selection });
       settleNativeOutcome(profileFor(target), target.stored, attempt);
       if (current === generation) uncertain.value = false;
+      // An acknowledgement remains reliable across reconnects, but belongs
+      // only to this selection and attempt, even if the same IDs reopen.
+      if (selected && p === target.profile && s === target.stored && pendingAttempt === attempt)
+        refreshPersistedSession();
     } catch (cause) {
       if (!dispatched || (cause instanceof NativeError && cause.outcome === "rejected")) {
         settleNativeOutcome(profileFor(target), target.stored, attempt);
@@ -524,6 +540,7 @@ export function useNativeSession(
   function close() {
     stale();
     selected = false;
+    pendingPersistence = false;
     pendingAttempt = "";
     messages.value = [];
     busy.value = false;

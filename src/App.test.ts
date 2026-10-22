@@ -16,6 +16,7 @@ const mount: typeof vueMount = (component, options = {}) =>
 import { computed, ref } from "vue";
 import App from "./App.vue";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
+import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
 import type { Session } from "./types/hermes";
 import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
@@ -514,6 +515,66 @@ describe("settings page", () => {
   });
 });
 describe("profile navigation", () => {
+  it.each(["stay", "navigate", "profile"])(
+    "refreshes only server-listed scheduled discussion sessions and preserves %s isolation",
+    async (action) => {
+      history.replaceState({}, "", "/chathermes?profile=alpha#/scheduled?profile=alpha");
+      const create = deferred<Response>();
+      let rows: Session[] = [];
+      const read = vi.fn(async (input: string) =>
+        json({ sessions: input.includes("profile=alpha") ? rows : [], total: rows.length }),
+      );
+      const factory = nativeSession.useNativeSession;
+      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((...args) => {
+        const owner = factory(...args);
+        owner.attach = vi.fn(async () => {});
+        return owner;
+      });
+      mockFetch(async (input, init) => {
+        if (input.includes("/capabilities")) return json(streaming);
+        if (init?.method === "POST") return create.promise;
+        if (input.includes("/api/sessions?")) return read(input);
+        if (input.includes("/scheduled")) return json({ jobs: [] });
+        return json({});
+      });
+      const wrapper = mount(App);
+      await flushPromises();
+      wrapper.findComponent(ScheduledPage).vm.$emit("discuss", "Discuss this output");
+      await flushPromises();
+      if (action === "navigate") {
+        wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
+        await flushPromises();
+      } else if (action === "profile") {
+        await wrapper.get(".profile-field").setValue("beta");
+        await flushPromises();
+      }
+      const previousRoute = location.hash;
+      const reads = read.mock.calls.length;
+      // The create response alone must never manufacture a sidebar row.
+      create.resolve(json({ id: "discussion" }));
+      await flushPromises();
+      expect(read).toHaveBeenCalledTimes(reads + (action === "profile" ? 0 : 1));
+      const sidebar = wrapper.findComponent(SessionSidebar);
+      expect(sidebar.props("sessions")).toEqual([]);
+      if (action === "stay") {
+        expect(location.hash).toBe("#/chat/discussion?profile=alpha");
+        expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe(
+          "Discuss this output",
+        );
+      } else expect(location.hash).toBe(previousRoute);
+      rows = [{ id: "discussion", title: "Persisted discussion" }];
+      const [, onCreated] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
+      onCreated?.("alpha", "discussion");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual(action === "profile" ? [] : rows);
+      if (action === "profile") {
+        await wrapper.get(".profile-field").setValue("alpha");
+        await flushPromises();
+        expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual(rows);
+      }
+      wrapper.unmount();
+    },
+  );
   it("keeps global navigation in the drawer and exposes screen actions from the top-right menu", async () => {
     mockFetch(
       vi.fn(async (input: string) =>
@@ -862,9 +923,10 @@ describe("profile navigation", () => {
     wrapper.unmount();
   });
   it.each(["refresh", "pagination"])(
-    "keeps a submitted session through delayed lists and refreshes, then reconciles via %s",
+    "keeps empty lists authoritative until persistence, updates a listed title, and reconciles via %s",
     async (source) => {
-      const list = deferred<Response>();
+      const initial = deferred<Response>();
+      const beforeTitle = deferred<Response>();
       let settle!: () => void;
       const factory = nativeSession.useNativeSession;
       vi.spyOn(nativeSession, "useNativeSession").mockImplementation(
@@ -875,7 +937,7 @@ describe("profile navigation", () => {
           return owner;
         },
       );
-      const read = vi.fn(() => list.promise);
+      const read = vi.fn(() => initial.promise);
       mockFetch(async (input, init) => {
         if (input.includes("/capabilities")) return json(streaming);
         if (init?.method === "POST") return json({ id: "draft", title: "New draft" });
@@ -889,28 +951,36 @@ describe("profile navigation", () => {
       await flushPromises();
       expect(location.hash).toBe("#/chat/draft?profile=alpha");
       expect(sidebar.props("sessions")).toEqual([]);
-      const onCreated = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)?.[1];
+      expect(read).toHaveBeenCalledTimes(1);
+      const [, onCreated, onTitle] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
+      // A normal refresh before persistence cannot manufacture a sidebar row.
+      read.mockImplementation(async () => json({ sessions: [], total: 0 }));
+      sidebar.vm.$emit("retry");
+      await flushPromises();
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(sidebar.props("sessions")).toEqual([]);
+      // Reliable native persistence triggers the follow-up and wins over the
+      // initial list, even if that older request ignores its abort signal.
+      read.mockImplementation(async () => json({ sessions: [{ id: "draft" }], total: 1 }));
       onCreated?.("alpha", "draft");
       await flushPromises();
-      list.resolve(json({ sessions: [{ id: "existing", title: "Existing" }], total: 1 }));
+      initial.resolve(json({ sessions: [{ id: "existing" }], total: 1 }));
       await flushPromises();
-      expect((sidebar.props("sessions") as Session[]).map((row) => row.id)).toEqual([
-        "draft",
-        "existing",
-      ]);
-      sidebar.vm.$emit("select", "existing");
-      await flushPromises();
-      read.mockImplementation(async () => json({ sessions: [], total: 0 }));
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft" }]);
+      read.mockImplementation(() => beforeTitle.promise);
       settle();
       await flushPromises();
-      expect((sidebar.props("sessions") as Session[])[0]).toMatchObject({ id: "draft" });
-      const onTitle = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)?.[2];
+      read.mockImplementation(async () =>
+        json({ sessions: [{ id: "draft", title: "Hermes title" }], total: 1 }),
+      );
+      const readsBeforeTitle = read.mock.calls.length;
       onTitle?.("alpha", "draft", "Hermes title");
       await flushPromises();
+      expect(read).toHaveBeenCalledTimes(readsBeforeTitle);
       expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "Hermes title" }]);
-      sidebar.vm.$emit("select", "draft");
+      beforeTitle.resolve(json({ sessions: [{ id: "draft", title: "Old title" }], total: 1 }));
       await flushPromises();
-      expect(location.hash).toBe("#/chat/draft?profile=alpha");
+      expect(sidebar.props("sessions")).toEqual([{ id: "draft", title: "Hermes title" }]);
       read.mockImplementation(async () =>
         json({ sessions: [{ id: "draft", title: "Saved title" }], total: 1 }),
       );
@@ -925,60 +995,58 @@ describe("profile navigation", () => {
       wrapper.unmount();
     },
   );
-  it("retains a delayed creation only in its owning profile without navigating", async () => {
-    const create = deferred<Response>();
-    let onCreated: ((profile: string, stored: string) => void) | undefined;
+  it("ignores another profile's input and title callbacks and loads its server list on return", async () => {
     const factory = nativeSession.useNativeSession;
     vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback, created, title) => {
-      onCreated = created;
       const owner = factory(callback, created, title);
-      owner.attach = vi.fn(async () => {
-        owner.connection.value = "ready";
-      });
+      owner.attach = vi.fn(async () => {});
       return owner;
     });
-    mockFetch(async (input, init) => {
-      if (input.includes("/capabilities")) return json({});
-      if (init?.method === "POST") return create.promise;
-      return json({ sessions: [], total: 0 });
+    let alphaRows: Session[] = [];
+    const read = vi.fn((input: string) =>
+      json({ sessions: input.includes("profile=alpha") ? alphaRows : [], total: 1 }),
+    );
+    mockFetch(async (input) => {
+      if (input.includes("/capabilities")) return json(streaming);
+      if (input.includes("/api/sessions?")) return read(input);
+      return json({});
     });
     const wrapper = mount(App);
     await flushPromises();
-    const sidebar = wrapper.findComponent(SessionSidebar);
-    sidebar.vm.$emit("create");
+    const [, onCreated, onTitle] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
-    create.resolve(json({ id: "alpha-draft" }));
-    await flushPromises();
+    const reads = read.mock.calls.length;
+    alphaRows = [{ id: "alpha-draft", title: "Alpha title" }];
     onCreated?.("alpha", "alpha-draft");
+    onTitle?.("alpha", "alpha-draft", "Alpha title");
     await flushPromises();
+    expect(read).toHaveBeenCalledTimes(reads);
     expect(routeUrl().searchParams.get("profile")).toBe("beta");
     expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([]);
     await wrapper.get(".profile-field").setValue("alpha");
     await flushPromises();
-    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual([
-      { id: "alpha-draft" },
-    ]);
+    expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual(alphaRows);
     expect(routeUrl().pathname).toBe("/");
     wrapper.unmount();
   });
   it.each(["archive", "delete"])(
-    "does not resurrect an unlisted draft after %s",
+    "does not resurrect a submitted draft after %s or a late title",
     async (action) => {
       const factory = nativeSession.useNativeSession;
-      let onCreated: ((profile: string, stored: string) => void) | undefined;
       vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback, created, title) => {
-        onCreated = created;
         const owner = factory(callback, created, title);
-        owner.attach = vi.fn(async () => {
-          owner.connection.value = "ready";
-        });
+        owner.attach = vi.fn(async () => {});
         return owner;
       });
+      let rows: Session[] = [];
+      const stale = deferred<Response>();
+      const read = vi.fn(async () => json({ sessions: rows, total: rows.length }));
       mockFetch(async (input, init) => {
-        if (input.includes("/capabilities")) return json({});
+        if (input.includes("/capabilities")) return json(streaming);
         if (init?.method === "POST") return json({ id: "draft" });
-        return json({ sessions: [], total: 0 });
+        if (input.includes("/api/sessions?")) return read();
+        return json({});
       });
       const wrapper = mount(App);
       await flushPromises();
@@ -986,13 +1054,28 @@ describe("profile navigation", () => {
       sidebar.vm.$emit("create");
       await flushPromises();
       expect(sidebar.props("sessions")).toEqual([]);
+      const [, onCreated, onTitle] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
+      rows = [{ id: "draft" }];
       onCreated?.("alpha", "draft");
       await flushPromises();
-      expect(sidebar.props("sessions")).toEqual([{ id: "draft" }]);
+      expect(sidebar.props("sessions")).toEqual(rows);
+      read.mockImplementationOnce(() => stale.promise);
+      sidebar.vm.$emit("more");
+      await flushPromises();
       sidebar.vm.$emit(action, "draft");
+      await flushPromises();
+      stale.resolve(json({ sessions: [{ id: "draft", title: "Stale row" }], total: 1 }));
+      await flushPromises();
+      const reads = read.mock.calls.length;
+      onTitle?.("alpha", "draft", "Late title");
       await flushPromises();
       expect(sidebar.props("sessions")).toEqual([]);
       expect(routeUrl().pathname).toBe("/");
+      expect(read).toHaveBeenCalledTimes(reads);
+      // Even a later response with an archived/deleted row stays filtered.
+      sidebar.vm.$emit("retry");
+      await flushPromises();
+      expect(sidebar.props("sessions")).toEqual([]);
       wrapper.unmount();
     },
   );
