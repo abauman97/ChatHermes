@@ -47,7 +47,7 @@ class RuntimeConfigTest(unittest.TestCase):
             self.assertTrue(config["platforms"]["chathermes"]["enabled"])
             self.assertEqual(config["platforms"]["chathermes"]["home_channel"]["chat_id"], "scheduled")
             self.assertIn("chathermes", config["plugins"]["enabled"])
-            self.assertFalse(config["gateway"]["multiplex_profiles"])
+            self.assertTrue(config["gateway"]["multiplex_profiles"])
             self.assertTrue((home / "plugins/chathermes/dashboard/test.js").exists())
             for filename in ("config.yaml", ".env"):
                 self.assertNotIn(self.env["TEST_LLM_API_KEY"], (home / filename).read_text())
@@ -56,6 +56,22 @@ class RuntimeConfigTest(unittest.TestCase):
             self.assertGreaterEqual(len(key.split("=", 1)[1].strip()), 16)
             start.configure(self.assets)
             self.assertEqual((home / ".env").read_text(), key)
+
+    def test_named_profiles_have_distinct_stable_keys_and_shared_listener(self):
+        with patch.dict(os.environ, self.env, clear=True):
+            start.configure(self.assets)
+            home = Path(self.env["HERMES_HOME"])
+            homes = [home, home / "profiles/alpha", home / "profiles/beta"]
+            keys = [(path / ".env").read_text() for path in homes]
+            self.assertEqual(len(set(keys)), 3)
+            for path in homes:
+                config = yaml.safe_load((path / "config.yaml").read_text())
+                self.assertEqual(config["platforms"]["api_server"]["port"], 8643)
+                self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
+                self.assertNotIn(self.env["TEST_LLM_API_KEY"], (path / "config.yaml").read_text())
+                self.assertEqual((path / ".env").stat().st_mode & 0o777, 0o600)
+            start.configure(self.assets)
+            self.assertEqual([(path / ".env").read_text() for path in homes], keys)
 
     def test_missing_provider_values_fail_before_seeding(self):
         for name in ("TEST_LLM_API_MODEL", "TEST_LLM_API_KEY", "TEST_LLM_API_BASE_URL"):

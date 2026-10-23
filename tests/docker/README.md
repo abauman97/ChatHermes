@@ -6,6 +6,13 @@ access, and starts the real Hermes gateway and dashboard under the upstream
 supervisor. It uses a real OpenAI-compatible provider, without fixture replies,
 bind mounts, or personal Hermes configuration.
 
+The fixture seeds `default`, `alpha`, and `beta` with matching provider settings
+and distinct generated gateway credentials in each profile's private `.env`.
+They share the loopback API listener through Hermes profile multiplexing. Named
+profile HTTP requests exercise Hermes's secondary plugin hosts; the runtime still
+refuses secondary plugin WebSockets. The profile routing browser test checks
+independent session stores and profile-local authenticated uploads.
+
 ## Launch from this checkout
 
 Create a `.env` file in the repository root:

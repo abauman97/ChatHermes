@@ -156,10 +156,25 @@ def _gateway_settings():
     return f"http://{host}:{port}", key
 
 
-def _target(request: Request, route: str):
-    profile = request.query_params.get("profile", "")
+def _request_profile(request):
+    profile = request.query_params.get('profile', '')
     if profile and not _PROFILE.fullmatch(profile):
-        raise HTTPException(422, "Invalid profile name")
+        raise HTTPException(422, 'Invalid profile name')
+    if os.environ.get('HERMES_PLUGIN_HOST_PROCESS') == '1':
+        from hermes_cli.web_server_profiles import serving_profile_name
+        # Hermes removes ?profile before IPC. The host belongs to exactly one
+        # profile; recover its verified identity, never a client header/alias.
+        hosted_profile = serving_profile_name()
+        if not hosted_profile or not _PROFILE.fullmatch(hosted_profile):
+            raise HTTPException(503, 'Could not identify the Hermes plugin host profile')
+        if profile and profile != hosted_profile:
+            raise HTTPException(422, 'Profile does not match the Hermes plugin host')
+        return hosted_profile
+    return profile
+
+
+def _target(request: Request, route: str):
+    profile = _request_profile(request)
     base, key = _gateway_settings()
     if profile and profile != "default":
         key = _profile_gateway_key(profile)
@@ -304,7 +319,7 @@ async def models(request: Request):
     if response.status_code != 200:
         return response
     payload = json.loads(response.body)
-    default = _configured_default_model(request.query_params.get('profile', ''))
+    default = _configured_default_model(_request_profile(request))
     if default:
         payload['default_model'] = default
     return JSONResponse(payload)
@@ -342,10 +357,17 @@ async def model_options(request: Request):
 
 
 def _profile_gateway_key(profile: str):
+    if not profile or profile == 'default':
+        return _gateway_settings()[1] or ''
     from agent.secret_scope import get_secret
     from hermes_cli.web_server_profiles import _config_profile_scope
     with _config_profile_scope(profile):
-        return get_secret('API_SERVER_KEY', '')
+        key = get_secret('API_SERVER_KEY', '')
+    if key:
+        return key
+    # Hermes validates the selected profile's own API_SERVER_KEY, so the host
+    # default can only work when profiles intentionally share that key.
+    return _gateway_settings()[1] or ''
 
 
 def _configured_default_model(profile: str):
@@ -362,9 +384,7 @@ def _upload_home(request: Request):
     from pathlib import Path
     from hermes_cli.profiles import get_profile_dir
     from hermes_constants import get_hermes_home
-    profile = request.query_params.get('profile', '')
-    if profile and not _PROFILE.fullmatch(profile):
-        raise HTTPException(422, 'Invalid profile name')
+    profile = _request_profile(request)
     home = Path(get_profile_dir(profile) if profile else get_hermes_home())
     if not home.is_dir():
         raise HTTPException(404, 'Profile not found')
@@ -485,10 +505,7 @@ async def chat_socket(ws: WebSocket):
 
 
 def _rpc_profile(request):
-    profile = request.query_params.get('profile', '') or 'default'
-    if not _PROFILE.fullmatch(profile):
-        raise HTTPException(422, 'Invalid profile name')
-    return profile
+    return _request_profile(request) or 'default'
 
 
 def _new_rpc_transport(request):
@@ -911,9 +928,7 @@ def _validated_workspace_turn(body):
 # not the gateway Runs buffer (which expires and is unrelated to cron history).
 def _scheduled_context(request):
     from hermes_cli.web_server_cron import _cron_profile_home
-    profile = request.query_params.get('profile', '')
-    if profile and not _PROFILE.fullmatch(profile):
-        raise HTTPException(422, 'Invalid profile name')
+    profile = _request_profile(request)
     return _cron_profile_home(profile or None)
 
 
@@ -1074,7 +1089,7 @@ async def _scheduled_read(request, worker, *args):
     try:
         profile, home = _scheduled_context(request)
         result = await run_in_threadpool(worker, profile, home, *args)
-        key = (_gateway_settings()[1] if not request.query_params.get('profile') or profile == 'default'
+        key = (_gateway_settings()[1] if not profile or profile == 'default'
                else _profile_gateway_key(profile)) or ''
         return Response(_safe_body(json.dumps(result).encode(), key) if key else json.dumps(result).encode(),
                         media_type='application/json')

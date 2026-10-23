@@ -1,5 +1,6 @@
 """Configure an isolated Hermes home without putting provider secrets in YAML."""
 import os
+import copy
 from pathlib import Path
 import secrets
 import shutil
@@ -65,15 +66,22 @@ def configure(asset_root=Path("/opt/chathermes")):
     api.update(host=os.environ["API_SERVER_HOST"], port=int(os.environ["API_SERVER_PORT"]))
     # Persist only the generated internal gateway credential so restart works.
     # Hermes loads this file server-side; it never enters plugin/browser assets.
-    env_file = home / ".env"
-    if not env_file.exists():
-        env_file.touch(mode=0o600)
-        env_file.write_text("API_SERVER_KEY=" + secrets.token_hex(32) + "\n")
-    env_file.chmod(0o600)
-    config_file = home / "config.yaml"
-    config_file.touch(mode=0o600)
-    config_file.write_text(yaml.safe_dump(config, sort_keys=False))
-    config_file.chmod(0o600)
+    for name in ("default", "alpha", "beta"):
+        profile_home = home if name == "default" else home / "profiles" / name
+        profile_home.mkdir(parents=True, exist_ok=True)
+        profile_config = copy.deepcopy(config)
+        # Named profiles share the listener, but authenticate with their own key.
+        if name != "default":
+            profile_config.pop("gateway", None)
+        env_file = profile_home / ".env"
+        if not env_file.exists():
+            env_file.touch(mode=0o600)
+            env_file.write_text("API_SERVER_KEY=" + secrets.token_hex(32) + "\n")
+        env_file.chmod(0o600)
+        config_file = profile_home / "config.yaml"
+        config_file.touch(mode=0o600)
+        config_file.write_text(yaml.safe_dump(profile_config, sort_keys=False))
+        config_file.chmod(0o600)
 
 
 if __name__ == "__main__":
