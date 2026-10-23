@@ -4,11 +4,21 @@ export default defineConfig({
   testMatch:
     process.env.CHATHERMES_TEST_SUITE === "legacy"
       ? "**/*.spec.ts"
-      : ["**/live-real.spec.ts", "**/routing-live.spec.ts", "**/notification-click-live.spec.ts"],
+      : [
+          "**/live-real.spec.ts",
+          "**/routing-live.spec.ts",
+          "**/notification-click-live.spec.ts",
+          "**/profile-routing-live.spec.ts",
+        ],
   outputDir: "./tests/visual-output",
   testIgnore:
     process.env.CHATHERMES_TEST_SUITE === "legacy"
-      ? ["**/live-real.spec.ts", "**/routing-live.spec.ts", "**/notification-click-live.spec.ts"]
+      ? [
+          "**/live-real.spec.ts",
+          "**/routing-live.spec.ts",
+          "**/notification-click-live.spec.ts",
+          "**/profile-routing-live.spec.ts",
+        ]
       : [],
   timeout: 90_000,
   workers: 1,

@@ -25,4 +25,4 @@ plugins:
     - chathermes
     - dashboard_auth/basic
 gateway:
-  multiplex_profiles: false
+  multiplex_profiles: true

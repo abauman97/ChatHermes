@@ -89,6 +89,138 @@ async def test_bearer_profile_and_forwarded_params(app, monkeypatch):
 
 
 @run_async
+@pytest.mark.parametrize('selected', ['alpha', 'beta', 'default'])
+async def test_real_secondary_host_forwarding_keeps_profile_and_query(app, monkeypatch, tmp_path, selected):
+    """Run the real forwarder; only replace its IPC hop with the hosted ASGI app."""
+    from types import SimpleNamespace
+    from fastapi import Request
+    forwarder = pytest.importorskip('hermes_cli.web_server_plugin_profiles')
+    from hermes_cli import plugins, web_server_profiles
+    from hermes_cli import plugin_host_http_auth as admission
+
+    seen, forwarded = [], []
+    profile_key = KEY if selected == 'default' else f'synthetic-{selected}-key'
+    monkeypatch.setattr(plugin, '_profile_gateway_key', lambda name: profile_key if name == selected else None)
+    monkeypatch.setattr(web_server_profiles, 'serving_profile_name', lambda: selected)
+    monkeypatch.setenv('HERMES_PLUGIN_HOST_PROCESS', '1')
+    monkeypatch.setattr(forwarder, '_secondary_hosted_plugin', lambda name: {'_dir': 'synthetic', '_api_file': 'plugin_api.py'})
+    monkeypatch.setattr(forwarder, 'secondary_profile_home', lambda: tmp_path / 'profiles' / selected)
+    monkeypatch.setattr(admission, 'admitted_for_sensitive_route', lambda request: True)
+
+    def gateway(request):
+        seen.append(request)
+        if request.url.path != f'/p/{selected}/api/sessions' or request.headers['authorization'] != f'Bearer {profile_key}':
+            return httpx.Response(401)
+        return httpx.Response(200, json={'sessions': [{'id': f'{selected}-only'}]})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    hosted = FastAPI()
+    hosted.include_router(plugin.router)
+
+    def asgi_request(name, directory, api_file, method, path, query, headers, body, **options):
+        forwarded.append((query, headers))
+        async def dispatch():
+            transport = httpx.ASGITransport(app=admission.with_hosted_admission(hosted, options['authenticated']))
+            async with httpx.AsyncClient(transport=transport, base_url='http://plugin-host') as client:
+                response = await client.request(method, path, params=query, headers=headers, content=body)
+            return {'status': response.status_code, 'headers': list(response.headers.multi_items()), 'body': response.content}
+        return asyncio.run(dispatch())
+
+    monkeypatch.setattr(plugins, 'get_plugin_manager', lambda: SimpleNamespace(
+        _plugin_host=lambda: SimpleNamespace(asgi_request=asgi_request)))
+    dashboard = FastAPI()
+    @dashboard.get('/api/plugins/chathermes/{path:path}')
+    async def forward(request: Request):
+        return await forwarder.forward_secondary_plugin_request(request, 'chathermes')
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=dashboard), base_url='http://dashboard.test') as client:
+        response = await client.get(f'/api/plugins/chathermes/api/sessions?profile={selected}&limit=30&offset=4&tag=a&tag=b&empty=',
+                                    headers={'cookie': 'synthetic-dashboard-cookie'})
+    assert forwarded[0][0] == 'limit=30&offset=4&tag=a&tag=b&empty='
+    assert not {'authorization', 'cookie', 'host'} & {key.lower() for key, _ in forwarded[0][1]}
+    assert response.status_code == 200
+    assert response.json() == {'sessions': [{'id': f'{selected}-only'}]}
+    assert seen[0].url.query.decode() == 'limit=30&offset=4&tag=a&tag=b&empty='
+    assert 'cookie' not in seen[0].headers
+    assert profile_key not in response.text and KEY not in response.text
+
+
+@run_async
+@pytest.mark.parametrize('profile,scoped_key,default_key,expected_key', [
+    ('alpha', 'alpha-key', 'default-key', 'alpha-key'),
+    ('alpha', '', 'default-key', 'default-key'),
+    ('alpha', '', '', ''),
+    ('default', 'ignored-scoped-key', 'default-key', 'default-key'),
+])
+async def test_profile_gateway_key_falls_back_to_default_only_when_scoped_key_missing(
+    monkeypatch, profile, scoped_key, default_key, expected_key
+):
+    from contextlib import nullcontext
+    monkeypatch.setattr(plugin, '_config_profile_scope', nullcontext, raising=False)
+    monkeypatch.setitem(__import__('sys').modules, 'agent.secret_scope',
+                        __import__('types').SimpleNamespace(get_secret=lambda name, default: scoped_key))
+    monkeypatch.setitem(__import__('sys').modules, 'hermes_cli.web_server_profiles',
+                        __import__('types').SimpleNamespace(_config_profile_scope=lambda name: nullcontext()))
+    monkeypatch.setattr(plugin, '_gateway_settings', lambda: ('http://gateway.test', default_key))
+    assert plugin._profile_gateway_key(profile) == expected_key
+
+
+@pytest.mark.parametrize('hosted,query,expected,status', [
+    ('alpha', '', 'alpha', None),
+    ('beta', '', 'beta', None),
+    ('default', '', 'default', None),
+    ('alpha', 'profile=alpha', 'alpha', None),
+    ('alpha', 'profile=beta', None, 422),
+    ('alpha', 'profile=default', None, 422),
+    ('alpha', 'profile=../bad', None, 422),
+    ('', '', None, 503),
+    ('../bad', '', None, 503),
+])
+def test_hosted_profile_is_pinned_and_fails_closed(monkeypatch, hosted, query, expected, status):
+    import sys
+    from types import SimpleNamespace
+    from starlette.datastructures import QueryParams
+    monkeypatch.setenv('HERMES_PLUGIN_HOST_PROCESS', '1')
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', SimpleNamespace(serving_profile_name=lambda: hosted))
+    request = SimpleNamespace(query_params=QueryParams(query))
+    if status:
+        with pytest.raises(plugin.HTTPException) as failure:
+            plugin._request_profile(request)
+        assert failure.value.status_code == status
+    else:
+        assert plugin._request_profile(request) == expected
+        assert plugin._rpc_profile(request) == expected
+
+
+def test_in_process_profile_selection_does_not_use_client_host_hints(monkeypatch):
+    from starlette.requests import Request
+    monkeypatch.delenv('HERMES_PLUGIN_HOST_PROCESS', raising=False)
+    for query, expected in [(b'', ''), (b'profile=alpha', 'alpha'), (b'profile=default', 'default')]:
+        request = Request({'type': 'http', 'query_string': query,
+                           'headers': [(b'x-hermes-plugin-host-process', b'1'), (b'x-profile', b'beta')]})
+        assert plugin._request_profile(request) == expected
+
+
+@pytest.mark.parametrize('selected', ['alpha', 'beta', 'default'])
+def test_host_identity_is_resolved_from_process_home(monkeypatch, tmp_path, selected):
+    from types import SimpleNamespace
+    from starlette.datastructures import QueryParams
+    profiles = pytest.importorskip('hermes_cli.profiles')
+    from hermes_cli import web_server_profiles
+    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+    home = tmp_path if selected == 'default' else tmp_path / 'profiles' / selected
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(profiles, '_get_default_hermes_home', lambda: tmp_path)
+    monkeypatch.setattr(web_server_profiles, 'get_process_hermes_home', lambda: home)
+    monkeypatch.setenv('HERMES_PLUGIN_HOST_PROCESS', '1')
+    token = set_hermes_home_override(home)
+    try:
+        assert plugin._request_profile(SimpleNamespace(query_params=QueryParams('limit=30'))) == selected
+    finally:
+        reset_hermes_home_override(token)
+
+
+@run_async
 async def test_profile_validation(app, monkeypatch):
     called = []
     monkeypatch.setattr(plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(lambda request: called.append(request))))
