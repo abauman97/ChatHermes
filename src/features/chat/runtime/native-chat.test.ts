@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { NativeViewer, type NativeHooks } from "./native-chat";
+import { RetainedNativeViewer as NativeViewer, type NativeHooks } from "./native-chat";
 import { nativeOutcome, settleNativeOutcome, uncertainNativeOutcome } from "./native-admission";
 
 const hooks = (): NativeHooks => ({
@@ -313,4 +313,21 @@ it("surfaces secret prompts and keeps their reply on the normal chat.answer rout
   });
   expect(h.requests).toHaveBeenLastCalledWith([]);
   viewer.close();
+});
+
+it("shares default-profile uncertainty across aliases and preserves legacy blank-profile locks", () => {
+  const id = "default-alias";
+  settleNativeOutcome("default", id);
+  const attempt = uncertainNativeOutcome("", id);
+  expect(nativeOutcome("default", id)).toBe(true);
+  expect(nativeOutcome("beta", id)).toBe(false);
+  settleNativeOutcome("default", id, attempt);
+  expect(nativeOutcome("", id)).toBe(false);
+  localStorage.setItem(
+    "chathermes.native-outcome:" + JSON.stringify(["", id]) + ":old-attempt",
+    "unknown",
+  );
+  expect(nativeOutcome("default", id)).toBe(true);
+  settleNativeOutcome("default", id);
+  expect(nativeOutcome("", id)).toBe(false);
 });

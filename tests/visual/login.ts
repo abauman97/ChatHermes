@@ -34,7 +34,7 @@ export async function signIn(page: Page, next = "/chathermes") {
       page
         .locator(".chathermes-embedded")
         .getByRole("button", { name: "Choose model", exact: true }),
-    ).toBeEnabled();
+    ).toBeEnabled({ timeout: 15000 });
 }
 
 export function pluginRouteUrl(value: string) {

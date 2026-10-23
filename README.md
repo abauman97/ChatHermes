@@ -125,11 +125,11 @@ available through `npm run test:visual:legacy` with a separately supplied seeded
 dashboard. Screenshots and traces are saved to `tests/visual-output/`.
 
 Rebuild with `npm run live` after plugin changes; the plugin is baked into the
-image. Provider credentials stay in the container environment and gateway
-credentials are generated server-side. Do not use the default test login for a
+image. Provider credentials stay in the container environment and private profile `.env`
+files; gateway credentials are generated server-side. Do not use the default test login for a
 public deployment.
 
-The composer starts a native Hermes session on first send. New Other and Project chats use the authenticated plugin WebSocket with retained active-turn recovery, approvals, clarification, guidance and Stop. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
+The composer starts a native Hermes session on first send. New Other and Project chats use the dashboard’s authenticated, same-origin native gateway WebSocket for creation, snapshots, approvals, clarification, guidance and Stop. Default and secondary profiles carry an explicit profile on each native operation. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
 See [frontend architecture](docs/architecture.md), [agent conventions](AGENTS.md), [deployment](docs/deployment.md), and [API contract](docs/api-contract.md). Reference images live in `docs/reference/chatgpt/`. Visually verify mobile and desktop behavior in the dashboard before committing.
 
@@ -154,9 +154,10 @@ first prompt, following Desktop. An unavailable workspace fails before creation.
 Opening another Project changes UI scope while retaining the current chat and
 its workspace. Existing sessions always resume with their own saved cwd. Native
 `prompt.submit` turns use one Vue session controller with direct native events,
-shared Hermes request correlation/heartbeat, server-retained execution and paged
-recovery frames. Reload restores activity before completion without native status
-polling. Models apply to the native runtime; uploads stay authenticated and profile
+shared Hermes request correlation/heartbeat, and native snapshot recovery. A healthy
+connection stays attached while the page is hidden. Offline recovery reconstructs
+the selected profile/session without resubmitting a prompt; execution lifetime
+follows the native gateway’s own disconnect policy. Models apply to the native runtime; uploads stay authenticated and profile
 scoped. Legacy REST chat execution and its drainage adapter have been removed.
 Hermes discovers context files normally; the plugin injects no Project prompt.
 
@@ -165,12 +166,11 @@ changes refresh the tree and selected hierarchy. No separate Project database,
 frontend path classifier, or active Project mutation exists. Project management
 and session moves remain in Desktop/CLI for this initial workflow.
 
-The implementation is verified against the reviewed test source pin
-`ac28abc96ce83f22f6b831f80d9007e2aba81f21`. Session creation always sends
-`cwd_explicit: true` for workspace Projects. If an older Hermes gateway rejects
-exactly that field as an extra schema input, ChatHermes retries without it only
-when the resolved workspace exists locally; older handlers infer explicit cwd
-from an existing directory. Other RPC errors are never retried. See the
+The shared legacy wire types retain the reviewed source pin
+`ac28abc96ce83f22f6b831f80d9007e2aba81f21`; the standalone canonical wire adapter
+comes from Desktop `290080e19e8e143d35f67427e89aed662161faf8`. Workspace
+creation sends `cwd_explicit: true` under the pinned native contract. Unsupported
+native creation fails closed; it is never retried after an ambiguous outcome. See the
 [source audit](docs/plans/2026-10-01-projects.md),
 [verification report](docs/verification/2026-10-01-projects.md), and
 [test environment instructions](tests/docker/README.md).

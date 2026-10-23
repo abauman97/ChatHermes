@@ -283,6 +283,10 @@ export function useNativeSession(
     visible = nextVisible;
     online = nextOnline;
     if (!visible || !online) {
+      // Native sessions use the host's transport lease. Keep a healthy socket
+      // through backgrounding; its heartbeat still detects an actual failure.
+      if (!visible && online && viewer?.retainWhileHidden && connection.value === "ready")
+        return Promise.resolve();
       if (selected && connection.value !== "stale") stale();
       return Promise.resolve();
     }
@@ -447,7 +451,15 @@ export function useNativeSession(
     selection: { model?: string; provider?: string },
     preview?: unknown,
   ) {
-    if (!viewer || busy.value || uncertain.value || loading.value || connection.value !== "ready")
+    if (
+      !visible ||
+      !online ||
+      !viewer ||
+      busy.value ||
+      uncertain.value ||
+      loading.value ||
+      connection.value !== "ready"
+    )
       throw new NativeError("Native session is not ready. Message not submitted.", "rejected");
     const current = generation,
       target = viewer,
@@ -463,7 +475,7 @@ export function useNativeSession(
     let dispatched = false;
     try {
       const prepared = typeof content === "function" ? await content() : content;
-      if (current !== generation)
+      if (current !== generation || !visible || !online)
         throw new NativeError("Viewer detached before submission", "rejected");
       dispatched = true;
       await target.rpc("chat.submit", { input: prepared, admission_id: attempt, ...selection });

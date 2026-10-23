@@ -2,12 +2,18 @@
 // Separate attempt keys prevent one tab's acknowledgement from clearing another
 // tab's uncertain submission. Storage writes never perform read/modify/write.
 const key = (profile: string, session: string) =>
-  "chathermes.native-outcome:" + JSON.stringify([profile, session]);
+  "chathermes.native-outcome:" + JSON.stringify([profile || "default", session]);
+const keys = (profile: string, session: string) =>
+  profile && profile !== "default"
+    ? [key(profile, session)]
+    : [key("default", session), "chathermes.native-outcome:" + JSON.stringify(["", session])];
 export function nativeOutcome(profile: string, session: string): boolean {
   try {
-    const prefix = key(profile, session);
+    const prefixes = keys(profile, session);
     return Object.keys(localStorage).some(
-      (k) => (k === prefix || k.startsWith(prefix + ":")) && localStorage.getItem(k) === "unknown",
+      (k) =>
+        prefixes.some((prefix) => k === prefix || k.startsWith(prefix + ":")) &&
+        localStorage.getItem(k) === "unknown",
     );
   } catch {
     return true;
@@ -26,11 +32,12 @@ export function uncertainNativeOutcome(profile: string, session: string): string
 }
 export function settleNativeOutcome(profile: string, session: string, attempt?: string) {
   try {
-    const prefix = key(profile, session);
-    if (attempt) localStorage.removeItem(prefix + ":" + attempt);
-    else
-      for (const k of Object.keys(localStorage))
-        if (k === prefix || k.startsWith(prefix + ":")) localStorage.removeItem(k);
+    for (const prefix of keys(profile, session)) {
+      if (attempt) localStorage.removeItem(prefix + ":" + attempt);
+      else
+        for (const k of Object.keys(localStorage))
+          if (k === prefix || k.startsWith(prefix + ":")) localStorage.removeItem(k);
+    }
   } catch {
     /* Conservatively keep the lock on reload. */
   }

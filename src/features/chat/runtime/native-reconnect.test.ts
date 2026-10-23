@@ -458,3 +458,24 @@ describe("selected native session reconstruction", () => {
     session.close();
   });
 });
+
+it("retains a healthy native transport while hidden and gates preparation separately", async () => {
+  const session = useNativeSession(vi.fn());
+  const opening = session.attach("alpha", "one");
+  const viewer = latest();
+  viewer.retainWhileHidden = true;
+  ready(viewer, "Saved");
+  await opening;
+  await session.availability(false, true);
+  expect(viewer.close).not.toHaveBeenCalled();
+  expect(session.connection.value).toBe("ready");
+  await expect(session.submit("Hidden", "Hidden", {})).rejects.toMatchObject({
+    outcome: "rejected",
+  });
+  await session.availability(true, true);
+  expect(fake.viewers).toHaveLength(1);
+  await session.availability(true, false);
+  expect(viewer.close).toHaveBeenCalledOnce();
+  expect(session.connection.value).toBe("stale");
+  session.close();
+});

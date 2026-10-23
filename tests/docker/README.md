@@ -8,10 +8,14 @@ bind mounts, or personal Hermes configuration.
 
 The fixture seeds `default`, `alpha`, and `beta` with matching provider settings
 and distinct generated gateway credentials in each profile's private `.env`.
-They share the loopback API listener through Hermes profile multiplexing. Named
+Each private profile file also receives the test provider credential, because
+native secondary runtimes do not inherit launch-profile secrets. They share the loopback API listener through Hermes profile multiplexing. Named
 profile HTTP requests exercise Hermes's secondary plugin hosts; the runtime still
-refuses secondary plugin WebSockets. The profile routing browser test checks
-independent session stores and profile-local authenticated uploads.
+refuses secondary plugin WebSockets. ChatHermes uses the supported dashboard
+`/api/ws` native gateway with a host-issued ticket and explicit profile on every
+RPC, so that refusal does not prevent secondary native chat. Browser tests check
+real conversations and offline recovery in all three profiles, colliding stored
+IDs, single-use ticket enforcement, and profile-local authenticated uploads.
 
 ## Launch from this checkout
 

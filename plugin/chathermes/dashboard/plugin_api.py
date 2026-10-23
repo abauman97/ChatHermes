@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 try:
     import httpx
@@ -267,8 +267,12 @@ async def sessions(request: Request):
 
 @router.post('/chat/sessions')
 async def native_session_create(request: Request):
-    made = await _rpc(request, 'session.create', {'source': 'desktop'})
-    return {'session': {'id': made['stored_session_id'], 'source': 'desktop', 'title': ''}}
+    if request.query_params.get('prepare') == '1':
+        return JSONResponse({'native_create': {'source': 'desktop'}}, headers={'Cache-Control': 'no-store'})
+    # Persist an empty row through the profile's existing authenticated gateway.
+    # A secondary plugin host must not create a private agent runtime. Native
+    # resume on /api/ws will own the runtime when the browser opens this row.
+    return await _proxy(request, '/api/sessions')
 
 
 @router.get("/sessions/{session_id}")
@@ -490,7 +494,59 @@ router.add_event_handler('shutdown', _native_owners.shutdown)
 
 @router.get('/chat/capabilities')
 async def chat_capabilities():
-    return _chat_gateway.capabilities()
+    result = _chat_gateway.capabilities()
+    result.update(mode='native-gateway', reviewed_source='290080e19e8e143d35f67427e89aed662161faf8')
+    result['guarantees']['offline_turn_lease'] = False
+    result['features']['reconnect'] = 'native-snapshot'
+    result['limits'].pop('socket_seconds', None)
+    result['operations'] = ['gateway.ping', 'session.create', 'session.resume', 'session.activate', 'prompt.submit', 'session.interrupt', 'session.steer', 'file.attach', 'config.set']
+    result['blockers'].append('legacy_snapshot_replay_boundary')
+    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+
+
+@router.get('/chat/sessions/{session_id}/membership')
+async def native_session_membership(request: Request, session_id: str):
+    from starlette.concurrency import run_in_threadpool
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id):
+        raise HTTPException(422, 'Invalid stored session')
+    # A native Project draft can be live before its first DB write. Check the
+    # selected profile's durable store OR its verified live owner; never cold-
+    # adopt an arbitrary ID just because native resume permits doing so.
+    await run_in_threadpool(_native_channel.check_profile_session, _rpc_profile(request), session_id)
+    return JSONResponse({'member': True}, headers={'Cache-Control': 'no-store'})
+
+
+@router.post('/chat/prepare')
+async def prepare_native_turn(request: Request):
+    """Validate profile-local attachments/model aliases without admitting a turn.
+
+    Buffered secondary plugin HTTP is sufficient here; execution and streaming
+    belong to the authenticated dashboard native gateway, never this host.
+    """
+    import re
+    from starlette.concurrency import run_in_threadpool
+    try:
+        params = await request.json()
+    except (ValueError, TypeError):
+        raise HTTPException(422, 'Invalid native preparation')
+    if not isinstance(params, dict) or set(params) - {'input', 'model', 'provider', 'admission_id'}:
+        raise HTTPException(422, 'Invalid native preparation')
+    profile = _rpc_profile(request)
+    text, images = _validated_workspace_turn({k: v for k, v in params.items() if k != 'admission_id'})
+    if images:
+        await run_in_threadpool(_native_channel.verify_image_refs, profile, text, images)
+    files = [{'name': name, 'path': path} for name, path in re.findall(r'Attached file ([^\n]+?): ([^\n]+)', text)]
+    if files:
+        await run_in_threadpool(_native_channel.verify_file_refs, profile, [file['path'] for file in files])
+    # Preserve the pinned native prompt shape: multipart only for images;
+    # text/file-only turns use the normalized string for @file expansion.
+    result = {'input': params['input'] if images else text, 'files': files}
+    if params.get('model'):
+        # This collector is never connected to a dispatcher or returned.
+        from types import SimpleNamespace
+        model, provider = await run_in_threadpool(_native_channel.model_selection, profile, params['model'], params.get('provider'), SimpleNamespace(secrets=set()))
+        result.update(model=model, provider=provider)
+    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
 
 
 # Authentication is checked inside this handler before accept: dashboard HTTP
@@ -788,6 +844,8 @@ async def project_session(request: Request, project_id: str):
             if cwd != root and os.path.normpath(cwd) != os.path.abspath(os.path.expanduser(root)):
                 raise HTTPException(409, 'The Project workspace is unavailable')
             params.update(cwd=cwd, cwd_explicit=True)
+        if request.query_params.get('prepare') == '1':
+            return JSONResponse({'native_create': {key: value for key, value in params.items() if key != 'profile'}}, headers={'Cache-Control': 'no-store'})
         try:
             made = await transport.call('session.create', params)
         except _CwdExplicitUnsupported:

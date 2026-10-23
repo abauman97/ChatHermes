@@ -32,7 +32,12 @@ describe("native chat rollout gate", () => {
   });
   it("authenticates same-origin, correlates only responses and closes the probe", async () => {
     vi.stubGlobal("location", new URL("https://dashboard.test/chathermes"));
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ticket: "ephemeral" })));
+    const fetch = vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(url.includes("chat/capabilities") ? contract : { ticket: "ephemeral" }),
+        ),
+    );
     vi.stubGlobal("fetch", fetch);
     class Socket {
       static current: Socket;
@@ -55,7 +60,8 @@ describe("native chat rollout gate", () => {
     await vi.waitFor(() => expect(Socket.current).toBeDefined());
     const ws = Socket.current;
     expect(ws.url.origin).toBe(location.origin.replace("http", "ws"));
-    expect(ws.url.search).toBe("?profile=alpha");
+    expect(ws.url.search).toBe("");
+    expect(ws.url.pathname).toBe("/api/ws");
     expect(ws.url.href).not.toContain("ephemeral");
     expect(ws.protocols).toEqual(["hermes-gateway-v1", "hermes-gateway-ticket.ephemeral"]);
     expect(fetch).toHaveBeenCalledWith(
@@ -66,15 +72,15 @@ describe("native chat rollout gate", () => {
     expect(JSON.parse(ws.send.mock.calls[0]![0])).toEqual({
       jsonrpc: "2.0",
       id: "capabilities",
-      method: "chat.capabilities",
-      params: {},
+      method: "gateway.ping",
+      params: { profile: "alpha" },
     });
     ws.onmessage!({
       data: JSON.stringify({ jsonrpc: "2.0", id: "capabilities", method: "approval", params: {} }),
     });
     expect(ws.close).not.toHaveBeenCalled();
     ws.onmessage!({
-      data: JSON.stringify({ jsonrpc: "2.0", id: "capabilities", result: contract }),
+      data: JSON.stringify({ jsonrpc: "2.0", id: "capabilities", result: { ok: true } }),
     });
     expect(await result).toEqual(contract);
     expect(ws.close).toHaveBeenCalledOnce();

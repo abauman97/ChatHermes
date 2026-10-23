@@ -50,7 +50,8 @@ class RuntimeConfigTest(unittest.TestCase):
             self.assertTrue(config["gateway"]["multiplex_profiles"])
             self.assertTrue((home / "plugins/chathermes/dashboard/test.js").exists())
             for filename in ("config.yaml", ".env"):
-                self.assertNotIn(self.env["TEST_LLM_API_KEY"], (home / filename).read_text())
+                if filename == 'config.yaml':
+                    self.assertNotIn(self.env["TEST_LLM_API_KEY"], (home / filename).read_text())
                 self.assertEqual((home / filename).stat().st_mode & 0o777, 0o600)
             key = (home / ".env").read_text()
             self.assertGreaterEqual(len(key.split("=", 1)[1].strip()), 16)
@@ -69,6 +70,9 @@ class RuntimeConfigTest(unittest.TestCase):
                 self.assertEqual(config["platforms"]["api_server"]["port"], 8643)
                 self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
                 self.assertNotIn(self.env["TEST_LLM_API_KEY"], (path / "config.yaml").read_text())
+                import json
+                values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
+                self.assertEqual(json.loads(values['TEST_LLM_API_KEY']), self.env['TEST_LLM_API_KEY'])
                 self.assertEqual((path / ".env").stat().st_mode & 0o777, 0o600)
             start.configure(self.assets)
             self.assertEqual([(path / ".env").read_text() for path in homes], keys)

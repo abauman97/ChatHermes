@@ -10,7 +10,57 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | History      | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None               | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
 | Capabilities | `GET /v1/capabilities`                                                                | None               | Feature and endpoint flags                                                                                                             |
 
-## Native session transport (2026-10-05)
+## Current native gateway transport (2026-10-23)
+
+The browser uses the dashboard's same-origin `/api/ws`, with a fresh authenticated
+`POST /api/auth/ws-ticket` grant in the `hermes-gateway-ticket.*` subprotocol.
+It never receives gateway/provider API keys or connects across origins. A missing,
+invalid or already-consumed ticket is refused by Hermes's existing native gate.
+Every session RPC carries its selected `profile`, including resume, model changes,
+file staging, Stop, guidance, and canonical prompt answers.
+
+`POST /chat/sessions?prepare=1` prepares a normal draft; Project creation uses
+`POST /projects/session?project_id=...&prepare=1` to validate the authoritative
+workspace without creating an agent in a secondary plugin host. The browser then
+calls native `session.create`. Its profile-bound creation connection remains
+attached until the viewer resumes the returned stored ID. Unopened draft leases
+expire after five minutes; creation refuses once 32 unopened drafts are held. Reopening an existing ID
+first checks authenticated `/chat/sessions/{id}/membership` against the selected
+profile's database or verified live registry, preventing arbitrary cold adoption.
+
+`POST /chat/prepare` validates upload references and model aliases without prompt
+admission. Text/file-only parts become the pinned native string input; image
+parts remain multipart. Native `file.attach` stages verified files, and model
+selection is read back from the native runtime before `prompt.submit` is issued.
+Prompts are dispatched once. Lost acknowledgements remain uncertain and are
+never replayed automatically. Empty/default profile aliases share the same lock,
+including older stored empty-profile markers. Late control errors cannot change
+another profile.
+
+The adapter detects revision-aware snapshots and uses Desktop's standalone
+canonical wire adapter from `290080e19e8e143d35f67427e89aed662161faf8` for request
+identities, revision/generation fences, model mutations and prompt answers.
+Legacy native gateways keep their pinned legacy request shapes. The official
+container exercises the legacy mode; canonical mode has transport fixture tests.
+
+Healthy native connections survive page backgrounding. Actual loss reconstructs
+a profile-bound snapshot and unanswered requests, while sending stays gated until
+recovery commits. A busy recovery uses one native activation confirmation, holding
+later frames, so a completion racing the resume reply cannot leave sending stuck.
+This is a bounded recovery barrier, not a completion polling loop. The composer
+stays focusable. Legacy snapshots lack an atomic
+snapshot/replay cursor, so these viewers do **not** claim lossless active progress
+or the retained facade's offline-turn lease. Native gateway disconnect/reaping
+policy governs unattended execution. The new capability mode is `native-gateway`,
+with `offline_turn_lease: false` and `lossless_snapshot_replay: false`.
+
+The compatibility facade below remains implemented and tested, but is no longer
+the browser's default transport. Its `native_owners` turn-complete push callback
+is not attached by new native viewers; unattended native per-turn ChatHermes web
+push is not established by this change. Cron delivery and worker-click navigation
+are separate paths.
+
+## Retained compatibility transport (2026-10-05)
 
 `POST /chat/sessions` creates an unscoped native draft; Projects use
 `POST /projects/session?project_id=…`. All Other and Project turns use the authenticated plugin TUI socket. Legacy

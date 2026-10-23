@@ -1,3 +1,4 @@
+import { NativeGatewayViewer } from "../features/chat/runtime/native-gateway";
 import { probeChatGateway } from "./chat-gateway";
 import type {
   Capabilities,
@@ -29,7 +30,7 @@ function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile))
     throw new Error("Invalid profile name");
   if (
-    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project)?|v1\/(?:capabilities|models))$/.test(
+    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project)?|v1\/(?:capabilities|models))$/.test(
       path,
     )
   )
@@ -181,12 +182,14 @@ export const api = {
     workspaceSessions.add(workspaceKey(profile, id));
   },
   projectCreate: async (profile: string, id: string) => {
-    const made = unwrapSession(
-      await request<unknown>(profile, `/projects/session?project_id=${encodeURIComponent(id)}`, {
-        method: "POST",
-        body: "{}",
-      }),
+    const prepared = await request<{ native_create?: Record<string, unknown> }>(
+      profile,
+      `/projects/session?project_id=${encodeURIComponent(id)}&prepare=1`,
+      { method: "POST", body: "{}" },
     );
+    const made = prepared.native_create
+      ? await NativeGatewayViewer.create(profile, prepared.native_create)
+      : unwrapSession(prepared);
     workspaceSessions.add(workspaceKey(profile, made.id));
     return made;
   },
@@ -225,9 +228,14 @@ export const api = {
       await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal }),
     ),
   create: async (profile: string, signal?: AbortSignal) => {
-    const made = unwrapSession(
-      await request<unknown>(profile, "/chat/sessions", { method: "POST", body: "{}", signal }),
+    const prepared = await request<{ native_create?: Record<string, unknown> }>(
+      profile,
+      "/chat/sessions?prepare=1",
+      { method: "POST", body: "{}", signal },
     );
+    const made = prepared.native_create
+      ? await NativeGatewayViewer.create(profile, prepared.native_create, signal)
+      : unwrapSession(prepared);
     workspaceSessions.add(workspaceKey(profile, made.id));
     return made;
   },

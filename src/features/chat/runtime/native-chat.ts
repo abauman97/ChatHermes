@@ -42,7 +42,7 @@ type Frame = { method?: string; params?: any; chat_offset?: number };
 
 /** One authenticated viewer. RPC/heartbeat are upstream; recovery is the
  * retained plugin owner's ordered spool, not a Runs/SSE interpretation. */
-export class NativeViewer {
+export class RetainedNativeViewer {
   private ws?: WebSocket;
   private channel: JsonRpcRequestChannel;
   private opening?: Promise<void>;
@@ -307,3 +307,5 @@ export class NativeViewer {
     this.held = [];
   }
 }
+
+export { NativeGatewayViewer as NativeViewer } from "./native-gateway";

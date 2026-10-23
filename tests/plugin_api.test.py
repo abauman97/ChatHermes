@@ -884,8 +884,13 @@ async def test_native_rollout_gate_is_explicit_and_cannot_dispatch(app, monkeypa
         result = await client.get('/api/plugins/chathermes/chat/capabilities')
     assert result.status_code == 200
     body = result.json()
-    assert body['admission'] is True and body['mode'] == 'native-retained'
-    assert body['guarantees']['offline_turn_lease'] is True
+    assert body['admission'] is True and body['mode'] == 'native-gateway'
+    assert body['guarantees']['offline_turn_lease'] is False
+    assert body['reviewed_source'] == '290080e19e8e143d35f67427e89aed662161faf8'
+    assert body['features']['reconnect'] == 'native-snapshot'
+    assert 'socket_seconds' not in body['limits']
+    assert 'chat.replay' not in body['operations']
+    assert 'session.resume' in body['operations']
     assert body['guarantees']['crash_safe_idempotency'] is False
     for method in ('prompt.submit', 'session.resume', 'session.events.since', 'config.set', 'image.attach_bytes', 'chat.submit'):
         assert plugin._chat_gateway.response({'jsonrpc': '2.0', 'id': 1, 'method': method})['error']['code'] == -32601
@@ -1235,10 +1240,11 @@ async def test_native_attach_image_history_and_first_submit(app, monkeypatch, tm
     monkeypatch.setitem(sys.modules, 'tui_gateway', types.SimpleNamespace(server=server, server_requests=types.SimpleNamespace(advertise=lambda *a: None, forget=lambda *a: None),
         event_replay=types.SimpleNamespace(replay_epoch=lambda: 'first-send')))
     monkeypatch.setattr(plugin._native_channel, 'register_profile_secrets', lambda *args: None)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
-        created = await client.post('/api/plugins/chathermes/chat/sessions', params={'profile': profile}, json={})
-    assert created.status_code == 200
-    assert created.json()['session']['id'] == 'stored'
+    # Seed the legacy retained adapter directly. Browser creation now persists
+    # through the authenticated gateway instead of constructing a host runtime.
+    from starlette.requests import Request
+    created = await plugin._rpc(Request({'type': 'http', 'query_string': ('profile=' + profile).encode(), 'headers': []}), 'session.create', {'source': 'desktop'})
+    assert created['stored_session_id'] == 'stored'
     assert sessions['runtime']['transport'] is None
 
     transport = plugin._RpcTransport()
@@ -2116,3 +2122,82 @@ async def test_native_history_uses_supported_resume_on_retained_owner(monkeypatc
     assert calls == [('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False})]
     with pytest.raises(plugin.HTTPException):
         await channel.operation('chat.history', {'session_id': 'foreign'})
+
+
+@run_async
+async def test_native_creation_uses_profile_gateway_not_host_runtime(app, monkeypatch):
+    seen = []
+    def gateway(request):
+        seen.append(request)
+        return httpx.Response(201, json={'session': {'id': 'persisted'}})
+    monkeypatch.setattr(plugin, '_client', lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway)))
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('must not create a host runtime'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('default', 'alpha', 'beta'):
+            response = await client.post('/api/plugins/chathermes/chat/sessions', params={'profile': profile}, json={})
+            assert response.status_code == 201
+            assert response.json()['session']['id'] == 'persisted'
+    assert [request.url.path for request in seen] == ['/p/default/api/sessions', '/p/alpha/api/sessions', '/p/beta/api/sessions']
+
+
+@run_async
+async def test_native_preparation_is_profile_local_and_never_admits(app, monkeypatch):
+    seen = []
+    monkeypatch.setattr(plugin._native_channel, 'verify_file_refs', lambda profile, refs: seen.append((profile, refs)))
+    monkeypatch.setattr(plugin._native_channel, 'model_selection', lambda profile, model, provider, collector: ('runtime-model', 'runtime-provider'))
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('preparation must not dispatch'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('default', 'alpha', 'beta'):
+            response = await client.post('/api/plugins/chathermes/chat/prepare', params={'profile': profile}, json={
+                'input': 'Hello\nAttached file note.txt: /synthetic/upload', 'model': 'Alias'})
+            assert response.status_code == 200
+            assert response.headers['cache-control'] == 'no-store'
+            assert response.json() == {'input': 'Hello\nAttached file note.txt: /synthetic/upload',
+                'files': [{'name': 'note.txt', 'path': '/synthetic/upload'}], 'model': 'runtime-model', 'provider': 'runtime-provider'}
+        for body in ({'input': 'Hello', 'profile': 'foreign'}, {'input': 'Hello', 'provider': 'orphan'}, {'input': []}):
+            response = await client.post('/api/plugins/chathermes/chat/prepare', json=body)
+            assert response.status_code == 422
+    assert seen == [(profile, ['/synthetic/upload']) for profile in ('default', 'alpha', 'beta')]
+
+
+@run_async
+async def test_native_membership_accepts_only_the_selected_profile_owner(app, monkeypatch):
+    calls = []
+    def check(profile, stored):
+        calls.append((profile, stored))
+        if stored != 'owned':
+            raise plugin.HTTPException(404, 'Session unavailable in this profile')
+    monkeypatch.setattr(plugin._native_channel, 'check_profile_session', check)
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('membership cannot create a runtime'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('default', 'alpha', 'beta'):
+            response = await client.get('/api/plugins/chathermes/chat/sessions/owned/membership', params={'profile': profile})
+            assert response.status_code == 200 and response.json() == {'member': True}
+            response = await client.get('/api/plugins/chathermes/chat/sessions/foreign/membership', params={'profile': profile})
+            assert response.status_code == 404
+    assert calls == [(profile, stored) for profile in ('default', 'alpha', 'beta') for stored in ('owned', 'foreign')]
+
+
+@run_async
+async def test_native_chat_and_project_creation_preparation_never_builds_an_agent(app, rpc, monkeypatch):
+    calls, nodes, transport = rpc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('default', 'alpha', 'beta'):
+            response = await client.post('/api/plugins/chathermes/chat/sessions', params={'profile': profile, 'prepare': '1'}, json={})
+            assert response.status_code == 200
+            assert response.json() == {'native_create': {'source': 'desktop'}}
+            assert response.headers['cache-control'] == 'no-store'
+        response = await client.post('/api/plugins/chathermes/projects/session', params={'profile': 'alpha', 'project_id': 'a', 'prepare': '1'}, json={})
+        assert response.status_code == 200
+        assert response.json()['native_create']['source'] == 'desktop'
+        assert 'profile' not in response.json()['native_create']
+    assert all(method != 'session.create' for method, _ in calls)
+
+
+@run_async
+async def test_native_preparation_flattens_text_only_parts_for_native_file_expansion(app):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/chat/prepare', json={'input': [
+            {'type': 'text', 'text': 'Question'}, {'type': 'text', 'text': 'Context'}]})
+    assert response.status_code == 200
+    assert response.json() == {'input': 'Question\nContext', 'files': []}

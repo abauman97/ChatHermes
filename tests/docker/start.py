@@ -1,5 +1,6 @@
 """Configure an isolated Hermes home without putting provider secrets in YAML."""
 import os
+import json
 import copy
 from pathlib import Path
 import secrets
@@ -78,6 +79,11 @@ def configure(asset_root=Path("/opt/chathermes")):
             env_file.touch(mode=0o600)
             env_file.write_text("API_SERVER_KEY=" + secrets.token_hex(32) + "\n")
         env_file.chmod(0o600)
+        # Named native runtimes intentionally do not inherit the launch home's
+        # provider secrets. Seed their own private credential, never YAML/image.
+        lines = [line for line in env_file.read_text().splitlines() if not line.startswith("TEST_LLM_API_KEY=")]
+        lines.append("TEST_LLM_API_KEY=" + json.dumps(os.environ["TEST_LLM_API_KEY"]))
+        env_file.write_text("\n".join(lines) + "\n")
         config_file = profile_home / "config.yaml"
         config_file.touch(mode=0o600)
         config_file.write_text(yaml.safe_dump(profile_config, sort_keys=False))
