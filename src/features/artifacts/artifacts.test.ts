@@ -196,6 +196,24 @@ it("preserves multiple image content parts and determines types from server file
   });
 });
 
+it("renders uploaded images from durable REST history without inline image parts", () => {
+  const images = messageArtifacts({
+    role: "user",
+    id: "upload-row",
+    content:
+      "What is in this picture?\nAttached image photo.png: /uploads/chathermes/0123456789abcdef0123456789abcdef.png",
+  });
+  expect(images).toMatchObject([
+    {
+      name: "photo.png",
+      path: "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png",
+      type: "image/png",
+      messageId: "upload-row",
+      direction: "uploaded",
+    },
+  ]);
+});
+
 it("hides native context refs when the original upload annotation supplies a card", () => {
   const parsed = textArtifacts(
     "Review this\nAttached file report.txt: /tmp/original.txt\n@file:./attachments/report.txt",

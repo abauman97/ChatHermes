@@ -24,7 +24,10 @@ describe("composer", () => {
           cancelable: true,
         });
         send.element.dispatchEvent(pointer);
-        expect(pointer.defaultPrevented).toBe(true);
+        expect(pointer.defaultPrevented).toBe(false);
+        const mouse = new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true });
+        send.element.dispatchEvent(mouse);
+        expect(mouse.defaultPrevented).toBe(true);
         if (blur) {
           area.element.blur();
           await wrapper.vm.$nextTick();
