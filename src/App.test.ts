@@ -1349,7 +1349,7 @@ describe("TUI-only chat execution", () => {
       ),
     );
     mockFetch(fetch);
-    const wrapper = mount(App);
+    const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
     const prompt = wrapper.get("textarea");
     expect(prompt.attributes("disabled")).toBeUndefined();

@@ -3,6 +3,41 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ChatComposer from "./ChatComposer.vue";
 describe("composer", () => {
+  it.each([false, true])(
+    "submits a focused draft once when blur before click is %s",
+    async (blur) => {
+      const wrapper = mount(ChatComposer, {
+        attachTo: document.body,
+        props: { disabled: false, sending: false },
+      });
+      try {
+        const area = wrapper.get("textarea");
+        area.element.focus();
+        await area.setValue("focused draft");
+        expect(document.activeElement).toBe(area.element);
+        let submissions = 0;
+        wrapper.get("form").element.addEventListener("submit", () => submissions++);
+        const send = wrapper.get(".send-button");
+        const pointer = new MouseEvent("pointerdown", {
+          button: 0,
+          bubbles: true,
+          cancelable: true,
+        });
+        send.element.dispatchEvent(pointer);
+        expect(pointer.defaultPrevented).toBe(true);
+        if (blur) {
+          area.element.blur();
+          await wrapper.vm.$nextTick();
+        }
+        await send.trigger("click");
+        expect(submissions).toBe(1);
+        expect(wrapper.emitted("send")).toEqual([["focused draft", []]]);
+        expect(area.element.value).toBe("");
+      } finally {
+        wrapper.unmount();
+      }
+    },
+  );
   it("hides attachment options while editing and restores them only after focus leaves the composer", async () => {
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
@@ -56,7 +91,10 @@ describe("composer", () => {
     }
   });
   it("uses exact 30px square buttons with centered icons and a symmetric plus glyph", () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
     try {
       for (const selector of [".attach-button", ".send-button"]) {
         expect(wrapper.get(selector).classes()).toEqual(
@@ -74,6 +112,7 @@ describe("composer", () => {
   });
   it("keeps the model selector 30px high, content-sized and readable beside the buttons", () => {
     const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
       props: { disabled: false, sending: false, model: "example-model" },
     });
     try {
@@ -90,7 +129,10 @@ describe("composer", () => {
     }
   });
   it("adds goal and plan slash commands to the next message and shows the active mode", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
     await wrapper.get('[data-mode="goal"]').trigger("click");
     expect(wrapper.get('[role="status"]').text()).toContain("Goal mode");
@@ -105,8 +147,11 @@ describe("composer", () => {
     expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
     wrapper.unmount();
   });
-  it("leaves Enter, Shift+Enter and composition to native newline handling; only the button sends", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+  it("leaves Enter, Shift+Enter and composition to native newline handling; only the button submits", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
     const area = wrapper.get("textarea");
     await area.setValue("hello\nworld");
     for (const extra of [{}, { shiftKey: true }, { isComposing: true }]) {
@@ -122,7 +167,7 @@ describe("composer", () => {
     expect(wrapper.emitted("send")).toBeUndefined();
     await wrapper.get(".send-button").trigger("click");
     expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
-    expect(wrapper.get(".send-button").attributes("type")).toBe("button");
+    expect(wrapper.get(".send-button").attributes("type")).toBe("submit");
     wrapper.unmount();
   });
   it("recalculates an empty input on focus and blur and keeps growing with draft content", async () => {
@@ -184,16 +229,21 @@ describe("composer", () => {
 
 describe("composer availability", () => {
   it("keeps text editable while sending is gated and blocks keyboard submissions", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: true, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: true, sending: false },
+    });
     const area = wrapper.get("textarea");
     expect(area.attributes("disabled")).toBeUndefined();
     await area.setValue("draft while loading");
     await area.trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("send")).toBeUndefined();
     expect((area.element as HTMLTextAreaElement).value).toBe("draft while loading");
+    wrapper.unmount();
   });
   it("steers non-empty input during an active stoppable run and stops with empty input", async () => {
     const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
       props: { disabled: false, sending: true, stoppable: true },
     });
     const button = wrapper.get(".send-button");
@@ -206,9 +256,15 @@ describe("composer availability", () => {
     expect(wrapper.emitted("stop")).toBeUndefined();
     await button.trigger("click");
     expect(wrapper.emitted("stop")).toHaveLength(1);
+    expect(wrapper.emitted("send")).toBeUndefined();
+    expect(button.attributes("type")).toBe("button");
+    wrapper.unmount();
   });
   it("reactivates the button when loading and run gates clear, including a draft typed during a run", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: true, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: true, sending: false },
+    });
     await wrapper.get("textarea").setValue("draft");
     const button = wrapper.get(".send-button");
     expect(button.attributes("disabled")).toBeDefined();
@@ -221,7 +277,10 @@ describe("composer availability", () => {
     wrapper.unmount();
   });
   it("releases the reading gate after an aborted attachment", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
     let reader: { onabort?: () => void } = {};
     const captureReader = (value: typeof reader) => {
       reader = value;
@@ -254,11 +313,15 @@ describe("composer availability", () => {
     }
   });
   it("retains ordinary send behavior outside a run", async () => {
-    const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
     await wrapper.get("textarea").setValue("hello");
     await wrapper.get(".send-button").trigger("click");
     expect(wrapper.emitted("send")?.[0]).toEqual(["hello", []]);
     expect(wrapper.emitted("steer")).toBeUndefined();
+    wrapper.unmount();
   });
 });
 
@@ -401,6 +464,7 @@ it("shares file staging, retains the draft and other files on upload failure, an
     .mockRejectedValueOnce(new Error("failed"))
     .mockResolvedValueOnce({ path: "/uploads/two.txt" });
   const wrapper = mount(ChatComposer, {
+    attachTo: document.body,
     props: { disabled: false, sending: false, profile: "work" },
   });
   await wrapper.get("textarea").setValue("Keep this draft");
