@@ -7945,23 +7945,26 @@ function Cp(e) {
 }
 function wp(e) {
 	if (e.role !== "user" && e.role !== "assistant") return [];
-	let t = (e.role === "user" ? Cp : xp)(gs(e.content)).files, n = t.some((e) => vp(e) === "image");
-	if (Array.isArray(e.content)) {
-		let r = 0;
-		for (let i of e.content) {
-			let e = i?.image_url?.url;
-			if (typeof e == "string" && /^(data:image\/|https?:\/\/)/.test(e)) {
-				if (n) {
-					let n = t.filter((e) => vp(e) === "image")[r++];
-					n && (n.imageData = e);
+	let { content: t } = e, n = (e.role === "user" ? Cp : xp)(gs(t)).files, r = n.filter((e) => vp(e) === "image");
+	if (Array.isArray(t)) {
+		let e = 0;
+		for (let i of t) {
+			let t = i?.image_url?.url;
+			if (typeof t == "string" && /^(data:image\/|https?:\/\/)/.test(t)) {
+				if (r.length) {
+					let n = r[e++];
+					n && (n.imageData = t);
 				} else {
-					let n = _p(e, "Attached image.png");
-					n && t.push(n);
+					let e = _p(t, "Attached image.png");
+					e && n.push(e);
 				}
 			}
 		}
+	} else if (e.role === "user" && r.length) for (let e of r) {
+		let t = e.path.match(/\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i);
+		t && (e.path = `/api/plugins/chathermes/images/${t[1]}`);
 	}
-	return t.map((t) => ({
+	return n.map((t) => ({
 		...t,
 		messageId: e.id,
 		createdAt: e.created_at,
@@ -9155,8 +9158,8 @@ var cm = ["open"], lm = {
 						disabled: le.value,
 						"aria-label": e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
-						onPointerdown: v,
-						onClick: n[3] ||= (t) => e.sending && !a.value.trim() && e.stoppable && i("stop")
+						onMousedown: v,
+						onClick: n[3] ||= (t) => e.sending ? a.value.trim() ? ue() : e.stoppable && i("stop") : ue()
 					}, [e.sending && !a.value.trim() ? (W(), G("svg", ah, [...n[11] ||= [q("rect", {
 						x: "6",
 						y: "6",
