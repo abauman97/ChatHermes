@@ -55,7 +55,7 @@ describe("native session state", () => {
       let acknowledge!: () => void;
       let reject!: (error: Error) => void;
       fake.rpc.mockImplementation((method) =>
-        method === "chat.submit"
+        method === "prompt.submit"
           ? new Promise<void>((resolve, fail) => {
               acknowledge = resolve;
               reject = fail;
@@ -92,7 +92,7 @@ describe("native session state", () => {
       vi.spyOn(api, "messages").mockResolvedValue([]);
       let acknowledge!: () => void;
       fake.rpc.mockImplementation((method) =>
-        method === "chat.submit"
+        method === "prompt.submit"
           ? new Promise<void>((resolve) => {
               acknowledge = resolve;
             })
@@ -118,7 +118,7 @@ describe("native session state", () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     let acknowledge!: () => void;
     fake.rpc.mockImplementation((method) =>
-      method === "chat.submit"
+      method === "prompt.submit"
         ? new Promise<void>((resolve) => {
             acknowledge = resolve;
           })
@@ -161,8 +161,8 @@ describe("native session state", () => {
     async (reload) => {
       vi.spyOn(api, "messages").mockResolvedValue([]);
       fake.rpc.mockImplementation(async (method) => {
-        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
-        if (method === "chat.state") return { running: false, queued: false };
+        if (method === "prompt.submit") throw new NativeError("Lost acknowledgement");
+        if (method === "state") return { running: false, queued: false };
         return { settled: false };
       });
       const session = useNativeSession(vi.fn());
@@ -192,7 +192,7 @@ describe("native session state", () => {
       expect(session.messages.value.map((row) => row.content)).toEqual([
         reload ? "Keep this question" : preview,
       ]);
-      expect(fake.rpc.mock.calls.filter(([method]) => method === "chat.submit")).toHaveLength(1);
+      expect(fake.rpc.mock.calls.filter(([method]) => method === "prompt.submit")).toHaveLength(1);
       session.close();
     },
   );
@@ -201,8 +201,8 @@ describe("native session state", () => {
     async (state) => {
       const history = vi.spyOn(api, "messages").mockResolvedValue([]);
       fake.rpc.mockImplementation(async (method) => {
-        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
-        if (method === "chat.state") {
+        if (method === "prompt.submit") throw new NativeError("Lost acknowledgement");
+        if (method === "state") {
           if (state === "unavailable") throw new Error("unavailable");
           return {
             running: state === "missing" ? undefined : state === "running",
@@ -220,7 +220,7 @@ describe("native session state", () => {
       expect(session.uncertain.value).toBe(true);
       expect(nativeOutcome("alpha", "one")).toBe(true);
       expect(session.messages.value.map((row) => row.content)).toEqual(["Question"]);
-      expect(fake.rpc.mock.calls.filter(([method]) => method === "chat.submit")).toHaveLength(1);
+      expect(fake.rpc.mock.calls.filter(([method]) => method === "prompt.submit")).toHaveLength(1);
       session.close();
     },
   );
@@ -228,7 +228,7 @@ describe("native session state", () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     let acknowledge!: () => void;
     fake.rpc.mockImplementation((method) =>
-      method === "chat.submit"
+      method === "prompt.submit"
         ? new Promise<void>((resolve) => {
             acknowledge = resolve;
           })
@@ -239,7 +239,7 @@ describe("native session state", () => {
     const sending = session.submit("Question", "Question", {});
     await session.resolveUncertainty();
     expect(session.uncertain.value).toBe(true);
-    expect(fake.rpc.mock.calls.some(([method]) => method === "chat.state")).toBe(false);
+    expect(fake.rpc.mock.calls.some(([method]) => method === "state")).toBe(false);
     acknowledge();
     await sending;
     session.close();
@@ -249,7 +249,7 @@ describe("native session state", () => {
     async (phase) => {
       const history = vi.spyOn(api, "messages").mockResolvedValue([]);
       fake.rpc.mockImplementation(async (method) => {
-        if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
+        if (method === "prompt.submit") throw new NativeError("Lost acknowledgement");
         return { settled: false, running: false };
       });
       const session = useNativeSession(vi.fn());
@@ -279,8 +279,8 @@ describe("native session state", () => {
   it("does not overwrite activity arriving during the native state check", async () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     fake.rpc.mockImplementation(async (method) => {
-      if (method === "chat.submit") throw new NativeError("Lost acknowledgement");
-      if (method === "chat.state") {
+      if (method === "prompt.submit") throw new NativeError("Lost acknowledgement");
+      if (method === "state") {
         fake.boundary++;
         fake.hooks!.event({ type: "message.start", session_id: "runtime" } as any);
         return { running: false };
@@ -370,7 +370,7 @@ describe("native session state", () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     let reject!: (error: Error) => void;
     fake.rpc.mockImplementation((method: string) =>
-      method === "chat.submit"
+      method === "prompt.submit"
         ? new Promise((_resolve, fail) => {
             reject = fail;
           })
@@ -392,7 +392,7 @@ describe("native session state", () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     let acknowledge!: (value: unknown) => void;
     fake.rpc.mockImplementation((method: string) =>
-      method === "chat.submit"
+      method === "prompt.submit"
         ? new Promise((resolve) => {
             acknowledge = resolve;
           })
@@ -407,14 +407,14 @@ describe("native session state", () => {
     acknowledge({ outcome: "accepted" });
     await pending;
     expect(nativeOutcome("alpha", "one")).toBe(false);
-    expect(fake.rpc.mock.calls.filter(([method]) => method === "chat.submit")).toHaveLength(1);
+    expect(fake.rpc.mock.calls.filter(([method]) => method === "prompt.submit")).toHaveLength(1);
     expect(fake.rpc.mock.calls.some(([method]) => method === "chat.status")).toBe(false);
     session.close();
   });
   it("a lost acknowledgement remains locked across close and reattachment", async () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     fake.rpc.mockImplementation((method: string) =>
-      method === "chat.submit"
+      method === "prompt.submit"
         ? Promise.reject(new Error("connection lost"))
         : Promise.resolve({ settled: true }),
     );
@@ -559,7 +559,7 @@ it.each(["hidden", "auto_continue", "process_complete", "async_delegation_comple
     expect(rendered().filter((entry) => entry.kind === "turn")).toHaveLength(
       display_kind === "async_delegation_complete" ? 2 : 1,
     );
-    expect(fake.rpc.mock.calls.some(([method]) => method === "chat.submit")).toBe(false);
+    expect(fake.rpc.mock.calls.some(([method]) => method === "prompt.submit")).toBe(false);
     session.close();
   },
 );
@@ -571,7 +571,7 @@ it.each(["process_complete", "async_delegation_complete"])(
       { id: "1", role: "user", content: "internal", display_kind },
     ]);
     fake.rpc.mockImplementation(async (method) =>
-      method === "chat.history"
+      method === "history"
         ? {
             messages: [
               {
@@ -641,7 +641,9 @@ it.each(["complete", "interrupted", "error"])(
     await session.availability(false, true);
     expect(session.status.value).not.toContain("interrupted mid-run");
     expect(
-      fake.rpc.mock.calls.some(([method]) => method === "chat.stop" || method === "chat.submit"),
+      fake.rpc.mock.calls.some(
+        ([method]) => method === "session.interrupt" || method === "prompt.submit",
+      ),
     ).toBe(false);
     session.close();
   },

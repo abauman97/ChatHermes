@@ -9,6 +9,8 @@ export default defineConfig({
           "**/routing-live.spec.ts",
           "**/notification-click-live.spec.ts",
           "**/profile-routing-live.spec.ts",
+          "**/native-profile-live.spec.ts",
+          "**/unattended-native-live.spec.ts",
         ],
   outputDir: "./tests/visual-output",
   testIgnore:
@@ -18,6 +20,8 @@ export default defineConfig({
           "**/routing-live.spec.ts",
           "**/notification-click-live.spec.ts",
           "**/profile-routing-live.spec.ts",
+          "**/native-profile-live.spec.ts",
+          "**/unattended-native-live.spec.ts",
         ]
       : [],
   timeout: 90_000,

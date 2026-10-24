@@ -3,10 +3,9 @@ import { signIn, sessionFromUrl } from "./login";
 
 const origin = new URL(process.env.CHATHERMES_TEST_URL || "http://127.0.0.1:9119").origin;
 test.use({
-  // The isolated HTTP dashboard needs a secure context for its real worker.
+  // Use HTTPS or a loopback test URL for the browser's real secure context.
   launchOptions: {
     executablePath: process.env.CHATHERMES_CHROMIUM,
-    args: ["--unsafely-treat-insecure-origin-as-secure=" + origin],
   },
   trace: "off",
 });

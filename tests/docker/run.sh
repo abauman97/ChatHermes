@@ -55,6 +55,7 @@ docker run -d --rm --name "$container" \
   --label "chathermes.live.instance=$instance" \
   -p "$bind:$port:9119" \
   -e TEST_LLM_API_BASE_URL -e TEST_LLM_API_KEY -e TEST_LLM_API_MODEL \
+  -e HERMES_DASHBOARD_PUBLIC_URL \
   "$image" >/dev/null
 ready=0
 cleanup() {

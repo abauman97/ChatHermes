@@ -55,7 +55,9 @@ describe("dashboard plugin Hermes client", () => {
     expect((await api.create("alpha")).id).toBe("one");
     expect((await api.rename("alpha", "one", "Renamed")).title).toBe("Renamed");
     expect(await api.messages("alpha", "one")).toHaveLength(1);
-    expect(fake.mock.calls[0]?.[0]).toBe("/api/plugins/chathermes/chat/sessions?profile=alpha");
+    expect(fake.mock.calls[0]?.[0]).toBe(
+      "/api/plugins/chathermes/chat/sessions?prepare=1&profile=alpha",
+    );
     expect(fake.mock.calls[0]?.[1]).toMatchObject({ method: "POST", credentials: "same-origin" });
   });
   it("uses durable tool history for workspace chats and falls back only for unpersisted drafts", async () => {

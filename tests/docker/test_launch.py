@@ -57,6 +57,12 @@ esac
         self.assertNotIn(" -v ", calls)
         self.assertEqual(calls.count("run -d "), 1)
 
+    def test_push_public_url_is_forwarded_without_printing_its_value(self):
+        result, calls = self.run_launcher(HERMES_DASHBOARD_PUBLIC_URL="https://dashboard.example.test/chathermes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("-e HERMES_DASHBOARD_PUBLIC_URL", calls)
+        self.assertNotIn("https://dashboard.example.test", calls + result.stdout + result.stderr)
+
     def test_foreign_container_is_preserved_on_launch_and_stop(self):
         for mode in ("real", "stop"):
             with self.subTest(mode=mode):

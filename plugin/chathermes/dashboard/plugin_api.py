@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 try:
     import httpx
@@ -267,8 +267,11 @@ async def sessions(request: Request):
 
 @router.post('/chat/sessions')
 async def native_session_create(request: Request):
-    made = await _rpc(request, 'session.create', {'source': 'desktop'})
-    return {'session': {'id': made['stored_session_id'], 'source': 'desktop', 'title': ''}}
+    if request.query_params.get('prepare') == '1':
+        return JSONResponse({'native_create': {'source': 'desktop'}}, headers={'Cache-Control': 'no-store'})
+    # Persist an empty draft through the existing profile gateway. Runtime
+    # creation belongs to the dashboard native gateway, including secondary hosts.
+    return await _proxy(request, '/api/sessions')
 
 
 @router.get("/sessions/{session_id}")
@@ -463,45 +466,129 @@ async def native_image(request: Request, file_id: str):
 # connection, credentials, native database writes, or a second session store.
 # Hermes imports this file by spec rather than as a package. Resolve siblings
 # relative to this trusted plugin directory, never through sys.path/CWD.
-def _load_sibling(name):
-    import importlib.util
-    spec = importlib.util.spec_from_file_location('chathermes_' + name, Path(__file__).with_name(name + '.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 _gateway_transport = _load_sibling('gateway_transport')
 _RpcTransport = _gateway_transport._RpcTransport
-_CwdExplicitUnsupported = _gateway_transport._CwdExplicitUnsupported
-_InlineImagesUnsupported = _gateway_transport._InlineImagesUnsupported
 
-_chat_gateway = _load_sibling('chat_gateway')
-_native_owners = _load_sibling('native_owners')
 _push_store_module = _load_sibling('push_store')
 _push_sender_module = _load_sibling('push_sender')
 # Spec-loaded siblings are not a package: the sender's fallback import creates
 # another store/lock. Share the API store so delivery cleanup and subscription
 # routes serialize read-modify-write operations on the same persisted state.
 _push_sender_module.push_store = _push_store_module
-_native_channel = _load_sibling('native_channel')
-router.add_event_handler('shutdown', _native_owners.shutdown)
+_native_validation = _load_sibling('native_validation')
+
+_execution_viewer = _load_sibling('execution_viewer')
+_completion_outbox = _load_sibling('completion_outbox')
+_execution_service = None
+
+
+def _executions():
+    global _execution_service
+    if _execution_service is None:
+        import sys
+        _execution_service = _execution_viewer.Service(sys.modules[__name__], _completion_outbox)
+    return _execution_service
+
+
+async def _resume_push_delivery():
+    import asyncio
+    service = _executions()
+    service.worker = asyncio.create_task(service.deliver())
+
+
+async def _stop_execution_viewers():
+    if _execution_service is not None:
+        await _execution_service.close()
+
+
+router.add_event_handler('startup', _resume_push_delivery)
+router.add_event_handler('shutdown', _stop_execution_viewers)
+
+
+@router.post('/chat/retain')
+async def retain_execution(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    try:
+        raw = await request.body()
+        if len(raw) > 4096:
+            raise ValueError()
+        body = __import__('json').loads(raw)
+        if not isinstance(body, dict) or set(body) != {'session_id', 'ticket'}:
+            raise ValueError()
+        stored, ticket = body['session_id'], body['ticket']
+        if not isinstance(stored, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', stored):
+            raise ValueError()
+        if not isinstance(ticket, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,1024}', ticket):
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(422, 'Invalid native retention request') from None
+    profile = _rpc_profile(request)
+    await run_in_threadpool(_native_validation.check_profile_session, profile, stored)
+    try:
+        runtime = await _executions().retain(profile, stored, ticket)
+    except Exception:
+        raise HTTPException(503, 'Native execution retention unavailable; nothing submitted') from None
+    return JSONResponse({'session_id': runtime}, headers={'Cache-Control': 'no-store'})
 
 
 @router.get('/chat/capabilities')
 async def chat_capabilities():
-    return _chat_gateway.capabilities()
+    return JSONResponse({
+        'protocol': 'hermes.native.bf0203a7',
+        'mode': 'native-gateway',
+        'admission': True,
+        'reviewed_source': 'bf0203a794a07aac3ff764972ab9087baa4e4f4e',
+        'operations': ['gateway.ping', 'session.create', 'session.resume', 'session.activate', 'prompt.submit', 'session.interrupt', 'session.steer', 'file.attach', 'config.set'],
+        'blockers': ['snapshot_replay_boundary'],
+        'features': {'reconnect': 'native-snapshot', 'files': True},
+        'guarantees': {'crash_safe_idempotency': False, 'lossless_snapshot_replay': False, 'offline_turn_lease': True},
+        'limits': {},
+    }, headers={'Cache-Control': 'no-store'})
 
 
-# Authentication is checked inside this handler before accept: dashboard HTTP
-# middleware does not authorize a WebSocket upgrade.
-from fastapi import WebSocket
+@router.get('/chat/sessions/{session_id}/membership')
+async def native_session_membership(request: Request, session_id: str):
+    from starlette.concurrency import run_in_threadpool
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id):
+        raise HTTPException(422, 'Invalid stored session')
+    # A native Project draft can be live before its first DB write. Check the
+    # selected profile's durable store OR its verified live owner; never cold-
+    # adopt an arbitrary ID just because native resume permits doing so.
+    await run_in_threadpool(_native_validation.check_profile_session, _rpc_profile(request), session_id)
+    return JSONResponse({'member': True}, headers={'Cache-Control': 'no-store'})
 
 
-@router.websocket('/chat/ws')
-async def chat_socket(ws: WebSocket):
-    import sys
-    await _chat_gateway.socket(ws, sys.modules[__name__])
+@router.post('/chat/prepare')
+async def prepare_native_turn(request: Request):
+    """Validate profile-local attachments/model aliases without admitting a turn.
+
+    Buffered secondary plugin HTTP is sufficient here; execution and streaming
+    belong to the authenticated dashboard native gateway, never this host.
+    """
+    import re
+    from starlette.concurrency import run_in_threadpool
+    try:
+        params = await request.json()
+    except (ValueError, TypeError):
+        raise HTTPException(422, 'Invalid native preparation')
+    if not isinstance(params, dict) or set(params) - {'input', 'model', 'provider', 'admission_id'}:
+        raise HTTPException(422, 'Invalid native preparation')
+    profile = _rpc_profile(request)
+    text, images = _validated_workspace_turn({k: v for k, v in params.items() if k != 'admission_id'})
+    if images:
+        await run_in_threadpool(_native_validation.verify_image_refs, profile, text, images)
+    files = [{'name': name, 'path': path} for name, path in re.findall(r'Attached file ([^\n]+?): ([^\n]+)', text)]
+    if files:
+        await run_in_threadpool(_native_validation.verify_file_refs, profile, [file['path'] for file in files])
+    # Preserve the pinned native prompt shape: multipart only for images;
+    # text/file-only turns use the normalized string for @file expansion.
+    result = {'input': params['input'] if images else text, 'files': files}
+    if params.get('model'):
+        # This collector is never connected to a dispatcher or returned.
+        from types import SimpleNamespace
+        model, provider = await run_in_threadpool(_native_validation.model_selection, profile, params['model'], params.get('provider'), SimpleNamespace(secrets=set()))
+        result.update(model=model, provider=provider)
+    return JSONResponse(result, headers={'Cache-Control': 'no-store'})
 
 
 def _rpc_profile(request):
@@ -788,15 +875,9 @@ async def project_session(request: Request, project_id: str):
             if cwd != root and os.path.normpath(cwd) != os.path.abspath(os.path.expanduser(root)):
                 raise HTTPException(409, 'The Project workspace is unavailable')
             params.update(cwd=cwd, cwd_explicit=True)
-        try:
-            made = await transport.call('session.create', params)
-        except _CwdExplicitUnsupported:
-            # Older Hermes infers explicit cwd from an existing directory. Retry
-            # only the exact schema-validation rejection, never operational errors.
-            if 'cwd' not in params or not os.path.isdir(params['cwd']):
-                raise HTTPException(409, 'The Project workspace is unavailable')
-            params.pop('cwd_explicit')
-            made = await transport.call('session.create', params)
+        if request.query_params.get('prepare') == '1':
+            return JSONResponse({'native_create': {key: value for key, value in params.items() if key != 'profile'}}, headers={'Cache-Control': 'no-store'})
+        made = await transport.call('session.create', params)
         return {'session': {'id': made['stored_session_id'], 'source': 'desktop',
                             'cwd': made['info'].get('cwd'), 'workspace_rpc': True}}
     finally:
@@ -833,11 +914,7 @@ async def project_events(request: Request):
 async def _workspace_resume(transport, profile, stored_id):
     # Crucially, no cwd here. Hermes restores the session's own workspace.
     params = {'profile': profile, 'session_id': stored_id, 'source': 'desktop', 'inline_images': False}
-    try:
-        return await transport.call('session.resume', params)
-    except _InlineImagesUnsupported:
-        # Some published images lack this optional history projection flag.
-        return await transport.call('session.resume', {key: value for key, value in params.items() if key != 'inline_images'})
+    return await transport.call('session.resume', params)
 
 
 def _workspace_message(row):
@@ -868,15 +945,13 @@ def _validated_workspace_turn(body):
     """Validate the entire turn before config/image/submit native mutations."""
     import base64
     import binascii
-    if not isinstance(body, dict) or set(body) - {'input', 'model', 'provider', 'require_model_lock'}:
+    if not isinstance(body, dict) or set(body) - {'input', 'model', 'provider'}:
         raise HTTPException(422, 'Invalid workspace turn')
     model, provider = body.get('model'), body.get('provider')
     if model is not None and (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,255}', model)):
         raise HTTPException(422, 'Invalid workspace model')
     if provider is not None and (not model or not isinstance(provider, str) or not _PROFILE.fullmatch(provider)):
         raise HTTPException(422, 'Invalid workspace provider')
-    if 'require_model_lock' in body and not isinstance(body['require_model_lock'], bool):
-        raise HTTPException(422, 'Invalid workspace turn')
     parts = body.get('input')
     if isinstance(parts, str):
         parts = [{'type': 'text', 'text': parts}]

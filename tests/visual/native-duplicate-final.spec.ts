@@ -13,7 +13,7 @@ test("native duplicate interim/final settles once in the mounted dashboard", asy
     class DuplicateFinalSocket extends Socket {
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols);
-        if (!new URL(String(url)).pathname.endsWith("/chathermes/chat/ws")) return;
+        if (!new URL(String(url)).pathname.endsWith("/api/ws")) return;
         let injected = false;
         this.addEventListener("message", (event) => {
           const frame = JSON.parse(event.data);

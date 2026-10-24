@@ -8,10 +8,14 @@ bind mounts, or personal Hermes configuration.
 
 The fixture seeds `default`, `alpha`, and `beta` with matching provider settings
 and distinct generated gateway credentials in each profile's private `.env`.
-They share the loopback API listener through Hermes profile multiplexing. Named
+Each private profile file also receives the test provider credential, because
+native secondary runtimes do not inherit launch-profile secrets. They share the loopback API listener through Hermes profile multiplexing. Named
 profile HTTP requests exercise Hermes's secondary plugin hosts; the runtime still
-refuses secondary plugin WebSockets. The profile routing browser test checks
-independent session stores and profile-local authenticated uploads.
+refuses secondary plugin WebSockets. ChatHermes uses the supported dashboard
+`/api/ws` native gateway with a host-issued ticket and explicit profile on every
+RPC, so that refusal does not prevent secondary native chat. Browser tests check
+real conversations and offline recovery in all three profiles, colliding stored
+IDs, single-use ticket enforcement, and profile-local authenticated uploads.
 
 ## Launch from this checkout
 
@@ -25,6 +29,13 @@ TEST_LLM_API_MODEL=your-model
 
 The launcher loads this file automatically. Existing exported environment values
 take precedence. The file stays excluded from Git and the Docker build context.
+For push testing, also set `HERMES_DASHBOARD_PUBLIC_URL` in `.env` or export it;
+the launcher forwards it to the container. Use the dashboard's public HTTPS URL.
+Background delivery has no request origin to fall back to, and HTTP localhost
+cannot supply the required VAPID subject. For an isolated localhost Android
+fixture, `https://chathermes.example.test` supplies a synthetic VAPID subject only;
+it does not change the app URL or provide HTTPS hosting. Enable notifications
+separately for each tested profile on the device.
 Then run:
 
 ```sh
@@ -146,6 +157,12 @@ query values omitted. Chrome builds that cannot install the PWA fail and remove 
 device; a browser shortcut alone does not count as a successful installation.
 Chrome must be able to reach any services required by its installation flow.
 
+To verify an existing installed device without replacing it, reinstalling the app,
+or force-stopping Chrome, run `sh tests/docker/android.sh check` with the same
+instance, bind address, and CDP endpoint used to launch it. A successful check
+prints the ready message and exits 0. Do not edit a shell launcher's source while
+that shell is running.
+
 The shell launcher is `tests/docker/android.sh`. It runs the emulator with `--rm`,
 Docker logging disabled, no volume or bind mounts, and no saved snapshots outside
 its container. The launcher rejects images that introduce inherited
@@ -159,9 +176,63 @@ containers owned by another instance.
 Use the same `CHATHERMES_INSTANCE` as Hermes. Optional
 `CHATHERMES_ANDROID_VNC_PORT` (default `6080`) and
 `CHATHERMES_ANDROID_CDP_PORT` (default `9223`) allow concurrent devices. Both ports
-bind only to daemon loopback; CDP grants browser control and must stay private.
+bind to daemon loopback by default; CDP grants browser control and must stay private.
 For a remote Docker daemon, forward both ports to matching local ports over SSH
-before launching Android. KVM must exist on the daemon host, not the client.
+before launching Android. `CHATHERMES_ANDROID_CDP_ENDPOINT` overrides the installer's
+HTTP discovery endpoint (default `http://127.0.0.1:9223`, following the CDP port
+setting). The installer also accepts a full endpoint URL instead of its port CLI
+argument. Discovery rewrites Chrome's advertised WebSocket host and port to this
+reachable endpoint, preserving the target path and query.
+
+In this environment the client uses `DOCKER_HOST=tcp://docker:2375` and the private
+Docker service is `172.25.0.2`. Nested loopback publications and nested bridge IPs
+are unreachable from the client. Publish on the daemon's private service interface
+and connect through that same address:
+
+```sh
+CHATHERMES_INSTANCE=android-check \
+CHATHERMES_ANDROID_BIND_ADDRESS=172.25.0.2 \
+CHATHERMES_ANDROID_CDP_ENDPOINT=http://172.25.0.2:9223 \
+npm run live:android
+```
+
+This reuses the healthy `chathermes-android-check-hermes` fixture (dashboard
+publication `172.25.0.2:9127`); the existing ADB forwarding still reaches its internal
+port 9119. `CHATHERMES_ANDROID_BIND_ADDRESS` defaults to `127.0.0.1` and accepts only
+loopback or RFC1918 IPv4 addresses on the daemon host. Wildcard and public addresses
+are rejected. Use this override only on the isolated private service network;
+never publish emulator controls to a public interface. No gateway or ADB ports are
+added. Successful installation retains the emulator. It establishes first launch
+and cold start, **not notification delivery**. Remaining Android notification
+checks are permission grant, push subscription, completion delivery with the app
+backgrounded, delivery after swiping the app away, and notification tap reopening
+the correct profile/session without duplicate delivery. Record actual Android
+notification evidence before marking those checks successful.
+
+KVM must exist on the daemon host, not the client.
+The launcher checks that `/dev/kvm` is a character device inside the launched
+container, then runs the image's `emulator -accel-check` with `docker exec --user 0`
+before waiting for boot. Numeric UID 0 avoids racing the image's startup
+permission change for `androidusr` and removal of the root passwd entry;
+normal emulator startup still runs as `androidusr`. A missing device
+or failed acceleration check fails immediately and removes only that launch's
+owned Android container. Check daemon-side device passthrough, KVM permissions,
+and nested virtualization if the daemon runs inside a VM. CPU count and available
+RAM alone do not establish KVM support.
+If KVM passes but boot fails, also check free space on the daemon's Docker
+storage filesystem: the AVD's userdata allocation can fail before ADB appears.
+Do not prune unrelated containers, images, or volumes to make this test run.
+
+The inspected image starts through
+`/home/androidusr/docker-android/mixins/scripts/run.sh`; its Python launcher
+requires `/dev/kvm` and already supplies `-gpu swiftshader_indirect -accel on`.
+It supports `EMULATOR_ADDITIONAL_ARGS`, but disabling acceleration there cannot
+bypass its required KVM permission step. This launcher keeps the image defaults
+and requires working KVM rather than attempting a software-only fallback.
+Passing the acceleration check does not establish Android boot or installation:
+success still requires ADB `sys.boot_completed=1` and a successful installed-app
+verification by `android-install.mjs`. Raw emulator logs are not printed.
+
 No ADB port is published. Docker images remain cached normally; application and
 device data are not exported to the checkout or host volumes.
 

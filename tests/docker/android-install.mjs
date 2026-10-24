@@ -4,7 +4,7 @@ import { openInstalledApp } from "./android-pwa.mjs";
 import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 
-const [container, port] = process.argv.slice(2);
+const [container, cdp = "9223"] = process.argv.slice(2);
 const adb = (...args) =>
   execFileSync("docker", ["exec", container, "adb", ...args], {
     encoding: "utf8",
@@ -13,7 +13,10 @@ const adb = (...args) =>
   });
 
 // Android boot completion does not guarantee HOME or Chrome is ready.
-const endpoint = `http://127.0.0.1:${port}`;
+// Retain the port-only CLI for local callers; a full URL reaches remote CDP.
+const endpoint =
+  process.env.CHATHERMES_ANDROID_CDP_ENDPOINT ||
+  (/^\d+$/.test(cdp) ? `http://127.0.0.1:${cdp}` : cdp);
 const connectChrome = () =>
   waitForChrome(endpoint, (url, options) => chromium.connectOverCDP(url, options));
 // Open Chrome before probing CDP: on a fresh AVD, adb boot completion leaves

@@ -136,21 +136,23 @@ export function useChatController(
     if (nativeMode.value) await sendNative(text, attachments);
   }
   async function stopResponse() {
+    const owner = scope.generation();
     if (nativeMode.value) {
       try {
         await native.stop();
       } catch {
-        native.error.value = "Could not stop the response.";
+        if (owner === scope.generation()) native.error.value = "Could not stop the response.";
       }
       return;
     }
   }
   async function steerResponse(text: string) {
+    const owner = scope.generation();
     if (nativeMode.value) {
       try {
         await native.steer(text);
       } catch {
-        native.error.value = "Response did not accept guidance.";
+        if (owner === scope.generation()) native.error.value = "Response did not accept guidance.";
       }
       return;
     }

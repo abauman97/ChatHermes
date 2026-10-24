@@ -139,9 +139,10 @@ await test("CDP waits through proxy failures, incomplete metadata, and connectio
   const browser = {};
   const result = await waitForChrome(
     "http://localhost:9223",
-    async (endpoint, { timeout }) => {
-      assert.equal(endpoint, "http://localhost:9223");
+    async (endpoint, { timeout, noDefaults }) => {
+      assert.equal(endpoint, "ws://localhost:9223/");
       assert.ok(timeout > 0 && timeout <= 5000);
+      assert.equal(noDefaults, true, "Android CDP must preserve native background visibility");
       if (++connects === 1) throw new Error("Chrome replaced its target");
       return browser;
     },
@@ -179,4 +180,38 @@ await test("CDP readiness has a bounded deadline and preserves the last failure"
     (error) => error.message === "Chrome debugging unavailable" && error.cause === failure,
   );
   assert.equal(polls, 3);
+});
+
+await test("CDP rewrites advertised loopback host and port through the private service endpoint", async () => {
+  for (const [endpoint, expected] of [
+    ["http://172.25.0.2:9223", "ws://172.25.0.2:9223/devtools/browser/device?session=1"],
+    ["http://172.25.0.2", "ws://172.25.0.2/devtools/browser/device?session=1"],
+    [
+      "https://private.example:9443",
+      "wss://private.example:9443/devtools/browser/device?session=1",
+    ],
+  ]) {
+    let requests = 0;
+    await waitForChrome(
+      endpoint,
+      async (url, options) => {
+        assert.equal(url, expected);
+        assert.equal(options.noDefaults, true);
+      },
+      {
+        ...clock(),
+        request: async (url) => {
+          requests++;
+          assert.equal(url, `${endpoint}/json/version`);
+          return {
+            ok: true,
+            json: async () => ({
+              webSocketDebuggerUrl: "ws://127.0.0.1:19222/devtools/browser/device?session=1",
+            }),
+          };
+        },
+      },
+    );
+    assert.equal(requests, 1);
+  }
 });

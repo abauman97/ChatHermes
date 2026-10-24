@@ -152,6 +152,9 @@ it.each(["edit_file", "write_file"])(
       const child = wrapper.get(".assistant-turn > .activity");
       expect(wrapper.findAll(".turn-work")).toHaveLength(1);
       expect(call.isVisible()).toBe(true);
+      expect(call.attributes("open")).toBe("");
+      await call.get("summary").trigger("click");
+      expect(call.attributes("open")).toBeUndefined();
       await call.get("summary").trigger("click");
       expect(call.attributes("open")).toBe("");
       emit("progress", "change", name, "Arriving file update");

@@ -1,7 +1,7 @@
 """Run in an isolated Hermes runtime, with /opt/plugins-src/chathermes copied in.
 
 Uses Hermes's real plugin dependency and profile scopes; no personal state or LLM.
-Reviewed contract: ac28abc96ce83f22f6b831f80d9007e2aba81f21.
+Reviewed contract: bf0203a794a07aac3ff764972ab9087baa4e4f4e.
 """
 import importlib.util
 import json
@@ -51,15 +51,6 @@ def scoped_plugin(tmp_path, monkeypatch, request):
                            scope=_config_profile_scope, home=get_hermes_home)
 
 
-def test_nested_profile_scope_preserves_launch_enablement(scoped_plugin):
-    f = scoped_plugin
-    with f.scope('developer'):
-        assert f.home() == f.developer
-        # None does not clear the host dependency's selected home on this pin.
-        with f.scope(None):
-            assert f.home() == f.developer
-        assert f.api._chat_gateway._enabled() is True
-        assert f.home() == f.developer
 
 
 def test_rest_target_uses_launch_address_and_selected_profile_key(scoped_plugin):
@@ -73,40 +64,8 @@ def test_rest_target_uses_launch_address_and_selected_profile_key(scoped_plugin)
         assert f.home() == f.developer
 
 
-def test_developer_websocket_uses_host_scope_and_reaches_ready(scoped_plugin, monkeypatch):
-    f = scoped_plugin
-    from hermes_cli import web_server_chat
-    # Authenticate a synthetic viewer without importing/starting the dashboard app.
-    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server', SimpleNamespace(
-        app=SimpleNamespace(state=SimpleNamespace(auth_required=True))))
-    monkeypatch.setattr(web_server_chat, '_ws_request_is_allowed', lambda ws: True)
-    monkeypatch.setattr(web_server_chat, '_gateway_ws_ticket_from_subprotocol', lambda ws: ('synthetic-ticket', 'ok'))
-    def auth(ws):
-        ws._hermes_auth_identity = {'user_id': 'synthetic-viewer', 'provider': 'basic'}
-        return None, 'ticket-subprotocol'
-    monkeypatch.setattr(web_server_chat, '_ws_auth_reason', auth)
-    with TestClient(f.app) as client:
-        with client.websocket_connect('/api/plugins/chathermes/chat/ws?profile=developer',
-                                      headers={'origin': 'http://testserver'}) as ws:
-            assert ws.receive_json()['method'] == 'chat.ready'
-            ws.send_json({'jsonrpc': '2.0', 'id': 'ping', 'method': 'gateway.ping', 'params': {}})
-            assert ws.receive_json() == {'jsonrpc': '2.0', 'id': 'ping', 'result': {'ok': True}}
 
 
-@pytest.mark.parametrize('selection', [{'enabled': []}, {'enabled': ['chathermes'], 'disabled': ['chathermes']}])
-def test_launch_disable_still_wins_inside_developer_scope(scoped_plugin, selection):
-    f = scoped_plugin
-    path = f.launch / 'config.yaml'
-    config = json.loads(path.read_text())
-    config['plugins'] = selection
-    path.write_text(json.dumps(config))
-    path = f.developer / 'config.yaml'
-    config = json.loads(path.read_text())
-    config['plugins'] = {'enabled': ['chathermes']}
-    path.write_text(json.dumps(config))
-    with f.scope('developer'):
-        assert f.api._chat_gateway._enabled() is False
-        assert f.home() == f.developer
 
 
 @pytest.mark.parametrize('stored,allowed', [('own-row', True), ('own-draft', True), ('foreign-draft', False)])
@@ -126,12 +85,11 @@ def test_native_session_guard_uses_selected_profile_store_and_drafts(scoped_plug
         'foreign-runtime': {'session_key': 'foreign-draft', 'profile_home': None},
     })
     with f.scope('developer'):
-        assert f.api._chat_gateway._enabled() is True
         if allowed:
-            f.api._native_channel.check_profile_session('developer', stored)
+            f.api._native_validation.check_profile_session('developer', stored)
         else:
             with pytest.raises(f.api.HTTPException) as failure:
-                f.api._native_channel.check_profile_session('developer', stored)
+                f.api._native_validation.check_profile_session('developer', stored)
             assert failure.value.status_code == 404
         assert f.home() == f.developer
     assert opened == [(f.developer / 'state.db', True)]

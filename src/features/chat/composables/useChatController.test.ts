@@ -136,3 +136,23 @@ describe("live chat controller", () => {
     upload.mockRestore();
   });
 });
+
+it.each(["stop", "steer"] as const)(
+  "isolates a late %s failure from the next profile",
+  async (operation) => {
+    const { native, controller, switchScope } = setup();
+    let fail!: (error: Error) => void;
+    native[operation] = vi.fn(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const pending =
+      operation === "stop" ? controller.actions.stop() : controller.actions.steer("guidance");
+    switchScope();
+    fail(new Error("private backend detail"));
+    await pending;
+    expect(native.error.value).toBe("");
+  },
+);

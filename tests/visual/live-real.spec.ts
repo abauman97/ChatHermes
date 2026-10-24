@@ -236,14 +236,14 @@ test("Send stays under the pointer then focuses the latest message", async ({ pa
   page.on("websocket", (socket) =>
     socket.on("framesent", (event) => {
       const frame = JSON.parse(String(event.payload));
-      if (frame.method === "chat.submit") submissions++;
+      if (frame.method === "prompt.submit") submissions++;
     }),
   );
   await signIn(page);
   const plugin = page.locator(".chathermes-embedded");
   const area = plugin.getByRole("textbox", { name: "Message Hermes" });
   const send = plugin.getByRole("button", { name: "Send message", exact: true });
-  await area.fill("Check stable send tap");
+  await area.fill("Check stable send tap. Reply only focus-ok without tools.");
   await expect(send).toBeEnabled();
   // Keep the original composer mounted so focus can be checked after the click.
   const created = await page.request.post("/api/plugins/chathermes/chat/sessions?profile=default", {
@@ -254,7 +254,8 @@ test("Send stays under the pointer then focuses the latest message", async ({ pa
     `/chathermes?profile=default#/chat/${encodeURIComponent((body.session || body).id)}`,
   );
   await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
-  await area.fill("Check stable send tap");
+  await area.fill("Check stable send tap. Reply only focus-ok without tools.");
+  await expect(send).toBeEnabled();
   await plugin.locator(".composer").evaluate((element) => {
     const state = { blurs: 0 };
     (window as unknown as { sendProbe: typeof state }).sendProbe = state;
@@ -316,13 +317,13 @@ test("sent message focus follows streamed content and respects a new draft and m
   let sendFrame: ((frame: object) => void) | undefined;
   let runtime = "";
   let seq = 0;
-  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+  await page.routeWebSocket(/\/api\/ws(?:\?|$)/, (socket) => {
     const server = socket.connectToServer();
     const attachIds = new Set<string>();
     socket.onMessage((message) => {
       const frame = JSON.parse(String(message));
-      if (frame.method === "chat.attach") attachIds.add(frame.id);
-      if (frame.method === "chat.submit") {
+      if (frame.method === "session.resume") attachIds.add(frame.id);
+      if (frame.method === "prompt.submit") {
         socket.send(
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { outcome: "accepted" } }),
         );
@@ -401,7 +402,7 @@ test("project home send hands focus to the newly mounted conversation", async ({
   const plugin = page.locator(".chathermes-embedded");
   const area = plugin.getByRole("textbox", { name: "Message Hermes" });
   await expect(plugin.locator(".transcript")).toHaveCount(0);
-  await area.fill("Check project send focus");
+  await area.fill("Check project send focus. Reply only project-focus-ok without tools.");
   const send = plugin.getByRole("button", { name: "Send message", exact: true });
   await expect(send).toBeEnabled();
   await send.click();
@@ -1002,12 +1003,12 @@ test("desktop grouped history counts tools and commands with matching chevrons",
       },
     }),
   );
-  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+  await page.routeWebSocket(/\/api\/ws(?:\?|$)/, (socket) => {
     const server = socket.connectToServer();
     const attachIds = new Set<string>();
     socket.onMessage((message) => {
       const frame = JSON.parse(String(message));
-      if (frame.method === "chat.attach") attachIds.add(frame.id);
+      if (frame.method === "session.resume") attachIds.add(frame.id);
       server.send(message);
     });
     server.onMessage((message) => {
@@ -1109,7 +1110,7 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
       private attachIds = new Set<string>();
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols);
-        if (!new URL(String(url)).pathname.endsWith("/chathermes/chat/ws")) return;
+        if (!new URL(String(url)).pathname.endsWith("/api/ws")) return;
         this.addEventListener("message", (event) => {
           const frame = JSON.parse(event.data);
           if (!this.attachIds.has(frame.id) || !frame.result) return;
@@ -1132,7 +1133,7 @@ test("failed and unavailable tool results stay collapsed and inspectable", async
       override send(data: Parameters<WebSocket["send"]>[0]) {
         if (typeof data === "string") {
           const frame = JSON.parse(data);
-          if (frame.method === "chat.attach") this.attachIds.add(frame.id);
+          if (frame.method === "session.resume") this.attachIds.add(frame.id);
         }
         super.send(data);
       }
@@ -1194,12 +1195,12 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     let sendFrame: ((frame: object) => void) | undefined;
     let runtime = "";
     let seq = 0;
-    await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+    await page.routeWebSocket(/\/api\/ws(?:\?|$)/, (socket) => {
       const server = socket.connectToServer();
       const attachIds = new Set<string>();
       socket.onMessage((message) => {
         const frame = JSON.parse(String(message));
-        if (frame.method === "chat.attach") attachIds.add(frame.id);
+        if (frame.method === "session.resume") attachIds.add(frame.id);
         server.send(message);
       });
       server.onMessage((message) => {
@@ -1210,7 +1211,7 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
             messages: [],
             running: false,
             queued: false,
-            inflight: null,
+            inflight: { user: "Check streaming activity", assistant: "" },
             recovery: {
               ...frame.result.recovery,
               complete: false,
@@ -1255,11 +1256,6 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
         name: toolName,
         result: { output: `Result ${id}`, exit_code },
       });
-    sendFrame!({
-      jsonrpc: "2.0",
-      method: "chat.input",
-      params: { text: "Check streaming activity" },
-    });
     event("message.start");
     event("message.delta", { text: "Starting activity." });
     start("first");
@@ -1278,6 +1274,9 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await expect(rows.nth(0)).not.toBeVisible();
     await expect(rows.nth(1)).toBeVisible();
     await expect(rows.nth(2)).toBeVisible();
+    await expect(rows.nth(1)).toHaveAttribute("open", "");
+    await rows.nth(1).locator("summary").click();
+    await expect(rows.nth(1)).not.toHaveAttribute("open");
     await rows.nth(1).locator("summary").click();
     event("tool.progress", { tool_id: "second", name: toolName, text: "Arriving live output" });
     await expect(rows.nth(1).locator("pre")).toContainText("Arriving live output");
@@ -1396,12 +1395,12 @@ test("async delegation receipts collapse as activity across reload", async ({ pa
       json: { data: messages.map((row) => ({ ...row, id: row.row_id, content: row.text })) },
     }),
   );
-  await page.routeWebSocket(/\/api\/plugins\/chathermes\/chat\/ws(?:\?|$)/, (socket) => {
+  await page.routeWebSocket(/\/api\/ws(?:\?|$)/, (socket) => {
     const server = socket.connectToServer();
     const attachIds = new Set<string>();
     socket.onMessage((message) => {
       const frame = JSON.parse(String(message));
-      if (frame.method === "chat.attach") attachIds.add(frame.id);
+      if (frame.method === "session.resume") attachIds.add(frame.id);
       server.send(message);
     });
     server.onMessage((message) => {

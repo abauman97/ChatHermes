@@ -81,17 +81,9 @@ class _RpcTransport:
             if 'error' in frame:
                 error = frame['error']
                 code = error.get('code')
-                message = error.get('message', '')
-                data = error.get('data')
-                if isinstance(message, str) and 'cwd_explicit' in message and isinstance(data, dict):
-                    message += ' ' + str(data)
-                if isinstance(message, str) and 'cwd_explicit' in message and 'Extra inputs are not permitted' in message:
-                    raise _CwdExplicitUnsupported()
-                if method == 'session.resume' and isinstance(message, str) and 'inline_images' in message and 'Extra inputs are not permitted' in message:
-                    raise _InlineImagesUnsupported()
                 raise HTTPException(501 if code == -32601 else 409, 'Hermes RPC could not complete this operation')
             return frame['result']
-        except (HTTPException, _CwdExplicitUnsupported, _InlineImagesUnsupported):
+        except HTTPException:
             raise
         except Exception:
             raise HTTPException(503, 'Hermes gateway RPC is unavailable')
@@ -119,11 +111,3 @@ class _RpcTransport:
         except Exception:
             # Teardown must not mask the original failure or leak exceptions.
             pass
-
-
-class _CwdExplicitUnsupported(Exception):
-    pass
-
-
-class _InlineImagesUnsupported(Exception):
-    pass

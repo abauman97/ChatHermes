@@ -478,7 +478,7 @@ describe("authoritative gateway Projects", () => {
       ),
     ).toEqual(
       expect.arrayContaining([
-        "/api/plugins/chathermes/projects/session?project_id=p_a&profile=alpha",
+        "/api/plugins/chathermes/projects/session?project_id=p_a&prepare=1&profile=alpha",
         expect.objectContaining({ body: "{}" }),
       ]),
     );
