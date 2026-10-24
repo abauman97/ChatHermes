@@ -8418,7 +8418,7 @@ var cm = ["open"], lm = {
 			"failed",
 			"interrupted",
 			"unknown"
-		].includes(r.value || "")), a = /* @__PURE__ */ V(null), o = X(() => a.value ?? (n.value || t.activity.kind === "thinking" && i.value)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(!0);
+		].includes(r.value || "")), a = /* @__PURE__ */ V(null), o = X(() => a.value ?? (t.activity.kind === "thinking" && (i.value || n.value) || t.activity.kind === "tool" && !!t.activity.delegated && n.value)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(!0);
 		function l() {
 			let e = s.value;
 			e && (c.value = e.scrollHeight - e.scrollTop - e.clientHeight < 24);
@@ -8810,6 +8810,7 @@ var cm = ["open"], lm = {
 	"aria-controls",
 	"disabled"
 ], rh = { class: "truncate" }, ih = [
+	"type",
 	"disabled",
 	"aria-label",
 	"title"
@@ -9150,12 +9151,12 @@ var cm = ["open"], lm = {
 					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, nh),
 					q("button", {
 						class: "send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
-						type: "button",
+						type: e.sending && !a.value.trim() ? "button" : "submit",
 						disabled: le.value,
 						"aria-label": e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						onPointerdown: v,
-						onClick: n[3] ||= (t) => e.sending ? a.value.trim() ? ue() : e.stoppable && i("stop") : ue()
+						onClick: n[3] ||= (t) => e.sending && !a.value.trim() && e.stoppable && i("stop")
 					}, [e.sending && !a.value.trim() ? (W(), G("svg", ah, [...n[11] ||= [q("rect", {
 						x: "6",
 						y: "6",
