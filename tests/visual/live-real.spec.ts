@@ -705,7 +705,6 @@ test("native artifact cards preview, download and survive history reconstruction
   await area.fill(prompt);
   await send.click();
   await area.fill("Draft remains available");
-  await area.click();
   await expect(area).toBeFocused();
   await expect(plugin.locator(".message.assistant").last()).toContainText(filename, {
     timeout: 180_000,
@@ -713,7 +712,6 @@ test("native artifact cards preview, download and survive history reconstruction
   // Refill after the response arrives so the send-enabled assertion always
   // checks a nonempty composer after the mobile submission/layout transition.
   await area.fill("Draft remains available");
-  await area.click();
   await expect(area).toBeFocused();
   await expect(send).toBeEnabled({ timeout: 180_000 });
   await expect(plugin.locator(".message.assistant").last()).toContainText(codeName);
@@ -741,6 +739,7 @@ test("native artifact cards preview, download and survive history reconstruction
     .filter({ hasText: imageName })
     .first();
   await expect(image.locator("img").first()).toBeVisible();
+  await page.screenshot({ path: info.outputPath("artifact-image-card.png") });
   await image
     .getByRole("button", { name: `Preview ${imageName}` })
     .first()

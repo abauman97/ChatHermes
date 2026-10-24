@@ -52,9 +52,8 @@ function resizeInput() {
     Math.max(parseFloat(style.minHeight) || 0, Math.min(contentHeight, 8 * lineHeight)) + padding;
   area.style.height = `${height}px`;
 }
-// Keep the keyboard and focus-dependent layout stable until Send receives its click.
-// Keyboard activation still uses the button's normal focus and click behavior.
-function preserveInputFocus(event: PointerEvent) {
+// Prevent the compatibility mouse event from blurring the textarea before click.
+function preserveInputFocus(event: MouseEvent) {
   if (event.button === 0 && document.activeElement === textarea.value) event.preventDefault();
 }
 function focusInput() {
@@ -453,8 +452,8 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
             sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'
           "
           :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'"
-          @pointerdown="preserveInputFocus"
-          @click="sending && !value.trim() && stoppable && emit('stop')"
+          @mousedown="preserveInputFocus"
+          @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()"
         >
           <svg
             v-if="sending && !value.trim()"

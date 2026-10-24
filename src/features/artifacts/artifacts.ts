@@ -244,22 +244,32 @@ export function uploadedArtifacts(text: string): { text: string; files: Artifact
 }
 export function messageArtifacts(message: Message): Artifact[] {
   if (message.role !== "user" && message.role !== "assistant") return [];
+  const { content } = message;
   const files = (message.role === "user" ? uploadedArtifacts : textArtifacts)(
-    messageText(message.content),
+    messageText(content),
   ).files;
-  const hasImageReferences = files.some((file) => previewKind(file) === "image");
-  if (Array.isArray(message.content)) {
+  const uploadedImages = files.filter((file) => previewKind(file) === "image");
+  if (Array.isArray(content)) {
     let imageIndex = 0;
-    for (const part of message.content) {
+    for (const part of content) {
       const url = part?.image_url?.url;
       if (typeof url !== "string" || !/^(data:image\/|https?:\/\/)/.test(url)) continue;
-      if (hasImageReferences) {
-        const file = files.filter((file) => previewKind(file) === "image")[imageIndex++];
+      if (uploadedImages.length) {
+        const file = uploadedImages[imageIndex++];
         if (file) file.imageData = url;
       } else {
         const file = artifact(url, "Attached image.png");
         if (file) files.push(file);
       }
+    }
+  } else if (message.role === "user" && uploadedImages.length) {
+    // SessionDB's REST history omits inline image content parts; the durable
+    // upload annotation maps each image to its authenticated image URL.
+    for (const file of uploadedImages) {
+      const match = file.path.match(
+        /\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i,
+      );
+      if (match) file.path = `/api/plugins/chathermes/images/${match[1]}`;
     }
   }
   return files.map((file) => ({
