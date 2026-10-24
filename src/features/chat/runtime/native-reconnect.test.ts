@@ -155,7 +155,7 @@ describe("interrupted attachment draft recovery", () => {
           expect(wrapper.text()).not.toContain("Viewer detached before submission");
         }
         for (const viewer of fake.viewers)
-          expect(viewer.rpc).not.toHaveBeenCalledWith("chat.submit", expect.anything());
+          expect(viewer.rpc).not.toHaveBeenCalledWith("prompt.submit", expect.anything());
       } finally {
         wrapper.unmount();
       }

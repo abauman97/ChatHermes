@@ -24,10 +24,11 @@ device must then enable notifications again. Do not copy its private key into
 browser configuration or logs.
 
 Set `HERMES_DASHBOARD_PUBLIC_URL` to the dashboard's HTTPS URL for background
-push delivery. The VAPID subject uses its origin with the path removed. When
-that setting is absent or invalid, request-backed delivery (such as **Send test**)
-can use the validated HTTPS request base origin. Without either valid origin,
-delivery fails safely without attempting transport. The pinned py-vapid 1.9.4
+push delivery in every dashboard/plugin-host process that drains the outbox.
+The VAPID subject uses its origin with the path removed. An absent or invalid
+setting fails safely without attempting transport, including **Send test**;
+request headers never supply a replacement origin. The Docker fixture seeds
+the explicit setting into each profile's dotenv for Hermes's native child loader. The pinned py-vapid 1.9.4
 requires a DNS HTTPS origin without a path or explicit port; credentials, query
 strings, fragments, localhost, and malformed URLs are rejected. The VAPID
 audience remains the push service origin, not the dashboard origin.
@@ -38,8 +39,7 @@ values fall back to **ChatHermes** without changing the routing identity. The
 worker accepts queued legacy **ChatHermes** titles and displays the validated
 profile name; mismatched titles are rejected. Explicit tests use the same profile
 title rule. Completion and failed/interrupted
-notifications use the native `message.complete.payload.text`: the actual final
-assistant text, already redacted by the credential-safe native transport. This
+notifications use the committed final assistant row verified against the successful native completion and pre-submission watermark, read from the owning profile and redacted before delivery. This
 is authoritative even when the runtime rewrites its streamed response. Reasoning,
 tool output and usage are excluded. Missing completion text produces an empty
 body rather than a generic substitute. Approval/clarification alerts and explicit
@@ -100,3 +100,10 @@ permission, Home Screen installation (iOS), and that this library is installed.
 
 See [profile-title verification](verification/2026-10-08-push-profile-titles.md)
 for exact test results and browser/transport verification limitations.
+
+Completion delivery is persisted in `state/chathermes-completions.sqlite3`.
+Each device is marked delivered only after provider success; failures retry after
+restart. A crash after sending but before recording success can repeat the same
+notification tag. New subscriptions do not receive old completions. Browser
+closure leaves a native server viewer attached while work runs; execution does
+not survive loss of the host/runtime process by virtue of the push outbox.

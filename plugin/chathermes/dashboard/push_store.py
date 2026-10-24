@@ -80,7 +80,7 @@ def _b64url(value):
 
 
 def vapid_subject(request=None):
-    """Prefer the configured public dashboard URL; fall back to request origin."""
+    """Require an operator-configured HTTPS origin, including unattended sends."""
     from urllib.parse import urlsplit, urlunsplit
 
     def origin(value):
@@ -109,33 +109,16 @@ def vapid_subject(request=None):
               bool(os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip()), bool(public))
     if public:
         return public
-    try:
-        headers = getattr(request, 'headers', {})
-        candidates = [headers.get('origin'), getattr(request, 'base_url', '')]
-        for candidate in candidates:
-            fallback = origin(str(candidate or ''))
-            if fallback:
-                return fallback
-    except Exception:
-        pass
     raise RuntimeError('Set HERMES_DASHBOARD_PUBLIC_URL to an HTTPS dashboard URL for Web Push')
 
 
 def public_dashboard_url(request=None):
-    """Resolve the configured URL, using the incoming request only as fallback."""
-    from urllib.parse import urlsplit
-
-    configured = os.environ.get('HERMES_DASHBOARD_PUBLIC_URL', '').strip()
-    if configured:
-        parsed = urlsplit(configured)
-        if parsed.scheme.lower() == 'https' and parsed.netloc:
-            return configured.rstrip('/')
-    if request is not None:
-        base_url = str(getattr(request, 'base_url', '') or '').rstrip('/')
-        parsed = urlsplit(base_url)
-        if parsed.scheme.lower() == 'https' and parsed.netloc:
-            return base_url
-    return None
+    """Return only the explicitly configured, validated dashboard URL."""
+    try:
+        vapid_subject()
+    except RuntimeError:
+        return None
+    return os.environ['HERMES_DASHBOARD_PUBLIC_URL'].strip().rstrip('/')
 
 
 def upsert(profile, subscription):

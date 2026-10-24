@@ -88,7 +88,7 @@ export function useNativeSession(
     if (pendingInput && !correction && user && admissionId === pendingAttempt) {
       pendingInput = false;
       // Keep the immediate attachment preview until authoritative history maps
-      // it to a native user row. The spool itself only retains durable refs.
+      // it to a native user row. Persisted history retains the durable references.
       repaint();
       return;
     }
@@ -180,7 +180,7 @@ export function useNativeSession(
       const stored = await api.messages(p, s);
       if (current !== generation || flight !== hydrating || recovering) return;
       const display = stored.length
-        ? await currentViewer.rpc<{ messages?: Message[] }>("chat.history").catch(() => null)
+        ? await currentViewer.rpc<{ messages?: Message[] }>("history").catch(() => null)
         : { messages: [] };
       // The pinned HTTP serializer omits display_metadata. Join the native
       // projection by durable identity, preserving REST attachments/tool output.
@@ -245,7 +245,7 @@ export function useNativeSession(
         history[index] = { ...history[index]!, blocks: projection.blocks };
       }
       messages.value = history;
-      const result = await currentViewer.rpc<{ settled: boolean }>("chat.reconciled", {
+      const result = await currentViewer.rpc<{ settled: boolean }>("reconciled", {
         through: currentViewer.boundary,
       });
       if (current === generation && result.settled) onSettled();
@@ -478,7 +478,7 @@ export function useNativeSession(
       if (current !== generation || !visible || !online)
         throw new NativeError("Viewer detached before submission", "rejected");
       dispatched = true;
-      await target.rpc("chat.submit", { input: prepared, admission_id: attempt, ...selection });
+      await target.rpc("prompt.submit", { input: prepared, admission_id: attempt, ...selection });
       settleNativeOutcome(profileFor(target), target.stored, attempt);
       if (current === generation) uncertain.value = false;
       // An acknowledgement remains reliable across reconnects, but belongs
@@ -519,14 +519,14 @@ export function useNativeSession(
       target = viewer!,
       boundary = target.boundary;
     try {
-      // Retained chat.input is a display boundary recorded before dispatch,
+      // Optimistic input is a display boundary recorded before dispatch,
       // not proof of native activity. Recheck Hermes even if replay set busy.
       // Keep the projection: replacing it could lose an unpersisted prompt.
       const state = await target.rpc<{
         running: boolean;
         queued: boolean;
         delegating: boolean;
-      }>("chat.state");
+      }>("state");
       if (current !== generation || target.boundary !== boundary || admitting.has(pendingAttempt))
         return;
       if (state.running !== false || state.queued || state.delegating) {
@@ -587,8 +587,8 @@ export function useNativeSession(
     resolveUncertainty,
     reconnect,
     availability,
-    stop: () => readyViewer().rpc("chat.stop"),
-    steer: (text: string) => readyViewer().rpc("chat.steer", { text }),
+    stop: () => readyViewer().rpc("session.interrupt"),
+    steer: (text: string) => readyViewer().rpc("session.steer", { text }),
     answer: (id: string, result: Record<string, unknown>) => readyViewer().answer(id, result),
   };
 }

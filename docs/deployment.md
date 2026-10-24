@@ -58,24 +58,24 @@ See [PWA and Web Push setup](push-notifications.md) for HTTPS/iOS requirements,
 the explicit enable flow, dependency installation, persistent VAPID state,
 notification privacy, and troubleshooting.
 
-## Native rollout gate
+## Native runtime
 
-Keep the checked-in source/archive/base-image pins. `npm run live` builds
-`tests/docker/Dockerfile` with instance-scoped services and no Compose dependency. The
-shell fixture launcher puts Hermes/model on an internal network and publishes
-only the dashboard through an inbound relay. It preserves its dedicated named
-volume; optional real-provider mode is explicitly separate. Restart/rebuild
-Python route changes; sibling `gateway_transport.py` and `chat_gateway.py` are
-copied by the existing whole-plugin installer.
+`npm run live` extends the latest official Hermes release in one disposable
+real-provider container, with no bind mounts or personal Hermes state. Set
+provider settings in the root `.env` and remove only the owned container and
+anonymous volume with `npm run live:stop`.
 
-The native socket admits Other and Project chats in bounded native mode. Copy
-`native_channel.py` alongside the transport/gateway modules and rebuild assets.
-Keep legacy routes for existing run pointers. Never change transport or retry
-an uncertain submission. The capability endpoint explicitly marks durable
-idempotency, atomic snapshot replay and offline leases unavailable; see the
-[API contract](api-contract.md). Viewer recovery follows Hermes's default
-20-second orphan grace, with active-work freshness able to defer reaping.
-No long-lived owner is created. Socket ticket renewal after 600 seconds does
-not extend the upstream offline guarantee. A multi-worker deployment requires
-native runtime/socket affinity; proxy-prefix, process-crash and physical iOS
-parity remain unverified.
+Deploy the whole plugin directory and rebuild assets after Python or frontend
+changes. The native contract targets Hermes 0.22.5 at
+`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. Unsupported contracts fail closed.
+Browser and server execution viewers use the same native dashboard gateway.
+The server viewer connects over loopback using `HERMES_DASHBOARD_PORT` (9119 by
+default) and a delegated single-use dashboard ticket. It must reach the same
+native runtime as the browser. Keep native runtime affinity in multi-worker
+hosting; do not distribute a live session across independent runtimes.
+
+Persist `state/chathermes-completions.sqlite3` alongside the existing push state.
+It contains completion addresses and per-device delivery receipts. Startup retries
+pending push deliveries. Active execution retention lasts for the plugin host
+process; a host or runtime crash is not a guarantee of execution continuation.
+See the [API contract](api-contract.md) for recovery and delivery limits.

@@ -3,10 +3,6 @@ import {
   JsonRpcGatewayError,
   type ServerRequest,
 } from "../../../vendor/hermes/json-rpc-channel";
-import {
-  CanonicalDesktopProtocol,
-  canonicalPromptParams,
-} from "../../../vendor/hermes/canonical-protocol";
 import type { GatewayEvent } from "../../../vendor/hermes/gateway-events";
 import { NativeError, type NativeHooks, type NativeSnapshot } from "./native-chat";
 
@@ -27,7 +23,7 @@ const silentHooks: NativeHooks = {
 
 /** A profile-bound connection to the dashboard's native gateway. Credentials
  * remain in the host's single-use subprotocol; no plugin-host WS is involved.
- * Legacy snapshots are authoritative but do not promise lossless replay. */
+ * Snapshots are authoritative but do not promise lossless replay. */
 export class NativeGatewayViewer {
   static async create(profile: string, params: Record<string, unknown>, signal?: AbortSignal) {
     if (pendingDrafts.size >= 32) throw new NativeError("Too many unopened drafts", "rejected");
@@ -39,9 +35,23 @@ export class NativeGatewayViewer {
       await creator.ensure();
       const made = await creator.call("session.create", params);
       signal?.throwIfAborted();
-      const stored = made.stored_session_id || made.session_id;
+      const stored = made.stored_session_id;
       if (typeof stored !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(stored))
         throw new NativeError("Invalid native draft receipt");
+      // Native drafts are lazy. Persist the same ID through the existing
+      // authenticated profile API so secondary plugin hosts can prove membership.
+      const durable = await fetch(
+        `/api/plugins/chathermes/api/sessions?profile=${encodeURIComponent(profile || "default")}`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          redirect: "manual",
+          signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: stored, source: "desktop" }),
+        },
+      );
+      if (!durable.ok) throw new NativeError("Could not persist native draft", "rejected");
       const key = draftKey(profile, stored);
       const timer = setTimeout(() => {
         if (pendingDrafts.get(key)?.viewer === creator) pendingDrafts.delete(key);
@@ -73,9 +83,6 @@ export class NativeGatewayViewer {
   readonly retainWhileHidden = true;
   private preparing = false;
   private preparationCancelled = false;
-  private canonical = false;
-  private protocol = new CanonicalDesktopProtocol();
-  private canonicalPrompts = new Map<string, { kind: string; params: Record<string, unknown> }>();
   readonly profile: string;
   readonly stored: string;
   private hooks: NativeHooks;
@@ -93,21 +100,22 @@ export class NativeGatewayViewer {
     });
     this.channel.onRequest((request) => {
       if (!["approval", "clarify", "secret"].includes(request.method)) return false;
-      if (request.params.session_id !== this.runtime && this.runtime) return false;
+      if (
+        (this.runtime && request.params.session_id !== this.runtime) ||
+        (request.params.profile && request.params.profile !== (this.profile || "default"))
+      ) {
+        request.decline?.("This viewer does not show that session");
+        return true;
+      }
       this.requests.set(request.id, request);
       if (!this.holding) this.publishRequests();
       return true;
     });
   }
   private publishRequests() {
-    this.hooks.requests([
-      ...[...this.requests.values()].map(({ id, method, params }) => ({ id, method, params })),
-      ...[...this.canonicalPrompts].map(([id, prompt]) => ({
-        id,
-        method: prompt.kind,
-        params: prompt.params,
-      })),
-    ]);
+    this.hooks.requests(
+      [...this.requests.values()].map(({ id, method, params }) => ({ id, method, params })),
+    );
   }
   ensure(): Promise<void> {
     if (this.detached || this.failed) return Promise.reject(new NativeError("Viewer detached"));
@@ -121,7 +129,7 @@ export class NativeGatewayViewer {
   }
   private async open() {
     this.hooks.connection("connecting");
-    // Confirm membership before resume: legacy resume can otherwise adopt a
+    // Confirm membership before resume: native resume can otherwise adopt a
     // foreign stored ID into the selected profile on some Hermes releases.
     // A pending draft carries an authenticated session.create receipt from this
     // exact profile. Its creator stays attached until this viewer resumes it.
@@ -176,7 +184,7 @@ export class NativeGatewayViewer {
             frame.params?.type === "gateway.ready" &&
             frame.params.payload?.session_authority === true
           )
-            this.canonical = true;
+            throw new Error("Unsupported native contract");
           this.channel.handleFrame(line);
           if (frame.method === "event") {
             if (!this.holding) this.event(frame.params);
@@ -215,8 +223,7 @@ export class NativeGatewayViewer {
     this.cancelOpening = undefined;
     ws.onerror = ws.onclose = () => this.disconnected();
     if (!this.stored) {
-      // The native ready frame precedes the ping reply and identifies whether
-      // creation needs the canonical request identity contract.
+      // Complete the native readiness round trip before creating a draft.
       await this.call("gateway.ping");
       this.holding = false;
       this.channel.startHeartbeat();
@@ -230,21 +237,11 @@ export class NativeGatewayViewer {
     this.assertLive();
     if (!snapshot || typeof snapshot.session_id !== "string" || !Array.isArray(snapshot.messages))
       throw new NativeError("Invalid native snapshot");
-    this.canonical = "revision" in snapshot && "execution_generation" in snapshot;
-    if (this.canonical) {
-      Object.assign(
-        snapshot,
-        this.protocol.result(
-          "session.resume",
-          { session_id: this.stored, profile: this.profile || "default" },
-          snapshot,
-        ),
-      );
-      this.adoptPrompts(snapshot as NativeSnapshot & { prompts?: Record<string, unknown>[] });
-    }
+    if ("revision" in snapshot || "execution_generation" in snapshot)
+      throw new NativeError("Unsupported native contract", "rejected");
     this.runtime = snapshot.session_id;
     if (snapshot.running || snapshot.queued) {
-      // A legacy resume can capture running=true just before completion and
+      // A native resume can capture running=true just before completion and
       // return after that terminal event. Confirm once after its reply, while
       // retaining later events. This is a recovery barrier, not completion polling.
       this.requests.clear();
@@ -286,23 +283,6 @@ export class NativeGatewayViewer {
       (event.profile && event.profile !== (this.profile || "default"))
     )
       return;
-    if (this.canonical) {
-      this.protocol.event(event);
-      const p = (event.payload || {}) as Record<string, unknown>;
-      if (
-        ["approval.request", "clarify.request"].includes(event.type) &&
-        typeof p.prompt_id === "string"
-      ) {
-        this.canonicalPrompts.set(p.prompt_id, {
-          kind: event.type.split(".")[0]!,
-          params: canonicalPromptParams(event.type.split(".")[0], this.runtime, p),
-        });
-        this.publishRequests();
-      } else if (event.type.endsWith(".settled") && typeof p.prompt_id === "string") {
-        this.canonicalPrompts.delete(p.prompt_id);
-        this.publishRequests();
-      }
-    }
     this.sequence++;
     if (event.type === "request.cancel") {
       const payload = event.payload as { id?: string; request_id?: string };
@@ -319,17 +299,7 @@ export class NativeGatewayViewer {
     if (!this.channel.connected) throw new NativeError("Native gateway disconnected", "rejected");
     try {
       const routed = { ...params, profile: this.profile || "default" };
-      if (!this.canonical) return await this.channel.request<T>(method, routed);
-      const prepared = this.protocol.prepare(method, routed);
-      try {
-        const value = await this.channel.request(this.protocol.wire(method, prepared), prepared);
-        const result = this.protocol.result(method, prepared, value);
-        if (["session.activate", "session.resume"].includes(method)) this.adoptPrompts(result);
-        return result as T;
-      } catch (error) {
-        this.protocol.failure(prepared, error);
-        throw error;
-      }
+      return await this.channel.request<T>(method, routed);
     } catch (error) {
       if (error instanceof JsonRpcGatewayError)
         throw new NativeError(
@@ -345,24 +315,23 @@ export class NativeGatewayViewer {
       throw new NativeError("Native gateway disconnected; message not submitted", "rejected");
     const scoped = { session_id: this.runtime };
     let result: unknown;
-    if (method === "chat.submit") result = await this.submit(params);
-    else if (method === "chat.stop") {
+    if (method === "prompt.submit") result = await this.submit(params);
+    else if (method === "session.interrupt") {
       if (this.preparing) this.preparationCancelled = true;
-      if (this.canonical) await this.call("session.activate", { ...scoped, omit_messages: true });
       result = await this.call("session.interrupt", scoped);
-    } else if (method === "chat.steer") {
+    } else if (method === "session.steer") {
       result = await this.call("session.steer", { ...scoped, text: params.text });
       if ((result as { status?: string })?.status !== "rejected")
         this.hooks.input(String(params.text), true);
-    } else if (["chat.state", "chat.history", "chat.reconciled"].includes(method)) {
+    } else if (["state", "history", "reconciled"].includes(method)) {
       const live = await this.call<NativeSnapshot>("session.activate", {
         ...scoped,
-        ...(method === "chat.history" ? {} : { omit_messages: true }),
+        ...(method === "history" ? {} : { omit_messages: true }),
       });
       result =
-        method === "chat.reconciled"
+        method === "reconciled"
           ? { settled: !live.running && !live.queued && params.through === this.sequence }
-          : method === "chat.history"
+          : method === "history"
             ? {
                 messages: live.messages.map((row) => ({
                   ...row,
@@ -421,26 +390,18 @@ export class NativeGatewayViewer {
           : input + "\n" + refs.join("\n");
       if (prepared.model) {
         guard();
-        if (!this.canonical) await this.call("approval.pending", { session_id: this.runtime });
+        await this.call("approval.pending", { session_id: this.runtime });
         guard();
         const value =
           prepared.model +
           " --session" +
           (prepared.provider ? " --provider " + prepared.provider : "");
-        const switched = this.canonical
-          ? await this.call("session.model", {
-              session_id: this.runtime,
-              payload: {
-                model: prepared.model,
-                ...(prepared.provider ? { provider: prepared.provider } : {}),
-              },
-            })
-          : await this.call("config.set", {
-              session_id: this.runtime,
-              key: "model",
-              value,
-              scope: "session",
-            });
+        const switched = await this.call("config.set", {
+          session_id: this.runtime,
+          key: "model",
+          value,
+          scope: "session",
+        });
         if (switched.confirm_required || switched.deferred)
           throw new NativeError("Selected runtime model unavailable", "rejected");
         const confirmed = await this.call<NativeSnapshot>("session.activate", {
@@ -453,6 +414,29 @@ export class NativeGatewayViewer {
         )
           throw new NativeError("Selected runtime model was not applied", "rejected");
       }
+      guard();
+      const ticketResponse = await fetch("/api/auth/ws-ticket", {
+        method: "POST",
+        credentials: "same-origin",
+        redirect: "manual",
+        signal: this.abort.signal,
+      });
+      if (!ticketResponse.ok) throw new NativeError("Could not retain execution", "rejected");
+      const { ticket } = await ticketResponse.json();
+      guard();
+      const retained = await fetch(
+        `/api/plugins/chathermes/chat/retain?profile=${encodeURIComponent(this.profile || "default")}`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          redirect: "manual",
+          signal: this.abort.signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ session_id: this.stored, ticket }),
+        },
+      );
+      if (!retained.ok || (await retained.json()).session_id !== this.runtime)
+        throw new NativeError("Could not retain execution; nothing submitted", "rejected");
       guard();
       dispatched = true;
       return await this.call("prompt.submit", { session_id: this.runtime, text: input });
@@ -471,47 +455,12 @@ export class NativeGatewayViewer {
   }
   async answer(id: string, result: Record<string, unknown>) {
     this.assertLive();
-    const prompt = this.canonicalPrompts.get(id);
-    if (prompt) {
-      const answer =
-        prompt.kind === "clarify"
-          ? {
-              answer:
-                typeof result.answer === "string"
-                  ? result.answer
-                  : JSON.stringify(result.answers || {}),
-            }
-          : { choice: result.choice };
-      await this.call(`${prompt.kind}.respond`, {
-        session_id: this.runtime,
-        request_id: id,
-        ...answer,
-      });
-      this.canonicalPrompts.delete(id);
-      this.publishRequests();
-      return;
-    }
     const request = this.requests.get(id);
     if (!this.channel.connected || !request)
       throw new NativeError("Request is no longer open", "rejected");
     request.respond(result);
     this.requests.delete(id);
     this.publishRequests();
-  }
-  private adoptPrompts(snapshot: NativeSnapshot & { prompts?: Record<string, unknown>[] }) {
-    this.canonicalPrompts.clear();
-    for (const prompt of snapshot.prompts || []) {
-      if (
-        typeof prompt.prompt_id === "string" &&
-        ["approval", "clarify"].includes(String(prompt.kind))
-      ) {
-        this.canonicalPrompts.set(prompt.prompt_id, {
-          kind: String(prompt.kind),
-          params: canonicalPromptParams(prompt.kind, snapshot.session_id, prompt),
-        });
-      }
-    }
-    if (!this.holding) this.publishRequests();
   }
   get boundary() {
     return this.sequence;
@@ -533,7 +482,6 @@ export class NativeGatewayViewer {
       this.ws = undefined;
     }
     this.requests.clear();
-    this.canonicalPrompts.clear();
   }
   close() {
     this.detached = true;

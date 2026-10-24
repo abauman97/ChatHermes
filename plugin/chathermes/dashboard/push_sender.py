@@ -36,7 +36,7 @@ _SOURCES = {
 _SOURCE_LABELS = {'.'.join(location) for location in _SOURCES} | {'unknown'}
 _FAILURE_STAGES = set(_SOURCES.values()) | {
     'schedule', 'subscriptions', 'configuration', 'dependencies', 'state_read',
-    'vapid_key_load', 'vapid_key_export', 'payload_build', 'endpoint_parse', 'expired_remove',
+    'vapid_key_load', 'vapid_key_export', 'vapid_subject', 'payload_build', 'endpoint_parse', 'expired_remove',
 }
 _EXCEPTION_CLASSES = {
     'ValueError', 'TypeError', 'KeyError', 'IndexError', 'RuntimeError',
@@ -220,6 +220,7 @@ def _deliver(profile, session_id, kind, dedupe_id, request=None, message=None, *
             vapid = Vapid.from_pem(data['vapid']['private_key'].encode())
         failure_stage = 'payload_build'
         payload = notification_payload(profile, session_id, kind, message, target, title)
+        failure_stage = 'vapid_subject'
         subject = push_store.vapid_subject(request)
         delivered = True
         for row in rows:

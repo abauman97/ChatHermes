@@ -50,16 +50,7 @@ class Socket {
             ? snapshot.confirmed || { ...snapshot, running: false, queued: null }
             : frame.method === "file.attach"
               ? { attached: true, ref_text: "@file note.txt" }
-              : frame.method === "session.mutate"
-                ? {
-                    session_id: "runtime",
-                    revision: 5,
-                    operation: frame.params.operation,
-                    status: "applied",
-                  }
-                : frame.method === "prompt.submit" && snapshot.revision !== undefined
-                  ? { ref: { session_id: "runtime" }, admission_id: "receipt", status: "accepted" }
-                  : { status: "streaming" };
+              : { status: "streaming" };
     queueMicrotask(() => {
       beforeReply?.(this, frame);
       this.receive({ jsonrpc: "2.0", id: frame.id, result });
@@ -87,9 +78,11 @@ beforeEach(() => {
           JSON.stringify(
             url.includes("ws-ticket")
               ? { ticket: "ephemeral" }
-              : url.includes("prepare")
-                ? prepare
-                : { session: { id: "stored" } },
+              : url.includes("retain")
+                ? { session_id: "runtime" }
+                : url.includes("prepare")
+                  ? prepare
+                  : { session: { id: "stored" } },
           ),
         ),
     ),
@@ -118,11 +111,11 @@ describe("profile-bound native gateway", () => {
           expect.objectContaining({ recovery: expect.objectContaining({ complete: false }) }),
         );
         expect(h.recovered).toHaveBeenCalledOnce();
-        await viewer.rpc("chat.submit", { input: "hello" });
-        await viewer.rpc("chat.state");
-        await viewer.rpc("chat.stop");
-        await viewer.rpc("chat.steer", { text: "guidance" });
-        await viewer.rpc("chat.history");
+        await viewer.rpc("prompt.submit", { input: "hello" });
+        await viewer.rpc("state");
+        await viewer.rpc("session.interrupt");
+        await viewer.rpc("session.steer", { text: "guidance" });
+        await viewer.rpc("history");
         expect(frames.filter((f) => f.method).every((f) => f.params.profile === profile)).toBe(
           true,
         );
@@ -157,7 +150,13 @@ describe("profile-bound native gateway", () => {
           cwd: "/synthetic/workspace",
         });
         expect(
-          vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("membership")),
+          vi
+            .mocked(fetch)
+            .mock.calls.some(([url]) =>
+              (typeof url === "string" ? url : url instanceof URL ? url.href : url.url).includes(
+                "membership",
+              ),
+            ),
         ).toBe(false);
       } finally {
         viewer.close();
@@ -255,7 +254,7 @@ describe("profile-bound native gateway", () => {
           finish = resolve;
         }),
     );
-    const sending = viewer.rpc("chat.submit", { input: "hello" });
+    const sending = viewer.rpc("prompt.submit", { input: "hello" });
     viewer.close();
     finish(new Response(JSON.stringify(prepare)));
     await expect(sending).rejects.toMatchObject({ outcome: "rejected" });
@@ -271,8 +270,8 @@ describe("profile-bound native gateway", () => {
           finish = resolve;
         }),
     );
-    const sending = viewer.rpc("chat.submit", { input: "hello" });
-    await viewer.rpc("chat.stop");
+    const sending = viewer.rpc("prompt.submit", { input: "hello" });
+    await viewer.rpc("session.interrupt");
     finish(new Response(JSON.stringify(prepare)));
     await expect(sending).rejects.toMatchObject({
       outcome: "rejected",
@@ -299,7 +298,7 @@ describe("profile-bound native gateway", () => {
         );
       } else send(text);
     });
-    await expect(viewer.rpc("chat.submit", { input: "hello" })).rejects.toMatchObject({
+    await expect(viewer.rpc("prompt.submit", { input: "hello" })).rejects.toMatchObject({
       outcome: "unknown",
       message: "Native submission outcome unknown. Inspect history before sending again.",
     });
@@ -315,7 +314,7 @@ describe("profile-bound native gateway", () => {
     };
     const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
     await viewer.ensure();
-    await viewer.rpc("chat.submit", { input: "hello", model: "Alias" });
+    await viewer.rpc("prompt.submit", { input: "hello", model: "Alias" });
     expect(frames.find((f) => f.method === "config.set")?.params.value).toBe(
       "test-model --session --provider test-provider",
     );
@@ -324,81 +323,71 @@ describe("profile-bound native gateway", () => {
     );
     viewer.close();
   });
-  it.each(["default", "alpha", "beta"])(
-    "uses Desktop canonical revision and generation fences for %s",
-    async (profile) => {
-      snapshot.revision = 4;
-      snapshot.execution_generation = 2;
-      prepare = { ...prepare, model: "test-model", provider: "test-provider" };
-      const viewer = new NativeGatewayViewer(profile, "stored", hooks());
-      try {
-        await viewer.ensure();
-        await viewer.rpc("chat.submit", { input: "hello", model: "Alias" });
-        await viewer.rpc("chat.stop");
-        const mutation = frames.find((f) => f.method === "session.mutate");
-        expect(mutation.params).toMatchObject({
-          profile,
-          session_id: "runtime",
-          operation: "model",
-          expected_revision: 4,
-          expected_generation: 2,
-        });
-        expect(mutation.params.request_id).toEqual(expect.any(String));
-        const submitted = frames.find((f) => f.method === "prompt.submit");
-        expect(submitted.params).toMatchObject({
-          profile,
-          session_id: "runtime",
-          text: "hello",
-          submission_id: expect.any(String),
-        });
-        expect(frames.find((f) => f.method === "session.interrupt").params).toMatchObject({
-          profile,
-          execution_generation: 2,
-        });
-        expect(
-          frames.some(
-            (f) =>
-              f.method === "session.activate" ||
-              f.method === "config.set" ||
-              f.method === "approval.pending",
-          ),
-        ).toBe(false);
-      } finally {
-        viewer.close();
-      }
+  it("rejects an incompatible snapshot without translated calls", async () => {
+    snapshot.revision = 4;
+    snapshot.execution_generation = 2;
+    const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+    await expect(viewer.ensure()).rejects.toMatchObject({ outcome: "rejected" });
+    expect(frames.some((f) => f.method === "session.mutate")).toBe(false);
+    viewer.close();
+  });
+  it.each(["unavailable", "different runtime"])(
+    "refuses dispatch when retention is %s",
+    async (failure) => {
+      const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+      await viewer.ensure();
+      const original = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (...args) => {
+        if (typeof args[0] === "string" && args[0].includes("chat/retain"))
+          return new Response(JSON.stringify({ session_id: "foreign-runtime" }), {
+            status: failure === "unavailable" ? 503 : 200,
+          });
+        return original(...args);
+      });
+      await expect(viewer.rpc("prompt.submit", { input: "hello" })).rejects.toMatchObject({
+        outcome: "rejected",
+      });
+      expect(frames.some((frame) => frame.method === "prompt.submit")).toBe(false);
+      viewer.close();
     },
   );
-  it("answers a canonical restored approval through its exact profile", async () => {
-    Object.assign(snapshot, {
-      revision: 4,
-      execution_generation: 2,
-      prompts: [
-        {
-          kind: "approval",
-          prompt_id: "canonical-approval",
-          execution_generation: 2,
-          choices: ["once", "deny"],
-          command: "echo synthetic",
-        },
-      ],
+  it("delegates a separate ticket before native dispatch without retaining credentials", async () => {
+    const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+    await viewer.ensure();
+    await viewer.rpc("prompt.submit", { input: "hello" });
+    const requests = vi.mocked(fetch).mock.calls;
+    expect(requests.filter(([url]) => url === "/api/auth/ws-ticket")).toHaveLength(2);
+    const retained = requests.find(
+      ([url]) => typeof url === "string" && url.includes("chat/retain"),
+    )!;
+    expect(JSON.parse(retained[1]?.body as string)).toEqual({
+      session_id: "stored",
+      ticket: "ephemeral",
     });
+    expect(frames.filter((frame) => frame.method === "prompt.submit")).toHaveLength(1);
+    expect(sockets.every((socket) => socket.url.pathname === "/api/ws" && !socket.url.search)).toBe(
+      true,
+    );
+    viewer.close();
+  });
+  it("does not answer or display a question belonging to another profile", async () => {
     const h = hooks(),
-      viewer = new NativeGatewayViewer("beta", "stored", h);
-    try {
-      await viewer.ensure();
-      expect(h.requests).toHaveBeenLastCalledWith([
-        expect.objectContaining({ id: "canonical-approval", method: "approval" }),
-      ]);
-      await viewer.answer("canonical-approval", { choice: "deny" });
-      expect(frames.find((f) => f.method === "approval.respond").params).toMatchObject({
-        profile: "beta",
-        session_id: "runtime",
-        prompt_id: "canonical-approval",
-        execution_generation: 2,
-        choice: "deny",
-      });
-    } finally {
-      viewer.close();
-    }
+      viewer = new NativeGatewayViewer("alpha", "stored", h);
+    await viewer.ensure();
+    sockets[0]!.receive({
+      jsonrpc: "2.0",
+      id: "foreign-question",
+      method: "approval",
+      params: { session_id: "runtime", profile: "beta", command: "echo other" },
+    });
+    expect(h.requests).not.toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: "foreign-question" })]),
+    );
+    expect(
+      frames
+        .filter((frame) => frame.id === "foreign-question")
+        .every((frame) => frame.error?.code === 4404),
+    ).toBe(true);
+    viewer.close();
   });
 });

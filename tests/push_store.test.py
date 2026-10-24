@@ -17,12 +17,8 @@ def public_push_origin(monkeypatch):
 @pytest.mark.parametrize('public,base,expected', [
     ('https://preferred.test/chathermes/', 'https://fallback.test/', 'https://preferred.test'),
     ('https://preferred.test/nested/path', None, 'https://preferred.test'),
-    ('https://preferred.test:8443/path', 'https://fallback.test/', 'https://fallback.test'),
-    ('', 'https://fallback.test/chathermes/', 'https://fallback.test'),
-    ('http://invalid.test', 'https://fallback.test/', 'https://fallback.test'),
-    ('https://[broken', 'https://fallback.test/', 'https://fallback.test'),
 ])
-def test_vapid_subject_preference_and_fallback(monkeypatch, public, base, expected):
+def test_vapid_subject_requires_configured_origin(monkeypatch, public, base, expected):
     from types import SimpleNamespace
     from py_vapid import Vapid
     monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', public)
@@ -42,10 +38,21 @@ def test_vapid_subject_preference_and_fallback(monkeypatch, public, base, expect
 def test_vapid_subject_invalid_or_unavailable_https_fails_safely(monkeypatch, value):
     from types import SimpleNamespace
     monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', value)
-    for request in (None, SimpleNamespace(base_url=value)):
+    for request in (None, SimpleNamespace(base_url=value),
+                    SimpleNamespace(base_url='https://fallback.test/', headers={'origin': 'https://fallback.test'})):
         with pytest.raises(RuntimeError, match='^Set HERMES_DASHBOARD_PUBLIC_URL') as error:
             store.vapid_subject(request)
         assert str(error.value) == 'Set HERMES_DASHBOARD_PUBLIC_URL to an HTTPS dashboard URL for Web Push'
+
+
+@pytest.mark.parametrize('public,expected', [
+    ('https://dashboard.test/chathermes/', 'https://dashboard.test/chathermes'),
+    ('', None), ('http://dashboard.test', None), ('https://user:secret@dashboard.test', None),
+])
+def test_public_dashboard_url_never_uses_request_origin(monkeypatch, public, expected):
+    from types import SimpleNamespace
+    monkeypatch.setenv('HERMES_DASHBOARD_PUBLIC_URL', public)
+    assert store.public_dashboard_url(SimpleNamespace(base_url='https://fallback.test/')) == expected
 
 
 def test_upsert_validation_scoping_and_unsubscribe(tmp_path, monkeypatch):
@@ -100,8 +107,7 @@ def test_keypair_is_persisted_and_private_never_returned(tmp_path, monkeypatch):
     assert store.config() == {'available': False, 'vapid_public_key': None}
 
 
-@pytest.mark.parametrize('configured', [True, False])
-def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, monkeypatch, configured):
+def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, monkeypatch):
     import pywebpush
     sender_spec = importlib.util.spec_from_file_location('chathermes_push_sender_under_test',
                                                        Path(store.__file__).with_name('push_sender.py'))
@@ -116,8 +122,6 @@ def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, mon
     sent = []
     monkeypatch.setattr(pywebpush, 'webpush', lambda subscription, payload, **options: sent.append((subscription, json.loads(payload), options)))
     from types import SimpleNamespace
-    if not configured:
-        monkeypatch.delenv('HERMES_DASHBOARD_PUBLIC_URL')
     sender._deliver('alpha', 'session_123', 'turn.complete', 'event_123',
                     SimpleNamespace(base_url='https://fallback.test/chathermes/'), message='Actual assistant message 😀')
     assert len(sent) == 1
@@ -131,7 +135,7 @@ def test_installed_sender_uses_persisted_key_and_assistant_payload(tmp_path, mon
     assert set(payload) == {'type', 'title', 'body', 'profile', 'session_id', 'tag'}
     assert payload['tag'] == 'chathermes:alpha:session_123:turn.complete'
     assert options['vapid_claims'] == {'aud': 'https://push.test',
-        'sub': 'https://dashboard.example.test' if configured else 'https://fallback.test'}
+        'sub': 'https://dashboard.example.test'}
     assert options['timeout'] == 5
     assert options['vapid_private_key'].__class__.__name__ in {'ECPrivateKey', 'Vapid02'}
     assert store.config() == configuration
@@ -301,6 +305,7 @@ def test_sender_invalid_subject_never_attempts_transport(tmp_path, monkeypatch, 
     send.assert_not_called()
     assert len(store.subscriptions('alpha')) == 1
     assert 'RuntimeError' in caplog.text
+    assert '"failure_stage":"vapid_subject"' in caplog.text
     assert 'private-secret' not in caplog.text and 'dashboard.test' not in caplog.text
 
 

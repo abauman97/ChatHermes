@@ -16,12 +16,12 @@ test("first home send attaches natively, completes and persists without a Runs f
     if (request.method() === "POST" && request.url().includes("/v1/runs")) runs++;
   });
   page.on("websocket", (socket) => {
-    if (!socket.url().includes("/chathermes/chat/ws")) return;
+    if (!socket.url().includes("/api/ws")) return;
     const attaches = new Set<string>();
     socket.on("framesent", (frame) => {
       const value = JSON.parse(String(frame.payload));
-      if (value.method === "chat.attach") attaches.add(value.id);
-      if (value.method === "chat.submit") submits++;
+      if (value.method === "session.resume") attaches.add(value.id);
+      if (value.method === "prompt.submit") submits++;
     });
     socket.on("framereceived", (frame) => {
       const value = JSON.parse(String(frame.payload));
@@ -56,61 +56,6 @@ test("first home send attaches natively, completes and persists without a Runs f
   await page.screenshot({ path: info.outputPath("first-send-native-saved.png") });
 });
 
-test("browser absence recovers more than 512 native events while a tool is still running", async ({
-  page,
-}, info) => {
-  let boundary = 0,
-    runs = 0;
-  page.on("request", (request) => {
-    if (request.url().includes("/v1/runs")) runs++;
-  });
-  page.on("websocket", (socket) => {
-    if (!socket.url().includes("/chathermes/chat/ws")) return;
-    socket.on("framereceived", (frame) => {
-      const value = JSON.parse(String(frame.payload));
-      if (value.result?.recovery) boundary = value.result.recovery.through;
-    });
-  });
-  await login(page);
-  const plugin = page.locator(".chathermes-embedded");
-  await plugin
-    .getByRole("textbox", { name: "Message Hermes" })
-    .fill("Retained browser absence probe [recovery-burst]");
-  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
-  await expect(plugin.locator(".activity pre").first()).toContainText(
-    "Checking the isolated test request",
-    { timeout: 15000 },
-  );
-  const url = page.url();
-  await page.goto("about:blank");
-  // Deliberately exceed the native orphan grace with no browser subscriber.
-  await page.waitForTimeout(26000);
-  await page.goto(url);
-  await expect(plugin.getByRole("button", { name: "Stop response" })).toBeVisible();
-  await expect.poll(() => boundary).toBeGreaterThan(512);
-  const thinking = plugin.locator(".activity").filter({ hasText: "checkpoint-599" });
-  await expect(thinking).toHaveCount(1);
-  await plugin.locator(".work-summary").click();
-  await thinking.locator("summary").click();
-  await expect(thinking.locator("pre")).toContainText("checkpoint-000");
-  await expect(thinking.locator("pre")).toContainText("checkpoint-599");
-  expect((await thinking.locator("pre").textContent())!.match(/checkpoint-000/g)).toHaveLength(1);
-  await expect(plugin.locator(".message.user")).toHaveCount(1);
-  await expect(plugin.locator(".work-summary")).toContainText("Working… Using tool: terminal");
-  await page.screenshot({ path: info.outputPath("native-burst-recovered.png") });
-  await thinking.locator("summary").click();
-  await expect(plugin.locator(".message.assistant").last()).toContainText(
-    "Tool completed successfully",
-    { timeout: 45000 },
-  );
-  await expect(plugin.locator(".activity[open]")).toHaveCount(0);
-  expect(runs).toBe(0);
-  await page.reload();
-  await expect(plugin.locator(".message.user")).toHaveCount(1);
-  await expect(plugin.locator(".message.assistant").last()).toContainText(
-    "Tool completed successfully",
-  );
-});
 test("native Other turn reload, second viewer, guidance, stop and persisted history", async ({
   page,
   context,
@@ -119,10 +64,10 @@ test("native Other turn reload, second viewer, guidance, stop and persisted hist
   let submits = 0,
     runs = 0;
   page.on("websocket", (socket) => {
-    if (!socket.url().includes("/chathermes/chat/ws")) return;
+    if (!socket.url().includes("/api/ws")) return;
     socket.on("framesent", (frame) => {
       const value = JSON.parse(String(frame.payload));
-      if (value.method === "chat.submit") submits++;
+      if (value.method === "prompt.submit") submits++;
     });
   });
   page.on("request", (req) => {
@@ -131,7 +76,7 @@ test("native Other turn reload, second viewer, guidance, stop and persisted hist
   await login(page);
   const caps = await (await page.request.get("/api/plugins/chathermes/chat/capabilities")).json();
   expect(caps).toMatchObject({
-    mode: "native-retained",
+    mode: "native-gateway",
     admission: true,
     features: { busy_send: "explicit", images: true },
   });
@@ -220,7 +165,7 @@ for (const { response, reload } of [
     const settled = new Set<string>();
     let requestId = "";
     page.on("websocket", (socket) => {
-      if (!socket.url().includes("/chathermes/chat/ws")) return;
+      if (!socket.url().includes("/api/ws")) return;
       const answerIds = new Set<string>();
       socket.on("framesent", (frame) => {
         const value = JSON.parse(String(frame.payload));
@@ -308,7 +253,7 @@ test("native dangerous command approval survives reload and denial settles once"
   const answers: unknown[] = [];
   let settled = 0;
   page.on("websocket", (socket) => {
-    if (!socket.url().includes("/chathermes/chat/ws")) return;
+    if (!socket.url().includes("/api/ws")) return;
     const answerIds = new Set<string>();
     socket.on("framesent", (frame) => {
       const value = JSON.parse(String(frame.payload));
@@ -408,7 +353,7 @@ test("lost native submit acknowledgement remains outcome unknown and never resub
   page.on("websocket", (socket) =>
     socket.on("framesent", (frame) => {
       const value = JSON.parse(String(frame.payload));
-      if (value.method === "chat.submit") submits++;
+      if (value.method === "prompt.submit") submits++;
     }),
   );
   await page.addInitScript(() => {
@@ -417,7 +362,7 @@ test("lost native submit acknowledgement remains outcome unknown and never resub
       submitId?: string;
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols);
-        if (!new URL(String(url)).pathname.endsWith("/chathermes/chat/ws")) return;
+        if (!new URL(String(url)).pathname.endsWith("/api/ws")) return;
         this.addEventListener("message", (event) => {
           const value = JSON.parse(event.data);
           if (this.submitId && value.id === this.submitId && !value.method) {
@@ -429,7 +374,7 @@ test("lost native submit acknowledgement remains outcome unknown and never resub
       override send(data: Parameters<WebSocket["send"]>[0]) {
         if (typeof data === "string") {
           const value = JSON.parse(data);
-          if (value.method === "chat.submit") this.submitId = value.id;
+          if (value.method === "prompt.submit") this.submitId = value.id;
         }
         super.send(data);
       }
@@ -460,7 +405,7 @@ test("first send with unavailable native attach is not submitted and stays edita
   let submits = 0;
   page.on("websocket", (socket) =>
     socket.on("framesent", (frame) => {
-      if (JSON.parse(String(frame.payload)).method === "chat.submit") submits++;
+      if (JSON.parse(String(frame.payload)).method === "prompt.submit") submits++;
     }),
   );
   await page.addInitScript(() => {
@@ -471,7 +416,7 @@ test("first send with unavailable native attach is not submitted and stays edita
         if (
           (window as any).chathermesFailAttach &&
           typeof data === "string" &&
-          JSON.parse(data).method === "chat.attach"
+          JSON.parse(data).method === "session.resume"
         ) {
           this.close();
           return;

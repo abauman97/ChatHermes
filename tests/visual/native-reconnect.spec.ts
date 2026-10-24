@@ -9,11 +9,11 @@ test("foreground reconstructs once, keeps stale progress readable, and retries w
   let attaches = 0,
     submits = 0;
   page.on("websocket", (socket) => {
-    if (!socket.url().includes("/chathermes/chat/ws")) return;
+    if (!socket.url().includes("/api/ws")) return;
     socket.on("framesent", (frame) => {
       const value = JSON.parse(String(frame.payload));
-      if (value.method === "chat.attach") attaches++;
-      if (value.method === "chat.submit") submits++;
+      if (value.method === "session.resume") attaches++;
+      if (value.method === "prompt.submit") submits++;
     });
   });
   await page.addInitScript(() => {
@@ -25,7 +25,7 @@ test("foreground reconstructs once, keeps stale progress readable, and retries w
     const Socket = window.WebSocket;
     class ControlledSocket extends Socket {
       override send(data: Parameters<WebSocket["send"]>[0]) {
-        if (typeof data === "string" && JSON.parse(data).method === "chat.attach") {
+        if (typeof data === "string" && JSON.parse(data).method === "session.resume") {
           if (controls.fail) {
             this.close();
             return;

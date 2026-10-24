@@ -148,17 +148,15 @@ Scoped creation uses the Project path, then its first repository path, resolves 
 workspace with `config.get` under the owning profile, and creates a native
 `session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
 `project_id` is sent to session creation. A pathless Project cannot start a chat;
-Home starts a chat without a Project workspace. Empty native drafts persist on
-first prompt, following Desktop. An unavailable workspace fails before creation.
+Home starts a chat without a Project workspace. Native draft IDs are persisted through the authenticated profile API before attachment. An unavailable workspace fails before creation.
 
 Opening another Project changes UI scope while retaining the current chat and
 its workspace. Existing sessions always resume with their own saved cwd. Native
 `prompt.submit` turns use one Vue session controller with direct native events,
 shared Hermes request correlation/heartbeat, and native snapshot recovery. A healthy
 connection stays attached while the page is hidden. Offline recovery reconstructs
-the selected profile/session without resubmitting a prompt; execution lifetime
-follows the native gateway’s own disconnect policy. Models apply to the native runtime; uploads stay authenticated and profile
-scoped. Legacy REST chat execution and its drainage adapter have been removed.
+the selected profile/session without resubmitting a prompt; a server-side native viewer retains execution when the browser leaves. Completion push uses durable per-device receipts for committed transcript rows. Models apply to the native runtime; uploads stay authenticated and profile
+scoped.
 Hermes discovers context files normally; the plugin injects no Project prompt.
 
 Project/session change events, reconnect, foregrounding, completion and profile
@@ -166,9 +164,8 @@ changes refresh the tree and selected hierarchy. No separate Project database,
 frontend path classifier, or active Project mutation exists. Project management
 and session moves remain in Desktop/CLI for this initial workflow.
 
-The shared legacy wire types retain the reviewed source pin
-`ac28abc96ce83f22f6b831f80d9007e2aba81f21`; the standalone canonical wire adapter
-comes from Desktop `290080e19e8e143d35f67427e89aed662161faf8`. Workspace
+The shared wire types target Hermes 0.22.5 at
+`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. Workspace
 creation sends `cwd_explicit: true` under the pinned native contract. Unsupported
 native creation fails closed; it is never retried after an ambiguous outcome. See the
 [source audit](docs/plans/2026-10-01-projects.md),

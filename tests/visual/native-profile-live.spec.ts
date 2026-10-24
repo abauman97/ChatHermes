@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
+test.use({ trace: "off" });
+
 test("native gateway chats and recovers independently in every profile", async ({
   page,
   context,
@@ -25,7 +27,9 @@ test("native gateway chats and recovers independently in every profile", async (
   try {
     for (const profile of ["default", "alpha", "beta"]) {
       await page.goto(`/chathermes?profile=${profile}#/?profile=${profile}`);
-      await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
+      await expect(plugin.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled({
+        timeout: 45000,
+      });
       const marker = `NATIVE_${profile.toUpperCase()}_${info.project.name.toUpperCase()}`;
       const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
       await composer.fill(`Reply with exactly ${marker}. Do not use any tools.`);
@@ -57,12 +61,14 @@ test("native gateway chats and recovers independently in every profile", async (
       await page.goto(
         `/chathermes?profile=${entry.profile}#/chat/${entry.id}?profile=${entry.profile}`,
       );
-      await expect(plugin.locator(".message.assistant")).toContainText(entry.marker);
+      await expect(plugin.locator(".message.assistant")).toContainText(entry.marker, {
+        timeout: 30000,
+      });
       for (const other of selected.filter((other) => other.profile !== entry.profile))
         await expect(plugin.locator(".transcript")).not.toContainText(other.marker);
     }
     expect(sockets).toContain("/api/ws");
-    expect(sockets).not.toContain("/api/plugins/chathermes/chat/ws");
+    expect(sockets.every((path) => path === "/api/ws")).toBe(true);
     expect(
       calls.filter((call) => call.method === "prompt.submit").map((call) => call.profile),
     ).toEqual(["default", "alpha", "beta"]);

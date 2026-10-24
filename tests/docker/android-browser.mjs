@@ -66,10 +66,21 @@ export async function waitForChrome(endpoint, connect, options = {}) {
       const response = await request(`${endpoint}/json/version`, {
         signal: AbortSignal.timeout(timeout),
       });
-      if (!response.ok || !(await response.json()).webSocketDebuggerUrl) {
-        throw new Error("Chrome debugging endpoint not ready");
-      }
-      return connect(endpoint, { timeout });
+      if (!response.ok) throw new Error("Chrome debugging endpoint not ready");
+      const { webSocketDebuggerUrl } = await response.json();
+      if (!webSocketDebuggerUrl) throw new Error("Chrome debugging endpoint not ready");
+      // Chrome advertises its container/ADB loopback address. Keep its target
+      // path and query, but connect through the caller's reachable publication.
+      const websocket = new URL(webSocketDebuggerUrl);
+      const reachable = new URL(endpoint);
+      websocket.protocol = reachable.protocol === "https:" ? "wss:" : "ws:";
+      websocket.hostname = reachable.hostname;
+      // Assign port separately so a default-port endpoint clears Chrome's port.
+      websocket.port = reachable.port;
+      // Preserve Android's real visibility/focus. Playwright's default CDP
+      // overrides make background pages appear visible, suppressing Web Push
+      // for a connected session even after HOME or a switch to another app.
+      return connect(websocket.toString(), { timeout, noDefaults: true });
     },
     "Chrome debugging unavailable",
     options,

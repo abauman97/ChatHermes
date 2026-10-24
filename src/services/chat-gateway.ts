@@ -1,41 +1,39 @@
 // Read-only native support probe. It never dispatches a prompt.
 // Tickets are ephemeral and only sent in the host's supported subprotocol.
 export interface ChatCapabilities {
-  protocol: "chathermes.chat.v2";
+  protocol: "hermes.native.bf0203a7";
   reviewed_source: string;
-  mode: "native-retained" | "native-gateway";
+  mode: "native-gateway";
   admission: true;
   operations: string[];
   blockers: string[];
   guarantees: {
     crash_safe_idempotency: false;
     lossless_snapshot_replay: false;
-    offline_turn_lease: boolean;
+    offline_turn_lease: true;
   };
 }
 export function chatCapabilities(value: unknown): ChatCapabilities {
-  const v = value as Partial<ChatCapabilities> | null;
+  const v = value as ChatCapabilities | null;
   if (
     !v ||
-    v.protocol !== "chathermes.chat.v2" ||
-    !["native-retained", "native-gateway"].includes(v.mode || "") ||
+    typeof v !== "object" ||
+    v.protocol !== "hermes.native.bf0203a7" ||
+    v.reviewed_source !== "bf0203a794a07aac3ff764972ab9087baa4e4f4e" ||
+    v.mode !== "native-gateway" ||
     v.admission !== true ||
-    typeof v.reviewed_source !== "string" ||
     !Array.isArray(v.operations) ||
-    !v.operations.every((x) => typeof x === "string") ||
+    !v.operations.every((operation) => typeof operation === "string") ||
     !Array.isArray(v.blockers) ||
-    !v.blockers.every((x) => typeof x === "string") ||
-    !v.guarantees ||
-    v.guarantees.crash_safe_idempotency !== false ||
-    v.guarantees.lossless_snapshot_replay !== false ||
-    v.guarantees.offline_turn_lease !== (v.mode === "native-retained") ||
-    !["crash_safe_idempotency", "lossless_snapshot_replay", "offline_turn_lease"].every(
-      (k) => k in v.guarantees!,
-    )
+    !v.blockers.every((blocker) => typeof blocker === "string") ||
+    v.guarantees?.crash_safe_idempotency !== false ||
+    v.guarantees?.lossless_snapshot_replay !== false ||
+    v.guarantees?.offline_turn_lease !== true
   )
     throw new Error("Unsupported native chat contract");
-  return v as ChatCapabilities;
+  return v;
 }
+
 export async function probeChatGateway(
   profile: string,
   signal?: AbortSignal,
@@ -80,7 +78,6 @@ export async function probeChatGateway(
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);
       ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
-      // CLOSING before upgrade may throw in mocks; cleanup never masks outcome.
       try {
         ws.close();
       } catch {
@@ -106,14 +103,17 @@ export async function probeChatGateway(
       );
     ws.onmessage = (event) => {
       try {
-        if (typeof event.data !== "string" || event.data.length > 8192)
-          throw new Error("Invalid native chat frame");
+        if (typeof event.data !== "string" || event.data.length > 8192) throw new Error();
         const frame = JSON.parse(event.data);
-        if (frame.jsonrpc !== "2.0" || Array.isArray(frame))
-          throw new Error("Invalid native chat frame");
+        if (frame.jsonrpc !== "2.0" || Array.isArray(frame)) throw new Error();
+        if (
+          frame.method === "event" &&
+          frame.params?.type === "gateway.ready" &&
+          frame.params.payload?.session_authority === true
+        )
+          throw new Error();
         if (frame.id !== "capabilities" || "method" in frame) return;
-        if ("error" in frame) throw new Error("Native chat probe rejected");
-        if (frame.result?.ok !== true) throw new Error("Invalid gateway heartbeat");
+        if ("error" in frame || frame.result?.ok !== true) throw new Error();
         finish(capabilities);
       } catch {
         finish(undefined, new Error("Unsupported native chat contract"));
