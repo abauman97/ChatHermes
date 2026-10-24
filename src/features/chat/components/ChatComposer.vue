@@ -447,14 +447,14 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         </button>
         <button
           class="send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55"
-          type="button"
+          :type="sending && !value.trim() ? 'button' : 'submit'"
           :disabled="buttonDisabled"
           :aria-label="
             sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'
           "
           :title="sending ? (value.trim() ? 'Guide this run' : 'Stop response') : 'Send message'"
           @pointerdown="preserveInputFocus"
-          @click="sending ? (value.trim() ? send() : stoppable && emit('stop')) : send()"
+          @click="sending && !value.trim() && stoppable && emit('stop')"
         >
           <svg
             v-if="sending && !value.trim()"

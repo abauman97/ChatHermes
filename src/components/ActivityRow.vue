@@ -21,7 +21,8 @@ const userOpen = ref<boolean | null>(null);
 const expanded = computed(
   () =>
     userOpen.value ??
-    (active.value || (props.activity.kind === "thinking" && needsAttention.value)),
+    ((props.activity.kind === "thinking" && (needsAttention.value || active.value)) ||
+      (props.activity.kind === "tool" && !!props.activity.delegated && active.value)),
 );
 const preview = ref<HTMLElement>();
 const following = ref(true);
