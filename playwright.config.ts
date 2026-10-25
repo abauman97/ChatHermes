@@ -5,6 +5,7 @@ export default defineConfig({
     process.env.CHATHERMES_TEST_SUITE === "legacy"
       ? "**/*.spec.ts"
       : [
+          "**/response-actions-live.spec.ts",
           "**/live-real.spec.ts",
           "**/routing-live.spec.ts",
           "**/notification-click-live.spec.ts",
@@ -17,6 +18,7 @@ export default defineConfig({
   testIgnore:
     process.env.CHATHERMES_TEST_SUITE === "legacy"
       ? [
+          "**/response-actions-live.spec.ts",
           "**/live-real.spec.ts",
           "**/routing-live.spec.ts",
           "**/notification-click-live.spec.ts",
