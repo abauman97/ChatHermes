@@ -4116,9 +4116,11 @@ function Ns(e, t, n) {
 			}
 		} else if (t === "reasoning.delta" || t === "reasoning.available") {
 			if (t === "reasoning.available") {
-				let t = [...e.blocks].reverse().find((e) => e.kind === "thinking");
-				if (t && t.kind === "thinking") {
-					t.content = xs(n.text);
+				let t = i(r.streamText ?? r.finalText)?.content.trim();
+				if (t && t.slice(0, 500).trim() === xs(n.text).trim()) return;
+				let a = [...e.blocks].reverse().find((e) => e.kind === "thinking");
+				if (a && a.kind === "thinking") {
+					a.content = xs(n.text);
 					return;
 				}
 			}
@@ -9074,8 +9076,9 @@ var cm = ["open"], lm = {
 				q("button", {
 					type: "button",
 					"aria-label": `Remove ${e.name}`,
+					onMousedown: v,
 					onClick: (e) => c.value.splice(t, 1)
-				}, " × ", 8, qm)
+				}, " × ", 40, qm)
 			]))), 128))])) : Y("v-if", !0),
 			o.value ? (W(), G("p", Jm, [J(F(o.value === "goal" ? "Goal mode" : "Plan mode") + " · next message ", 1), q("button", {
 				type: "button",
