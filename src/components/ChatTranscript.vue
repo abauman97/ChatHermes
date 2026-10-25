@@ -8,6 +8,8 @@ import TurnWork from "./TurnWork.vue";
 import { renderMarkdown } from "../utils/markdown";
 const props = withDefaults(
   defineProps<{
+    branchDisabled?: boolean;
+    responseTargets?: Record<string, string>;
     profile?: string;
     sessionId?: string;
     messages: Message[];
@@ -25,6 +27,7 @@ const props = withDefaults(
   }>(),
   { followInitially: true },
 );
+const emit = defineEmits<{ branch: [responseId: string] }>();
 const visible = computed(() => entries.value);
 const entries = computed(() => transcriptEntries(props));
 const transcript = ref<HTMLElement>();
@@ -157,7 +160,9 @@ watch(
             v-else
             data-chat-message
             tabindex="-1"
-            :entry="entry"
+            :entry="{ ...entry, responseId: entry.responseId || responseTargets?.[entry.key] }"
+            :branch-disabled="branchDisabled"
+            @branch="emit('branch', $event)"
             :profile="profile"
             :session-id="sessionId"
             @image-load="disclosureChanged"

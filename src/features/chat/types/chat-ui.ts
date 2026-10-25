@@ -6,6 +6,7 @@ export type TranscriptEntry =
   | {
       kind: "turn";
       blocks: TurnBlock[];
+      responseId?: string;
       working?: boolean;
       approvalPending?: boolean;
       key: string;

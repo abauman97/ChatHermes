@@ -1,4 +1,4 @@
-import { computed, type Ref } from "vue";
+import { computed, ref, type Ref } from "vue";
 import { api } from "../../../services/hermes-api";
 import { projectRoot } from "../../projects/utils/projects";
 import type {
@@ -40,9 +40,11 @@ export function useChatController(
     defaultModel: Readonly<Ref<string>>;
     suggestedPrompt: Ref<string>;
     generation: () => number;
+    navigation: () => number;
     createSession: () => Promise<string | undefined>;
     suggest: (text: string) => Promise<void>;
     retryHistory: () => Promise<unknown>;
+    openBranch: (id: string) => Promise<void>;
   },
 ) {
   const {
@@ -68,6 +70,41 @@ export function useChatController(
     defaultModel,
     suggestedPrompt,
   } = scope;
+  const branching = ref(false);
+  const branchDisabled = computed(
+    () =>
+      branching.value ||
+      !canStream.value ||
+      viewApprovalPending.value ||
+      viewBusy.value ||
+      viewLoading.value ||
+      viewReconnect.value ||
+      offline.value ||
+      !session.value,
+  );
+  async function branch(responseId: string) {
+    if (branchDisabled.value) return;
+    const owner = scope.generation(),
+      navigation = scope.navigation(),
+      p = profile.value,
+      id = session.value;
+    branching.value = true;
+    try {
+      const made = await api.branch(p, id, responseId);
+      if (
+        owner === scope.generation() &&
+        navigation === scope.navigation() &&
+        p === profile.value &&
+        id === session.value
+      )
+        await scope.openBranch(made.id);
+    } catch {
+      if (owner === scope.generation() && navigation === scope.navigation())
+        native.error.value = "Could not branch this response. Refresh history and try again.";
+    } finally {
+      branching.value = false;
+    }
+  }
   const nativeMode = canStream;
   const viewMessages = computed(() => (nativeMode.value ? native.messages.value : messages.value));
   const viewBusy = computed(() => native.busy.value || native.uncertain.value);
@@ -82,6 +119,7 @@ export function useChatController(
   async function sendNative(text: string, attachments: Attachment[]) {
     if (
       scheduledPage.value ||
+      branching.value ||
       viewBusy.value ||
       creating.value ||
       viewApprovalPending.value ||
@@ -190,6 +228,7 @@ export function useChatController(
         ? selectedProject.value?.label
         : undefined,
     disabled: Boolean(
+      branching.value ||
       !!projectPage.value ||
       scheduledPage.value ||
       projectsPage.value ||
@@ -226,6 +265,7 @@ export function useChatController(
                   : undefined,
   }));
   const actions = {
+    branch,
     send,
     stop: stopResponse,
     steer: steerResponse,
@@ -246,6 +286,8 @@ export function useChatController(
   return {
     view: {
       messages: viewMessages,
+      branchDisabled,
+      responseTargets: native.responseTargets,
       busy: viewBusy,
       loading: viewLoading,
       error: viewError,

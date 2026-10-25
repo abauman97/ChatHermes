@@ -1528,3 +1528,88 @@ async def test_media_upload_preparation_keeps_profile_validation_and_native_stag
             'input': 'Review\nMEDIA:/private/secret.txt'})
         assert response.status_code == 200 and response.json()['files'] == []
         assert checked == [('alpha', [path])]
+
+
+@run_async
+async def test_response_branch_checks_membership_and_uses_native_history(app, monkeypatch):
+    seen = []
+    def check(profile, stored):
+        seen.append(('member', profile, stored))
+        if profile == 'beta':
+            raise plugin.HTTPException(404, 'Session unavailable in this profile')
+    class Transport:
+        async def call(self, method, params):
+            seen.append((method, params))
+            if method == 'session.resume':
+                return {'session_id': 'runtime', 'running': False, 'queued': False}
+            return {'stored_session_id': 'child'}
+        def close(self):
+            seen.append('closed')
+    monkeypatch.setattr(plugin._native_validation, 'check_profile_session', check)
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda request: Transport())
+    monkeypatch.setattr(plugin, '_branch_response_count', lambda p, s, r: 4 if (p, s, r) == ('alpha', 'stored', '42') else pytest.fail('wrong scope'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        result = await client.post('/api/plugins/chathermes/api/sessions/stored/branch?profile=alpha', json={'response_id': '42'})
+        assert result.status_code == 201 and result.json() == {'id': 'child'}
+        denied = await client.post('/api/plugins/chathermes/api/sessions/stored/branch?profile=beta', json={'response_id': '42'})
+        assert denied.status_code == 404
+        for body in ({'count': 4}, {'response_id': '42', 'cwd': '/other'}, {'response_id': 'native-user-1'}):
+            invalid = await client.post('/api/plugins/chathermes/api/sessions/stored/branch?profile=alpha', json=body)
+            assert invalid.status_code == 422
+    assert seen == [('member', 'alpha', 'stored'),
+                    ('session.resume', {'profile': 'alpha', 'session_id': 'stored', 'source': 'desktop', 'inline_images': False}),
+                    ('session.branch', {'profile': 'alpha', 'session_id': 'runtime', 'count': 4}),
+                    'closed', ('member', 'beta', 'stored')]
+
+
+def test_response_branch_ordinal_includes_hidden_prose_but_not_tools(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    closed = []
+    rows = [
+        {'role': 'user', 'content': 'hidden context', 'display_kind': 'hidden', '_row_id': 1},
+        {'role': 'user', 'content': 'question', '_row_id': 2},
+        {'role': 'assistant', 'content': '', 'tool_calls': [{}], '_row_id': 3},
+        {'role': 'tool', 'content': 'result', '_row_id': 4},
+        {'role': 'assistant', 'content': [{'type': 'text', 'text': 'answer'}], '_row_id': 5},
+        {'role': 'user', 'content': 'later question', '_row_id': 6},
+    ]
+    class DB:
+        def get_resume_conversations(self, stored):
+            assert stored == 'stored'
+            return [], rows
+        def close(self):
+            closed.append(True)
+    def db(profile, read_only):
+        assert profile == 'alpha' and read_only
+        return DB()
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_sessions', SimpleNamespace(_open_session_db_for_profile=db))
+    monkeypatch.setitem(sys.modules, 'tui_gateway.session_history', SimpleNamespace(_coerce_message_text=lambda content: content if isinstance(content, str) else ''.join(part['text'] for part in content)))
+    assert plugin._branch_response_count('alpha', 'stored', '5') == 3
+    for row_id in ('4', '6', '999'):
+        with pytest.raises(plugin.HTTPException) as error:
+            plugin._branch_response_count('alpha', 'stored', row_id)
+        assert error.value.status_code == 409
+    assert len(closed) == 4
+
+
+@run_async
+@pytest.mark.parametrize('running,break_branch,status', [(True, False, 409), (False, True, 503)])
+async def test_response_branch_busy_and_failure_do_not_leak(app, monkeypatch, running, break_branch, status):
+    called = []
+    monkeypatch.setattr(plugin._native_validation, 'check_profile_session', lambda *args: None)
+    monkeypatch.setattr(plugin, '_branch_response_count', lambda *args: 2)
+    class Transport:
+        async def call(self, method, params):
+            called.append(method)
+            if method == 'session.resume':
+                return {'session_id': 'runtime', 'running': running}
+            if break_branch:
+                raise ValueError(KEY)
+        def close(self):
+            called.append('closed')
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda request: Transport())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        result = await client.post('/api/plugins/chathermes/api/sessions/stored/branch', json={'response_id': '42'})
+    assert result.status_code == status and KEY not in result.text
+    assert called == (['session.resume', 'closed'] if running else ['session.resume', 'session.branch', 'closed'])

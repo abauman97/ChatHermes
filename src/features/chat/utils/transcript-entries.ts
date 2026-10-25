@@ -15,6 +15,9 @@ export function transcriptEntries(input: {
     (message) => gatewayDisplay(message) !== "hidden" || Boolean(message.blocks?.length),
   );
   const result: TranscriptEntry[] = [];
+  const responseId = (rows: Message[]) =>
+    [...rows].reverse().find((row) => row.role === "assistant" && messageText(row.content).trim())
+      ?.id;
   let userCount = 0;
   for (let index = 0; index < visible.length;) {
     const message = visible[index]!;
@@ -78,6 +81,7 @@ export function transcriptEntries(input: {
         result.push({
           kind: "turn",
           blocks: turnBlocks,
+          responseId: responseId(visible.slice(index + 1, end)),
           working,
           approvalPending: last && input.approvalPending,
           key: `turn-${message.id || index}`,
@@ -94,6 +98,7 @@ export function transcriptEntries(input: {
       result.push({
         kind: "turn",
         blocks: historyBlocks(visible.slice(index, end)),
+        responseId: responseId(visible.slice(index, end)),
         key: `history-${index}`,
       });
       index = end;
