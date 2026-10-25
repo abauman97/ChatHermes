@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/ac28abc96ce83f22f6b831f80d9007e2aba81f21/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
 | Operation    | Hermes route                                                                          | Request            | Expected response                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -100,7 +100,7 @@ TUI tool and reasoning events carry the available runtime activity. Tool complet
 
 ## Test environment
 
-The Compose environment extends the latest official Hermes release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See README for launch and cleanup commands.
+The Compose environment extends the latest official Hermes release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
 
 ## Project metadata and draft history
 

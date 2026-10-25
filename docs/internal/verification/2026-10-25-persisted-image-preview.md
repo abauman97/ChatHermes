@@ -72,14 +72,14 @@ is explicit because these tests seed synthetic history in that container.
 Separate viewer-closed and viewer-open screenshots were captured and inspected
 with vision on both devices after full reload. All four quadrants are visible
 inline and in the modal, and the modal's close/download controls fit on mobile.
-Local evidence (ignored, retained in this checkout):
+Local evidence paths recorded by the original author (ignored and unavailable in this documentation checkout; paths are relative to the repository root):
 
-- [Before desktop](../../tmp/image-preview-169/evidence/before-desktop.png) and
-  [before mobile](../../tmp/image-preview-169/evidence/before-mobile.png).
-- [Desktop inline](../../tmp/image-preview-169/evidence/desktop-inline.png) and
-  [desktop viewer](../../tmp/image-preview-169/evidence/desktop-viewer.png).
-- [Mobile inline](../../tmp/image-preview-169/evidence/mobile-inline.png) and
-  [mobile viewer](../../tmp/image-preview-169/evidence/mobile-viewer.png).
+- Before desktop (`tmp/image-preview-169/evidence/before-desktop.png`) and
+  before mobile (`tmp/image-preview-169/evidence/before-mobile.png`).
+- Desktop inline (`tmp/image-preview-169/evidence/desktop-inline.png`) and
+  desktop viewer (`tmp/image-preview-169/evidence/desktop-viewer.png`).
+- Mobile inline (`tmp/image-preview-169/evidence/mobile-inline.png`) and
+  mobile viewer (`tmp/image-preview-169/evidence/mobile-viewer.png`).
 
 No real-provider send was performed. The fixture used an intentionally
 unreachable synthetic provider; persisted rows were seeded instead. Live send,

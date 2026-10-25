@@ -1,8 +1,14 @@
-# Frontend architecture
+# Architecture
 
 ChatHermes mounts Vue through the Hermes React dashboard plugin SDK. `main.ts`
 creates an app per mount; `plugin-entry.ts` owns host integration and viewport
 restoration. Each app installs a fresh Vue Router 4 instance. There is no standalone application or global store.
+
+## Runtime and server boundary
+
+The Vue app mounts inside Hermes's React dashboard plugin SDK. Python routes in `plugin/chathermes/dashboard/plugin_api.py` inherit dashboard authentication, select the owning Hermes profile, and keep gateway credentials server-side. `plugin/chathermes/__init__.py` registers the plugin platform and Cron delivery; `cron_delivery.py` adapts persisted scheduled results. The browser uses the host's authenticated same-origin native TUI gateway, not REST run execution or a separate ChatHermes WebSocket server.
+
+The composer starts a native Hermes session on first send. New Other and Project chats use the dashboard’s authenticated, same-origin native gateway WebSocket for creation, snapshots, approvals, clarification, guidance and Stop. Default and secondary profiles carry an explicit profile on each native operation. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
 ## Mobile shell and keyboard behavior
 
@@ -108,11 +114,7 @@ viewer, Pinia, event bus, or dependency just to forward props. App remains a
 substantial shell coordinator; further navigation/project extraction should be
 small, behavior-tested changes rather than a state-machine rewrite.
 
-Use `vp lint` and `vp fmt` on owned source; run `npm test`, `npm run test:api`,
-and `npm run build`. Keep generated plugin dist assets ignored and out of commits. Verify the
-actual React-mounted dashboard at desktop/mobile sizes with `npm run live` and
-`npm run test:visual`, inspect screenshots, and stop only your fixture with
-`npm run live:stop`. Follow [AGENTS.md](../AGENTS.md) for scope and fixture rules.
+Follow [contributing](contributing.md) and [testing](testing.md) for validation and fixture rules.
 
 ## Navigation
 
@@ -138,3 +140,64 @@ route parameters and aborts obsolete reads, including saved runs outside page on
 Settings stores a validated plugin-relative return_to destination. Notifications
 use the same link resolver, and the worker produces and recognizes canonical
 chat hashes with the existing visible-connected-viewer handshake.
+
+## Projects and native workspace ownership
+
+Projects use Hermes's `projects.tree` gateway RPC, including automatic repository
+Projects and Home. Selecting a Project loads its fully hydrated
+`projects.project_sessions` hierarchy and displays its recent chats. Project and
+session query parameters preserve scope across refresh and browser navigation.
+Other chats remain available. Hermes owns all membership and Git/worktree grouping.
+
+**New Project Chat** appears on Project home and in an open chat with a selected
+Project. It creates a distinct chat in that selected Project. **New chat** in an
+open chat still starts an unscoped chat; on Project home it retains scoped creation.
+Scoped creation uses the Project path, then its first repository path, resolves the
+workspace with `config.get` under the owning profile, and creates a native
+`session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
+`project_id` is sent to session creation. A pathless Project cannot start a chat;
+Home starts a chat without a Project workspace. Native draft IDs are persisted through the authenticated profile API before attachment. An unavailable workspace fails before creation.
+
+Opening another Project changes UI scope while retaining the current chat and
+its workspace. Existing sessions always resume with their own saved cwd. Native
+`prompt.submit` turns use one Vue session controller with direct native events,
+shared Hermes request correlation/heartbeat, and native snapshot recovery. A healthy
+connection stays attached while the page is hidden. Offline recovery reconstructs
+the selected profile/session without resubmitting a prompt; a server-side native viewer retains execution when the browser leaves. Completion push uses durable per-device receipts for committed transcript rows. Models apply to the native runtime; uploads stay authenticated and profile
+scoped.
+Hermes discovers context files normally; the plugin injects no Project prompt.
+
+Project/session change events, reconnect, foregrounding, completion and profile
+changes refresh the tree and selected hierarchy. No separate Project database,
+frontend path classifier, or active Project mutation exists. Project management
+and session moves remain in Desktop/CLI for this initial workflow.
+
+The shared wire types target Hermes 0.22.5 at
+`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. Workspace
+creation sends `cwd_explicit: true` under the pinned native contract. Unsupported
+native creation fails closed; it is never retried after an ambiguous outcome. See the
+[source audit](../internal/plans/2026-10-01-projects.md),
+[verification report](../internal/verification/2026-10-01-projects.md), and
+[test environment instructions](../../tests/docker/README.md).
+
+## Scheduled history adapter
+
+The drawer's Scheduled screen groups persisted cron history by job in the
+selected Hermes profile. Active, Paused and Completed filters lead to dated
+runs (newest first), with older pages available and full output on selection.
+Agent transcripts retain thinking/tool disclosures; script-only saved Markdown
+is also readable. Reloadable job/run links stay within dashboard authentication.
+“Open a chat about this run” creates a separate normal chat and drafts the job,
+date and assistant/saved output for review before sending.
+
+The adapter follows the pinned Hermes dashboard contracts:
+`web_server_cron._cron_profile_home`, `_call_cron_for_profile` and
+`_cron_store_scope`; `SessionDB.list_cron_job_runs` and `get_messages_as_conversation` with resume
+lineage and compacted display history; and the
+native cron output filename/timezone and session reconciliation helpers. The
+profile-scoped execution ledger supplies failed runs without saved output. It
+reads retained history rather than the transient gateway Runs buffer, pages
+beyond the native dashboard's 100-run cap, checks exact job/run ownership, and
+returns a compatibility message when these helpers are unavailable. Deleted
+jobs or pruned output cannot be recovered. Scheduling and job mutation remain
+in Hermes's native dashboard.
