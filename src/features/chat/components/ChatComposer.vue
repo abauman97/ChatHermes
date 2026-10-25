@@ -351,6 +351,7 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         ><button
           type="button"
           :aria-label="`Remove ${file.name}`"
+          @mousedown="preserveInputFocus"
           @click="attachments.splice(index, 1)"
         >
           ×

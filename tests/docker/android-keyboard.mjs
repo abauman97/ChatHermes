@@ -3,9 +3,10 @@ import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium } from "@playwright/test";
+import { waitForChrome } from "./android-browser.mjs";
 
-// Run against the disposable device after `npm run live:android` has installed
-// and opened ChatHermes. CDP touch events open the actual Android software IME.
+// Run after browser preparation; installation is optional. CDP touch events
+// open the actual Android software IME in the visible dashboard target.
 const [container, port = "9223", output = "tests/visual-output/android-keyboard"] =
   process.argv.slice(2);
 if (!container)
@@ -21,7 +22,10 @@ const previous = settings.map((key, index) =>
     .toString()
     .trim(),
 );
-const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+const endpoint = /^\d+$/.test(port) ? `http://127.0.0.1:${port}` : port;
+const browser = await waitForChrome(endpoint, (url, options) =>
+  chromium.connectOverCDP(url, options),
+);
 const evidence = {};
 /** @type {import("@playwright/test").Page | undefined} */
 let page;
@@ -30,15 +34,13 @@ try {
     for (const candidate of browser.contexts().flatMap((context) => context.pages())) {
       if (
         candidate.url().startsWith("http://localhost:9119/chathermes") &&
-        (await candidate
-          .evaluate(() => matchMedia("(display-mode: standalone)").matches)
-          .catch(() => false))
+        (await candidate.evaluate(() => document.visibilityState === "visible").catch(() => false))
       )
         page = candidate;
     }
     if (!page) await delay(500);
   }
-  assert.ok(page, "Open the installed ChatHermes app before running this check");
+  assert.ok(page, "Prepare and foreground the ChatHermes browser before running this check");
   await page.locator(".composer-input").waitFor();
   assert.notEqual(await page.evaluate(() => navigator.virtualKeyboard?.overlaysContent), true);
   await mkdir(output, { recursive: true });
@@ -97,7 +99,16 @@ try {
     if (keyboardShown()) adb("shell", "input", "keyevent", "KEYCODE_BACK");
     await waitKeyboard(false);
   };
+  const settledLayout = () =>
+    page.waitForFunction(() => {
+      const composer = document.querySelector(".composer").getBoundingClientRect();
+      const footer = document.querySelector(".app-footer").getBoundingClientRect();
+      return (
+        Math.abs(composer.bottom - footer.top) < 1 && Math.abs(footer.bottom - innerHeight) < 1
+      );
+    });
   const tapComposer = async () => {
+    const height = await page.evaluate(() => innerHeight);
     const rect = await area.boundingBox();
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchStart",
@@ -105,7 +116,8 @@ try {
     });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await waitKeyboard(true);
-    await delay(400);
+    await page.waitForFunction((height) => innerHeight < height, height);
+    await settledLayout();
     assert.match(adb("shell", "dumpsys", "input_method").toString(), /mInputShown=true/);
   };
   const orientation = async (name, rotation) => {
@@ -117,7 +129,7 @@ try {
       (landscape) => innerWidth > innerHeight === landscape,
       rotation === "1",
     );
-    await delay(700);
+    await settledLayout();
     const before = await snapshot(`${name}-closed`);
     closeTo(before.composer.bottom, before.footer.y, "Closed composer must meet footer");
     await tapComposer();
@@ -150,7 +162,8 @@ try {
     // Android Back dismisses only the keyboard; the textarea remains focused.
     adb("shell", "input", "keyevent", "KEYCODE_BACK");
     await waitKeyboard(false);
-    await delay(400);
+    await page.waitForFunction((height) => innerHeight >= height, before.viewport.height);
+    await settledLayout();
     const dismissed = await snapshot(`${name}-dismissed-focused`);
     focusedLayout(dismissed);
     assert.equal(dismissed.focused, true);

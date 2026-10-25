@@ -551,6 +551,10 @@ export function reduceNativeTurn(turn: AssistantTurn, name: string, data: Data) 
     }
   } else if (name === "reasoning.delta" || name === "reasoning.available") {
     if (name === "reasoning.available") {
+      // Hermes also relays a bounded answer preview through this event. Keep
+      // actual streamed reasoning when the preview merely repeats the answer.
+      const answer = textBlock(native.streamText ?? native.finalText)?.content.trim();
+      if (answer && answer.slice(0, 500).trim() === string(data.text).trim()) return;
       const block = [...turn.blocks].reverse().find((b) => b.kind === "thinking");
       if (block && block.kind === "thinking") {
         block.content = string(data.text);

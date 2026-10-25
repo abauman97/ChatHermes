@@ -86,48 +86,31 @@ notification to reach a device.
 ```sh
 npm ci
 npm test
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r tests/requirements.txt
-# Install ChatHermes plugin dependencies plus Python test tooling for its cron tests
-pip install -e 'plugin/chathermes[dev]'
-npm run test:api
 npm run build
-npm run live
-# Optional: rebuild, launch, and run desktop/mobile Playwright checks
-npm run live:visual
-# Optional: start Hermes and install the plugin PWA in disposable Android 14
-npm run test:live:android
-# Remove the Android device after testing
-npm run live:android:stop
+npm run test:env:build
+npm run test:integration
+# Real Android Chrome; requires daemon-side KVM:
+npm run test:integration:android
+# Explicitly remove only this Compose project's test environment:
+docker compose --project-directory . -f tests/docker/compose.yml --profile android down -v
 ```
 
-The launcher builds from the latest official Hermes image and starts one disposable
-container with ChatHermes installed and enabled. Add `TEST_LLM_API_BASE_URL`,
-`TEST_LLM_API_KEY`, and `TEST_LLM_API_MODEL` to the repository root `.env` file,
-then run `npm run live` (or its alias
-`npm run live:real`). The provider URL must be reachable from inside Docker;
-`localhost` there refers to the container itself. No bind mounts or personal
-Hermes state are used. `npm run live:stop` removes the container and its anonymous
-data volume. Each new launch starts with an empty Hermes home.
+Deterministic tests use the real Hermes dashboard plugin and stock MockServer,
+without provider credentials. Browser preparation and optional Android installation
+are separate retryable steps; failed commands leave containers running. Rebuild
+explicitly after source changes. `COMPOSE_PROJECT_NAME` isolates concurrent
+checkouts; published ports must also differ.
 
-Open the printed `/chathermes` URL and sign in with `tester` /
-`chathermes-local-test`. Use `CHATHERMES_INSTANCE` and
-`CHATHERMES_DASHBOARD_PORT` to run multiple containers. See the
-[live dashboard workflow](tests/docker/README.md) for direct Docker commands,
-remote Docker, and port settings.
+For Python tests, activate the project virtualenv, install
+`pip install -r tests/requirements.txt` and
+`pip install -e 'plugin/chathermes[dev]'`, then run `npm run test:api` with the
+reviewed Hermes source on `PYTHONPATH`. Run `vp lint` and `vp fmt` for code quality.
+See [the test environment guide](tests/docker/README.md) for preparation commands,
+real-provider opt-in, remote Docker, and failure inspection, and
+[the migration audit](tests/test-audit.md) for coverage and remaining migrations.
 
-For browser tests, run `npx playwright install chromium` once, then
-`npm run live:visual`, or set `CHATHERMES_TEST_URL` to the running dashboard and
-run `npm run test:visual`. The default desktop/mobile checks send a small real
-model request and require tool support. The older fixture-dependent suites are
-available through `npm run test:visual:legacy` with a separately supplied seeded
-dashboard. Screenshots and traces are saved to `tests/visual-output/`.
-
-Rebuild with `npm run live` after plugin changes; the plugin is baked into the
-image. Provider credentials stay in the container environment and private profile `.env`
-files; gateway credentials are generated server-side. Do not use the default test login for a
-public deployment.
+Never commit generated dashboard assets, credentials, or runtime state. Visually
+verify the actual dashboard plugin at desktop/mobile sizes before committing.
 
 The composer starts a native Hermes session on first send. New Other and Project chats use the dashboard’s authenticated, same-origin native gateway WebSocket for creation, snapshots, approvals, clarification, guidance and Stop. Default and secondary profiles carry an explicit profile on each native operation. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](docs/api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
