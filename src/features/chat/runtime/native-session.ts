@@ -60,6 +60,7 @@ export function useNativeSession(
     hasCorrections: boolean;
   }[] = [];
   let pendingAttempt = "";
+  let pendingText = "";
   const admitting = new Set<string>();
   let p = "",
     s = "",
@@ -85,13 +86,19 @@ export function useNativeSession(
     admissionId?: string,
     display: DisplayMetadata = {},
   ) {
-    if (pendingInput && !correction && user && admissionId === pendingAttempt) {
+    if (
+      pendingInput &&
+      !correction &&
+      user &&
+      (admissionId ? admissionId === pendingAttempt : !display.display_kind && text === pendingText)
+    ) {
       pendingInput = false;
       // Keep the immediate attachment preview until authoritative history maps
       // it to a native user row. Persisted history retains the durable references.
       repaint();
       return;
     }
+    pendingInput = false;
     if (correction && user && turn) {
       // A correction is another display boundary within the same execution.
       // Keep earlier parts addressable so late tool results update their IDs.
@@ -367,6 +374,7 @@ export function useNativeSession(
           }
           if (target) reduceNativeTurn(target, event.type, { ...data, persisted: recovering });
           if (event.type === "message.complete") {
+            pendingInput = false;
             for (const entry of completed)
               reduceNativeTurn(entry.turn, "message.complete", { status: data.status });
             receipt = data.persisted_turn as PersistedTurn | undefined;
@@ -466,10 +474,12 @@ export function useNativeSession(
       attempt = uncertainNativeOutcome(p, s);
     uncertain.value = true;
     error.value = "";
+    pendingInput = false;
     input(text);
     user!.content = preview ?? content;
     pendingInput = true;
     pendingAttempt = attempt;
+    pendingText = text;
     admitting.add(attempt);
     const optimisticId = user!.id;
     let dispatched = false;
