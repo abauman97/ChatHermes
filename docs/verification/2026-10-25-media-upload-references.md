@@ -1,10 +1,9 @@
 # Uploaded MEDIA references
 
 Work performed in `fix/persisted-chat-image-preview`, starting at `a8fc3f3894`.
-The initial diff already contained the multipart image-route fix, its two tests,
+The initial diff already contained the multipart image-route fix, its tests,
 Playwright selection changes, a rewritten live image test, an image fixture, and
-`2026-10-25-persisted-image-preview.md`. Those changes were preserved and the
-existing evidence document was left untouched. No commit or publication occurred.
+`2026-10-25-persisted-image-preview.md`. Those changes were preserved.
 
 ## History and implementation
 
@@ -88,8 +87,6 @@ snapshots and reload were exercised; reconnect/state-isolation unit tests passed
 Named-profile browser coverage was not run; profile boundaries were checked by
 API tests. The existing evidence document records earlier host limitations.
 
-No containers were stopped. The new disposable fixture remains running at
-`http://docker:9141/chathermes`, named
-`chathermes-media-upload-20261025-hermes`. Existing containers were left alone.
-No staging, commit, push, PR action, deployment, or changes to the separate
-project checkout were performed.
+Both task-owned disposable fixtures were stopped after testing. Other running
+containers were left alone. No deployment or changes to the separate primary
+checkout were performed.
