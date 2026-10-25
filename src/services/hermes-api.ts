@@ -30,7 +30,7 @@ function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile))
     throw new Error("Invalid profile name");
   if (
-    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project)?|v1\/(?:capabilities|models))$/.test(
+    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(
       path,
     )
   )
@@ -105,7 +105,10 @@ function messagePage(value: unknown): {
     throw new Error("Invalid Hermes messages response");
   const pagination = record(row?.pagination);
   return {
-    messages: entries as Message[],
+    messages: entries.map((row) => ({
+      ...row,
+      id: row.id == null ? undefined : String(row.id),
+    })) as Message[],
     pagination:
       typeof pagination?.returned === "number" && typeof pagination.limit === "number"
         ? { returned: pagination.returned, limit: pagination.limit }
@@ -246,6 +249,11 @@ export const api = {
     if (row.cwd || row.source === "desktop") workspaceSessions.add(workspaceKey(profile, id));
     return row;
   },
+  branch: (profile: string, id: string, responseId: string) =>
+    request<{ id: string }>(profile, `/api/sessions/${encodeURIComponent(id)}/branch`, {
+      method: "POST",
+      body: JSON.stringify({ response_id: responseId }),
+    }),
   rename: async (profile: string, id: string, title: string, signal?: AbortSignal) =>
     unwrapSession(
       await request<unknown>(profile, `/api/sessions/${encodeURIComponent(id)}`, {

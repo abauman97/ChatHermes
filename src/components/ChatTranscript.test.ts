@@ -206,14 +206,9 @@ describe("ordered activity presentation", () => {
         loading: false,
       },
     });
-    expect(wrapper.findAll(".assistant-turn > *").map((row) => row.classes()[0])).toEqual([
-      "message",
-      "activity",
-      "turn-work",
-      "message",
-      "turn-work",
-      "message",
-    ]);
+    expect(
+      wrapper.findAll(".assistant-turn > :not(.response-actions)").map((row) => row.classes()[0]),
+    ).toEqual(["message", "activity", "turn-work", "message", "turn-work", "message"]);
     expect(wrapper.findAll(".turn-work")).toHaveLength(2);
     expect(wrapper.findAll(".current-activity")).toHaveLength(3);
     expect(wrapper.get(".activity pre").text()).toBe("Plan");
@@ -794,13 +789,9 @@ it("collapses completed native calls during streaming across empty generation bo
   await event("message.complete", { text: "Finished.", status: "cancelled" });
   await wrapper.setProps({ working: false });
   expect(current.get(".activity-failed summary").text()).toContain("Interrupted");
-  expect(current.findAll(":scope > *").map((row) => row.classes()[0])).toEqual([
-    "message",
-    "turn-work",
-    "activity",
-    "turn-work",
-    "message",
-  ]);
+  expect(
+    current.findAll(":scope > :not(.response-actions)").map((row) => row.classes()[0]),
+  ).toEqual(["message", "turn-work", "activity", "turn-work", "message"]);
   expect(wrapper.findAll(".transcript > div > *")[2]!.classes()).toContain("message");
   await summary.trigger("click");
   expect(current.findAll(".activity")[1]!.attributes("open")).toBeUndefined();
@@ -849,3 +840,35 @@ it.each(["user", "system", "assistant"])(
     restored.unmount();
   },
 );
+
+it("copies response prose and branches at the final durable assistant row", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  const wrapper = mount(ChatTranscript, {
+    props: {
+      loading: false,
+      progress: [],
+      draft: "",
+      messages: [
+        { id: "1", role: "user", content: "Question" },
+        { id: "2", role: "assistant", content: "Checking", tool_calls: [] },
+        { id: "3", role: "tool", content: "Private tool output" },
+        { id: "4", role: "assistant", content: "**Answer**" },
+        { id: "5", role: "user", content: "Next question" },
+        { id: "6", role: "assistant", content: "Later answer" },
+      ],
+    },
+  });
+  await wrapper.findAll('[aria-label="Copy response"]')[0]!.trigger("click");
+  await flushPromises();
+  expect(writeText).toHaveBeenCalledWith("Checking\n\n**Answer**");
+  expect(wrapper.text()).toContain("Copied");
+  await wrapper.findAll('[aria-label="Branch in new chat"]')[0]!.trigger("click");
+  expect(wrapper.emitted("branch")).toEqual([["4"]]);
+  await wrapper.setProps({ branchDisabled: true });
+  expect(wrapper.find('[aria-label="Branch in new chat"]').attributes("disabled")).toBeDefined();
+  writeText.mockRejectedValue(new Error("denied"));
+  await wrapper.findAll('[aria-label="Copy response"]')[1]!.trigger("click");
+  await flushPromises();
+  expect(wrapper.text()).toContain("Could not copy");
+});

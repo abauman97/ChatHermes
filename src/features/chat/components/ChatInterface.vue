@@ -170,6 +170,9 @@ const {
         :approval-pending="viewApprovalPending"
         :home="!session"
         :status-label="status"
+        :branch-disabled="view.branchDisabled.value"
+        :response-targets="view.responseTargets.value"
+        @branch="actions.branch"
       >
         <template #request><LiveRequest /></template>
       </ChatTranscript>

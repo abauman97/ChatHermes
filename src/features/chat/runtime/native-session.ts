@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from "vue";
+import { savedResponseTargets } from "../utils/saved-response-targets";
 import { api, messageText } from "../../../services/hermes-api";
 import { NativeViewer, NativeError, type NativeSnapshot, type NativeHooks } from "./native-chat";
 import {
@@ -29,6 +30,7 @@ export function useNativeSession(
   onCreated?: (profile: string, stored: string) => void,
   onTitle?: (profile: string, stored: string, title: string) => void,
 ) {
+  const responseTargets = ref<Record<string, string>>({});
   const messages = ref<Message[]>([]),
     busy = ref(false),
     loading = ref(false),
@@ -205,6 +207,10 @@ export function useNativeSession(
           : row;
       });
       if (current !== generation || flight !== hydrating || recovering) return;
+      // The pinned gateway may omit persistence receipts. Match the complete
+      // ordered prose projection before exposing any durable branch targets;
+      // keep the richer live tool/thinking projection intact.
+      if (!busy.value) responseTargets.value = savedResponseTargets(messages.value, history);
       // A newer turn may start while REST is pending. Preserve its projection;
       // only a receipt with durable row identities retires covered live parts.
       if (busy.value && user && turn) {
@@ -565,6 +571,7 @@ export function useNativeSession(
     pendingPersistence = false;
     pendingAttempt = "";
     messages.value = [];
+    responseTargets.value = {};
     busy.value = false;
     loading.value = false;
     requests.value = [];
@@ -582,6 +589,7 @@ export function useNativeSession(
   }
   return {
     messages,
+    responseTargets,
     busy,
     loading,
     error,

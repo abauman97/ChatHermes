@@ -57,12 +57,9 @@ it("folds the delegation call into its tool run while keeping the child independ
   expect(child.attributes("open")).toBeUndefined();
   await child.get("summary").trigger("click");
   expect(child.get("pre").text()).toContain("Child result");
-  expect(wrapper.findAll(".assistant-turn > *").map((row) => row.classes()[0])).toEqual([
-    "message",
-    "turn-work",
-    "activity",
-    "message",
-  ]);
+  expect(
+    wrapper.findAll(".assistant-turn > :not(.response-actions)").map((row) => row.classes()[0]),
+  ).toEqual(["message", "turn-work", "activity", "message"]);
   wrapper.unmount();
 });
 
@@ -206,11 +203,9 @@ it("keeps delivered artifacts at their tool position and outside collapsed detai
   expect(wrapper.find(".work-summary").exists()).toBe(false);
   expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
   expect(wrapper.get(".artifact-stub").isVisible()).toBe(true);
-  expect(wrapper.findAll(".assistant-turn > *").map((row) => row.classes()[0])).toEqual([
-    "message",
-    "turn-work",
-    "message",
-  ]);
+  expect(
+    wrapper.findAll(".assistant-turn > :not(.response-actions)").map((row) => row.classes()[0]),
+  ).toEqual(["message", "turn-work", "message"]);
   await wrapper.get(".activity summary").trigger("click");
   await wrapper.get(".activity summary").trigger("click");
   expect(wrapper.get(".artifact-stub").isVisible()).toBe(true);

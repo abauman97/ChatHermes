@@ -30,9 +30,11 @@ function setup() {
     defaultModel: ref("default"),
     suggestedPrompt: ref(""),
     generation: () => generation,
+    navigation: vi.fn(() => 0),
     createSession: vi.fn(async () => "one"),
     suggest: vi.fn(async () => {}),
     retryHistory: vi.fn(async () => {}),
+    openBranch: vi.fn(async (_id: string) => {}),
   };
   let generation = 0;
   const controller = useChatController(native, scope);
@@ -196,4 +198,44 @@ it.each([true, false])("submits every staged upload through MEDIA (staged=%s)", 
   } finally {
     upload.mockRestore();
   }
+});
+
+it("branches in the selected scope and ignores a late result after switching profiles", async () => {
+  const { scope, controller, switchScope } = setup();
+  const branch = vi.spyOn(api, "branch").mockResolvedValue({ id: "child" });
+  await controller.actions.branch("42");
+  expect(branch).toHaveBeenCalledWith("alpha", "one", "42");
+  expect(scope.openBranch).toHaveBeenCalledWith("child");
+  scope.openBranch.mockClear();
+  let finish!: (result: { id: string }) => void;
+  branch.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = controller.actions.branch("42");
+  expect(controller.view.branchDisabled.value).toBe(true);
+  switchScope();
+  finish({ id: "late-child" });
+  await pending;
+  expect(scope.openBranch).not.toHaveBeenCalled();
+  branch.mockRestore();
+});
+
+it("does not open a late branch after navigating to another page", async () => {
+  const { scope, controller } = setup();
+  let finish!: (result: { id: string }) => void;
+  const branch = vi.spyOn(api, "branch").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = controller.actions.branch("42");
+  scope.navigation.mockReturnValue(1);
+  finish({ id: "child" });
+  await pending;
+  expect(scope.openBranch).not.toHaveBeenCalled();
+  branch.mockRestore();
 });
