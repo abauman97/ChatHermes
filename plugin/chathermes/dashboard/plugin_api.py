@@ -558,6 +558,67 @@ async def native_session_membership(request: Request, session_id: str):
     return JSONResponse({'member': True}, headers={'Cache-Control': 'no-store'})
 
 
+def _branch_response_count(profile, stored, response_id):
+    """Address native branch's prose ordinal using the durable display history.
+
+    Read all rows, including hidden context: the gateway's branch source filters
+    user/assistant text, rather than the UI's visible bubbles or tool blocks.
+    """
+    from hermes_cli.web_server_sessions import _open_session_db_for_profile
+    from tui_gateway.session_history import _coerce_message_text
+    db = _open_session_db_for_profile(profile, read_only=True)
+    try:
+        _, history = db.get_resume_conversations(stored)
+        count = 0
+        for row in history:
+            text = _coerce_message_text(row.get('content'))
+            if row.get('role') not in ('user', 'assistant') or not text.strip():
+                continue
+            count += 1
+            if str(row.get('_row_id')) == response_id and row.get('role') == 'assistant':
+                return count
+        raise HTTPException(409, 'Response is no longer available in saved history')
+    finally:
+        db.close()
+
+
+@router.post('/api/sessions/{session_id}/branch', status_code=201)
+async def branch_response(request: Request, session_id: str):
+    from starlette.concurrency import run_in_threadpool
+    profile = _rpc_profile(request)
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session_id):
+        raise HTTPException(422, 'Invalid stored session')
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(422, 'Invalid branch selection')
+    if (not isinstance(body, dict) or set(body) != {'response_id'}
+            or not isinstance(body['response_id'], str) or not re.fullmatch(r'[0-9]{1,20}', body['response_id'])):
+        raise HTTPException(422, 'Invalid branch selection')
+    # Resume must never adopt an ID belonging to another profile.
+    await run_in_threadpool(_native_validation.check_profile_session, profile, session_id)
+    transport = _new_rpc_transport(request)
+    try:
+        parent = await _workspace_resume(transport, profile, session_id)
+        if parent.get('running') or parent.get('queued'):
+            raise HTTPException(409, 'Wait for the response to finish before branching')
+        count = await run_in_threadpool(_branch_response_count, profile, session_id, body['response_id'])
+        # Hermes copies its own authoritative transcript and inherits the parent's
+        # workspace, lineage and profile; no client transcript/cwd is accepted.
+        made = await transport.call('session.branch', {
+            'profile': profile, 'session_id': parent['session_id'], 'count': count})
+        stored = made.get('stored_session_id')
+        if not isinstance(stored, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', stored):
+            raise HTTPException(502, 'Invalid branch receipt')
+        return {'id': stored}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Could not branch this response') from None
+    finally:
+        transport.close()
+
+
 @router.post('/chat/prepare')
 async def prepare_native_turn(request: Request):
     """Validate profile-local attachments/model aliases without admitting a turn.

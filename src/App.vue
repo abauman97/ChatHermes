@@ -239,9 +239,15 @@ const chat = useChatController(native, {
   defaultModel,
   suggestedPrompt,
   generation: () => generation,
+  navigation: () => navigationRevision,
   createSession,
   suggest,
   retryHistory: loadMessages,
+  openBranch: async (id: string) => {
+    await chooseSession(id);
+    refreshProjects();
+    void loadSessions();
+  },
 });
 provideChat(chat);
 const wakeLock = useWakeLock();
