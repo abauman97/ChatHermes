@@ -7878,6 +7878,10 @@ function vp(e) {
 }
 function yp(e, t = "", n = !1) {
 	if (/^(https?:\/\/|data:image\/)/.test(e.path)) return e.path;
+	if (e.path.match(/^\/api\/plugins\/chathermes\/images\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i)) {
+		let n = new URLSearchParams();
+		return t && n.set("profile", t), `${e.path}${n.size ? `?${n}` : ""}`;
+	}
 	let r = new URLSearchParams({
 		path: e.path,
 		profile: t || "default"
@@ -8063,6 +8067,10 @@ var Ep = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2x
 			let e = p = new AbortController();
 			try {
 				let t = yp(n.file, n.profile);
+				if (o.value === "image" && /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(t)) {
+					c.value = t;
+					return;
+				}
 				if (o.value === "image" && /^https?:\/\//.test(t)) {
 					c.value = t;
 					return;
@@ -8108,6 +8116,10 @@ var Ep = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2x
 			let i = new AbortController();
 			r(() => i.abort());
 			let a = yp(n.file, n.profile);
+			if (/^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(a)) {
+				g.value = a;
+				return;
+			}
 			if (!a.startsWith("/api/plugins/")) {
 				g.value = a;
 				return;
