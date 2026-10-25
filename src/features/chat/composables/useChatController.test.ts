@@ -156,3 +156,44 @@ it.each(["stop", "steer"] as const)(
     expect(native.error.value).toBe("");
   },
 );
+
+it.each([true, false])("submits every staged upload through MEDIA (staged=%s)", async (staged) => {
+  const { native, controller } = setup();
+  const upload = vi
+    .spyOn(api, "upload")
+    .mockResolvedValue({ path: "/home/alpha/uploads/chathermes/input.txt" });
+  const attachments = [
+    {
+      name: "photo.png",
+      type: "image/png",
+      data: "data:image/png;base64,AA==",
+      size: 1,
+      path: "/home/alpha/uploads/chathermes/photo.png",
+    },
+    {
+      name: "input.txt",
+      type: "text/plain",
+      data: "data:text/plain;base64,QQ==",
+      size: 1,
+      ...(staged ? { path: "/home/alpha/uploads/chathermes/input.txt" } : {}),
+    },
+  ];
+  native.submit = vi.fn(async (_text, content, _options, preview) => {
+    const parts = await content();
+    for (const file of attachments) {
+      const path = file.path || "/home/alpha/uploads/chathermes/input.txt";
+      expect(JSON.stringify(parts)).toContain(JSON.stringify(`MEDIA:"${path}"`).slice(1, -1));
+      if (file.path)
+        expect(JSON.stringify(preview)).toContain(JSON.stringify(`MEDIA:"${path}"`).slice(1, -1));
+    }
+    expect(parts).toContainEqual({ type: "image_url", image_url: { url: attachments[0]!.data } });
+  });
+  try {
+    await controller.actions.send("Review", attachments);
+    expect(native.error.value).toBe("");
+    expect(native.submit).toHaveBeenCalledOnce();
+    expect(upload).toHaveBeenCalledTimes(staged ? 0 : 1);
+  } finally {
+    upload.mockRestore();
+  }
+});

@@ -10,6 +10,11 @@ import type {
 } from "../../../types/hermes";
 import type { useNativeSession } from "../runtime/native-session";
 import { normalizeRequest, type RequestAnswer } from "../utils/chat-requests";
+// Keep the filename annotation for durable metadata and native file staging;
+// MEDIA is the direct delivery reference consumed by the artifact parser.
+function uploadReference(file: Attachment, path: string) {
+  return `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${path}\nMEDIA:"${path}"`;
+}
 export function useChatController(
   native: ReturnType<typeof useNativeSession>,
   scope: {
@@ -93,9 +98,7 @@ export function useChatController(
       ...attachments.flatMap((file): unknown[] => [
         {
           type: "text",
-          text: file.path
-            ? `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${file.path}`
-            : "📎 " + file.name,
+          text: file.path ? uploadReference(file, file.path) : "📎 " + file.name,
         },
         ...(file.type.startsWith("image/")
           ? [{ type: "image_url", image_url: { url: file.data } }]
@@ -115,7 +118,7 @@ export function useChatController(
               throw new Error("Session changed before submission");
             parts.push({
               type: "text",
-              text: `Attached ${file.type.startsWith("image/") ? "image" : "file"} ${file.name.replace(/[\r\n]/g, " ")}: ${uploaded.path}`,
+              text: uploadReference(file, uploaded.path),
             });
             if (file.type.startsWith("image/"))
               parts.push({ type: "image_url", image_url: { url: file.data } });

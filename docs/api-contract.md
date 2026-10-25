@@ -181,7 +181,11 @@ files. Staging does not submit a prompt. General files use native `file.attach`
 at submission, after checking that every source belongs to the selected
 profile's authenticated upload directory. The native `ref_text` is passed to
 `prompt.submit` for file context; original upload annotations retain the
-filename and retrieval reference in durable history. Images retain the existing
+filename and retrieval reference in durable history. Every submitted upload also
+includes a standalone `MEDIA:"<uploaded path>"` direct reference. User history
+uses the same explicit artifact parser as generated delivery, deduplicating the
+reference and filename annotation while preserving quotation/untrusted boundaries.
+Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
 Timeline cards and the global/project Artifacts views share history-based
@@ -195,9 +199,9 @@ fields do not assert delivery. Standalone `@file:` references remain text unless
 an upload annotation supplies a card and hides the redundant context reference.
 Fenced source code remains intact.
 Completed, successful tool outputs use the same explicit delivery rules regardless
-of tool name. JSON results and untrusted result wrappers are decoded before
-scanning their strings for delivery annotations; neither terminal stdout nor
-structured output keys promote bare paths. Tool input arguments, failed blocks,
+of tool name. Only a top-level `media_tag` or explicit multimodal `meta.media_tag` envelope
+asserts tool delivery. Terminal stdout, nested result strings, untrusted wrappers,
+and arbitrary structured output fields remain data. Tool input arguments, failed blocks,
 and incomplete blocks never produce cards. Explicit deliveries retain available
 file metadata. User upload/image-content cards and authenticated session/profile
 retrieval remain unchanged.

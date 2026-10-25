@@ -11,6 +11,7 @@ export default defineConfig({
           "**/profile-routing-live.spec.ts",
           "**/native-profile-live.spec.ts",
           "**/unattended-native-live.spec.ts",
+          "**/image-preview-live.spec.ts",
         ],
   outputDir: "./tests/visual-output",
   testIgnore:
@@ -22,6 +23,7 @@ export default defineConfig({
           "**/profile-routing-live.spec.ts",
           "**/native-profile-live.spec.ts",
           "**/unattended-native-live.spec.ts",
+          "**/image-preview-live.spec.ts",
         ]
       : [],
   timeout: 90_000,
