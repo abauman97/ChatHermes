@@ -78,4 +78,7 @@ test("uploaded image renders inline and opens from persisted chat history", asyn
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("img")).toHaveAttribute("src", src!);
   await page.screenshot({ path: info.outputPath("image-preview-dialog.png"), fullPage: true });
+  await dialog.getByRole("button", { name: /close/i }).click();
+  await expect(dialog).not.toBeVisible();
+  await page.screenshot({ path: info.outputPath("persisted-inline-image.png"), fullPage: true });
 });
