@@ -48,6 +48,41 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it.each([false, true])(
+    "reconciles an untagged matching input with its optimistic upload (ack first: %s)",
+    async (ackFirst) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      let acknowledge!: () => void;
+      fake.rpc.mockImplementation((method) =>
+        method === "prompt.submit"
+          ? new Promise<void>((resolve) => {
+              acknowledge = resolve;
+            })
+          : Promise.resolve({ settled: false }),
+      );
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      const preview = [
+        { type: "text", text: "Question" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      ];
+      const sending = session.submit("Question", "prepared upload", {}, preview);
+      await Promise.resolve();
+      const id = session.messages.value[0]!.id;
+      if (ackFirst) {
+        acknowledge();
+        await sending;
+      }
+      fake.hooks!.input("Question", false);
+      expect(session.messages.value).toHaveLength(1);
+      expect(session.messages.value[0]).toMatchObject({ id, content: preview });
+      if (!ackFirst) {
+        acknowledge();
+        await sending;
+      }
+      session.close();
+    },
+  );
   it.each(["start", "ack", "lost ack"])(
     "ignores early input and refreshes once after persistence via %s",
     async (first) => {
