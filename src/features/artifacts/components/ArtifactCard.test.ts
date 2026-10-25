@@ -32,3 +32,44 @@ it("keeps thumbnail requests stable across equivalent props and aborts on an ori
   wrapper.unmount();
   expect(lastSignal.aborted).toBe(true);
 });
+
+it("renders authenticated native image URLs directly and opens them without JSON fetch", async () => {
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  const file = {
+    path: "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png",
+    name: "chart.png",
+    type: "image/png",
+  };
+  const wrapper = mount(ArtifactCard, { props: { file, profile: "work" } });
+  await flushPromises();
+  expect(wrapper.get(".artifact-card button img").attributes("src")).toBe(
+    `${file.path}?profile=work`,
+  );
+  const dialog = wrapper.get("dialog").element as HTMLDialogElement;
+  dialog.showModal = vi.fn();
+  await wrapper.get(".artifact-card button").trigger("click");
+  await flushPromises();
+  expect(wrapper.get("dialog img").attributes("src")).toBe(`${file.path}?profile=work`);
+  expect(fetch).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+it("keeps generic authenticated API image previews on the JSON preview path", async () => {
+  const fetch = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ dataUrl: "data:image/png;base64,AA==" }),
+  }));
+  vi.stubGlobal("fetch", fetch);
+  const file = { path: "/tmp/chart.png", name: "chart.png", type: "image/png" };
+  const wrapper = mount(ArtifactCard, { props: { file, profile: "work" } });
+  await flushPromises();
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/plugins/chathermes/files/preview?path=%2Ftmp%2Fchart.png&profile=work",
+    expect.objectContaining({ credentials: "same-origin" }),
+  );
+  expect(wrapper.get(".artifact-card button img").attributes("src")).toBe(
+    "data:image/png;base64,AA==",
+  );
+  wrapper.unmount();
+});

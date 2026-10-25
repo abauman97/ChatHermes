@@ -36,6 +36,13 @@ async function open() {
   const current = (controller = new AbortController());
   try {
     let url = fileUrl(props.file, props.profile);
+    if (
+      kind.value === "image" &&
+      /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(url)
+    ) {
+      source.value = url;
+      return;
+    }
     if (kind.value === "image" && /^https?:\/\//.test(url)) {
       source.value = url;
       return;
@@ -95,6 +102,12 @@ watch(
     const pending = new AbortController();
     cleanup(() => pending.abort());
     const url = fileUrl(props.file, props.profile);
+    if (
+      /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(url)
+    ) {
+      thumbnail.value = url;
+      return;
+    }
     if (!url.startsWith("/api/plugins/")) {
       thumbnail.value = url;
       return;
