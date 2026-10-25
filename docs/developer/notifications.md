@@ -1,4 +1,6 @@
-# ChatHermes Web Push
+# Web Push operations and delivery
+
+For device setup and Cron delivery, start with [the user guide](../user/notifications.md). This reference covers the detailed transport, persistence, and diagnostic contract.
 
 Serve the Hermes dashboard over trusted HTTPS (localhost is exempt for local
 browser development). iOS/iPadOS requires 16.4 or newer and the ChatHermes web
@@ -98,7 +100,7 @@ must work before the configuration reports available. If the
 Notifications control reports the service unavailable, verify HTTPS, browser
 permission, Home Screen installation (iOS), and that this library is installed.
 
-See [profile-title verification](verification/2026-10-08-push-profile-titles.md)
+See [profile-title verification](../internal/verification/2026-10-08-push-profile-titles.md)
 for exact test results and browser/transport verification limitations.
 
 Completion delivery is persisted in `state/chathermes-completions.sqlite3`.
