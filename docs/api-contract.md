@@ -100,7 +100,7 @@ TUI tool and reasoning events carry the available runtime activity. Tool complet
 
 ## Test environment
 
-The Docker launcher extends the latest official Hermes release in one disposable container with an anonymous volume and real provider credentials from the root `.env`. The reviewed native contract is the pin above. See README for launch and cleanup commands.
+The Compose environment extends the latest official Hermes release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See README for launch and cleanup commands.
 
 ## Project metadata and draft history
 

@@ -1,0 +1,49 @@
+# Run from the checkout root with --project-directory . so the project name
+# follows the checkout directory. COMPOSE_PROJECT_NAME overrides that default.
+services:
+  mockserver:
+    image: mockserver/mockserver:9.1.0
+    ports:
+      - "${CHATHERMES_BIND_ADDRESS:-127.0.0.1}:${CHATHERMES_MOCKSERVER_PORT:-1080}:1080"
+    environment:
+      MOCKSERVER_LOG_LEVEL: WARN
+  hermes:
+    build:
+      context: .
+      dockerfile: tests/docker/Dockerfile
+    depends_on:
+      mockserver:
+        condition: service_healthy
+    ports:
+      - "${CHATHERMES_BIND_ADDRESS:-127.0.0.1}:${CHATHERMES_DASHBOARD_PORT:-9119}:9119"
+    environment:
+      TEST_LLM_API_BASE_URL: http://mockserver:1080/v1
+      TEST_LLM_API_KEY: synthetic-test-only
+      TEST_LLM_API_MODEL: chathermes-test
+      HERMES_DASHBOARD_PUBLIC_URL: https://chathermes.example.test
+  android:
+    profiles: [android]
+    image: budtmo/docker-android:emulator_14.0
+    devices: [/dev/kvm:/dev/kvm]
+    # The image's startup adjusts KVM permissions using sudo; do not run the
+    # emulator as root or require the client's KVM group to match the daemon.
+    shm_size: 2gb
+    logging:
+      driver: none
+    environment:
+      EMULATOR_DEVICE: Samsung Galaxy S10
+      WEB_VNC: "true"
+    ports:
+      - "${CHATHERMES_ANDROID_BIND_ADDRESS:-127.0.0.1}:${CHATHERMES_ANDROID_VNC_PORT:-6080}:6080"
+      - "${CHATHERMES_ANDROID_BIND_ADDRESS:-127.0.0.1}:${CHATHERMES_ANDROID_CDP_PORT:-9223}:9222"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -c /dev/kvm || { echo 'Android boot: pass /dev/kvm through to the Docker daemon'; exit 1; };
+          emulator -accel-check >/dev/null 2>&1 || { echo 'Android boot: check KVM acceleration and device permissions'; exit 1; };
+          test "$$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 || { echo 'Android boot: waiting for sys.boot_completed=1'; exit 1; }
+      interval: 5s
+      timeout: 10s
+      start_period: 360s
+      retries: 3

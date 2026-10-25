@@ -414,6 +414,23 @@ describe("native Desktop event semantics", () => {
     reduceNativeTurn(turn, "message.complete", { text: "Final answer", status: "complete" });
     expect(turn.blocks.map((block) => block.content)).toEqual(["Final answer"]);
   });
+  it.each([false, true])(
+    "ignores answer previews relayed as reasoning (streamed reasoning: %s)",
+    (thinking) => {
+      const turn = createTurn();
+      if (thinking) reduceNativeTurn(turn, "reasoning.delta", { text: "A real plan" });
+      const answer = "Answer ".repeat(100).trim();
+      reduceNativeTurn(turn, "message.delta", { text: answer });
+      reduceNativeTurn(turn, "reasoning.available", { text: answer.slice(0, 500) });
+      reduceNativeTurn(turn, "message.complete", { text: answer, status: "complete" });
+      expect(
+        turn.blocks.filter((block) => block.kind === "thinking").map((block) => block.content),
+      ).toEqual(thinking ? ["A real plan"] : []);
+      expect(
+        turn.blocks.filter((block) => block.kind === "text").map((block) => block.content),
+      ).toEqual([answer]);
+    },
+  );
   it("keeps transient status out of reasoning, replaces reasoning, and upserts completed tools by identity", () => {
     const turn = createTurn();
     reduceNativeTurn(turn, "thinking.delta", { text: "Waiting on provider" });

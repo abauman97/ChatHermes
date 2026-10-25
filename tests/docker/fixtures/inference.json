@@ -1,0 +1,470 @@
+[
+  {
+    "id": "chathermes-stream",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-stream\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"First visible chunk. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Second visible chunk. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Stream complete.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-continue",
+    "priority": 30,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-continue\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Recovered conversation.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-tool",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-tool\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"printf workflow-tool-start; sleep 2; printf workflow-tool-ok\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-tool-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*workflow-tool-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Tool completed: workflow-tool-ok.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-interrupted",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-interrupted\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Partial response before interruption.\"},\"finish_reason\":null}]}\n\ndata: {malformed-inference-frame}\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        },
+        "closeSocket": true
+      }
+    }
+  },
+  {
+    "id": "chathermes-unknown",
+    "priority": -100,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions"
+    },
+    "httpResponse": {
+      "statusCode": 400,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"error\": {\"message\": \"No ChatHermes inference fixture matched this request\", \"type\": \"invalid_request_error\"}}"
+    }
+  },
+  {
+    "id": "chathermes-models",
+    "priority": 10,
+    "httpRequest": {
+      "method": "GET",
+      "path": "/v1/models"
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"object\": \"list\", \"data\": [{\"id\": \"chathermes-test\", \"object\": \"model\", \"created\": 1, \"owned_by\": \"chathermes\"}, {\"id\": \"chathermes-alternate\", \"object\": \"model\", \"created\": 1, \"owned_by\": \"chathermes\"}]}"
+    }
+  },
+  {
+    "id": "chathermes-auxiliary",
+    "priority": 30,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "ALL_OF",
+        "bodyAllOf": [
+          {
+            "type": "JSON_PATH",
+            "jsonPath": "$[?(@.stream != true)]"
+          },
+          {
+            "type": "JSON_PATH",
+            "jsonPath": "$.messages[?(@.role == 'system' && @.content =~ /(?si).*title.*/)]"
+          }
+        ]
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"id\": \"chatcmpl-aux\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"chathermes-test\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"Workflow conversation\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 1, \"completion_tokens\": 1, \"total_tokens\": 2}}"
+    }
+  },
+  {
+    "id": "chathermes-interrupted-retry",
+    "priority": 15,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$.messages[?(@.role == 'user' && @.content =~ /(?s).*\\[workflow-interrupted\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 400,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"error\": {\"message\": \"Synthetic interrupted inference\", \"type\": \"invalid_request_error\"}}"
+    }
+  },
+  {
+    "id": "chathermes-clarify",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-clarify\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"clarify\",\"arguments\":\"{\\\"questions\\\": [{\\\"question\\\": \\\"Choose a workflow direction\\\", \\\"choices\\\": [\\\"Proceed with workflow\\\", \\\"Try another direction\\\"]}]}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-clarify-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*Proceed with workflow.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Clarification accepted.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-project",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-project\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"pwd; printf 'Generated project artifact' > workflow-artifact.txt; printf workflow-project-ok\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-project-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*workflow-project-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Workspace verified.\\nMEDIA:./workflow-artifact.txt\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-approval",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-approval\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"target=$(mktemp -d /tmp/chathermes-approval-XXXXXX); chmod 777 \\\\\\\"$target\\\\\\\"; printf workflow-approved\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-approval-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*workflow-approved.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Approved once.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-background",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-background\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"printf workflow-background-start; sleep 4; printf workflow-background-ok\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-background-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*workflow-background-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Background execution finished.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-approval-denied",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?si).*(denied|blocked|rejected).*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Approval denied; command did not run.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-thinking",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-thinking\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"First visible chunk. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"Second visible chunk. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Stream complete.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  }
+]

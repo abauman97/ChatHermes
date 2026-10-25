@@ -1,256 +1,157 @@
-# Disposable Hermes dashboard
+# Workflow test environment
 
-The image extends `nousresearch/hermes-agent:latest`, installs the checked-out
-ChatHermes plugin and its Python dependencies, enables authenticated dashboard
-access, and starts the real Hermes gateway and dashboard under the upstream
-supervisor. It uses a real OpenAI-compatible provider, without fixture replies,
-bind mounts, or personal Hermes configuration.
+Compose starts services; preparation scripts make browsers usable; Playwright
+verifies user contracts. A failed command leaves everything running for inspection.
+No provider credentials or `.env` file are needed for deterministic tests.
 
-The fixture seeds `default`, `alpha`, and `beta` with matching provider settings
-and distinct generated gateway credentials in each profile's private `.env`.
-Each private profile file also receives the test provider credential, because
-native secondary runtimes do not inherit launch-profile secrets. They share the loopback API listener through Hermes profile multiplexing. Named
-profile HTTP requests exercise Hermes's secondary plugin hosts; the runtime still
-refuses secondary plugin WebSockets. ChatHermes uses the supported dashboard
-`/api/ws` native gateway with a host-issued ticket and explicit profile on every
-RPC, so that refusal does not prevent secondary native chat. Browser tests check
-real conversations and offline recovery in all three profiles, colliding stored
-IDs, single-use ticket enforcement, and profile-local authenticated uploads.
+## First run and explicit rebuild
 
-## Launch from this checkout
-
-Create a `.env` file in the repository root:
-
-```dotenv
-TEST_LLM_API_BASE_URL=https://provider.example/v1
-TEST_LLM_API_KEY=your-provider-key
-TEST_LLM_API_MODEL=your-model
-```
-
-The launcher loads this file automatically. Existing exported environment values
-take precedence. The file stays excluded from Git and the Docker build context.
-For push testing, also set `HERMES_DASHBOARD_PUBLIC_URL` in `.env` or export it;
-the launcher forwards it to the container. Use the dashboard's public HTTPS URL.
-Background delivery has no request origin to fall back to, and HTTP localhost
-cannot supply the required VAPID subject. For an isolated localhost Android
-fixture, `https://chathermes.example.test` supplies a synthetic VAPID subject only;
-it does not change the app URL or provide HTTPS hosting. Enable notifications
-separately for each tested profile on the device.
-Then run:
+From the repository root:
 
 ```sh
 npm ci
-npm run live
-# Open http://127.0.0.1:9119/chathermes
-# Login: tester / chathermes-local-test
-npm run live:stop
+npx playwright install chromium
+npm run test:env:build
+npm run test:integration
+# Filter without bootstrapping another environment:
+npm run test:integration -- tests/workflows/messaging.spec.ts --grep streaming
 ```
 
-`npm run live:real` is an alias for the same real-provider workflow. A launcher
-instance defaults to the checkout's short revision. To run another concurrently:
+`test:env:build` builds ignored plugin assets and uses `docker compose build --pull`
+to refresh the latest official Hermes base. Ordinary test runs never rebuild,
+replace, or reseed running containers. After a rebuild, explicitly apply it with
+`docker compose --project-directory . -f tests/docker/compose.yml up -d --no-build`.
+Stop Android first if replacing Hermes while an installed app is in use.
+
+Use standard Compose commands for infrastructure only:
 
 ```sh
-CHATHERMES_INSTANCE=second CHATHERMES_DASHBOARD_PORT=9120 npm run live
-CHATHERMES_INSTANCE=second npm run live:stop
+docker compose --project-directory . -f tests/docker/compose.yml up -d --wait --no-build
+docker compose --project-directory . -f tests/docker/compose.yml ps
+docker compose --project-directory . -f tests/docker/compose.yml --profile android up -d --wait --no-build
+# Explicit cleanup, including Android and the upstream anonymous Hermes volume:
+docker compose --project-directory . -f tests/docker/compose.yml --profile android down -v
 ```
 
-The launcher publishes on loopback by default. For a remote Docker daemon, set
-`CHATHERMES_BIND_ADDRESS` to a daemon-side address (or `0.0.0.0`) and
-`CHATHERMES_DASHBOARD_URL_HOST` to its reachable hostname/IP. Readiness is checked
-inside the container, so it does not depend on client-to-daemon HTTP access.
+`--project-directory .` is intentional: it makes the default project name follow
+the checkout directory rather than the shared `tests/docker` basename. Override
+`COMPOSE_PROJECT_NAME` for another isolated environment. Assign different published
+ports for concurrent environments. Stop uses Compose ownership, never a global
+prune or deletion of old fixture volumes.
 
-## Direct Docker usage
-
-Build from the repository root, then pass the provider variables from `.env`:
+## Independently retryable preparation
 
 ```sh
-docker build --pull -f tests/docker/Dockerfile -t chathermes-test .
-docker run --rm --name chathermes-test \
-  -p 127.0.0.1:9119:9119 \
-  --env-file .env \
-  chathermes-test
+npm run test:fixtures                  # stock MockServer REST initialization
+npm run test:browser                   # interactive desktop Chrome + real login
+npm run test:android:prepare           # existing booted device + Chrome + login
+npm run test:android:install           # optional native installation + cold start
 ```
 
-The image includes the committed plugin assets. Run `npm run build` before
-building directly if the UI source has changed. `--pull` refreshes the upstream
-image; a running container does not update itself.
+The inference fixtures live in `fixtures/inference.json`. The loader sends them
+from the client to MockServer's REST API; no derived image, checkout mount, or
+file transfer is needed. Stable expectation IDs make reruns update expectations
+without duplication. It does not reset the server or delete other expectations.
+After removing a fixture, remove its old expectation explicitly or recreate only
+the MockServer service when no test is running.
 
-Docker publishes ports at container creation; environment variables inside an
-image cannot create host port mappings. Change the host port using `-p`, or also
-change the internal listener with `-e HERMES_DASHBOARD_PORT=9120` and
-`-p 127.0.0.1:9120:9120`. `API_SERVER_PORT` controls the internal gateway listener
-(default `8642`); it must differ from the dashboard port. Only the dashboard
-needs publishing. The provider base URL must be reachable from inside Docker.
+Hermes reaches `http://mockserver:1080/v1` on the Compose network. Credentials are
+synthetic and server-side. Requests select fixtures through explicit markers and
+conversation history; tool continuations match actual tool results, not counters.
+Unknown requests fail. The non-streaming auxiliary expectation supports Hermes's
+title generation. Streaming expectations contain real OpenAI SSE frames with
+paced HTTP chunks; the interrupted fixture emits a malformed frame after partial
+text. A scenario-specific error response also covers Hermes's repair/retry request
+after that malformed frame. Readiness and assertions use conditions, never fixed setup sleeps.
 
-Optional `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` and
-`HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` override the disposable login for direct
-Docker runs. The health check verifies both dashboard and gateway readiness.
-Do not pass `--init`; Hermes's supervisor needs to be PID 1.
+## Android
 
-The upstream image declares `/opt/data` as an anonymous volume. With `--rm`, it
-is deleted when this container exits. The launcher also explicitly removes its
-owned container and anonymous volume on stop or failed readiness. No named
-volumes or networks are created, reused, or deleted. Existing volumes from the
-old fixture launcher are left alone.
-
-Removing a container deletes its chats, attachments, and generated state.
-Provider keys are never baked into the image or printed by the launcher.
-
-## Browser verification
-
-Install Chromium with `npx playwright install chromium`, then run
-`npm run live:visual`. If the dashboard is already running, set
-`CHATHERMES_TEST_URL` to its printed base URL and run `npm run test:visual`.
-The default suite uses the disposable real-provider dashboard at desktop and
-mobile sizes. It checks composer focus and scrolling, the model picker,
-file upload and camera preview, a real native terminal call, and completed
-activity disclosures. It sends a small real-provider request per viewport and
-requires a model with tool support. Screenshots and traces stay in ignored
-`tests/visual-output/`; inspect them before committing.
-
-The older browser suites remain available with `npm run test:visual:legacy`.
-They require a separately supplied dashboard with their deterministic replies,
-secondary profiles, Projects and scheduled fixtures. They are not part of the
-default disposable workflow, which starts with an empty Hermes home.
-
-## Disposable Android 14 device
-
-On a Linux Docker daemon with working `/dev/kvm` hardware acceleration and enough
-RAM for an Android emulator, run:
+The Docker daemon must support `/dev/kvm`. Android health checks require usable
+acceleration and `sys.boot_completed=1`; health does not depend on Chrome or app
+installation. If boot fails, inspect KVM passthrough/permissions and daemon disk
+space. The image initializes KVM ownership itself; the client need not share its
+KVM group. A failed browser/installer command never deletes or reboots the device.
 
 ```sh
-npm run test:live:android  # builds/starts Hermes, then boots and installs on Android
-# Or reuse the already-running live Hermes instance:
-npm run live:android
-# Open http://127.0.0.1:6080/?autoconnect=true&resize=scale
-npm run live:android:stop
-npm run live:stop
+npm run test:integration:android
+npm run test:integration:android -- --grep streaming
+# Explicit installation scenario only:
+CHATHERMES_NATIVE_TESTS=1 npm run test:integration:android -- --grep "@installed|@native"
 ```
 
-`test:live` is an alias for `live`. Android uses
-[`budtmo/docker-android:emulator_14.0`](https://github.com/budtmo/docker-android)
-with the Samsung Galaxy S10 device profile and noVNC controls. The first image
-pull and emulator boot can take several minutes. Install the repository's Node
-dependencies first; the installer uses Playwright to sign in to the real Hermes
-dashboard with the synthetic test account. No desktop Chromium download is
-needed for this path. Rebuild Hermes with `npm run live` after plugin changes;
-an older test image may lack the credentialed manifest link required for installation.
-Fresh Chrome can close its initial tab during sign-in. The installer reconnects
-and reloads the authenticated dashboard for up to three attempts when a tab or
-browser connection closes. It reuses successful authentication; dashboard readiness
-timeouts still fail the launch and clean up the device.
+Normal Android workflows run in Chrome without installation or a desktop Chromium
+download. Optional installed/native scenarios are excluded by default. Preparation
+reuses Chrome when its debugging socket exists. HTTP/WebSockets reach Hermes by
+service DNS through an ephemeral in-container proxy and ADB reverse; Android uses
+`http://localhost:9119/chathermes` as a secure context. No gateway or ADB port is
+published. CDP attaches with `noDefaults: true` to retain real visibility behavior.
+Native installation controls use accessibility labels/current bounds.
 
-The launcher forwards Android's `http://localhost:9119/chathermes` through ADB to
-the existing Hermes container. Localhost gives Chrome a secure context for the
-plugin's existing manifest and service worker without changing authentication,
-adding a separate app, disabling certificate checks, or publishing the gateway.
-It uses Chrome's native **Install app / Add to Home screen** flow and waits for
-Android to persist the icon. It opens that icon and verifies the standalone app
-and composer before stopping Chrome, then cold-starts the icon and verifies both
-again. This avoids treating a saved shortcut as a completed first launch.
-If installation brings Chrome back to the foreground after HOME was requested,
-the launcher requests HOME again. It swipes between icon pages only while the
-Android launcher is in front, and bounds recovery attempts.
-Standalone windows on the login route are recognized and signed in again if
-needed. A failure reports the local window paths and their display modes, with
-query values omitted. Chrome builds that cannot install the PWA fail and remove the
-device; a browser shortcut alone does not count as a successful installation.
-Chrome must be able to reach any services required by its installation flow.
+Open `http://127.0.0.1:6080/?autoconnect=true&resize=scale` for interactive device
+inspection. Login: `tester` / `chathermes-local-test` (synthetic test account only).
 
-To verify an existing installed device without replacing it, reinstalling the app,
-or force-stopping Chrome, run `sh tests/docker/android.sh check` with the same
-instance, bind address, and CDP endpoint used to launch it. A successful check
-prints the ready message and exits 0. Do not edit a shell launcher's source while
-that shell is running.
+## Remote Docker and concurrency
 
-The shell launcher is `tests/docker/android.sh`. It runs the emulator with `--rm`,
-Docker logging disabled, no volume or bind mounts, and no saved snapshots outside
-its container. The launcher rejects images that introduce inherited
-mounts. Device state, browser sessions, downloads, and installed apps disappear
-when stopped. Startup/install failures and interruption during setup remove the
-owned device. A successful launch leaves it running for interactive tests until
-`live:android:stop`; stop Android before restarting/stopping Hermes. Hermes data
-remains governed by its own disposable launcher. Neither stop command removes
-containers owned by another instance.
+Publications default to loopback. For a remote daemon, use SSH forwarding or
+explicit private daemon addresses. Never publish browser controls publicly.
 
-Use the same `CHATHERMES_INSTANCE` as Hermes. Optional
-`CHATHERMES_ANDROID_VNC_PORT` (default `6080`) and
-`CHATHERMES_ANDROID_CDP_PORT` (default `9223`) allow concurrent devices. Both ports
-bind to daemon loopback by default; CDP grants browser control and must stay private.
-For a remote Docker daemon, forward both ports to matching local ports over SSH
-before launching Android. `CHATHERMES_ANDROID_CDP_ENDPOINT` overrides the installer's
-HTTP discovery endpoint (default `http://127.0.0.1:9223`, following the CDP port
-setting). The installer also accepts a full endpoint URL instead of its port CLI
-argument. Discovery rewrites Chrome's advertised WebSocket host and port to this
-reachable endpoint, preserving the target path and query.
+| Setting                           | Default / purpose                                                       |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `COMPOSE_PROJECT_NAME`            | Checkout basename; isolate simultaneous environments                    |
+| `CHATHERMES_BIND_ADDRESS`         | `127.0.0.1`; dashboard and MockServer publication                       |
+| `CHATHERMES_ANDROID_BIND_ADDRESS` | `127.0.0.1`; private noVNC/CDP publication                              |
+| `CHATHERMES_DASHBOARD_PORT`       | `9119`                                                                  |
+| `CHATHERMES_MOCKSERVER_PORT`      | `1080`                                                                  |
+| `CHATHERMES_ANDROID_VNC_PORT`     | `6080`                                                                  |
+| `CHATHERMES_ANDROID_CDP_PORT`     | `9223`                                                                  |
+| `CHATHERMES_DASHBOARD_URL_HOST`   | Client-reachable hostname; otherwise `DOCKER_HOST` hostname or loopback |
+| `CHATHERMES_TEST_URL`             | Explicit dashboard origin override                                      |
+| `CHATHERMES_MOCKSERVER_URL`       | Explicit MockServer endpoint override                                   |
+| `CHATHERMES_ANDROID_CDP_ENDPOINT` | Explicit client-reachable CDP endpoint                                  |
+| `CHATHERMES_CHROMIUM`             | Optional installed desktop Chrome executable                            |
 
-In this environment the client uses `DOCKER_HOST=tcp://docker:2375` and the private
-Docker service is `172.25.0.2`. Nested loopback publications and nested bridge IPs
-are unreachable from the client. Publish on the daemon's private service interface
-and connect through that same address:
+Run one suite at a time per project/device. Use `CHATHERMES_NATIVE_TESTS=1`
+with `--grep "@installed|@native"` to verify installation and real portrait/landscape
+keyboard geometry. The optional native notification scenario also requires real FCM
+connectivity and exercises receipt plus a tap in Android’s notification tray; it
+never fabricates a push event. Ordinary workflows exclude both tags. Separate projects also need distinct
+ports. Fixture loading transfers data through HTTP and proxy preparation uses
+`docker exec`, so remote setups never require matching checkout paths on the daemon.
 
-```sh
-CHATHERMES_INSTANCE=android-check \
-CHATHERMES_ANDROID_BIND_ADDRESS=172.25.0.2 \
-CHATHERMES_ANDROID_CDP_ENDPOINT=http://172.25.0.2:9223 \
-npm run live:android
-```
+## Authoring and debugging contracts
 
-This reuses the healthy `chathermes-android-check-hermes` fixture (dashboard
-publication `172.25.0.2:9127`); the existing ADB forwarding still reaches its internal
-port 9119. `CHATHERMES_ANDROID_BIND_ADDRESS` defaults to `127.0.0.1` and accepts only
-loopback or RFC1918 IPv4 addresses on the daemon host. Wildcard and public addresses
-are rejected. Use this override only on the isolated private service network;
-never publish emulator controls to a public interface. No gateway or ADB ports are
-added. Successful installation retains the emulator. It establishes first launch
-and cold start, **not notification delivery**. Remaining Android notification
-checks are permission grant, push subscription, completion delivery with the app
-backgrounded, delivery after swiping the app away, and notification tap reopening
-the correct profile/session without duplicate delivery. Record actual Android
-notification evidence before marking those checks successful.
+Add scenarios under `tests/workflows/`, importing `test` and `expect` from its
+shared fixture. One Playwright configuration provides desktop, mobile viewport,
+and real Android targets. Use accessible labels and observable outcomes; set up
+prerequisites through real authenticated APIs where helpful. Exercise real Hermes
+sessions, inference dispatch, WebSockets and tools. Do not replace those APIs with
+route mocks. Use unique session/prompt markers and retain failed state.
 
-KVM must exist on the daemon host, not the client.
-The launcher checks that `/dev/kvm` is a character device inside the launched
-container, then runs the image's `emulator -accel-check` with `docker exec --user 0`
-before waiting for boot. Numeric UID 0 avoids racing the image's startup
-permission change for `androidusr` and removal of the root passwd entry;
-normal emulator startup still runs as `androidusr`. A missing device
-or failed acceleration check fails immediately and removes only that launch's
-owned Android container. Check daemon-side device passthrough, KVM permissions,
-and nested virtualization if the daemon runs inside a VM. CPU count and available
-RAM alone do not establish KVM support.
-If KVM passes but boot fails, also check free space on the daemon's Docker
-storage filesystem: the AVD's userdata allocation can fail before ADB appears.
-Do not prune unrelated containers, images, or volumes to make this test run.
+Use the small `tests/workflows/helpers.ts` runtime helper only for native prerequisites
+that lack a user-facing creation flow, such as a paused Cron job with saved output
+or a disposable project directory. Keep assertions in the actual dashboard.
 
-The inspected image starts through
-`/home/androidusr/docker-android/mixins/scripts/run.sh`; its Python launcher
-requires `/dev/kvm` and already supplies `-gpu swiftshader_indirect -accel on`.
-It supports `EMULATOR_ADDITIONAL_ARGS`, but disabling acceleration there cannot
-bypass its required KVM permission step. This launcher keeps the image defaults
-and requires working KVM rather than attempting a software-only fallback.
-Passing the acceleration check does not establish Android boot or installation:
-success still requires ADB `sys.boot_completed=1` and a successful installed-app
-verification by `android-install.mjs`. Raw emulator logs are not printed.
+Test inference faults separately from browser connectivity faults. Check progressive
+rendering, event ordering, final content, reload persistence, and recoverability.
+Do not count a successful API request as proof of a visible notification or an
+installed app. Keep platform-specific actions small and separately tagged.
 
-No ADB port is published. Docker images remain cached normally; application and
-device data are not exported to the checkout or host volumes.
+Screenshots and failure context go to ignored `tests/visual-output/`. Raw workflow
+traces are disabled because authentication and gateway tickets can appear in them.
+Do not print full request records, process environments, or raw Hermes logs; inspect
+allowlisted metadata and redact before sharing. Never commit credentials, Hermes
+state, downloaded files, or generated `dashboard/dist/` assets.
 
-Once installed, use noVNC to check keyboard/composer focus, scrolling, file and
-camera attachments, profile/model selects, and active/completed disclosures.
-This interactive device path does not replace the desktop/mobile Playwright
-suite or automatically send a model request.
+See [the migration audit](../test-audit.md) for retained and replacement coverage.
+Existing visual suites remain accessible through `npm run test:visual` and
+`npm run test:visual:legacy`; their older fixture assumptions are not silently
+included in the deterministic workflow suite. CI integration is deferred.
 
-For a repeatable real-keyboard geometry check after opening the installed app:
+## Optional real-provider testing
 
-```sh
-node tests/docker/android-keyboard.mjs chathermes-INSTANCE-android 9223
-```
-
-Replace `INSTANCE` with the launcher's instance name. The check uses CDP touch
-input and Android's actual software keyboard in portrait and landscape. It
-asserts that the browser resizes the content for the keyboard and the focused
-composer retains a 4px footer through draft growth, dismissal with focus retained,
-and reopening. It restores
-the device's rotation and hardware-keyboard settings afterward. Screenshots and
-geometry evidence stay in ignored `tests/visual-output/android-keyboard/`.
+Use a separate `COMPOSE_PROJECT_NAME` and root `.env` containing
+`TEST_LLM_API_BASE_URL`, `TEST_LLM_API_KEY`, and `TEST_LLM_API_MODEL`, then run
+`npm run live:real`. `HERMES_DASHBOARD_PUBLIC_URL` is optional for real push tests.
+The deterministic runner refuses to test a retained real-provider container.
+`npm run live` starts the deterministic stack and loads expectations;
+`npm run live:stop` explicitly removes the current project's resources.

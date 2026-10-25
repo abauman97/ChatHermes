@@ -1,0 +1,8 @@
+# Explicit opt-in only. Compose reads provider variables from the root .env.
+services:
+  hermes:
+    environment:
+      TEST_LLM_API_BASE_URL: ${TEST_LLM_API_BASE_URL:?Set TEST_LLM_API_BASE_URL for real-provider testing}
+      TEST_LLM_API_KEY: ${TEST_LLM_API_KEY:?Set TEST_LLM_API_KEY for real-provider testing}
+      TEST_LLM_API_MODEL: ${TEST_LLM_API_MODEL:?Set TEST_LLM_API_MODEL for real-provider testing}
+      HERMES_DASHBOARD_PUBLIC_URL: ${HERMES_DASHBOARD_PUBLIC_URL:-}
