@@ -224,6 +224,31 @@ it("renders uploaded images from durable REST history without inline image parts
   ]);
 });
 
+it.each([false, true])(
+  "keeps durable uploads on the image route in native multipart history (inline=%s)",
+  (inline) => {
+    const path = "/uploads/chathermes/0123456789abcdef0123456789abcdef.png";
+    const files = messageArtifacts({
+      role: "user",
+      content: [
+        { type: "text", text: `Review this\nAttached image photo.png: ${path}` },
+        ...(inline
+          ? [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }]
+          : []),
+      ],
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      name: "photo.png",
+      path: "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png",
+      ...(inline ? { imageData: "data:image/png;base64,AA==" } : {}),
+    });
+    expect(fileUrl(files[0]!, "alpha", true)).toBe(
+      "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png?profile=alpha",
+    );
+  },
+);
+
 it("hides native context refs when the original upload annotation supplies a card", () => {
   const parsed = textArtifacts(
     "Review this\nAttached file report.txt: /tmp/original.txt\n@file:./attachments/report.txt",
@@ -400,4 +425,37 @@ it.each([
     text: example,
     files: [{ path: "/tmp/final.pdf" }],
   });
+});
+
+it.each([false, true])(
+  "uses explicit MEDIA uploads in text and multipart history (multipart=%s)",
+  (multipart) => {
+    const path = "/uploads/chathermes/0123456789abcdef0123456789abcdef.png";
+    const text = `Review\nMEDIA:"${path}"\nMEDIA:/tmp/report.pdf`;
+    const content = multipart ? [{ type: "text", text }] : text;
+    const files = messageArtifacts({ role: "user", content });
+    expect(files.map((file) => file.path)).toEqual([
+      "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png",
+      "/tmp/report.pdf",
+    ]);
+    expect(uploadedArtifacts(text).text).toBe("Review");
+    expect(fileUrl({ ...files[1]!, sessionId: "s" }, "alpha", true)).toBe(
+      "/api/plugins/chathermes/files/download?path=%2Ftmp%2Freport.pdf&profile=alpha&session_id=s&name=report.pdf",
+    );
+  },
+);
+
+it.each(quotedDeliveries)("keeps user upload examples out of the artifact channel: %s", (text) => {
+  expect(uploadedArtifacts(text)).toEqual({ text, files: [] });
+  expect(messageArtifacts({ role: "user", content: text })).toEqual([]);
+});
+
+it("deduplicates MEDIA upload references with legacy filename metadata and context refs", () => {
+  const text =
+    'Review\nAttached file original name.txt: /tmp/input.txt\nMEDIA:"/tmp/input.txt"\n@file:./attachments/input.txt';
+  expect(uploadedArtifacts(text)).toMatchObject({
+    text: "Review",
+    files: [{ path: "/tmp/input.txt", name: "original name.txt" }],
+  });
+  expect(messageArtifacts({ role: "user", content: text })).toHaveLength(1);
 });

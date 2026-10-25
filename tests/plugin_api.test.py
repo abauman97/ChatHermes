@@ -1508,3 +1508,23 @@ async def test_native_schema_rejection_does_not_retry_an_alternate_shape(monkeyp
         assert len(calls) == 1 and calls[0]['params']['inline_images'] is False
     finally:
         transport.close()
+
+
+@run_async
+async def test_media_upload_preparation_keeps_profile_validation_and_native_staging(app, monkeypatch):
+    checked = []
+    monkeypatch.setattr(plugin._native_validation, 'verify_file_refs', lambda profile, refs: checked.append((profile, refs)))
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('must not admit a turn'))
+    path = '/profile/uploads/chathermes/' + 'a' * 32 + '.txt'
+    text = f'Review\nAttached file original name.txt: {path}\nMEDIA:"{path}"'
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/chat/prepare?profile=alpha', json={
+            'input': [{'type': 'text', 'text': text}]})
+        assert response.status_code == 200
+        assert response.json() == {'input': text, 'files': [{'name': 'original name.txt', 'path': path}]}
+        assert checked == [('alpha', [path])]
+        # A MEDIA line never becomes permission to stage arbitrary host paths.
+        response = await client.post('/api/plugins/chathermes/chat/prepare?profile=alpha', json={
+            'input': 'Review\nMEDIA:/private/secret.txt'})
+        assert response.status_code == 200 and response.json()['files'] == []
+        assert checked == [('alpha', [path])]

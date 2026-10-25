@@ -237,18 +237,9 @@ export function toolArtifacts(block: TurnBlock): Artifact[] {
   });
 }
 export function uploadedArtifacts(text: string): { text: string; files: Artifact[] } {
-  const files: Artifact[] = [];
-  const clean = text
-    .replace(/^Attached (?:image|file) ([^\n]+?): ([^\n]+)(?:\n|$)/gm, (all, name, path) => {
-      const file = artifact(path.trim(), name);
-      if (!file) return all;
-      files.push(file);
-      return "";
-    })
-    .replace(/(?:^|\n)@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)(?=\n|$)/g, (all) =>
-      files.length ? "" : all,
-    );
-  return { text: clean.trim(), files };
+  // Uploads share the explicit delivery parser, including its quotation and
+  // untrusted-content boundaries. Legacy annotations retain original names.
+  return textArtifacts(text);
 }
 export function messageArtifacts(message: Message): Artifact[] {
   if (message.role !== "user" && message.role !== "assistant") return [];
@@ -270,9 +261,10 @@ export function messageArtifacts(message: Message): Artifact[] {
         if (file) files.push(file);
       }
     }
-  } else if (message.role === "user" && uploadedImages.length) {
-    // SessionDB's REST history omits inline image content parts; the durable
-    // upload annotation maps each image to its authenticated image URL.
+  }
+  if (message.role === "user" && uploadedImages.length) {
+    // REST history and native multipart snapshots can omit image data. Resolve
+    // durable uploads identically so resume never switches to workspace paths.
     for (const file of uploadedImages) {
       const match = file.path.match(
         /\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i,
