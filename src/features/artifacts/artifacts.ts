@@ -113,6 +113,14 @@ export function previewKind(
 }
 export function fileUrl(file: Artifact, profile = "", download = false): string {
   if (/^(https?:\/\/|data:image\/)/.test(file.path)) return file.path;
+  const nativeImage = file.path.match(
+    /^\/api\/plugins\/chathermes\/images\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i,
+  );
+  if (nativeImage) {
+    const query = new URLSearchParams();
+    if (profile) query.set("profile", profile);
+    return `${file.path}${query.size ? `?${query}` : ""}`;
+  }
   const query = new URLSearchParams({ path: file.path, profile: profile || "default" });
   if (file.sessionId) query.set("session_id", file.sessionId);
   if (download) query.set("name", file.name);

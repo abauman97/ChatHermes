@@ -64,6 +64,16 @@ describe("native artifact references", () => {
     expect(previewKind(artifact("/tmp/app.html")!)).toBe("text");
     expect(previewKind(artifact("/tmp/unknown.bin")!)).toBeUndefined();
   });
+  it("uses the authenticated image route directly for uploaded native images", () => {
+    const image = {
+      path: "/api/plugins/chathermes/images/0123456789abcdef0123456789abcdef.png",
+      name: "photo.png",
+      type: "image/png",
+      sessionId: "session-1",
+    };
+    expect(fileUrl(image, "work")).toBe(`${image.path}?profile=work`);
+    expect(fileUrl(image)).toBe(image.path);
+  });
 });
 
 describe("explicit artifact delivery", () => {
