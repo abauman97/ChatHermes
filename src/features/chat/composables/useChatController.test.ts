@@ -80,6 +80,62 @@ describe("live chat controller", () => {
       expect.any(Array),
     );
   });
+  it("keeps reasoning choices isolated by profile and session, and captures the send choice", async () => {
+    const { native, scope, controller } = setup();
+    native.submit = vi.fn(async () => {});
+    controller.actions.setReasoningEffort("high");
+    scope.session.value = "two";
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    controller.actions.setReasoningEffort("low");
+    scope.profile.value = "beta";
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    scope.profile.value = "alpha";
+    scope.session.value = "one";
+    expect(controller.scope.reasoningEffort.value).toBe("high");
+    await controller.actions.send("Reason");
+    expect(native.submit).toHaveBeenCalledWith(
+      "Reason",
+      expect.any(Function),
+      { model: "default", provider: undefined, reasoning_effort: "high" },
+      expect.any(Array),
+    );
+    controller.actions.setReasoningEffort("");
+    expect(controller.scope.reasoningEffort.value).toBe("");
+  });
+  it("transfers a home reasoning choice only to the created chat", async () => {
+    const { native, scope, controller } = setup();
+    native.submit = vi.fn(async () => {});
+    scope.session.value = "";
+    controller.actions.setReasoningEffort("ultra");
+    scope.createSession.mockImplementation(async () => {
+      scope.session.value = "created";
+      return "created";
+    });
+    await controller.actions.send("New chat");
+    expect(controller.scope.reasoningEffort.value).toBe("ultra");
+    expect(native.submit).toHaveBeenCalledWith(
+      "New chat",
+      expect.any(Function),
+      expect.objectContaining({ reasoning_effort: "ultra" }),
+      expect.any(Array),
+    );
+    scope.session.value = "";
+    expect(controller.scope.reasoningEffort.value).toBe("");
+  });
+  it("does not transfer reasoning or submit after profile changes during creation", async () => {
+    const { native, scope, controller } = setup();
+    native.submit = vi.fn(async () => {});
+    scope.session.value = "";
+    controller.actions.setReasoningEffort("high");
+    scope.createSession.mockImplementation(async () => {
+      scope.profile.value = "beta";
+      scope.session.value = "foreign";
+      return "created";
+    });
+    await controller.actions.send("Old draft");
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    expect(native.submit).not.toHaveBeenCalled();
+  });
   it("rejects callbacks captured in an old scope even when request IDs repeat", async () => {
     const { native, controller, request, switchScope } = setup();
     native.answer = vi.fn(async () => {});

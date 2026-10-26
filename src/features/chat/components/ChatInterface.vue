@@ -86,6 +86,7 @@ const {
   scheduledPage,
   offline,
   canStream: nativeMode,
+  reasoningEffort,
   models,
   providers,
   modelsLoading,
@@ -191,6 +192,8 @@ const {
         :provider="provider"
         @update:provider="actions.setProvider"
         :default-model="defaultModel"
+        :reasoning-effort="reasoningEffort"
+        @update:reasoning-effort="actions.setReasoningEffort"
         :model="model"
         @update:model="actions.setModel"
         :sending="viewBusy"

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { api } from "../../../services/hermes-api";
-import type { Attachment, ModelOption, ProviderOption } from "../../../types/hermes";
+import { reasoningEfforts } from "../../../types/hermes";
+import type {
+  ReasoningEffort,
+  Attachment,
+  ModelOption,
+  ProviderOption,
+} from "../../../types/hermes";
 const props = withDefaults(
   defineProps<{
     profile?: string;
@@ -14,6 +20,7 @@ const props = withDefaults(
     suggestedPrompt?: string;
     models?: ModelOption[];
     model?: string;
+    reasoningEffort?: ReasoningEffort | "";
     defaultModel?: string;
     providers?: ProviderOption[];
     provider?: string;
@@ -26,6 +33,7 @@ const emit = defineEmits<{
   steer: [text: string];
   send: [text: string, attachments: Attachment[]];
   "update:model": [model: string];
+  "update:reasoningEffort": [effort: ReasoningEffort | ""];
   "update:provider": [provider: string];
 }>();
 const value = ref(""),
@@ -168,7 +176,7 @@ function pickerKeydown(event: KeyboardEvent) {
     closePicker();
   }
   if (event.key === "Tab") {
-    const buttons = Array.from(panel.value?.querySelectorAll<HTMLButtonElement>("button") || []);
+    const buttons = Array.from(panel.value?.querySelectorAll<HTMLElement>("button, select") || []);
     const target = event.shiftKey ? buttons.at(-1) : buttons[0];
     if (document.activeElement === (event.shiftKey ? buttons[0] : buttons.at(-1))) {
       event.preventDefault();
@@ -521,6 +529,28 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
           ×
         </button>
       </div>
+      <label
+        class="flex shrink-0 items-center justify-between gap-3 border-b border-[#424242] px-3 py-2"
+      >
+        <span>Reasoning effort</span>
+        <select
+          aria-label="Reasoning effort"
+          class="min-w-0 rounded-lg bg-[#303030] px-2 py-1 text-base text-white"
+          :value="reasoningEffort || ''"
+          :disabled="pickerDisabled"
+          @change="
+            emit(
+              'update:reasoningEffort',
+              ($event.target as HTMLSelectElement).value as ReasoningEffort | '',
+            )
+          "
+        >
+          <option value="">Model default</option>
+          <option v-for="effort in reasoningEfforts" :key="effort" :value="effort">
+            {{ effort === "xhigh" ? "XHigh" : effort[0]!.toUpperCase() + effort.slice(1) }}
+          </option>
+        </select>
+      </label>
       <div class="min-h-0 overflow-y-auto overscroll-contain">
         <template v-if="pickerProvider === null">
           <button

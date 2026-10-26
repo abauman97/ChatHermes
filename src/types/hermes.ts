@@ -161,3 +161,16 @@ export interface ScheduledOutput {
   messages: Message[];
   session_id?: string;
 }
+
+// Reviewed Hermes 0.22.5 hermes_constants.VALID_REASONING_EFFORTS, plus disabled.
+export const reasoningEfforts = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const;
+export type ReasoningEffort = (typeof reasoningEfforts)[number];

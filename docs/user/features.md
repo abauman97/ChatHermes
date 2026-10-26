@@ -4,6 +4,8 @@
 
 Use the drawer to open a saved chat, or **New chat** to start another. Switch profiles to see that profile's conversations. Select the provider and model before sending; selections affect the session runtime.
 
+The model picker also has a **Reasoning effort** select. Choose None, Minimal, Low, Medium, High, XHigh, Max, or Ultra before sending. Explicit choices apply to that chat after its model is selected; they do not change other chats or profile defaults. **Model default** uses the selected model’s configured reasoning setting without adding an explicit override. Hermes controls the model's supported levels and may map a requested level to a supported one or omit reasoning for models that do not support it. Picker choices are held for the current page visit.
+
 Attach files or images with the composer, drag files onto the chat, or use camera capture where supported. Failed uploads can be retried or removed without losing the draft. Uploads are limited to 20 MB decoded per file. Images retain their originals for later viewing. Other files are made available to the agent in the selected profile's filesystem.
 
 Thinking and tool disclosures show the activity Hermes provides. Open a completed disclosure to inspect it. Approvals and clarification requests appear in the conversation; respond there to continue.

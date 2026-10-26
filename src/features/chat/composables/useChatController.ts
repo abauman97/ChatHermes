@@ -2,6 +2,7 @@ import { computed, ref, type Ref } from "vue";
 import { api } from "../../../services/hermes-api";
 import { projectRoot } from "../../projects/utils/projects";
 import type {
+  ReasoningEffort,
   Attachment,
   Message,
   Project,
@@ -70,6 +71,11 @@ export function useChatController(
     defaultModel,
     suggestedPrompt,
   } = scope;
+  // Pending choices belong only to this profile/session. A home draft transfers
+  // its choice to the newly created session, never to another profile or chat.
+  const efforts = ref(new Map<string, ReasoningEffort>());
+  const effortKey = () => JSON.stringify([profile.value || "default", session.value]);
+  const reasoningEffort = computed(() => efforts.value.get(effortKey()) || "");
   const branching = ref(false);
   const branchDisabled = computed(
     () =>
@@ -128,7 +134,17 @@ export function useChatController(
       modelsLoading.value
     )
       return;
-    if ((projectView.value || !session.value) && !(await scope.createSession())) return;
+    const draftKey = effortKey(),
+      effort = reasoningEffort.value,
+      draftProfile = profile.value;
+    if (projectView.value || !session.value) {
+      const created = await scope.createSession();
+      if (!created || profile.value !== draftProfile || session.value !== created) return;
+      if (effort) {
+        efforts.value.set(effortKey(), effort);
+        if (draftKey !== effortKey()) efforts.value.delete(draftKey);
+      }
+    }
     const current = scope.generation(),
       p = profile.value;
     const preview = [
@@ -163,7 +179,11 @@ export function useChatController(
           }
           return attachments.length ? parts : text;
         },
-        { model: model.value || defaultModel.value, provider: provider.value || undefined },
+        {
+          model: model.value || defaultModel.value,
+          provider: provider.value || undefined,
+          ...(effort ? { reasoning_effort: effort } : {}),
+        },
         preview,
       );
     } catch (cause) {
@@ -276,6 +296,10 @@ export function useChatController(
     suggest: scope.suggest,
     retry: () => (viewReconnect.value ? native.reconnect() : scope.retryHistory()),
     resolve: () => native.resolveUncertainty(),
+    setReasoningEffort: (value: ReasoningEffort | "") => {
+      if (value) efforts.value.set(effortKey(), value);
+      else efforts.value.delete(effortKey());
+    },
     setModel: (value: string) => {
       model.value = value;
     },
@@ -311,6 +335,7 @@ export function useChatController(
       models,
       providers,
       modelsLoading,
+      reasoningEffort,
       model: computed(() => model.value),
       provider: computed(() => provider.value),
       defaultModel,

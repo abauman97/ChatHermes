@@ -37,6 +37,15 @@ existing gateway API, including from secondary plugin hosts.
 model aliases without admitting a turn. Images remain one native multipart input;
 other files use native `file.attach`. Model selection waits for `approval.pending`,
 applies session-only `config.set`, and verifies the resulting model/provider.
+An optional `reasoning_effort` on `/chat/prepare` accepts only `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. After the model switch, the
+browser sends `config.set {key: 'reasoning', value: effort, scope: 'session',
+session_id, profile}` and verifies `config.get {key: 'reasoning', session_id,
+profile}` before retaining execution and submitting. An omitted effort adds no
+reasoning calls. This follows the pin's `methods_config_set._set_reasoning` and
+`methods_config._cfg_get_reasoning`; Hermes owns provider wire clamping. Pending
+picker choices are keyed by profile and stored session; a home draft transfers
+its choice only to the chat it creates.
 A rejected or deferred model choice blocks submission. All protocol schema
 rejections fail closed without retrying different parameter shapes.
 

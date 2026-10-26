@@ -446,6 +446,31 @@ describe("provider and model picker", () => {
     expect(wrapper.find(".model-panel").exists()).toBe(false);
     expect(document.activeElement).toBe(pill.element);
   });
+  it("selects reasoning without closing the picker or changing model and preserves the draft", async () => {
+    const wrapper = composer({ reasoningEffort: "high" });
+    await wrapper.get("textarea").setValue("Keep draft");
+    await wrapper.get(".model-pill").trigger("click");
+    const select = wrapper.get('select[aria-label="Reasoning effort"]');
+    expect((select.element as HTMLSelectElement).value).toBe("high");
+    expect(select.findAll("option").map((option) => option.attributes("value"))).toEqual([
+      "",
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
+    await select.setValue("none");
+    expect(wrapper.emitted("update:reasoningEffort")).toEqual([["none"]]);
+    expect(wrapper.emitted("update:model")).toBeUndefined();
+    expect(wrapper.get("textarea").element.value).toBe("Keep draft");
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
+    await select.trigger("keydown", { key: "Escape" });
+    expect(document.activeElement).toBe(wrapper.get(".model-pill").element);
+  });
   it("gates the picker during sending, closes an open picker, and keeps the composer editable", async () => {
     const wrapper = composer({ disabled: true });
     expect(wrapper.get(".model-pill").attributes("disabled")).toBeUndefined();
