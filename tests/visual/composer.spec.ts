@@ -14,9 +14,8 @@ test("composer newlines, mobile focus layout, eight-row scrolling and send recov
   await expect(send).toBeDisabled();
   await area.fill("first line");
   await area.press("Enter");
-  await area.press("Shift+Enter");
   await area.press("x");
-  await expect(area).toHaveValue("first line\n\nx");
+  await expect(area).toHaveValue("first line\nx");
   await expect(send).toBeEnabled();
   await expect(area).toBeFocused();
   if (info.project.name === "mobile") {
@@ -64,7 +63,7 @@ test("composer newlines, mobile focus layout, eight-row scrolling and send recov
     await page.setViewportSize(viewport);
   }
   await area.fill("Composer regression [tool]\nsecond line");
-  await send.click();
+  await area.press("Shift+Enter");
   await expect(page.locator(".message.user").last()).toContainText("second line");
   await expect(page.locator(".activity[open]").first()).toBeVisible();
   await area.fill("draft during response");

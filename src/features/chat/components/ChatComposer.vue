@@ -47,6 +47,7 @@ const files = ref<HTMLInputElement>(),
 const textarea = ref<HTMLTextAreaElement>(),
   form = ref<HTMLFormElement>(),
   editing = ref(false);
+const composing = ref(false);
 let resizeObserver: ResizeObserver | undefined;
 function resizeInput() {
   const area = textarea.value;
@@ -234,6 +235,23 @@ const buttonDisabled = computed(() =>
       imageGated.value ||
       (!value.value.trim() && !attachments.value.length),
 );
+function composerKeydown(event: KeyboardEvent) {
+  if (
+    event.key !== "Enter" ||
+    !event.shiftKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey ||
+    composing.value ||
+    event.isComposing ||
+    // Some IMEs end composition before the confirming Enter keydown.
+    event.keyCode === 229 ||
+    event.defaultPrevented
+  )
+    return;
+  event.preventDefault();
+  if (!event.repeat) send();
+}
 function send() {
   if (buttonDisabled.value) return;
   if (props.sending && value.value.trim()) {
@@ -412,6 +430,9 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         class="composer-input min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-6 text-white outline-none placeholder:text-[#b4b4b4]"
         @focus="focusInput"
         @blur="resizeOnFocusChange"
+        @keydown="composerKeydown"
+        @compositionstart="composing = true"
+        @compositionend="composing = false"
       />
       <input ref="files" type="file" multiple hidden aria-label="Upload files" @change="attach" />
       <input
