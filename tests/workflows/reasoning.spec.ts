@@ -51,16 +51,70 @@ async function runtimeEffort(
   );
 }
 
+test("authenticated model inventory gates reasoning by provider and model", async ({ page }) => {
+  await page.route("**/api/plugins/chathermes/api/model/options**", async (route) => {
+    const response = await route.fetch();
+    const inventory = await response.json();
+    await route.fulfill({
+      json: {
+        ...inventory,
+        providers: [
+          {
+            slug: "workflow-capabilities",
+            name: "Workflow capabilities",
+            models: ["reasoning-disabled", "reasoning-enabled", "reasoning-unknown"],
+            capabilities: {
+              "reasoning-disabled": { reasoning: false },
+              "reasoning-enabled": { reasoning: true },
+            },
+          },
+        ],
+      },
+    });
+  });
+  await page.reload();
+
+  const picker = page.getByRole("button", {
+    name: "Choose model",
+    exact: true,
+  });
+  const effort = page.getByRole("combobox", {
+    name: "Reasoning effort",
+    exact: true,
+  });
+  await expect(picker).toBeEnabled();
+  await picker.click();
+  await expect(effort).toBeVisible();
+  await page.getByRole("button", { name: /Workflow capabilities/ }).click();
+  await page.getByRole("button", { name: "reasoning-disabled", exact: true }).click();
+  await expect(effort).toHaveCount(0);
+  await page.getByRole("button", { name: "Choose model", exact: true }).click();
+  await page.getByRole("button", { name: /Workflow capabilities/ }).click();
+  await page.getByRole("button", { name: "reasoning-enabled", exact: true }).click();
+  await page.getByRole("button", { name: "Choose model", exact: true }).click();
+  await expect(effort).toBeVisible();
+  await page.getByRole("button", { name: /Workflow capabilities/ }).click();
+  await page.getByRole("button", { name: "reasoning-unknown", exact: true }).click();
+  await page.getByRole("button", { name: "Choose model", exact: true }).click();
+  await expect(effort).toBeVisible();
+});
+
 test("composer reasoning reaches the native runtime and stays in its chat", async ({
   page,
 }, info) => {
-  const picker = page.getByRole("button", { name: "Choose model", exact: true });
+  const picker = page.getByRole("button", {
+    name: "Choose model",
+    exact: true,
+  });
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
   await expect(picker).toBeEnabled();
   await composer.fill(`[workflow-stream] ${randomUUID()}`);
   await composer.blur();
   await picker.click();
-  const effort = page.getByRole("combobox", { name: "Reasoning effort", exact: true });
+  const effort = page.getByRole("combobox", {
+    name: "Reasoning effort",
+    exact: true,
+  });
   await expect(effort).toHaveValue("");
   await expect(effort).toHaveCSS("font-size", "16px");
   await effort.selectOption("high");
@@ -81,7 +135,10 @@ test("composer reasoning reaches the native runtime and stays in its chat", asyn
   await expect(page.locator(".message.assistant").last()).toContainText("Stream complete.");
   expect(await runtimeEffort(page, stored)).toBe("none");
   const plugin = page.locator(".chathermes-embedded");
-  const navigation = plugin.getByRole("button", { name: "Open navigation", exact: true });
+  const navigation = plugin.getByRole("button", {
+    name: "Open navigation",
+    exact: true,
+  });
   if (await navigation.isVisible()) await navigation.click();
   await plugin.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page.locator(".message.user")).toHaveCount(0);
@@ -97,7 +154,10 @@ test("composer reasoning reaches the native runtime and stays in its chat", asyn
   // Change profile through the real native select without remounting the page.
   if (await navigation.isVisible()) await navigation.click();
   await plugin.getByRole("combobox", { name: "Profile", exact: true }).selectOption("beta");
-  const closeNavigation = plugin.getByRole("button", { name: "Close navigation", exact: true });
+  const closeNavigation = plugin.getByRole("button", {
+    name: "Close navigation",
+    exact: true,
+  });
   if (await closeNavigation.isVisible()) await closeNavigation.click();
   await expect(page.locator(".message.user")).toHaveCount(0);
   await expect(picker).toBeEnabled();
