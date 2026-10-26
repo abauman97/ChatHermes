@@ -29,6 +29,29 @@ test("streaming renders progressively and persists once after reload", async ({ 
   await expect(assistant).toHaveText(complete);
 });
 
+test("Enter adds a newline and Shift+Enter sends one message while keeping the composer usable", async ({
+  page,
+}, info) => {
+  const composer = page.getByRole("textbox", { name: "Message Hermes" });
+  const prompt = `[workflow-stream] ${randomUUID()}`;
+  await composer.fill(prompt);
+  await composer.press("Enter");
+  await composer.press("x");
+  await expect(composer).toHaveValue(`${prompt}\nx`);
+  await expect(page.locator(".message.user")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+  await page.screenshot({ path: info.outputPath("composer-newline.png") });
+  await composer.press("Shift+Enter");
+  await expect(page.locator(".message.user")).toHaveText(`${prompt}\nx`);
+  await expect(composer).toHaveValue("");
+  await composer.fill("Next draft");
+  await expect(composer).toBeFocused();
+  await expect(page.locator(".message.assistant")).toHaveText(complete);
+  await expect(page.locator(".message.user")).toHaveCount(1);
+  await expect(composer).toHaveValue("Next draft");
+  await page.screenshot({ path: info.outputPath("composer-sent.png") });
+});
+
 test("real tool activity completes before one final response", async ({ page }, info) => {
   await page
     .getByRole("textbox", { name: "Message Hermes" })

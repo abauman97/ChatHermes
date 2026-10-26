@@ -146,32 +146,112 @@ describe("composer", () => {
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
     await wrapper.get('[data-mode="plan"]').trigger("click");
     await wrapper.get("textarea").setValue("refactor the parser");
-    await wrapper.get(".send-button").trigger("click");
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
     expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
     wrapper.unmount();
   });
-  it("leaves Enter, Shift+Enter and composition to native newline handling; only the button submits", async () => {
+  it("leaves plain Enter, other modifiers and IME confirmation to native handling", async () => {
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: false, sending: false },
     });
-    const area = wrapper.get("textarea");
-    await area.setValue("hello\nworld");
-    for (const extra of [{}, { shiftKey: true }, { isComposing: true }]) {
+    try {
+      const area = wrapper.get("textarea");
+      await area.setValue("hello\nworld");
+      for (const extra of [
+        {},
+        { shiftKey: true, isComposing: true },
+        { shiftKey: true, keyCode: 229 },
+        { shiftKey: true, ctrlKey: true },
+        { shiftKey: true, altKey: true },
+        { shiftKey: true, metaKey: true },
+      ]) {
+        const event = new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+          ...extra,
+        });
+        area.element.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      await area.trigger("compositionstart");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("send")).toBeUndefined();
+      expect(area.element.value).toBe("hello\nworld");
+      await area.trigger("compositionend");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("sends once with Shift+Enter, keeps focus, and ignores held keys", async () => {
+    const wrapper = mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false },
+    });
+    try {
+      const area = wrapper.get("textarea");
+      area.element.focus();
+      await area.setValue("  hello\nworld  ");
       const event = new KeyboardEvent("keydown", {
         key: "Enter",
+        shiftKey: true,
         bubbles: true,
         cancelable: true,
-        ...extra,
       });
       area.element.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(false);
+      await wrapper.vm.$nextTick();
+      expect(event.defaultPrevented).toBe(true);
+      expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
+      expect(area.element.value).toBe("");
+      expect(document.activeElement).toBe(area.element);
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("send")).toHaveLength(1);
+      await area.setValue("next draft");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true, repeat: true });
+      expect(wrapper.emitted("send")).toHaveLength(1);
+      expect(area.element.value).toBe("next draft");
+    } finally {
+      wrapper.unmount();
     }
-    expect(wrapper.emitted("send")).toBeUndefined();
-    await wrapper.get(".send-button").trigger("click");
-    expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
-    expect(wrapper.get(".send-button").attributes("type")).toBe("submit");
-    wrapper.unmount();
+  });
+  it.each([
+    { disabled: true, sending: false, stoppable: false },
+    { disabled: false, sending: true, stoppable: false },
+  ])("retains drafts when Shift+Enter is gated: %j", async (props) => {
+    const wrapper = mount(ChatComposer, { props });
+    try {
+      const area = wrapper.get("textarea");
+      await area.setValue("draft while unavailable");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("send")).toBeUndefined();
+      expect(wrapper.emitted("steer")).toBeUndefined();
+      expect(area.element.value).toBe("draft while unavailable");
+      await wrapper.setProps({ disabled: false, sending: false });
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("send")).toEqual([["draft while unavailable", []]]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("uses Shift+Enter for run guidance without stopping an empty run", async () => {
+    const wrapper = mount(ChatComposer, {
+      props: { disabled: false, sending: true, stoppable: true },
+    });
+    try {
+      const area = wrapper.get("textarea");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("stop")).toBeUndefined();
+      await area.setValue("  follow this direction  ");
+      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(wrapper.emitted("steer")).toEqual([["follow this direction"]]);
+      expect(wrapper.emitted("send")).toBeUndefined();
+      expect(area.element.value).toBe("");
+    } finally {
+      wrapper.unmount();
+    }
   });
   it("recalculates an empty input on focus and blur and keeps growing with draft content", async () => {
     const wrapper = mount(ChatComposer, {
@@ -548,12 +628,15 @@ it("shares file staging, retains the draft and other files on upload failure, an
   expect(wrapper.emitted("send")).toBeUndefined();
   expect(wrapper.get("textarea").element.value).toBe("Keep this draft");
   expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
+  expect(wrapper.emitted("send")).toBeUndefined();
+  expect(wrapper.get("textarea").element.value).toBe("Keep this draft");
   await wrapper.get('button[aria-label="Retry upload two.txt"]').trigger("click");
   const { flushPromises } = await import("@vue/test-utils");
   await flushPromises();
   expect(wrapper.find('button[aria-label="Retry upload two.txt"]').exists()).toBe(false);
   expect(wrapper.get(".send-button").attributes("disabled")).toBeUndefined();
-  await wrapper.get("form").trigger("submit");
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
   expect(wrapper.emitted("send")?.[0]).toMatchObject([
     "Keep this draft",
     [
