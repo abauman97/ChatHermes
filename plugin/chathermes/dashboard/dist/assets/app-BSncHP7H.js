@@ -9009,8 +9009,8 @@ var um = ["open"], dm = {
 		"update:provider"
 	],
 	setup(e, { expose: t, emit: n }) {
-		let r = e, i = n, a = /* @__PURE__ */ V(""), o = /* @__PURE__ */ V(null), s = /* @__PURE__ */ V(!1), c = /* @__PURE__ */ V([]), l = /* @__PURE__ */ V(""), u = /* @__PURE__ */ V(!1), d = /* @__PURE__ */ V(), f = /* @__PURE__ */ V(), p = /* @__PURE__ */ V(), m = /* @__PURE__ */ V(), h = /* @__PURE__ */ V(!1), g;
-		function _() {
+		let r = e, i = n, a = /* @__PURE__ */ V(""), o = /* @__PURE__ */ V(null), s = /* @__PURE__ */ V(!1), c = /* @__PURE__ */ V([]), l = /* @__PURE__ */ V(""), u = /* @__PURE__ */ V(!1), d = /* @__PURE__ */ V(), f = /* @__PURE__ */ V(), p = /* @__PURE__ */ V(), m = /* @__PURE__ */ V(), h = /* @__PURE__ */ V(!1), g = /* @__PURE__ */ V(!1), _;
+		function v() {
 			let e = p.value;
 			if (!e) return;
 			let t = getComputedStyle(e), n = parseFloat(t.paddingTop || "0") + parseFloat(t.paddingBottom || "0");
@@ -9018,89 +9018,92 @@ var um = ["open"], dm = {
 			let r = e.scrollHeight - n, i = parseFloat(t.lineHeight) || 24, a = Math.max(parseFloat(t.minHeight) || 0, Math.min(r, 8 * i)) + n;
 			e.style.height = `${a}px`;
 		}
-		function v(e) {
+		function y(e) {
 			e.button === 0 && document.activeElement === p.value && e.preventDefault();
 		}
-		function y() {
-			h.value = !0, C.value = !1, b();
-		}
 		function b() {
-			hn(_);
+			h.value = !0, w.value = !1, x();
 		}
-		function x(e) {
+		function x() {
+			hn(v);
+		}
+		function S(e) {
 			(!(e.relatedTarget instanceof Node) || !m.value?.contains(e.relatedTarget)) && (h.value = !1);
 		}
-		Pn(a, () => _(), { flush: "post" }), or(() => {
-			if (_(), typeof ResizeObserver < "u") {
+		Pn(a, () => v(), { flush: "post" }), or(() => {
+			if (v(), typeof ResizeObserver < "u") {
 				let e = -1;
-				g = new ResizeObserver((t) => {
+				_ = new ResizeObserver((t) => {
 					let n = t[0]?.contentRect.width;
-					n !== void 0 && n !== e && (e = n, _());
-				}), p.value && g.observe(p.value);
+					n !== void 0 && n !== e && (e = n, v());
+				}), p.value && _.observe(p.value);
 			}
-		}), lr(() => g?.disconnect()), Pn(() => r.suggestedPrompt, (e) => {
+		}), lr(() => _?.disconnect()), Pn(() => r.suggestedPrompt, (e) => {
 			e && (a.value = e);
 		}, { immediate: !0 });
-		let S = X(() => (r.models || []).filter((e) => e.parent !== null)), C = /* @__PURE__ */ V(!1), w = /* @__PURE__ */ V(null), T = /* @__PURE__ */ V(""), E = /* @__PURE__ */ V(), D = /* @__PURE__ */ V(), O = Gn(), k = X(() => r.imagesSupported === !1 && c.value.some((e) => e.type.startsWith("image/"))), A = X(() => r.sending || r.modelsLoading), ee = X(() => r.providers?.find((e) => e.slug === w.value)), te = X(() => ee.value?.name || "Model routes"), ne = X(() => {
-			let e = C.value && w.value !== null ? w.value : r.provider || "", t = e ? r.providers?.find((t) => t.slug === e) : void 0, n = C.value ? T.value || r.model || r.defaultModel || "" : r.model || r.defaultModel || "";
+		let C = X(() => (r.models || []).filter((e) => e.parent !== null)), w = /* @__PURE__ */ V(!1), T = /* @__PURE__ */ V(null), E = /* @__PURE__ */ V(""), D = /* @__PURE__ */ V(), O = /* @__PURE__ */ V(), k = Gn(), A = X(() => r.imagesSupported === !1 && c.value.some((e) => e.type.startsWith("image/"))), ee = X(() => r.sending || r.modelsLoading), te = X(() => r.providers?.find((e) => e.slug === T.value)), ne = X(() => te.value?.name || "Model routes"), j = X(() => {
+			let e = w.value && T.value !== null ? T.value : r.provider || "", t = e ? r.providers?.find((t) => t.slug === e) : void 0, n = w.value ? E.value || r.model || r.defaultModel || "" : r.model || r.defaultModel || "";
 			return t?.capabilities?.[n]?.reasoning !== !1;
-		}), j = X(() => {
-			let e = ee.value, t = e ? e.models : S.value.map((e) => e.id);
+		}), M = X(() => {
+			let e = te.value, t = e ? e.models : C.value.map((e) => e.id);
 			return [.../* @__PURE__ */ new Set([...(e?.is_current || !r.providers?.length) && r.defaultModel ? [r.defaultModel] : [], ...t])];
 		});
-		async function M() {
-			await hn(), C.value && (D.value?.querySelector("select") || D.value?.querySelector("button"))?.focus();
-		}
-		function re() {
-			C.value && (C.value = !1, E.value?.focus());
+		async function re() {
+			await hn(), w.value && (O.value?.querySelector("select") || O.value?.querySelector("button"))?.focus();
 		}
 		function ie() {
-			if (C.value) {
-				re();
+			w.value && (w.value = !1, D.value?.focus());
+		}
+		function ae() {
+			if (w.value) {
+				ie();
 				return;
 			}
-			A.value || (s.value = !1, w.value = null, T.value = r.model || r.defaultModel || "", C.value = !0, M());
+			ee.value || (s.value = !1, T.value = null, E.value = r.model || r.defaultModel || "", w.value = !0, re());
 		}
-		function ae(e) {
-			w.value = e;
+		function oe(e) {
+			T.value = e;
 			let t = r.providers?.find((t) => t.slug === e);
-			T.value = e === (r.provider || "") ? r.model || r.defaultModel || "" : t?.models[0] || "", M();
+			E.value = e === (r.provider || "") ? r.model || r.defaultModel || "" : t?.models[0] || "", re();
 		}
-		function oe() {
-			w.value = null, T.value = r.model || r.defaultModel || "", M();
-		}
-		function se(e) {
-			A.value || (T.value = e, i("update:provider", w.value || ""), i("update:model", ee.value?.is_current && e === r.defaultModel ? "" : e), re());
+		function se() {
+			T.value = null, E.value = r.model || r.defaultModel || "", re();
 		}
 		function ce(e) {
-			let t = e.composedPath();
-			D.value && !t.includes(D.value) && E.value && !t.includes(E.value) && re();
+			ee.value || (E.value = e, i("update:provider", T.value || ""), i("update:model", te.value?.is_current && e === r.defaultModel ? "" : e), ie());
 		}
 		function le(e) {
-			if (C.value && (e.key === "Escape" && (e.preventDefault(), re()), e.key === "Tab")) {
-				let t = Array.from(D.value?.querySelectorAll("button, select") || []), n = e.shiftKey ? t.at(-1) : t[0];
+			let t = e.composedPath();
+			O.value && !t.includes(O.value) && D.value && !t.includes(D.value) && ie();
+		}
+		function ue(e) {
+			if (w.value && (e.key === "Escape" && (e.preventDefault(), ie()), e.key === "Tab")) {
+				let t = Array.from(O.value?.querySelectorAll("button, select") || []), n = e.shiftKey ? t.at(-1) : t[0];
 				document.activeElement === (e.shiftKey ? t[0] : t.at(-1)) && (e.preventDefault(), n?.focus());
 			}
 		}
-		Pn(A, (e) => {
-			e && re();
-		}), Pn(() => r.providers, () => re()), or(() => {
-			document.addEventListener("click", ce), document.addEventListener("keydown", le);
+		Pn(ee, (e) => {
+			e && ie();
+		}), Pn(() => r.providers, () => ie()), or(() => {
+			document.addEventListener("click", le), document.addEventListener("keydown", ue);
 		}), lr(() => {
-			document.removeEventListener("click", ce), document.removeEventListener("keydown", le);
+			document.removeEventListener("click", le), document.removeEventListener("keydown", ue);
 		});
-		let ue = X(() => r.sending ? !r.stoppable || !!a.value.trim() && (u.value || c.value.some((e) => !!e.uploadError) || k.value) : r.disabled || u.value || c.value.some((e) => !!e.uploadError) || k.value || !a.value.trim() && !c.value.length);
-		function de() {
-			if (ue.value) return;
+		let de = X(() => r.sending ? !r.stoppable || !!a.value.trim() && (u.value || c.value.some((e) => !!e.uploadError) || A.value) : r.disabled || u.value || c.value.some((e) => !!e.uploadError) || A.value || !a.value.trim() && !c.value.length);
+		function fe(e) {
+			e.key !== "Enter" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || g.value || e.isComposing || e.keyCode === 229 || e.defaultPrevented || (e.preventDefault(), e.repeat || pe());
+		}
+		function pe() {
+			if (de.value) return;
 			if (r.sending && a.value.trim()) {
 				i("steer", a.value.trim()), a.value = "";
 				return;
 			}
-			if (r.disabled || r.sending || u.value || c.value.some((e) => !!e.uploadError) || k.value) return;
+			if (r.disabled || r.sending || u.value || c.value.some((e) => !!e.uploadError) || A.value) return;
 			let e = a.value.trim();
 			(e || c.value.length) && (i("send", o.value ? `/${o.value}\n${e}` : e, [...c.value]), a.value = "", c.value = [], s.value = !1, o.value = null);
 		}
-		async function fe(e) {
+		async function N(e) {
 			if (e.length <= 1398104) return e;
 			let t = new Image();
 			await new Promise((n, r) => {
@@ -9119,33 +9122,33 @@ var um = ["open"], dm = {
 			}
 			throw Error("This image is too large to send.");
 		}
-		let pe = 0;
+		let P = 0;
 		lr(() => {
-			pe++;
+			P++;
 		});
-		async function N(e) {
-			let t = pe;
+		async function me(e) {
+			let t = P;
 			try {
 				let n = await Q.upload(r.profile || "", e);
-				if (t !== pe) return;
+				if (t !== P) return;
 				e.path = n.path, e.uploadError = void 0;
 			} catch {
-				t === pe && (e.uploadError = "Upload failed. Retry or remove this file.");
+				t === P && (e.uploadError = "Upload failed. Retry or remove this file.");
 			}
 		}
-		async function P(e) {
+		async function he(e) {
 			if (!u.value) {
 				u.value = !0;
 				try {
-					await N(e);
+					await me(e);
 				} finally {
 					u.value = !1;
 				}
 			}
 		}
-		async function me(e) {
+		async function ge(e) {
 			if (u.value) return;
-			let t = pe;
+			let t = P;
 			u.value = !0, l.value = "", s.value = !1;
 			try {
 				for (let n of e) try {
@@ -9155,35 +9158,35 @@ var um = ["open"], dm = {
 						let r = new FileReader();
 						r.onload = () => e(String(r.result)), r.onerror = () => t(/* @__PURE__ */ Error("Could not read file.")), r.onabort = () => t(/* @__PURE__ */ Error("File reading was cancelled. Try again.")), r.readAsDataURL(n);
 					});
-					if (n.type.startsWith("image/") && (e = await fe(e)), t !== pe) return;
+					if (n.type.startsWith("image/") && (e = await N(e)), t !== P) return;
 					let r = n.type.startsWith("image/") ? e.slice(5, e.indexOf(";")) : n.type || "application/octet-stream", i = {
 						name: n.name,
 						type: r,
 						data: e,
 						size: n.size
 					};
-					c.value.push(i), await N(i);
+					c.value.push(i), await me(i);
 				} catch (e) {
-					if (t !== pe) return;
+					if (t !== P) return;
 					l.value = e instanceof Error ? e.message : "Could not read file.";
 				}
 			} finally {
-				t === pe && (u.value = !1);
+				t === P && (u.value = !1);
 			}
 		}
-		async function he(e) {
+		async function _e(e) {
 			let t = e.target;
-			await me(Array.from(t.files || [])), t.value = "";
+			await ge(Array.from(t.files || [])), t.value = "";
 		}
 		return t({
-			stageFiles: me,
+			stageFiles: ge,
 			blurInput: () => p.value?.blur()
 		}), (t, n) => (W(), G("form", {
 			ref_key: "form",
 			ref: m,
-			onFocusout: x,
+			onFocusout: S,
 			class: "composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]",
-			onSubmit: Mo(de, ["prevent"])
+			onSubmit: Mo(pe, ["prevent"])
 		}, [
 			c.value.length ? (W(), G("div", Ym, [(W(!0), G(U, null, br(c.value, (e, t) => (W(), G("div", {
 				key: t,
@@ -9201,13 +9204,13 @@ var um = ["open"], dm = {
 					type: "button",
 					class: "text-red-200 underline",
 					disabled: u.value,
-					onClick: (t) => P(e),
+					onClick: (t) => he(e),
 					"aria-label": `Retry upload ${e.name}`
 				}, " Retry upload", 8, Qm)) : Y("v-if", !0),
 				q("button", {
 					type: "button",
 					"aria-label": `Remove ${e.name}`,
-					onMousedown: v,
+					onMousedown: y,
 					onClick: (e) => c.value.splice(t, 1)
 				}, " × ", 40, $m)
 			]))), 128))])) : Y("v-if", !0),
@@ -9216,10 +9219,10 @@ var um = ["open"], dm = {
 				class: "ml-2 underline",
 				onClick: n[0] ||= (e) => o.value = null
 			}, "Turn off")])) : Y("v-if", !0),
-			k.value ? (W(), G("p", th, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
+			A.value ? (W(), G("p", th, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
 			l.value ? (W(), G("p", nh, F(l.value), 1)) : Y("v-if", !0),
 			q("div", rh, [
-				n[14] ||= q("label", {
+				n[16] ||= q("label", {
 					class: "sr-only",
 					for: "prompt"
 				}, "Message Hermes", -1),
@@ -9232,8 +9235,11 @@ var um = ["open"], dm = {
 					maxlength: "65536",
 					placeholder: e.projectName ? `Message ${e.projectName}` : "Message Hermes…",
 					class: "composer-input min-h-14 w-full resize-none bg-transparent px-2 py-1 text-base leading-6 text-white outline-none placeholder:text-[#b4b4b4]",
-					onFocus: y,
-					onBlur: b
+					onFocus: b,
+					onBlur: x,
+					onKeydown: fe,
+					onCompositionstart: n[2] ||= (e) => g.value = !0,
+					onCompositionend: n[3] ||= (e) => g.value = !1
 				}, null, 40, ih), [[So, a.value]]),
 				q("input", {
 					ref_key: "files",
@@ -9242,7 +9248,7 @@ var um = ["open"], dm = {
 					multiple: "",
 					hidden: "",
 					"aria-label": "Upload files",
-					onChange: he
+					onChange: _e
 				}, null, 544),
 				q("input", {
 					ref_key: "camera",
@@ -9252,7 +9258,7 @@ var um = ["open"], dm = {
 					capture: "environment",
 					hidden: "",
 					"aria-label": "Take a photo",
-					onChange: he
+					onChange: _e
 				}, null, 544),
 				q("div", ah, [
 					On(q("button", {
@@ -9261,10 +9267,10 @@ var um = ["open"], dm = {
 						"aria-label": "Attachment options",
 						"aria-expanded": s.value,
 						disabled: e.sending || u.value,
-						onClick: n[2] ||= (e) => {
-							re(), s.value = !s.value;
+						onClick: n[4] ||= (e) => {
+							ie(), s.value = !s.value;
 						}
-					}, [...n[10] ||= [q("svg", {
+					}, [...n[12] ||= [q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
@@ -9276,16 +9282,16 @@ var um = ["open"], dm = {
 					q("p", sh, F(u.value ? "Preparing attachments…" : e.reason || ""), 1),
 					q("button", {
 						ref_key: "pill",
-						ref: E,
+						ref: D,
 						type: "button",
 						class: "model-pill flex h-[30px] min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-0 text-[16px] text-white disabled:opacity-55",
 						"aria-label": "Choose model",
 						"aria-haspopup": "dialog",
-						"aria-expanded": C.value,
-						"aria-controls": H(O),
-						disabled: A.value,
-						onClick: ie
-					}, [q("span", lh, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[11] ||= q("svg", {
+						"aria-expanded": w.value,
+						"aria-controls": H(k),
+						disabled: ee.value,
+						onClick: ae
+					}, [q("span", lh, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[13] ||= q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
@@ -9296,38 +9302,38 @@ var um = ["open"], dm = {
 					q("button", {
 						class: "send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
 						type: e.sending && !a.value.trim() ? "button" : "submit",
-						disabled: ue.value,
+						disabled: de.value,
 						"aria-label": e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
-						onMousedown: v,
-						onClick: n[3] ||= (t) => e.sending ? a.value.trim() ? de() : e.stoppable && i("stop") : de()
-					}, [e.sending && !a.value.trim() ? (W(), G("svg", dh, [...n[12] ||= [q("rect", {
+						onMousedown: y,
+						onClick: n[5] ||= (t) => e.sending ? a.value.trim() ? pe() : e.stoppable && i("stop") : pe()
+					}, [e.sending && !a.value.trim() ? (W(), G("svg", dh, [...n[14] ||= [q("rect", {
 						x: "6",
 						y: "6",
 						width: "12",
 						height: "12",
 						rx: "2"
-					}, null, -1)]])) : (W(), G("svg", fh, [...n[13] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, uh)
+					}, null, -1)]])) : (W(), G("svg", fh, [...n[15] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, uh)
 				])
 			]),
-			C.value ? (W(), G("div", {
+			w.value ? (W(), G("div", {
 				key: 4,
-				id: H(O),
+				id: H(k),
 				ref_key: "panel",
-				ref: D,
+				ref: O,
 				role: "dialog",
 				"aria-modal": "true",
-				"aria-label": w.value === null ? "Choose provider" : te.value,
+				"aria-label": T.value === null ? "Choose provider" : ne.value,
 				class: "model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl"
 			}, [
 				q("div", mh, [
-					w.value === null ? Y("v-if", !0) : (W(), G("button", {
+					T.value === null ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
 						"aria-label": "Back to providers",
 						class: "picker-back rounded-full p-2 hover:bg-[#424242]",
-						onClick: oe
-					}, [...n[15] ||= [q("svg", {
+						onClick: se
+					}, [...n[17] ||= [q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
@@ -9335,59 +9341,59 @@ var um = ["open"], dm = {
 						class: "size-5",
 						"aria-hidden": "true"
 					}, [q("path", { d: "m15 18-6-6 6-6" })], -1)]])),
-					q("h2", hh, F(w.value === null ? "Choose provider" : te.value), 1),
+					q("h2", hh, F(T.value === null ? "Choose provider" : ne.value), 1),
 					q("button", {
 						type: "button",
 						"aria-label": "Close model picker",
 						class: "rounded-full px-3 py-2 hover:bg-[#424242]",
-						onClick: re
+						onClick: ie
 					}, " × ")
 				]),
-				ne.value ? (W(), G("label", gh, [n[17] ||= q("span", null, "Reasoning effort", -1), q("select", {
+				j.value ? (W(), G("label", gh, [n[19] ||= q("span", null, "Reasoning effort", -1), q("select", {
 					"aria-label": "Reasoning effort",
 					class: "min-w-0 rounded-lg bg-[#303030] px-2 py-1 text-base text-white",
 					value: e.reasoningEffort || "",
-					disabled: A.value,
-					onChange: n[4] ||= (e) => i("update:reasoningEffort", e.target.value)
-				}, [n[16] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, br(H(Jm), (e) => (W(), G("option", {
+					disabled: ee.value,
+					onChange: n[6] ||= (e) => i("update:reasoningEffort", e.target.value)
+				}, [n[18] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, br(H(Jm), (e) => (W(), G("option", {
 					key: e,
 					value: e
 				}, F(e === "xhigh" ? "XHigh" : e[0].toUpperCase() + e.slice(1)), 9, vh))), 128))], 40, _h)])) : Y("v-if", !0),
-				q("div", yh, [w.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
+				q("div", yh, [T.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
 					key: e.slug,
 					type: "button",
 					class: "provider-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": e.slug,
-					onClick: (t) => ae(e.slug)
+					onClick: (t) => oe(e.slug)
 				}, [q("span", xh, F(e.name), 1), e.is_current ? (W(), G("span", Sh, "Current")) : Y("v-if", !0)], 8, bh))), 128)), q("button", {
 					type: "button",
 					class: "provider-option w-full rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": "",
-					onClick: n[5] ||= (e) => ae("")
-				}, " Model routes ")], 64)) : (W(), G(U, { key: 1 }, [(W(!0), G(U, null, br(j.value, (t) => (W(), G("button", {
+					onClick: n[7] ||= (e) => oe("")
+				}, " Model routes ")], 64)) : (W(), G(U, { key: 1 }, [(W(!0), G(U, null, br(M.value, (t) => (W(), G("button", {
 					key: t,
 					type: "button",
 					class: "model-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-model": t,
-					onClick: (e) => se(t)
-				}, [q("span", wh, F(t), 1), (e.provider || "") === w.value && t === (e.model || e.defaultModel) ? (W(), G("span", Th, "✓")) : Y("v-if", !0)], 8, Ch))), 128)), j.value.length ? Y("v-if", !0) : (W(), G("p", Eh, "No models available"))], 64))])
+					onClick: (e) => ce(t)
+				}, [q("span", wh, F(t), 1), (e.provider || "") === T.value && t === (e.model || e.defaultModel) ? (W(), G("span", Th, "✓")) : Y("v-if", !0)], 8, Ch))), 128)), M.value.length ? Y("v-if", !0) : (W(), G("p", Eh, "No models available"))], 64))])
 			], 8, ph)) : Y("v-if", !0),
 			s.value ? (W(), G("div", Dh, [
 				q("button", {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
-					onClick: n[6] ||= (e) => d.value?.click()
+					onClick: n[8] ||= (e) => d.value?.click()
 				}, " Upload files "),
 				q("button", {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
-					onClick: n[7] ||= (e) => f.value?.click()
+					onClick: n[9] ||= (e) => f.value?.click()
 				}, " Take a photo "),
 				q("button", {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
 					"data-mode": "goal",
-					onClick: n[8] ||= (e) => {
+					onClick: n[10] ||= (e) => {
 						o.value = "goal", s.value = !1;
 					}
 				}, " Goal mode "),
@@ -9395,7 +9401,7 @@ var um = ["open"], dm = {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
 					"data-mode": "plan",
-					onClick: n[9] ||= (e) => {
+					onClick: n[11] ||= (e) => {
 						o.value = "plan", s.value = !1;
 					}
 				}, " Plan mode ")
