@@ -348,7 +348,11 @@ describe("profile-bound native gateway", () => {
           scope: "session",
         });
         const check = frames.findIndex((f) => f.method === "config.get");
-        expect(frames[check].params).toEqual({ profile, session_id: "runtime", key: "reasoning" });
+        expect(frames[check].params).toEqual({
+          profile,
+          session_id: "runtime",
+          key: "reasoning",
+        });
         expect(check).toBeLessThan(frames.findIndex((f) => f.method === "prompt.submit"));
         expect(frames.find((f) => f.method === "prompt.submit").params).toEqual({
           profile,

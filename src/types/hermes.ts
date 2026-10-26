@@ -68,6 +68,7 @@ export interface ProviderOption {
   name: string;
   is_current?: boolean;
   models: string[];
+  capabilities?: Record<string, { reasoning?: boolean }> | null;
 }
 export interface ModelInventory {
   providers: ProviderOption[];

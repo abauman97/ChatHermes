@@ -428,12 +428,13 @@ describe("provider and model picker", () => {
     const wrapper = composer();
     const pill = wrapper.get(".model-pill");
     await pill.trigger("click");
+    const select = wrapper.get('select[aria-label="Reasoning effort"]');
     const close = wrapper.get('[aria-label="Close model picker"]');
-    expect(document.activeElement).toBe(close.element);
-    await close.trigger("keydown", { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(wrapper.get('[data-provider=""]').element);
-    await wrapper.get('[data-provider=""]').trigger("keydown", { key: "Tab" });
-    expect(document.activeElement).toBe(close.element);
+    expect(document.activeElement).toBe(select.element);
+    await select.trigger("keydown", { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(select.element);
+    await select.trigger("keydown", { key: "Tab" });
+    expect(document.activeElement).toBe(select.element);
     await close.trigger("keydown", { key: "Escape" });
     expect(wrapper.find(".model-panel").exists()).toBe(false);
     expect(document.activeElement).toBe(pill.element);
@@ -470,6 +471,48 @@ describe("provider and model picker", () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
     await select.trigger("keydown", { key: "Escape" });
     expect(document.activeElement).toBe(wrapper.get(".model-pill").element);
+  });
+  it("hides reasoning only for an explicit false on the active provider and model", async () => {
+    const capable = [
+      { ...providers[0]!, capabilities: { one: { reasoning: false }, two: { reasoning: true } } },
+      { ...providers[1]!, capabilities: { other: { reasoning: false } } },
+    ];
+    const wrapper = composer({ providers: capable, model: "one" });
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(false);
+    await wrapper.get('[data-provider="first"]').trigger("click");
+    await wrapper.get('[data-model="two"]').trigger("click");
+    expect(wrapper.emitted("update:model")).toEqual([["two"]]);
+    await wrapper.setProps({ model: "two" });
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(true);
+    await wrapper.get(".model-pill").trigger("click");
+    await wrapper.get(".model-pill").trigger("click");
+    await wrapper.get('[data-provider="custom:second"]').trigger("click");
+    expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(false);
+    await wrapper.get('[data-model="other"]').trigger("click");
+    await wrapper.setProps({ provider: "custom:second", model: "other" });
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(false);
+    await wrapper.setProps({
+      providers: [{ ...capable[0]!, capabilities: {} }],
+      provider: "first",
+      model: "unknown",
+    });
+    await wrapper.get(".model-pill").trigger("click");
+    expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(true);
+  });
+  it("focuses the reasoning selector first and includes it in picker tab order", async () => {
+    const wrapper = composer();
+    await wrapper.get(".model-pill").trigger("click");
+    const select = wrapper.get('select[aria-label="Reasoning effort"]');
+    expect(document.activeElement).toBe(select.element);
+
+    await select.trigger("keydown", { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(select.element);
+
+    await select.trigger("keydown", { key: "Tab" });
+    expect(document.activeElement).toBe(select.element);
   });
   it("gates the picker during sending, closes an open picker, and keeps the composer editable", async () => {
     const wrapper = composer({ disabled: true });

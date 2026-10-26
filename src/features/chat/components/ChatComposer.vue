@@ -102,7 +102,8 @@ watch(
 // Gateway catalog roots describe the backing model; their children are selectable routes.
 const routeModels = computed(() => (props.models || []).filter((item) => item.parent !== null));
 const pickerOpen = ref(false),
-  pickerProvider = ref<string | null>(null);
+  pickerProvider = ref<string | null>(null),
+  pickerModel = ref("");
 const pill = ref<HTMLButtonElement>(),
   panel = ref<HTMLElement>();
 const panelId = useId();
@@ -116,6 +117,15 @@ const selectedProvider = computed(() =>
   props.providers?.find((item) => item.slug === pickerProvider.value),
 );
 const pickerTitle = computed(() => selectedProvider.value?.name || "Model routes");
+const reasoningSupported = computed(() => {
+  const provider =
+    pickerOpen.value && pickerProvider.value !== null ? pickerProvider.value : props.provider || "";
+  const selected = provider ? props.providers?.find((item) => item.slug === provider) : undefined;
+  const selectedModel = pickerOpen.value
+    ? pickerModel.value || props.model || props.defaultModel || ""
+    : props.model || props.defaultModel || "";
+  return selected?.capabilities?.[selectedModel]?.reasoning !== false;
+});
 const providerModels = computed(() => {
   const selected = selectedProvider.value;
   const ids = selected ? selected.models : routeModels.value.map((item) => item.id);
@@ -131,7 +141,12 @@ const providerModels = computed(() => {
 });
 async function focusPanel() {
   await nextTick();
-  if (pickerOpen.value) panel.value?.querySelector<HTMLButtonElement>("button")?.focus();
+  if (pickerOpen.value) {
+    const target =
+      panel.value?.querySelector<HTMLElement>("select") ||
+      panel.value?.querySelector<HTMLElement>("button");
+    target?.focus();
+  }
 }
 function closePicker() {
   if (!pickerOpen.value) return;
@@ -146,19 +161,27 @@ function togglePicker() {
   if (pickerDisabled.value) return;
   attachmentsOpen.value = false;
   pickerProvider.value = null;
+  pickerModel.value = props.model || props.defaultModel || "";
   pickerOpen.value = true;
   void focusPanel();
 }
 function showModels(slug: string) {
   pickerProvider.value = slug;
+  const selected = props.providers?.find((item) => item.slug === slug);
+  pickerModel.value =
+    slug === (props.provider || "")
+      ? props.model || props.defaultModel || ""
+      : selected?.models[0] || "";
   void focusPanel();
 }
 function showProviders() {
   pickerProvider.value = null;
+  pickerModel.value = props.model || props.defaultModel || "";
   void focusPanel();
 }
 function chooseModel(id: string) {
   if (pickerDisabled.value) return;
+  pickerModel.value = id;
   emit("update:provider", pickerProvider.value || "");
   emit("update:model", selectedProvider.value?.is_current && id === props.defaultModel ? "" : id);
   closePicker();
@@ -176,9 +199,9 @@ function pickerKeydown(event: KeyboardEvent) {
     closePicker();
   }
   if (event.key === "Tab") {
-    const buttons = Array.from(panel.value?.querySelectorAll<HTMLElement>("button, select") || []);
-    const target = event.shiftKey ? buttons.at(-1) : buttons[0];
-    if (document.activeElement === (event.shiftKey ? buttons[0] : buttons.at(-1))) {
+    const controls = Array.from(panel.value?.querySelectorAll<HTMLElement>("button, select") || []);
+    const target = event.shiftKey ? controls.at(-1) : controls[0];
+    if (document.activeElement === (event.shiftKey ? controls[0] : controls.at(-1))) {
       event.preventDefault();
       target?.focus();
     }
@@ -530,6 +553,7 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         </button>
       </div>
       <label
+        v-if="reasoningSupported"
         class="flex shrink-0 items-center justify-between gap-3 border-b border-[#424242] px-3 py-2"
       >
         <span>Reasoning effort</span>

@@ -350,6 +350,14 @@ async def model_options(request: Request):
                 'is_current': row.get('is_current') is True,
                 'models': [mid for mid in row.get('models', []) if isinstance(mid, str)]
             })
+            capabilities = row.get('capabilities')
+            if isinstance(capabilities, dict):
+                safe_capabilities = {}
+                for model_id, value in capabilities.items():
+                    if isinstance(model_id, str) and isinstance(value, dict) and isinstance(value.get('reasoning'), bool):
+                        safe_capabilities[model_id] = {'reasoning': value['reasoning']}
+                if safe_capabilities:
+                    providers[-1]['capabilities'] = safe_capabilities
         return JSONResponse({
             'providers': providers,
             'provider': payload.get('provider') if isinstance(payload.get('provider'), str) else '',
