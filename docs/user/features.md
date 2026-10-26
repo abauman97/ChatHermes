@@ -24,6 +24,10 @@ Use the Project instructions editor to load and save the workspace instruction f
 
 Open a file card in a conversation, or browse **Artifacts** globally or within a Project. Images have thumbnails and a larger viewer; PDFs and supported media use browser viewers. Text, HTML, and SVG display as escaped source; other files offer download.
 
+The library shows its first 50 indexed files immediately. Use **Load More** for
+older files and **Refresh** to read the latest index. Existing conversations are
+indexed in the background; newly delivered files may take a moment to appear.
+
 Artifacts come from explicit delivered-file references and uploads in saved history. A bare path or ordinary link does not create an artifact. Preview and download use the authenticated dashboard and the chat's profile/workspace. Confirm deletion only when you intend to remove the actual managed file. Historical references remain afterward; remote SSH deletion is unsupported.
 
 ## Scheduled results

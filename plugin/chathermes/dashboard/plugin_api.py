@@ -444,6 +444,7 @@ async def upload(request: Request):
             handle.write(content)
         path.chmod(0o600)
     await run_in_threadpool(store)
+    _index_artifacts(_rpc_profile(request))
     return {'path': str(path)}
 
 
@@ -487,6 +488,9 @@ _native_validation = _load_sibling('native_validation')
 
 _execution_viewer = _load_sibling('execution_viewer')
 _completion_outbox = _load_sibling('completion_outbox')
+_artifact_store = _load_sibling('artifact_store')
+_artifact_indexer = _load_sibling('artifact_indexer')
+_artifact_service = None
 _execution_service = None
 
 
@@ -509,6 +513,26 @@ async def _stop_execution_viewers():
         await _execution_service.close()
 
 
+async def _start_artifact_indexing():
+    global _artifact_service
+    _artifact_service = _artifact_indexer.Service(_artifact_indexer.Source(sys.modules[__name__]), _push_store_module)
+    _artifact_service.start()
+
+
+async def _stop_artifact_indexing():
+    global _artifact_service
+    if _artifact_service is not None:
+        await _artifact_service.close()
+        _artifact_service = None
+
+
+def _index_artifacts(profile, session=None):
+    if _artifact_service is not None:
+        _artifact_service.trigger(profile, session)
+
+
+router.add_event_handler('startup', _start_artifact_indexing)
+router.add_event_handler('shutdown', _stop_artifact_indexing)
 router.add_event_handler('startup', _resume_push_delivery)
 router.add_event_handler('shutdown', _stop_execution_viewers)
 
@@ -754,7 +778,52 @@ async def artifact_download(request: Request, path: str, session_id: str = None,
 
 @router.delete('/files')
 async def artifact_delete(request: Request, path: str, session_id: str):
-    return await _native_file(request, 'delete', path, session_id)
+    original_path = path
+    image = re.fullmatch(r'/api/plugins/chathermes/images/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))', path, re.I)
+    if image:
+        path = str(_upload_home(request) / 'uploads' / 'chathermes' / image[1])
+    result = await _native_file(request, 'delete', path, session_id)
+    import asyncio
+    await asyncio.to_thread(_artifact_store.remove_file, _push_store_module, _rpc_profile(request), session_id, path)
+    if original_path != path:
+        await asyncio.to_thread(_artifact_store.remove_file, _push_store_module, _rpc_profile(request), session_id, original_path)
+    _index_artifacts(_rpc_profile(request), session_id)
+    return result
+
+
+@router.get('/artifacts')
+async def artifacts(request: Request, project_id: str = None, limit: int = 50, cursor: str = None):
+    import asyncio
+    profile = _rpc_profile(request)
+    try:
+        result = await asyncio.to_thread(_artifact_store.page, _push_store_module, profile, project_id, limit, cursor)
+    except ValueError:
+        raise HTTPException(422, 'Invalid artifact pagination') from None
+    except Exception:
+        raise HTTPException(503, 'Artifact index unavailable') from None
+    return JSONResponse(result, headers={'Cache-Control': 'private, no-store'})
+
+
+@router.get('/artifact-images/{session_id}/{message_id}/{part_index}')
+async def artifact_image(request: Request, session_id: str, message_id: str, part_index: int, download: bool = False):
+    # Inline legacy images remain in Hermes history; SQLite stores their address.
+    import base64
+    profile = _rpc_profile(request)
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', session_id) or not 0 <= part_index <= 1000:
+        raise HTTPException(422, 'Invalid image reference')
+    try:
+        messages = await _artifact_indexer.Source(sys.modules[__name__]).messages(profile, session_id, inline=True)
+        row = next(row for row in messages if str(row.get('id')) == message_id and row.get('role') in ('user', 'assistant'))
+        url = row['content'][part_index]['image_url']['url']
+        if not isinstance(url, str) or not re.match(r'^data:image/(?:png|jpeg|gif|webp);base64,', url) or len(url) > 28 * 1024 * 1024:
+            raise ValueError()
+        content = base64.b64decode(url.split(',', 1)[1], validate=True)
+    except Exception:
+        raise HTTPException(404, 'Image unavailable') from None
+    headers = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'}
+    if download:
+        headers['Content-Disposition'] = 'attachment; filename="image"'
+    return Response(content, media_type=url[5:url.index(';')], headers=headers)
 
 
 @router.get('/projects')

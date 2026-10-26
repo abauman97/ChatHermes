@@ -115,3 +115,23 @@ describe("dashboard plugin Hermes client", () => {
     );
   });
 });
+
+it("requests a single indexed artifact page with encoded Project and cursor scope", async () => {
+  const fake = vi.fn(
+    async (_input: string, _init?: RequestInit) =>
+      new Response(JSON.stringify({ files: [], nextCursor: null })),
+  );
+  vi.stubGlobal("fetch", fake);
+  const controller = new AbortController();
+  await api.artifacts("alpha", "/workspace/project name", "next+/=", controller.signal);
+  const url = new URL(fake.mock.calls[0]![0], "https://dashboard.test");
+  expect(url.pathname).toBe("/api/plugins/chathermes/artifacts");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    profile: "alpha",
+    project_id: "/workspace/project name",
+    limit: "50",
+    cursor: "next+/=",
+  });
+  expect(fake).toHaveBeenCalledTimes(1);
+  expect(fake.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+});

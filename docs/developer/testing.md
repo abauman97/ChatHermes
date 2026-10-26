@@ -19,7 +19,7 @@ Use `vp fmt` to apply formatting. Build output under `plugin/chathermes/dashboar
 `npm run test:api` runs `tests/plugin_api.test.py`. For focused Python contracts, use the same environment, for example:
 
 ```sh
-PYTHONPATH=/path/to/hermes-source:plugin python -m pytest tests/cron_delivery.test.py
+PYTHONPATH=/path/to/hermes-source:plugin python -m pytest tests/cron_delivery.test.py tests/execution_viewer.test.py tests/artifacts.test.py
 ```
 
 Prefer observable user contracts. Retain focused protocol, security, deduplication, and pure-logic tests until replacements pass. See the [coverage migration audit](../../tests/test-audit.md).

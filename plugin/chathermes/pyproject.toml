@@ -5,7 +5,7 @@ name = "chathermes-dashboard-dependencies"
 version = "1.0.0"
 description = "Runtime dependencies for the Hermes ChatHermes dashboard plugin"
 requires-python = ">=3.11"
-dependencies = ["pywebpush==2.5.0", "py-vapid==1.9.4"]
+dependencies = ["pywebpush==2.5.0", "py-vapid==1.9.4", "markdown-it-py==4.0.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>8"]

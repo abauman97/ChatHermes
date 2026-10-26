@@ -11,6 +11,8 @@ services:
     build:
       context: .
       dockerfile: tests/docker/Dockerfile
+      args:
+        CHATHERMES_BUILD_OUT_DIR: ${CHATHERMES_BUILD_OUT_DIR:-plugin/chathermes/dashboard/dist}
     depends_on:
       mockserver:
         condition: service_healthy
