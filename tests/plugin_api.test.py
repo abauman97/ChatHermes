@@ -413,7 +413,11 @@ async def test_model_inventory_is_profile_scoped_and_only_exposes_picker_fields(
             'providers': [
                 {'slug': 'custom:local', 'name': 'Local', 'is_current': True,
                  'models': ['model-a', 'model-b'], 'api_key': 'private-metadata',
-                 'base_url': 'https://private.test', 'key_env': 'LOCAL_KEY'},
+                 'base_url': 'https://private.test', 'key_env': 'LOCAL_KEY',
+                 'capabilities': {'model-a': {'reasoning': True, 'api_key': 'secret'},
+                                  'model-b': {'reasoning': False},
+                                  'malformed': {'reasoning': 'yes'},
+                                  'not-an-object': True}},
                 {'slug': 'missing', 'authenticated': False, 'models': ['unavailable']},
                 {'slug': 'other', 'name': 'Other', 'models': ['model-c']}
             ]})
@@ -421,7 +425,8 @@ async def test_model_inventory_is_profile_scoped_and_only_exposes_picker_fields(
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
         response = await client.get('/api/plugins/chathermes/api/model/options?profile=beta')
         assert response.json() == {'provider': 'custom:local', 'model': 'model-a', 'providers': [
-            {'slug': 'custom:local', 'name': 'Local', 'is_current': True, 'models': ['model-a', 'model-b']},
+            {'slug': 'custom:local', 'name': 'Local', 'is_current': True, 'models': ['model-a', 'model-b'],
+             'capabilities': {'model-a': {'reasoning': True}, 'model-b': {'reasoning': False}}},
             {'slug': 'other', 'name': 'Other', 'is_current': False, 'models': ['model-c']}]}
         assert 'private' not in response.text
         assert KEY not in response.text
@@ -1613,3 +1618,18 @@ async def test_response_branch_busy_and_failure_do_not_leak(app, monkeypatch, ru
         result = await client.post('/api/plugins/chathermes/api/sessions/stored/branch', json={'response_id': '42'})
     assert result.status_code == status and KEY not in result.text
     assert called == (['session.resume', 'closed'] if running else ['session.resume', 'session.branch', 'closed'])
+
+
+@run_async
+async def test_native_reasoning_preparation_validates_effort_without_dispatch(app, monkeypatch):
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('preparation must not dispatch'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        for profile in ('default', 'alpha', 'beta'):
+            for effort in ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'):
+                response = await client.post('/api/plugins/chathermes/chat/prepare', params={'profile': profile},
+                    json={'input': 'Hello', 'reasoning_effort': effort})
+                assert response.status_code == 200
+                assert response.json() == {'input': 'Hello', 'files': [], 'reasoning_effort': effort}
+        for effort in (None, False, 0, [], {}, '', 'show', 'hide', 'HIGH', 'high --global', 'bogus'):
+            response = await client.post('/api/plugins/chathermes/chat/prepare', json={'input': 'Hello', 'reasoning_effort': effort})
+            assert response.status_code == 422

@@ -48,9 +48,11 @@ class Socket {
           ? snapshot
           : frame.method === "session.activate"
             ? snapshot.confirmed || { ...snapshot, running: false, queued: null }
-            : frame.method === "file.attach"
-              ? { attached: true, ref_text: "@file note.txt" }
-              : { status: "streaming" };
+            : frame.method === "config.get"
+              ? { value: prepare.confirmedEffort ?? prepare.reasoning_effort }
+              : frame.method === "file.attach"
+                ? { attached: true, ref_text: "@file note.txt" }
+                : { status: "streaming" };
     queueMicrotask(() => {
       beforeReply?.(this, frame);
       this.receive({ jsonrpc: "2.0", id: frame.id, result });
@@ -322,6 +324,88 @@ describe("profile-bound native gateway", () => {
       "@file note.txt",
     );
     viewer.close();
+  });
+  it.each(["default", "alpha", "beta"])(
+    "applies reasoning after the model in %s before prompt submission",
+    async (profile) => {
+      prepare = {
+        ...prepare,
+        model: "test-model",
+        provider: "test-provider",
+        reasoning_effort: "high",
+      };
+      const viewer = new NativeGatewayViewer(profile, "stored", hooks());
+      try {
+        await viewer.ensure();
+        await viewer.rpc("prompt.submit", { input: "hello", reasoning_effort: "high" });
+        const changes = frames.filter((f) => f.method === "config.set");
+        expect(changes.map((f) => f.params.key)).toEqual(["model", "reasoning"]);
+        expect(changes[1].params).toEqual({
+          profile,
+          session_id: "runtime",
+          key: "reasoning",
+          value: "high",
+          scope: "session",
+        });
+        const check = frames.findIndex((f) => f.method === "config.get");
+        expect(frames[check].params).toEqual({
+          profile,
+          session_id: "runtime",
+          key: "reasoning",
+        });
+        expect(check).toBeLessThan(frames.findIndex((f) => f.method === "prompt.submit"));
+        expect(frames.find((f) => f.method === "prompt.submit").params).toEqual({
+          profile,
+          session_id: "runtime",
+          text: "hello",
+        });
+      } finally {
+        viewer.close();
+      }
+    },
+  );
+  it("does not change reasoning without an explicit selection", async () => {
+    const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+    try {
+      await viewer.ensure();
+      await viewer.rpc("prompt.submit", { input: "hello" });
+      expect(frames.some((f) => f.params?.key === "reasoning")).toBe(false);
+    } finally {
+      viewer.close();
+    }
+  });
+  it.each(["mismatch", "error", "cancel"])("blocks submission on reasoning %s", async (failure) => {
+    prepare.reasoning_effort = "none";
+    if (failure === "mismatch") prepare.confirmedEffort = "high";
+    const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+    try {
+      await viewer.ensure();
+      const socket = sockets[0]!;
+      const send = socket.send.bind(socket);
+      socket.send = (text) => {
+        const f = JSON.parse(text);
+        if (f.method === "config.set" && failure === "error") {
+          frames.push(f);
+          queueMicrotask(() =>
+            socket.receive({
+              jsonrpc: "2.0",
+              id: f.id,
+              error: { code: 4002, message: "private detail" },
+            }),
+          );
+        } else {
+          send(text);
+          if (f.method === "config.set" && failure === "cancel")
+            void viewer.rpc("session.interrupt");
+        }
+      };
+      await expect(
+        viewer.rpc("prompt.submit", { input: "hello", reasoning_effort: "none" }),
+      ).rejects.toMatchObject({ outcome: "rejected" });
+      expect(frames.some((f) => f.method === "prompt.submit")).toBe(false);
+    } finally {
+      viewer.close();
+    }
   });
   it("rejects an incompatible snapshot without translated calls", async () => {
     snapshot.revision = 4;

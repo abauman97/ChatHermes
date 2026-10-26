@@ -414,6 +414,26 @@ export class NativeGatewayViewer {
         )
           throw new NativeError("Selected runtime model was not applied", "rejected");
       }
+      if (prepared.reasoning_effort !== undefined) {
+        guard();
+        const changed = await this.call("config.set", {
+          session_id: this.runtime,
+          key: "reasoning",
+          value: prepared.reasoning_effort,
+          scope: "session",
+        });
+        guard();
+        const confirmed = await this.call("config.get", {
+          session_id: this.runtime,
+          key: "reasoning",
+        });
+        if (
+          changed.deferred ||
+          changed.confirm_required ||
+          confirmed.value !== prepared.reasoning_effort
+        )
+          throw new NativeError("Selected reasoning effort was not applied", "rejected");
+      }
       guard();
       const ticketResponse = await fetch("/api/auth/ws-ticket", {
         method: "POST",

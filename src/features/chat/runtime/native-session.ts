@@ -1,3 +1,4 @@
+import type { ReasoningEffort } from "../../../types/hermes";
 import { computed, reactive, ref } from "vue";
 import { savedResponseTargets } from "../utils/saved-response-targets";
 import { api, messageText } from "../../../services/hermes-api";
@@ -462,7 +463,11 @@ export function useNativeSession(
   async function submit(
     text: string,
     content: unknown,
-    selection: { model?: string; provider?: string },
+    selection: {
+      model?: string;
+      provider?: string;
+      reasoning_effort?: ReasoningEffort;
+    },
     preview?: unknown,
   ) {
     if (

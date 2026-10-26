@@ -350,6 +350,14 @@ async def model_options(request: Request):
                 'is_current': row.get('is_current') is True,
                 'models': [mid for mid in row.get('models', []) if isinstance(mid, str)]
             })
+            capabilities = row.get('capabilities')
+            if isinstance(capabilities, dict):
+                safe_capabilities = {}
+                for model_id, value in capabilities.items():
+                    if isinstance(model_id, str) and isinstance(value, dict) and isinstance(value.get('reasoning'), bool):
+                        safe_capabilities[model_id] = {'reasoning': value['reasoning']}
+                if safe_capabilities:
+                    providers[-1]['capabilities'] = safe_capabilities
         return JSONResponse({
             'providers': providers,
             'provider': payload.get('provider') if isinstance(payload.get('provider'), str) else '',
@@ -632,10 +640,13 @@ async def prepare_native_turn(request: Request):
         params = await request.json()
     except (ValueError, TypeError):
         raise HTTPException(422, 'Invalid native preparation')
-    if not isinstance(params, dict) or set(params) - {'input', 'model', 'provider', 'admission_id'}:
+    if not isinstance(params, dict) or set(params) - {'input', 'model', 'provider', 'admission_id', 'reasoning_effort'}:
         raise HTTPException(422, 'Invalid native preparation')
+    effort = params.get('reasoning_effort')
+    if 'reasoning_effort' in params and (not isinstance(effort, str) or effort not in ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')):
+        raise HTTPException(422, 'Invalid reasoning effort')
     profile = _rpc_profile(request)
-    text, images = _validated_workspace_turn({k: v for k, v in params.items() if k != 'admission_id'})
+    text, images = _validated_workspace_turn({k: v for k, v in params.items() if k not in ('admission_id', 'reasoning_effort')})
     if images:
         await run_in_threadpool(_native_validation.verify_image_refs, profile, text, images)
     files = [{'name': name, 'path': path} for name, path in re.findall(r'Attached file ([^\n]+?): ([^\n]+)', text)]
@@ -644,6 +655,8 @@ async def prepare_native_turn(request: Request):
     # Preserve the pinned native prompt shape: multipart only for images;
     # text/file-only turns use the normalized string for @file expansion.
     result = {'input': params['input'] if images else text, 'files': files}
+    if effort is not None:
+        result['reasoning_effort'] = effort
     if params.get('model'):
         # This collector is never connected to a dispatcher or returned.
         from types import SimpleNamespace
