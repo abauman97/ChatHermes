@@ -587,7 +587,9 @@ describe("provider and model picker", () => {
     const activeBeforeOpen = document.activeElement;
     await wrapper.get(".model-pill").trigger("click");
     expect(document.activeElement).toBe(activeBeforeOpen);
-    expect(document.activeElement).not.toBe(wrapper.get('select[aria-label="Reasoning effort"]').element);
+    expect(document.activeElement).not.toBe(
+      wrapper.get('select[aria-label="Reasoning effort"]').element,
+    );
     expect(document.activeElement).not.toBe(wrapper.get('[data-provider="first"]').element);
     wrapper.unmount();
   });
