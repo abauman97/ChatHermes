@@ -329,3 +329,15 @@ def test_source_projects_uses_complete_native_membership_and_closes_transport():
         assert await source.projects('alpha') == {'old': ('p', 'Project'), 'new': ('p', 'Project')}
         assert calls == [('projects.tree', {'profile': 'alpha', 'preview_limit': 0}), 'closed']
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize('text', [
+    'MEDIA:/tmp/report.pdf',
+    'Here is the export.\nMEDIA:/tmp/report.pdf',
+    'MEDIA:/tmp/report.pdf\nHere is the export.',
+    'The example is `MEDIA:/tmp/private.pdf`.\nMEDIA:/tmp/report.pdf\nOther path: /tmp/secret.txt',
+    'MEDIA:/tmp/report.pdf\nThe example is `MEDIA:/tmp/private.pdf`.',
+])
+def test_delivery_with_surrounding_text_does_not_promote_examples_or_paths(text):
+    files = extraction.extract([{'id': 1, 'role': 'assistant', 'content': text}], {'id': 's'})
+    assert [file['path'] for file in files] == ['/tmp/report.pdf']

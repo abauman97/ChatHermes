@@ -8,8 +8,20 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import unquote, urlsplit
 from markdown_it import MarkdownIt
+from markdown_it.rules_inline.backticks import backtick
+
+def _delivery_code_span(state, silent):
+    """Retain source lines with the Markdown parser's own quotation semantics."""
+    start, count = state.pos, len(state.tokens)
+    matched = backtick(state, silent)
+    if not silent and len(state.tokens) > count and state.tokens[-1].type == 'code_inline':
+        state.tokens[-1].meta['delivery_lines'] = (
+            state.src[:start].count('\n'), state.src[:state.pos].count('\n'))
+    return matched
+
 
 _MARKDOWN = MarkdownIt('default', {'html': True})
+_MARKDOWN.inline.ruler.at('backticks', _delivery_code_span)
 _EXTENSIONS = 'png jpg jpeg gif webp bmp tiff svg mp4 mov avi mkv webm 3gp mp3 m2a wav ogg opus m4a flac pdf docx doc odt rtf txt md epub xlsx xls ods csv tsv json xml yaml yml kmz kml geojson gpx pptx ppt odp key zip tar gz tgz bz2 xz 7z rar apk ipa html htm'
 _ANCHORED = r'''(?:~/|/|[A-Za-z]:[/\\])\S+?(?:[^\S\n]+\S+?)*?\.(?:''' + '|'.join(sorted(_EXTENSIONS.split(), key=len, reverse=True)) + r''')(?=[\s`"'*_,;:)\]}]|MEDIA:|$)'''
 _MEDIA = re.compile(r'''MEDIA:\s*(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|''' + _ANCHORED + r'''|[^\s`"]+)''')
@@ -82,11 +94,15 @@ def text_artifacts(text):
     for position, token in enumerate(tokens):
         if token.type != 'paragraph_open' or token.level != 0 or not token.map:
             continue
-        if any(child.type == 'code_inline' and re.search(r'MEDIA:|Attached (?:image|file) ', child.content)
-               for child in tokens[position + 1].children or []):
-            continue
+        # Quoted examples protect their source lines, not the whole paragraph.
+        quoted = set()
+        for child in tokens[position + 1].children or []:
+            if child.type != 'code_inline' or not re.search(r'MEDIA:|Attached (?:image|file) ', child.content):
+                continue
+            first, last = child.meta['delivery_lines']
+            quoted.update(range(token.map[0] + first, token.map[0] + last + 1))
         for index in range(*token.map):
-            if index in untrusted:
+            if index in untrusted or index in quoted:
                 continue
             line = lines[index]
             attachment = re.fullmatch(r'Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?', line)
