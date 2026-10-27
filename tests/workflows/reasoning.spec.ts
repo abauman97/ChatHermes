@@ -134,6 +134,20 @@ test("composer reasoning reaches the native runtime and stays in its chat", asyn
   await expect(page.locator(".message.assistant")).toHaveCount(2);
   await expect(page.locator(".message.assistant").last()).toContainText("Stream complete.");
   expect(await runtimeEffort(page, stored)).toBe("none");
+  // A new mount has no in-memory picker choices: resume must restore the
+  // session's runtime effort rather than the profile's medium default.
+  await page.reload();
+  await expect(picker).toBeEnabled();
+  await expect(page.locator(".message.assistant")).toHaveCount(2);
+  await picker.click();
+  await expect(effort).toHaveValue("none");
+  await page.screenshot({ path: info.outputPath("resumed-reasoning-picker.png") });
+  await effort.press("Escape");
+  await composer.fill(`[workflow-stream] ${randomUUID()}`);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(3);
+  await expect(page.locator(".message.assistant").last()).toContainText("Stream complete.");
+  expect(await runtimeEffort(page, stored)).toBe("none");
   const plugin = page.locator(".chathermes-embedded");
   const navigation = plugin.getByRole("button", {
     name: "Open navigation",

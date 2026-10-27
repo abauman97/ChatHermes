@@ -105,9 +105,10 @@ test("interrupted inference settles and the conversation remains usable", async 
   await page.screenshot({ path: info.outputPath("recovered.png") });
 });
 
-test("selected model reaches the real inference request", async ({ page }) => {
+test("resumed model and reasoning reach the real inference request", async ({ page }, info) => {
   const marker = randomUUID();
   await page.getByRole("button", { name: "Choose model", exact: true }).click();
+  await page.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("high");
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /chathermes-test/ })
@@ -119,22 +120,39 @@ test("selected model reaches the real inference request", async ({ page }) => {
   await page.getByRole("textbox", { name: "Message Hermes" }).fill(`[workflow-stream] ${marker}`);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
-  const verified = await fetch(`${mockserverURL()}/mockserver/verify`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      httpRequest: {
-        method: "POST",
-        path: "/v1/chat/completions",
-        body: {
-          type: "JSON_PATH",
-          jsonPath: `$[?(@.model == 'chathermes-alternate' && @.stream == true && @.messages[-1].content =~ /(?s).*${marker}.*/)]`,
+  await page.reload();
+  const picker = page.getByRole("button", { name: "Choose model", exact: true });
+  await expect(picker).toContainText("chathermes-alternate");
+  await picker.click();
+  const effort = page.getByRole("combobox", { name: "Reasoning effort", exact: true });
+  await expect(effort).toHaveValue("high");
+  await page.screenshot({ path: info.outputPath("resumed-model-reasoning.png") });
+  await effort.press("Escape");
+  const continuedMarker = randomUUID();
+  await page
+    .getByRole("textbox", { name: "Message Hermes" })
+    .fill(`[workflow-stream] ${continuedMarker}`);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(2);
+  await expect(page.locator(".message.assistant").last()).toContainText("Stream complete.");
+  for (const requestMarker of [marker, continuedMarker]) {
+    const verified = await fetch(`${mockserverURL()}/mockserver/verify`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        httpRequest: {
+          method: "POST",
+          path: "/v1/chat/completions",
+          body: {
+            type: "JSON_PATH",
+            jsonPath: `$[?(@.model == 'chathermes-alternate' && @.stream == true && @.messages[-1].content =~ /(?s).*${requestMarker}.*/)]`,
+          },
         },
-      },
-      times: { atLeast: 1, atMost: 1 },
-    }),
-  });
-  expect(verified.status).toBe(202);
+        times: { atLeast: 1, atMost: 1 },
+      }),
+    });
+    expect(verified.status).toBe(202);
+  }
 });
 
 test("Stop settles an active response and keeps the composer usable", async ({ page }) => {
