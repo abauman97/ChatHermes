@@ -45,7 +45,10 @@ profile}` before retaining execution and submitting. An omitted effort adds no
 reasoning calls. This follows the pin's `methods_config_set._set_reasoning` and
 `methods_config._cfg_get_reasoning`; Hermes owns provider wire clamping. Pending
 picker choices are keyed by profile and stored session; a home draft transfers
-its choice only to the chat it creates.
+its choice only to the chat it creates. On resume, the guarded native snapshot’s
+`info.model`, `info.provider`, and `info.reasoning_effort` supply the composer
+defaults for that session. Profile inventory arriving later cannot replace them;
+pending picker choices remain local to their profile and session.
 A rejected or deferred model choice blocks submission. All protocol schema
 rejections fail closed without retrying different parameter shapes.
 

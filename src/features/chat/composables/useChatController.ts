@@ -1,4 +1,5 @@
 import { computed, ref, type Ref } from "vue";
+import { reasoningEfforts } from "../../../types/hermes";
 import { api } from "../../../services/hermes-api";
 import { projectRoot } from "../../projects/utils/projects";
 import type {
@@ -73,9 +74,34 @@ export function useChatController(
   } = scope;
   // Pending choices belong only to this profile/session. A home draft transfers
   // its choice to the newly created session, never to another profile or chat.
-  const efforts = ref(new Map<string, ReasoningEffort>());
+  const efforts = ref(new Map<string, ReasoningEffort | "">());
+  const modelChoices = ref(new Map<string, { model: string; provider: string }>());
   const effortKey = () => JSON.stringify([profile.value || "default", session.value]);
-  const reasoningEffort = computed(() => efforts.value.get(effortKey()) || "");
+  const resumed = computed(() => {
+    const saved = native.settings.value;
+    return saved?.profile === profile.value &&
+      saved.session === session.value &&
+      saved.generation === native.generationRef.value
+      ? saved.info
+      : undefined;
+  });
+  const reasoningEffort = computed(() => {
+    const saved = resumed.value?.reasoning_effort;
+    return (
+      efforts.value.get(effortKey()) ??
+      (reasoningEfforts.includes(saved as ReasoningEffort) ? (saved as ReasoningEffort) : "")
+    );
+  });
+  const selectedModel = computed(
+    () =>
+      modelChoices.value.get(effortKey())?.model ??
+      (session.value ? resumed.value?.model || "" : model.value),
+  );
+  const selectedProvider = computed(
+    () =>
+      modelChoices.value.get(effortKey())?.provider ??
+      (session.value ? resumed.value?.provider || provider.value : provider.value),
+  );
   const branching = ref(false);
   const branchDisabled = computed(
     () =>
@@ -136,10 +162,14 @@ export function useChatController(
       return;
     const draftKey = effortKey(),
       effort = reasoningEffort.value,
-      draftProfile = profile.value;
+      draftProfile = profile.value,
+      draftModel = selectedModel.value,
+      draftProvider = selectedProvider.value;
     if (projectView.value || !session.value) {
       const created = await scope.createSession();
       if (!created || profile.value !== draftProfile || session.value !== created) return;
+      modelChoices.value.set(effortKey(), { model: draftModel, provider: draftProvider });
+      if (draftKey !== effortKey()) modelChoices.value.delete(draftKey);
       if (effort) {
         efforts.value.set(effortKey(), effort);
         if (draftKey !== effortKey()) efforts.value.delete(draftKey);
@@ -180,8 +210,8 @@ export function useChatController(
           return attachments.length ? parts : text;
         },
         {
-          model: model.value || defaultModel.value,
-          provider: provider.value || undefined,
+          model: selectedModel.value || defaultModel.value,
+          provider: selectedProvider.value || undefined,
           ...(effort ? { reasoning_effort: effort } : {}),
         },
         preview,
@@ -297,14 +327,13 @@ export function useChatController(
     retry: () => (viewReconnect.value ? native.reconnect() : scope.retryHistory()),
     resolve: () => native.resolveUncertainty(),
     setReasoningEffort: (value: ReasoningEffort | "") => {
-      if (value) efforts.value.set(effortKey(), value);
-      else efforts.value.delete(effortKey());
+      efforts.value.set(effortKey(), value);
     },
     setModel: (value: string) => {
-      model.value = value;
+      modelChoices.value.set(effortKey(), { model: value, provider: selectedProvider.value });
     },
     setProvider: (value: string) => {
-      provider.value = value;
+      modelChoices.value.set(effortKey(), { model: selectedModel.value, provider: value });
     },
   };
   return {
@@ -336,8 +365,8 @@ export function useChatController(
       providers,
       modelsLoading,
       reasoningEffort,
-      model: computed(() => model.value),
-      provider: computed(() => provider.value),
+      model: selectedModel,
+      provider: selectedProvider,
       defaultModel,
       suggestedPrompt: computed(() => suggestedPrompt.value),
     },

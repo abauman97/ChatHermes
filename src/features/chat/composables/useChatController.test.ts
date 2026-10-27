@@ -29,8 +29,11 @@ function setup() {
     provider: ref(""),
     defaultModel: ref("default"),
     suggestedPrompt: ref(""),
+    generationRef: ref(0),
+    settings: ref(),
     generation: () => generation,
     navigation: vi.fn(() => 0),
+    connection: ref("stale"),
     createSession: vi.fn(async () => "one"),
     suggest: vi.fn(async () => {}),
     retryHistory: vi.fn(async () => {}),
@@ -79,6 +82,79 @@ describe("live chat controller", () => {
       { model: "default", provider: "custom" },
       expect.any(Array),
     );
+  });
+  it("restores resumed runtime choices and submits them instead of profile defaults", async () => {
+    const { native, scope, controller } = setup();
+    native.submit = vi.fn(async () => {});
+    native.settings.value = {
+      profile: "alpha",
+      session: "one",
+      info: { model: "saved-model", provider: "saved-provider", reasoning_effort: "none" },
+      generation: native.generationRef.value,
+    };
+    expect(controller.scope.model.value).toBe("saved-model");
+    expect(controller.scope.provider.value).toBe("saved-provider");
+    expect(controller.scope.reasoningEffort.value).toBe("none");
+    // Inventory may finish after the session snapshot.
+    scope.provider.value = "profile-provider";
+    scope.defaultModel.value = "profile-model";
+    await controller.actions.send("Continue");
+    expect(native.submit).toHaveBeenLastCalledWith(
+      "Continue",
+      expect.any(Function),
+      { model: "saved-model", provider: "saved-provider", reasoning_effort: "none" },
+      expect.any(Array),
+    );
+    controller.actions.setModel("pending-model");
+    controller.actions.setProvider("pending-provider");
+    controller.actions.setReasoningEffort("low");
+    native.settings.value = {
+      ...native.settings.value,
+      info: { model: "saved-model", provider: "saved-provider", reasoning_effort: "high" },
+      generation: native.generationRef.value,
+    };
+    expect(controller.scope.model.value).toBe("pending-model");
+    expect(controller.scope.reasoningEffort.value).toBe("low");
+    controller.actions.setReasoningEffort("");
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    scope.session.value = "two";
+    expect(controller.scope.model.value).toBe("");
+    expect(controller.scope.provider.value).toBe("profile-provider");
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    scope.session.value = "one";
+    scope.profile.value = "beta";
+    expect(controller.scope.model.value).toBe("");
+    expect(controller.scope.reasoningEffort.value).toBe("");
+    scope.profile.value = "alpha";
+    expect(controller.scope.model.value).toBe("pending-model");
+    expect(controller.scope.provider.value).toBe("pending-provider");
+  });
+  it("transfers a home model choice to its new chat and leaves the next home at defaults", async () => {
+    const { native, scope, controller } = setup();
+    native.submit = vi.fn(async () => {});
+    scope.session.value = "";
+    controller.actions.setModel("draft-model");
+    controller.actions.setProvider("draft-provider");
+    scope.createSession.mockImplementation(async () => {
+      scope.session.value = "created";
+      native.settings.value = {
+        profile: "alpha",
+        session: "created",
+        info: { model: "profile-model", reasoning_effort: "medium" },
+        generation: native.generationRef.value,
+      };
+      return "created";
+    });
+    await controller.actions.send("Create");
+    expect(native.submit).toHaveBeenLastCalledWith(
+      "Create",
+      expect.any(Function),
+      { model: "draft-model", provider: "draft-provider" },
+      expect.any(Array),
+    );
+    scope.session.value = "";
+    expect(controller.scope.model.value).toBe("");
+    expect(controller.scope.provider.value).toBe("");
   });
   it("keeps reasoning choices isolated by profile and session, and captures the send choice", async () => {
     const { native, scope, controller } = setup();

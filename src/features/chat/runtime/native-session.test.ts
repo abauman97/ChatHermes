@@ -48,6 +48,52 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it.each([
+    ["alpha", "two"],
+    ["beta", "one"],
+  ])(
+    "publishes recovered settings and rejects obsolete viewers after selecting %s/%s",
+    async (profile, stored) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      const old = fake.hooks!;
+      const snapshot = (model: string) =>
+        ({
+          session_id: "runtime",
+          messages: [],
+          running: false,
+          info: { model, provider: "saved-provider", reasoning_effort: "high" },
+          recovery: { epoch: "epoch", through: 0, base_row_ids: [], complete: true },
+        }) as any;
+      old.snapshot(snapshot("saved-model"));
+      expect(session.settings.value?.info).toBeUndefined();
+      old.recovered();
+      expect(session.settings.value).toMatchObject({
+        profile: "alpha",
+        session: "one",
+        info: { model: "saved-model" },
+        generation: session.generationRef.value,
+      });
+      await session.attach(profile, stored);
+      const current = fake.hooks!;
+      current.snapshot(snapshot("beta-model"));
+      current.recovered();
+      old.snapshot(snapshot("stale-model"));
+      old.recovered();
+      expect(session.settings.value).toMatchObject({
+        profile,
+        session: stored,
+        info: { model: "beta-model" },
+        generation: session.generationRef.value,
+      });
+      session.close();
+      expect(session.settings.value).toBeUndefined();
+      current.snapshot(snapshot("closed-model"));
+      current.recovered();
+      expect(session.settings.value).toBeUndefined();
+    },
+  );
   it.each([false, true])(
     "reconciles an untagged matching input with its optimistic upload (ack first: %s)",
     async (ackFirst) => {

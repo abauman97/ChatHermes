@@ -23,6 +23,7 @@ import type { Message } from "../../../types/hermes";
 import type {
   OpenRequestEntry,
   PersistedTurn,
+  SessionLiveInfo,
 } from "../../../vendor/hermes/gateway-contract.generated.ts";
 
 /** One state owner for TUI chat execution and recovery. */
@@ -31,6 +32,12 @@ export function useNativeSession(
   onCreated?: (profile: string, stored: string) => void,
   onTitle?: (profile: string, stored: string, title: string) => void,
 ) {
+  const settings = ref<{
+    profile: string;
+    session: string;
+    info: SessionLiveInfo;
+    generation: number;
+  }>();
   const responseTargets = ref<Record<string, string>>({});
   const messages = ref<Message[]>([]),
     busy = ref(false),
@@ -38,6 +45,7 @@ export function useNativeSession(
     error = ref(""),
     status = ref("");
   const connection = ref<"ready" | "stale" | "reconnecting">("stale"),
+    generationRef = ref(0),
     requests = ref<OpenRequestEntry[]>([]),
     uncertain = ref(false);
   const approval = computed<Record<string, unknown> | undefined>(() => {
@@ -74,6 +82,10 @@ export function useNativeSession(
   const repaint = () => {
     if (user && turn) user.blocks = turn.blocks;
     messages.value = [...messages.value];
+  };
+  const setGeneration = (value: number) => {
+    generation = value;
+    generationRef.value = value;
   };
   function refreshPersistedSession() {
     if (!pendingPersistence) return;
@@ -122,7 +134,9 @@ export function useNativeSession(
     busy.value = true;
     repaint();
   }
-  function restore(value: NativeSnapshot) {
+  function restore(value: NativeSnapshot, current: number) {
+    if (current === generation && selected && s)
+      settings.value = { profile: p, session: s, info: value.info, generation: current };
     recovering = true;
     hydrating++;
     receipt = undefined;
@@ -274,6 +288,7 @@ export function useNativeSession(
   async function attach(profile: string, stored: string) {
     if (!selected || p !== profile || s !== stored) {
       close();
+      setGeneration(generation + 1);
       p = profile;
       s = stored;
       selected = true;
@@ -283,7 +298,7 @@ export function useNativeSession(
     await reconnect();
   }
   function stale() {
-    generation++;
+    setGeneration(generation + 1);
     hydrating++;
     viewer?.close();
     viewer = undefined;
@@ -311,6 +326,7 @@ export function useNativeSession(
     if (!selected || !visible || !online || connection.value === "ready") return Promise.resolve();
     if (reconstruction) return reconstruction;
     const current = ++generation;
+    generationRef.value = current;
     hydrating++;
     recovering = true;
     loading.value = messages.value.length === 0;
@@ -331,7 +347,7 @@ export function useNativeSession(
             : "";
           status.value = "";
           requests.value = [];
-          restore(value);
+          restore(value, current);
         });
       },
       input: (text, correction, admissionId, display) =>
@@ -573,6 +589,7 @@ export function useNativeSession(
   function close() {
     stale();
     selected = false;
+    settings.value = undefined;
     pendingPersistence = false;
     pendingAttempt = "";
     messages.value = [];
@@ -593,6 +610,8 @@ export function useNativeSession(
     return viewer;
   }
   return {
+    generationRef,
+    settings,
     messages,
     responseTargets,
     busy,
