@@ -488,3 +488,23 @@ it("deduplicates MEDIA upload references with legacy filename metadata and conte
   });
   expect(messageArtifacts({ role: "user", content: text })).toHaveLength(1);
 });
+
+it.each([
+  ["MEDIA:/tmp/report.pdf", ""],
+  ["Here is the export.\nMEDIA:/tmp/report.pdf", "Here is the export."],
+  ["MEDIA:/tmp/report.pdf\nHere is the export.", "Here is the export."],
+  [
+    "The example is `MEDIA:/tmp/private.pdf`.\nMEDIA:/tmp/report.pdf\nOther path: /tmp/secret.txt",
+    "The example is `MEDIA:/tmp/private.pdf`.\nOther path: /tmp/secret.txt",
+  ],
+  [
+    "MEDIA:/tmp/report.pdf\nThe example is `MEDIA:/tmp/private.pdf`.",
+    "The example is `MEDIA:/tmp/private.pdf`.",
+  ],
+])("renders delivery within surrounding prose without promoting examples: %s", (content, text) => {
+  expect(textArtifacts(content)).toMatchObject({ text, files: [{ path: "/tmp/report.pdf" }] });
+  expect(textArtifacts(content).files).toHaveLength(1);
+  expect(messageArtifacts({ role: "assistant", content }).map((file) => file.path)).toEqual([
+    "/tmp/report.pdf",
+  ]);
+});

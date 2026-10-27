@@ -3,7 +3,13 @@
     "MEDIA:/tmp/report.pdf",
     "Here is the export.\nMEDIA:\"/tmp/a chart.png\"",
     "Attached file original name.txt: /tmp/source.txt",
-    "Attached image photo.png: /uploads/chathermes/0123456789abcdef0123456789abcdef.png"
+    "Attached image photo.png: /uploads/chathermes/0123456789abcdef0123456789abcdef.png",
+    "MEDIA:/tmp/report.pdf\nHere is the export.",
+    "Here is the export.\nMEDIA:/tmp/report.pdf\nYou can download it.",
+    "Use `MEDIA:/tmp/private.pdf` as a syntax example.\nMEDIA:/tmp/report.pdf",
+    "MEDIA:/tmp/report.pdf\nThe syntax example is `MEDIA:/tmp/private.pdf`.",
+    "Example: ``MEDIA:/tmp/private.pdf``\nMEDIA:/tmp/report.pdf",
+    "Example: `do not send\nMEDIA:/tmp/private.pdf\n`\nMEDIA:/tmp/report.pdf"
   ],
   "positiveToolDeliveries": [
     "{\"media_tag\":\"MEDIA:/tmp/report.pdf\"}",
@@ -30,7 +36,10 @@
     "{\"command\":\"MEDIA:/tmp/private.pdf\"}",
     "Example: Attached file private.pdf: /tmp/private.pdf",
     "> Attached image private.png: /tmp/private.png",
-    "~~~text\nAttached file private.pdf: /tmp/private.pdf\n~~~"
+    "~~~text\nAttached file private.pdf: /tmp/private.pdf\n~~~",
+    "Example: `do not send\nMEDIA:/tmp/private.pdf\n`",
+    "Example: ``a literal ` backtick\nMEDIA:/tmp/private.pdf\n``",
+    "Example: \\`escaped then `quoted\nMEDIA:/tmp/private.pdf\n`"
   ],
   "toolBodyDeliveries": [
     "MEDIA:/tmp/private.pdf",

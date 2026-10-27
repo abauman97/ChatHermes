@@ -137,6 +137,27 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
 // Block tokens keep backtick/tilde fences (including incomplete fences),
 // indented code, blockquotes and lists out of the delivery channel.
 const deliveryMarkdown = new MarkdownIt({ html: true });
+// Record source lines using MarkdownIt's own code-span rule so escapes, HTML,
+// links and differently sized delimiters keep the parser's quotation semantics.
+const codeSpanRule = deliveryMarkdown.inline.ruler.__rules__.find(
+  (rule) => rule.name === "backticks",
+)!.fn;
+deliveryMarkdown.inline.ruler.at("backticks", (state, silent) => {
+  const start = state.pos;
+  const count = state.tokens.length;
+  const matched = codeSpanRule(state, silent);
+  const token = state.tokens.at(-1);
+  if (!silent && state.tokens.length > count && token?.type === "code_inline") {
+    token.meta = {
+      deliveryLines: [
+        state.src.slice(0, start).split("\n").length - 1,
+        state.src.slice(0, state.pos).split("\n").length - 1,
+      ],
+    };
+  }
+  return matched;
+});
+
 export function textArtifacts(text: string): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
   if (!/MEDIA:|Attached (?:image|file) /.test(text)) return { text, files };
@@ -176,16 +197,18 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
   }
   for (const [position, token] of tokens.entries()) {
     if (token.type !== "paragraph_open" || token.level !== 0 || !token.map) continue;
-    // Inline code can span lines; its body still belongs to the quotation.
-    if (
-      tokens[position + 1]?.children?.some(
-        (child) =>
-          child.type === "code_inline" && /MEDIA:|Attached (?:image|file) /.test(child.content),
-      )
-    )
-      continue;
+    // A code example protects its own lines, not every delivery in the paragraph.
+    const quotedLines = new Set<number>();
+    for (const child of tokens[position + 1]?.children || []) {
+      if (child.type !== "code_inline" || !/MEDIA:|Attached (?:image|file) /.test(child.content))
+        continue;
+      const deliveryLines = child.meta?.deliveryLines as [number, number] | undefined;
+      if (!deliveryLines) continue;
+      const [first, last] = deliveryLines;
+      for (let line = first; line <= last; line++) quotedLines.add(token.map[0] + line);
+    }
     for (let index = token.map[0]; index < token.map[1]; index++) {
-      if (untrustedLines.has(index)) continue;
+      if (untrustedLines.has(index) || quotedLines.has(index)) continue;
       const line = lines[index]!;
       const attachment = line.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
       if (attachment && add(attachment[2]!.trim(), attachment[1])) {
