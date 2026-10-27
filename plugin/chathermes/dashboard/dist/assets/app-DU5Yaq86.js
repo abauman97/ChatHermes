@@ -9043,7 +9043,7 @@ var lm = ["open"], um = {
 			return [.../* @__PURE__ */ new Set([...(e?.is_current || !r.providers?.length) && r.defaultModel ? [r.defaultModel] : [], ...t])];
 		});
 		async function ne() {
-			await mn(), w.value && (O.value?.querySelector("select") || O.value?.querySelector("button"))?.focus();
+			await mn();
 		}
 		function re() {
 			w.value && (w.value = !1, D.value?.focus());
@@ -9085,7 +9085,7 @@ var lm = ["open"], um = {
 		});
 		let ue = X(() => r.sending ? !r.stoppable || !!a.value.trim() && (u.value || c.value.some((e) => !!e.uploadError) || k.value) : r.disabled || u.value || c.value.some((e) => !!e.uploadError) || k.value || !a.value.trim() && !c.value.length);
 		function de(e) {
-			e.key !== "Enter" || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || g.value || e.isComposing || e.keyCode === 229 || e.defaultPrevented || (e.preventDefault(), e.repeat || P());
+			e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || g.value || e.isComposing || e.keyCode === 229 || e.defaultPrevented || window.innerWidth <= 700 || (e.preventDefault(), P());
 		}
 		function P() {
 			if (ue.value) return;
