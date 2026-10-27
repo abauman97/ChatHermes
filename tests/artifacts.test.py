@@ -289,6 +289,22 @@ def test_source_uses_pinned_pagination_and_server_profile_credentials():
 DELIVERY_FIXTURES = json.loads((ROOT.parents[2] / 'tests/fixtures/artifact-deliveries.json').read_text())
 
 
+@pytest.mark.parametrize('text', DELIVERY_FIXTURES['positiveTextDeliveries'])
+def test_conversation_and_index_extract_the_same_explicit_text_artifacts(text):
+    frontend_contract = extraction.text_artifacts(text)
+    backend_index = extraction.extract([{'id': 1, 'role': 'assistant', 'content': text}], {'id': 's'})
+    assert [file['path'] for file in frontend_contract] == [file['path'] for file in backend_index]
+    assert backend_index
+
+
+@pytest.mark.parametrize('output', DELIVERY_FIXTURES['positiveToolDeliveries'])
+def test_conversation_and_index_extract_the_same_explicit_tool_artifacts(output):
+    frontend_contract = extraction.tool_artifacts(output)
+    backend_index = extraction.extract([{'id': 1, 'role': 'tool', 'content': output}], {'id': 's'})
+    assert [file['path'] for file in frontend_contract] == [file['path'] for file in backend_index]
+    assert backend_index
+
+
 @pytest.mark.parametrize('text', DELIVERY_FIXTURES['quotedDeliveries'])
 def test_conversation_and_index_reject_the_same_quoted_references(text):
     assert extraction.text_artifacts(text) == []

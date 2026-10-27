@@ -1,4 +1,15 @@
 {
+  "positiveTextDeliveries": [
+    "MEDIA:/tmp/report.pdf",
+    "Here is the export.\nMEDIA:\"/tmp/a chart.png\"",
+    "Attached file original name.txt: /tmp/source.txt",
+    "Attached image photo.png: /uploads/chathermes/0123456789abcdef0123456789abcdef.png"
+  ],
+  "positiveToolDeliveries": [
+    "{\"media_tag\":\"MEDIA:/tmp/report.pdf\"}",
+    "{\"media_tag\":\"MEDIA:/tmp/a chart.png\",\"mime_type\":\"image/png\",\"size\":42}",
+    "{\"_multimodal\":true,\"meta\":{\"media_tag\":\"MEDIA:/tmp/voice.wav\",\"mime\":\"audio/wav\"}}"
+  ],
   "quotedDeliveries": [
     "For example, use MEDIA:/tmp/private.pdf to send a file.",
     "`MEDIA:/tmp/private.pdf`",
