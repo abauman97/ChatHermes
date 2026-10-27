@@ -22,7 +22,7 @@ The getting-started guide documents Enter and Shift+Enter.
   plugin development extra, and Hermes source at
   `bf0203a794a07aac3ff764972ab9087baa4e4f4e` on `PYTHONPATH`.
 - `npm run build`: passed, including TypeScript checking. The final repeat used
-  `CHATHERMES_BUILD_OUT_DIR=tmp/issue-113-dist` to keep output ignored.
+  the historical alternate output path `tmp/issue-113-dist` to keep output ignored.
 - `vp lint`, `vp fmt`, `vp fmt --check`, and `git diff --check`: passed.
 - `npm run test:env:build`: passed against the official Hermes image, followed
   by actual dashboard plugin workflows with stock MockServer fixtures.

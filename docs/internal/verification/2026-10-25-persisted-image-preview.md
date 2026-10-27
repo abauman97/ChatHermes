@@ -37,8 +37,8 @@ authentication, gateway, or provider behavior changed.
 - `npm test`: **760 passed**, 32 files.
 - `npm run test:api`: **99 passed**, with the project virtualenv, development
   extra, runtime test dependencies, and `PYTHONPATH=/opt/hermes:plugin`.
-- `npm run build`: passed. Final fixture build used
-  `CHATHERMES_BUILD_OUT_DIR=tests/image-preview-169-dist`; its output was moved
+- `npm run build`: passed. Final fixture build used the historical alternate output path
+  `tests/image-preview-169-dist`; its output was moved
   into ignored `tmp/image-preview-169/validated-build` after Docker built the
   image. Initial validation-generated changes to tracked dist files were
   restored to their starting bytes. No generated assets remain in the diff.

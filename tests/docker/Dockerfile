@@ -3,9 +3,7 @@ FROM nousresearch/hermes-agent:latest
 USER root
 
 COPY plugin/chathermes /opt/chathermes/plugin
-# Allow isolated validation without overwriting tracked distribution assets.
-ARG CHATHERMES_BUILD_OUT_DIR=plugin/chathermes/dashboard/dist
-COPY ${CHATHERMES_BUILD_OUT_DIR}/ /opt/chathermes/plugin/dashboard/dist/
+COPY plugin/chathermes/dashboard/dist/ /opt/chathermes/plugin/dashboard/dist/
 # Install the plugin's declared dependencies into the dashboard interpreter.
 RUN /opt/hermes/.venv/bin/python -c "import subprocess; from pm import uv_launcher; subprocess.run([str(uv_launcher('uv')), 'pip', 'install', '--python', '/opt/hermes/.venv/bin/python', '/opt/chathermes/plugin'], check=True)"
 COPY tests/docker/config.yaml tests/docker/start.py tests/docker/healthcheck.py /opt/chathermes/
