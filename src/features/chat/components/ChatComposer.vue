@@ -142,12 +142,6 @@ const providerModels = computed(() => {
 });
 async function focusPanel() {
   await nextTick();
-  if (pickerOpen.value) {
-    const target =
-      panel.value?.querySelector<HTMLElement>("select") ||
-      panel.value?.querySelector<HTMLElement>("button");
-    target?.focus();
-  }
 }
 function closePicker() {
   if (!pickerOpen.value) return;
@@ -238,7 +232,7 @@ const buttonDisabled = computed(() =>
 function composerKeydown(event: KeyboardEvent) {
   if (
     event.key !== "Enter" ||
-    !event.shiftKey ||
+    event.shiftKey ||
     event.ctrlKey ||
     event.altKey ||
     event.metaKey ||
@@ -246,11 +240,12 @@ function composerKeydown(event: KeyboardEvent) {
     event.isComposing ||
     // Some IMEs end composition before the confirming Enter keydown.
     event.keyCode === 229 ||
-    event.defaultPrevented
+    event.defaultPrevented ||
+    window.innerWidth <= 700
   )
     return;
   event.preventDefault();
-  if (!event.repeat) send();
+  send();
 }
 function send() {
   if (buttonDisabled.value) return;

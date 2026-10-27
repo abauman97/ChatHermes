@@ -146,11 +146,11 @@ describe("composer", () => {
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
     await wrapper.get('[data-mode="plan"]').trigger("click");
     await wrapper.get("textarea").setValue("refactor the parser");
-    await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
     wrapper.unmount();
   });
-  it("leaves plain Enter, other modifiers and IME confirmation to native handling", async () => {
+  it("keeps modified and composing Enter to native newline handling", async () => {
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: false, sending: false },
@@ -159,7 +159,6 @@ describe("composer", () => {
       const area = wrapper.get("textarea");
       await area.setValue("hello\nworld");
       for (const extra of [
-        {},
         { shiftKey: true, isComposing: true },
         { shiftKey: true, keyCode: 229 },
         { shiftKey: true, ctrlKey: true },
@@ -176,17 +175,18 @@ describe("composer", () => {
         expect(event.defaultPrevented).toBe(false);
       }
       await area.trigger("compositionstart");
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("send")).toBeUndefined();
       expect(area.element.value).toBe("hello\nworld");
       await area.trigger("compositionend");
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
     } finally {
       wrapper.unmount();
     }
   });
-  it("sends once with Shift+Enter, keeps focus, and ignores held keys", async () => {
+  it("sends once with desktop Enter, keeps focus, and ignores held keys", async () => {
+    vi.stubGlobal("innerWidth", 1024);
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: false, sending: false },
@@ -197,7 +197,6 @@ describe("composer", () => {
       await area.setValue("  hello\nworld  ");
       const event = new KeyboardEvent("keydown", {
         key: "Enter",
-        shiftKey: true,
         bubbles: true,
         cancelable: true,
       });
@@ -207,7 +206,7 @@ describe("composer", () => {
       expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
       expect(area.element.value).toBe("");
       expect(document.activeElement).toBe(area.element);
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("send")).toHaveLength(1);
       await area.setValue("next draft");
       await area.trigger("keydown", { key: "Enter", shiftKey: true, repeat: true });
@@ -220,32 +219,34 @@ describe("composer", () => {
   it.each([
     { disabled: true, sending: false, stoppable: false },
     { disabled: false, sending: true, stoppable: false },
-  ])("retains drafts when Shift+Enter is gated: %j", async (props) => {
+  ])("retains drafts when desktop Enter is gated: %j", async (props) => {
+    vi.stubGlobal("innerWidth", 1024);
     const wrapper = mount(ChatComposer, { props });
     try {
       const area = wrapper.get("textarea");
       await area.setValue("draft while unavailable");
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("send")).toBeUndefined();
       expect(wrapper.emitted("steer")).toBeUndefined();
       expect(area.element.value).toBe("draft while unavailable");
       await wrapper.setProps({ disabled: false, sending: false });
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("send")).toEqual([["draft while unavailable", []]]);
     } finally {
       wrapper.unmount();
     }
   });
-  it("uses Shift+Enter for run guidance without stopping an empty run", async () => {
+  it("uses desktop Enter for run guidance without stopping an empty run", async () => {
+    vi.stubGlobal("innerWidth", 1024);
     const wrapper = mount(ChatComposer, {
       props: { disabled: false, sending: true, stoppable: true },
     });
     try {
       const area = wrapper.get("textarea");
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("stop")).toBeUndefined();
       await area.setValue("  follow this direction  ");
-      await area.trigger("keydown", { key: "Enter", shiftKey: true });
+      await area.trigger("keydown", { key: "Enter" });
       expect(wrapper.emitted("steer")).toEqual([["follow this direction"]]);
       expect(wrapper.emitted("send")).toBeUndefined();
       expect(area.element.value).toBe("");
@@ -504,17 +505,16 @@ describe("provider and model picker", () => {
     await wrapper.get('[data-model="saved"]').trigger("click");
     expect(wrapper.emitted("update:model")?.[1]).toEqual(["saved"]);
   });
-  it("moves focus, traps Tab and closes on toggle, Escape and outside click", async () => {
+  it("does not autofocus picker controls and closes on toggle, Escape and outside click", async () => {
     const wrapper = composer();
     const pill = wrapper.get(".model-pill");
+    const activeBeforeOpen = document.activeElement;
     await pill.trigger("click");
     const select = wrapper.get('select[aria-label="Reasoning effort"]');
     const close = wrapper.get('[aria-label="Close model picker"]');
-    expect(document.activeElement).toBe(select.element);
-    await select.trigger("keydown", { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(select.element);
-    await select.trigger("keydown", { key: "Tab" });
-    expect(document.activeElement).toBe(select.element);
+    expect(document.activeElement).toBe(activeBeforeOpen);
+    expect(document.activeElement).not.toBe(select.element);
+    expect(document.activeElement).not.toBe(wrapper.get('[data-provider="first"]').element);
     await close.trigger("keydown", { key: "Escape" });
     expect(wrapper.find(".model-panel").exists()).toBe(false);
     expect(document.activeElement).toBe(pill.element);
@@ -582,17 +582,16 @@ describe("provider and model picker", () => {
     await wrapper.get(".model-pill").trigger("click");
     expect(wrapper.find('select[aria-label="Reasoning effort"]').exists()).toBe(true);
   });
-  it("focuses the reasoning selector first and includes it in picker tab order", async () => {
+  it("does not autofocus the reasoning selector or first provider when opened", async () => {
     const wrapper = composer();
+    const activeBeforeOpen = document.activeElement;
     await wrapper.get(".model-pill").trigger("click");
-    const select = wrapper.get('select[aria-label="Reasoning effort"]');
-    expect(document.activeElement).toBe(select.element);
-
-    await select.trigger("keydown", { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(select.element);
-
-    await select.trigger("keydown", { key: "Tab" });
-    expect(document.activeElement).toBe(select.element);
+    expect(document.activeElement).toBe(activeBeforeOpen);
+    expect(document.activeElement).not.toBe(
+      wrapper.get('select[aria-label="Reasoning effort"]').element,
+    );
+    expect(document.activeElement).not.toBe(wrapper.get('[data-provider="first"]').element);
+    wrapper.unmount();
   });
   it("gates the picker during sending, closes an open picker, and keeps the composer editable", async () => {
     const wrapper = composer({ disabled: true });
@@ -628,7 +627,7 @@ it("shares file staging, retains the draft and other files on upload failure, an
   expect(wrapper.emitted("send")).toBeUndefined();
   expect(wrapper.get("textarea").element.value).toBe("Keep this draft");
   expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
-  await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
   expect(wrapper.emitted("send")).toBeUndefined();
   expect(wrapper.get("textarea").element.value).toBe("Keep this draft");
   await wrapper.get('button[aria-label="Retry upload two.txt"]').trigger("click");
@@ -636,7 +635,7 @@ it("shares file staging, retains the draft and other files on upload failure, an
   await flushPromises();
   expect(wrapper.find('button[aria-label="Retry upload two.txt"]').exists()).toBe(false);
   expect(wrapper.get(".send-button").attributes("disabled")).toBeUndefined();
-  await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
+  await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
   expect(wrapper.emitted("send")?.[0]).toMatchObject([
     "Keep this draft",
     [
