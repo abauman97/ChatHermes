@@ -3675,7 +3675,7 @@ var rs = class extends Error {
 }, is = /* @__PURE__ */ new Set(), as = /* @__PURE__ */ new Set(), os = (e, t) => JSON.stringify([e, t]), ss = "/api/plugins/chathermes";
 function cs(e, t) {
 	if (e && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(e)) throw Error("Invalid profile name");
-	if (!/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(t)) throw Error("Invalid Hermes API path.");
+	if (!/^\/(?:artifacts\?[^#]*|project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(t)) throw Error("Invalid Hermes API path.");
 	return ss + t + (e ? `${t.includes("?") ? "&" : "?"}profile=${encodeURIComponent(e)}` : "");
 }
 async function ls(e, t, n = {}, r = "application/json") {
@@ -3734,6 +3734,10 @@ function hs(e) {
 	};
 }
 var Q = {
+	artifacts: (e, t, n, r) => {
+		let i = new URLSearchParams({ limit: "50" });
+		return t !== void 0 && i.set("project_id", t), n && i.set("cursor", n), us(e, `/artifacts?${i}`, { signal: r });
+	},
 	nativeChatCapabilities: ns,
 	isNative: (e) => is.has(e),
 	profiles: async () => {
@@ -6798,6 +6802,177 @@ var xd = [
 };
 $(Od, "Token", Pl), $(Od, "Ruler", Fl), $(Od, "Renderer", Ll), $(Od, "ParserCore", mu), $(Od, "StateCore", Rl), $(Od, "ParserBlock", Bu), $(Od, "StateBlock", hu), $(Od, "ParserInline", Cd), $(Od, "StateInline", Vu);
 var kd = tl(Od), Ad = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	gif: "image/gif",
+	webp: "image/webp",
+	bmp: "image/bmp",
+	svg: "image/svg+xml",
+	pdf: "application/pdf",
+	mp4: "video/mp4",
+	webm: "video/webm",
+	mp3: "audio/mpeg",
+	wav: "audio/wav",
+	ogg: "audio/ogg",
+	html: "text/html",
+	htm: "text/html"
+}, jd = new Set("txt md csv json xml yaml yml py js ts tsx jsx css sh sql toml rs go java c cpp h html htm svg".split(" ")), Md = `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${"png jpg jpeg gif webp bmp tiff svg mp4 mov avi mkv webm 3gp mp3 m2a wav ogg opus m4a flac pdf docx doc odt rtf txt md epub xlsx xls ods csv tsv json xml yaml yml kmz kml geojson gpx pptx ppt odp key zip tar gz tgz bz2 xz 7z rar apk ipa html htm".split(" ").sort((e, t) => t.length - e.length).join("|")})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`, Nd = RegExp(`MEDIA:\\s*(\`[^\`\n]+\`|"[^"\n]+"|'[^'\n]+'|${Md}|[^\\s\`"]+)`, "g");
+function Pd(e) {
+	e = e.trim();
+	let t = e[0];
+	if (t && t === e.at(-1) && [
+		"\"",
+		"'",
+		"`"
+	].includes(t)) e = e.slice(1, -1);
+	else {
+		for (e = e.replace(/[`"]$/, ""); /[.,;:!?]$/.test(e) && /[/\\]|\.[^.]/.test(e.slice(0, -1));) e = e.slice(0, -1);
+		e = e.replace(/[`"'*_]{1,3}$/, "");
+	}
+	return /[/\\]|\.[^.]/.test(e) ? e : "";
+}
+function Fd(e, t) {
+	let n = [], r = 0;
+	for (let t of e.matchAll(Nd)) {
+		if (e.slice(r, t.index).trim()) return e;
+		let i = Pd(t[1]);
+		if (!/^(?:file:|\/|[~.][\\/]|\.\.[\\/]|[a-z]:[\\/]|\\\\|https?:\/\/|data:image\/)/i.test(i)) return e;
+		n.push(i), r = t.index + t[0].length;
+	}
+	return !n.length || e.slice(r).trim() ? e : n.every((e) => !!Ld(e)) && n.every(t) ? "" : e;
+}
+function Id(e) {
+	return e.split(".").at(-1)?.toLowerCase() || "";
+}
+function Ld(e, t) {
+	try {
+		e.startsWith("#media:") && (e = decodeURIComponent(e.slice(7))), e.startsWith("sandbox:") && (e = e.slice(8)), e.startsWith("file:") && (e = decodeURIComponent(new URL(e).pathname));
+	} catch {
+		return;
+	}
+	if (!/^(\/|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\|data:image\/|https?:\/\/)/.test(e)) return;
+	let n = e.split(/[\\/]/).at(-1)?.split(/[?#]/)[0] || "";
+	t = (t && /\.[a-z0-9]{1,12}$/i.test(t) ? t : n) || t || "Attached image";
+	let r = Id(t);
+	return {
+		path: e,
+		name: t,
+		type: Ad[r] || (jd.has(r) ? "text/plain" : "application/octet-stream")
+	};
+}
+function Rd(e) {
+	if (e.type.startsWith("image/") && e.type !== "image/svg+xml") return "image";
+	if (e.type === "application/pdf") return "pdf";
+	if (e.type.startsWith("audio/")) return "audio";
+	if (e.type.startsWith("video/")) return "video";
+	if (jd.has(Id(e.name))) return "text";
+}
+function zd(e, t = "", n = !1) {
+	if (/^(https?:\/\/|data:image\/)/.test(e.path)) return e.path;
+	if (/^\/api\/plugins\/chathermes\/artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+$/.test(e.path)) {
+		let r = new URLSearchParams({ profile: t || "default" });
+		return n && r.set("download", "true"), `${e.path}?${r}`;
+	}
+	if (e.path.match(/^\/api\/plugins\/chathermes\/images\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i)) {
+		let n = new URLSearchParams();
+		return t && n.set("profile", t), `${e.path}${n.size ? `?${n}` : ""}`;
+	}
+	let r = new URLSearchParams({
+		path: e.path,
+		profile: t || "default"
+	});
+	return e.sessionId && r.set("session_id", e.sessionId), n && r.set("name", e.name), `/api/plugins/chathermes/files/${n ? "download" : "preview"}?${r}`;
+}
+var Bd = new kd({ html: !0 });
+function Vd(e) {
+	let t = [];
+	if (!/MEDIA:|Attached (?:image|file) /.test(e)) return {
+		text: e,
+		files: t
+	};
+	let n = (e, n) => {
+		let r = Ld(e, n);
+		return r ? (t.some((e) => e.path === r.path) || t.push(r), !0) : !1;
+	}, r = e.split("\n"), i = [...r], a = !1, o = [], s = Bd.parse(e, {}), c = /* @__PURE__ */ new Set();
+	for (let e of s) if (e.map && ([
+		"fence",
+		"code_block",
+		"blockquote_open",
+		"bullet_list_open",
+		"ordered_list_open"
+	].includes(e.type) || e.children?.some((e) => e.type === "code_inline" && /untrusted_tool_result/i.test(e.content)))) for (let t = e.map[0]; t < e.map[1]; t++) c.add(t);
+	let l = /* @__PURE__ */ new Set(), u = 0;
+	for (let [e, t] of r.entries()) if (u && l.add(e), !c.has(e) && /^\s*<\/?untrusted_tool_result\b/i.test(t)) for (let n of t.matchAll(/<(\/?)untrusted_tool_result\b[^>]*(?:>|$)/gi)) l.add(e), u = n[1] ? Math.max(0, u - 1) : u + 1;
+	for (let [e, t] of s.entries()) if (t.type === "paragraph_open" && t.level === 0 && t.map && !s[e + 1]?.children?.some((e) => e.type === "code_inline" && /MEDIA:|Attached (?:image|file) /.test(e.content))) for (let e = t.map[0]; e < t.map[1]; e++) {
+		if (l.has(e)) continue;
+		let t = i[e], r = t.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
+		r && n(r[2].trim(), r[1]) ? (a = !0, i[e] = "") : /^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(t) ? o.push(e) : t.startsWith("MEDIA:") && (i[e] = Fd(t, n));
+	}
+	if (a) for (let e of o) i[e] = "";
+	return {
+		text: t.length ? i.filter((e, t) => e !== "" || r[t] === "").join("\n").trim() : e,
+		files: t
+	};
+}
+function Hd(e) {
+	if (e.kind !== "tool" || !e.complete || e.state === "failed") return [];
+	let t;
+	try {
+		t = JSON.parse(e.output || "");
+	} catch {
+		return [];
+	}
+	if (!t || typeof t != "object" || Array.isArray(t)) return [];
+	let n = t;
+	if (n.is_error || n.error || n.success === !1 || typeof n.exit_code == "number" && n.exit_code !== 0) return [];
+	let r = n._multimodal === !0 && n.meta && typeof n.meta == "object" && !Array.isArray(n.meta) ? n.meta : n;
+	if (typeof r.media_tag != "string") return [];
+	let i = r.media_tag.replace(/^\[\[audio_as_voice\]\]\r?\n/, "");
+	if (i.split("\n").some((e) => e && !e.startsWith("MEDIA:"))) return [];
+	let a = Vd(i);
+	return a.text.trim() ? [] : a.files.map((e) => {
+		let t = r.mime_type || r.mime;
+		typeof t == "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(t) && (e.type = t);
+		let n = r.size ?? r.bytes;
+		return typeof n == "number" && Number.isSafeInteger(n) && n >= 0 && (e.size = n), e;
+	});
+}
+function Ud(e) {
+	return Vd(e);
+}
+function Wd(e) {
+	if (e.role !== "user" && e.role !== "assistant") return [];
+	let { content: t } = e, n = (e.role === "user" ? Ud : Vd)(gs(t)).files, r = n.filter((e) => Rd(e) === "image");
+	if (Array.isArray(t)) {
+		let e = 0;
+		for (let i of t) {
+			let t = i?.image_url?.url;
+			if (typeof t == "string" && /^(data:image\/|https?:\/\/)/.test(t)) {
+				if (r.length) {
+					let n = r[e++];
+					n && (n.imageData = t);
+				} else {
+					let e = Ld(t, "Attached image.png");
+					e && n.push(e);
+				}
+			}
+		}
+	}
+	if (e.role === "user" && r.length) for (let e of r) {
+		let t = e.path.match(/\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i);
+		t && (e.path = `/api/plugins/chathermes/images/${t[1]}`);
+	}
+	return n.map((t) => ({
+		...t,
+		messageId: e.id,
+		createdAt: e.created_at,
+		direction: e.role === "user" ? "uploaded" : "generated"
+	}));
+}
+//#endregion
+//#region src/features/chat/runtime/gateway-display.ts
+var Gd = {
 	auto_continue: "Resuming interrupted turn…",
 	process_complete: "Background process completed",
 	async_delegation_complete: "Delegated work completed",
@@ -6805,30 +6980,30 @@ var kd = tl(Od), Ad = {
 	personality_switch: "Personality changed",
 	failed_turn: "Response did not complete · verify any actions before resending"
 };
-function jd(e) {
-	return e.display_kind === "hidden" ? "hidden" : e.display_kind && Object.hasOwn(Ad, e.display_kind) ? "status" : e.role === "system" ? "hidden" : "message";
+function Kd(e) {
+	return e.display_kind === "hidden" ? "hidden" : e.display_kind && Object.hasOwn(Gd, e.display_kind) ? "status" : e.role === "system" ? "hidden" : "message";
 }
-function Md(e) {
+function qd(e) {
 	let t = e.display_metadata;
 	if (e.display_kind === "model_switch" && t && typeof t == "object") {
 		let e = "model" in t && typeof t.model == "string" ? t.model : "";
 		if (e) return `Model changed to ${e}`;
 	}
-	return t && typeof t == "object" && "display_text" in t && typeof t.display_text == "string" ? t.display_text : Ad[e.display_kind || ""] || "";
+	return t && typeof t == "object" && "display_text" in t && typeof t.display_text == "string" ? t.display_text : Gd[e.display_kind || ""] || "";
 }
-function Nd(e) {
+function Jd(e) {
 	return e === "interrupted" ? "Response interrupted" : e === "cancelled" ? "Response cancelled" : e === "error" || e === "failed" ? "Response failed" : "Response completed";
 }
 //#endregion
 //#region src/features/chat/runtime/assistant-turn.ts
-var Pd = (e) => typeof e == "string" ? e : "", Fd = (e) => typeof e == "string" ? e : e == null ? "" : JSON.stringify(e, null, 2);
-function Id(e) {
-	let t = Pd(e.subagent_id) || Pd(e.child_session_id);
+var Yd = (e) => typeof e == "string" ? e : "", Xd = (e) => typeof e == "string" ? e : e == null ? "" : JSON.stringify(e, null, 2);
+function Zd(e) {
+	let t = Yd(e.subagent_id) || Yd(e.child_session_id);
 	if (t) return t;
-	let n = Pd(e.delegation_id);
+	let n = Yd(e.delegation_id);
 	return n && typeof e.task_index == "number" && Number.isSafeInteger(e.task_index) ? `${n}:${e.task_index}` : "";
 }
-function Ld(e) {
+function Qd(e) {
 	let t = e;
 	if (typeof t == "string") try {
 		t = JSON.parse(t);
@@ -6839,7 +7014,7 @@ function Ld(e) {
 	let n = t;
 	return !!(n.is_error || n.error || n.success === !1 || typeof n.exit_code == "number" && n.exit_code !== 0);
 }
-function Rd(e, t = !1) {
+function $d(e, t = !1) {
 	let n = {
 		file_search: ["Searching files", "Searched files"],
 		terminal: ["Running command", "Ran command"],
@@ -6853,32 +7028,32 @@ function Rd(e, t = !1) {
 	}, r = Object.keys(n).find((t) => e === t || e.startsWith(t + "_"));
 	return r ? n[r][+!!t] : t ? "Used tool" : "Using tool";
 }
-var zd = () => ({
+var ef = () => ({
 	blocks: [],
 	seen: /* @__PURE__ */ new Set(),
 	sequence: 0
 });
-function Bd(e) {
-	Vd(e);
+function tf(e) {
+	nf(e);
 	for (let t of e.blocks) t.kind !== "text" && (t.complete = !0, t.kind === "thinking" && (t.title = "Thought"), (!t.state || t.state === "running" || t.state === "pending") && (t.state = t.kind === "tool" ? "unknown" : "completed"));
 }
-function Vd(e) {
+function nf(e) {
 	for (let t of e.blocks) t.kind === "thinking" && (t.complete = !0, t.state = "completed", t.title = "Thought", t.duration === void 0 && t.startedAt !== void 0 && (t.duration = Math.max(0, (Date.now() - t.startedAt) / 1e3)));
 }
-function Hd(e, t) {
+function rf(e, t) {
 	if (t.key && e.seen.has(t.key)) return;
 	t.key && e.seen.add(t.key);
-	let { type: n, data: r } = t, i = Pd(r.delta) || Pd(r.text) || Pd(r.preview), a = Pd(r.tool_call_id) || Pd(r.tool_id), o = Pd(r.tool_name) || Pd(r.name) || Pd(r.tool), s = () => `block-${++e.sequence}`;
+	let { type: n, data: r } = t, i = Yd(r.delta) || Yd(r.text) || Yd(r.preview), a = Yd(r.tool_call_id) || Yd(r.tool_id), o = Yd(r.tool_name) || Yd(r.name) || Yd(r.tool), s = () => `block-${++e.sequence}`;
 	if (n === "text" || n === "text.snapshot" || n === "text.completed") {
-		Vd(e);
-		let t = n === "text.completed" ? Pd(r.content) : i;
+		nf(e);
+		let t = n === "text.completed" ? Yd(r.content) : i;
 		if (!t || n === "text.completed" && [...e.blocks].reverse().find((e) => e.kind === "text")?.content === t) return;
 		let a = e.blocks.at(-1);
 		if (n === "text.snapshot") {
 			let n = e.blocks.filter((e) => e.kind === "text").map((e) => e.content).join("");
 			if (n === t || n.startsWith(t)) return;
 			if (t.startsWith(n)) {
-				Hd(e, {
+				rf(e, {
 					type: "text",
 					data: { delta: t.slice(n.length) }
 				});
@@ -6905,43 +7080,43 @@ function Hd(e, t) {
 			state: "running",
 			startedAt: r.persisted ? void 0 : typeof r.ts == "number" ? r.ts * 1e3 : Date.now()
 		}, e.blocks.push(t)), t.content += i;
-	} else if (n === "reasoning.completed") Vd(e);
+	} else if (n === "reasoning.completed") nf(e);
 	else if (n.startsWith("tool.")) {
-		Vd(e);
+		nf(e);
 		let t = e.blocks.find((e) => e.kind === "tool" && a && e.id === a);
 		if (!t && !a && (t = [...e.blocks].reverse().find((e) => e.kind === "tool" && !e.complete && (!o || e.toolName === o))), t || (t = {
 			id: a || s(),
 			kind: "tool",
-			title: Rd(o),
+			title: $d(o),
 			toolName: o,
 			content: "",
 			complete: !1,
 			state: "pending",
 			startedAt: r.persisted ? void 0 : typeof r.ts == "number" ? r.ts * 1e3 : Date.now()
 		}, e.blocks.push(t)), n === "tool.started" && t.complete) return;
-		n === "tool.started" ? (t.state = "running", t.content = Fd(r.args) || i || t.content) : n === "tool.updated" ? (t.complete || (t.state = "running"), t.output = (t.output || "") + i) : (t.complete = !0, t.state = n === "tool.failed" || Ld(r.output ?? r.result) || r.is_error || r.error ? "failed" : "completed", t.title = Rd(t.toolName || o, !0), t.output = Fd(r.output ?? r.result ?? r.error) || t.output || i, t.content = Fd(r.args) || t.content, t.duration = typeof r.duration_s == "number" ? r.duration_s : t.startedAt ? Math.max(0, ((typeof r.ts == "number" ? r.ts * 1e3 : Date.now()) - t.startedAt) / 1e3) : void 0);
+		n === "tool.started" ? (t.state = "running", t.content = Xd(r.args) || i || t.content) : n === "tool.updated" ? (t.complete || (t.state = "running"), t.output = (t.output || "") + i) : (t.complete = !0, t.state = n === "tool.failed" || Qd(r.output ?? r.result) || r.is_error || r.error ? "failed" : "completed", t.title = $d(t.toolName || o, !0), t.output = Xd(r.output ?? r.result ?? r.error) || t.output || i, t.content = Xd(r.args) || t.content, t.duration = typeof r.duration_s == "number" ? r.duration_s : t.startedAt ? Math.max(0, ((typeof r.ts == "number" ? r.ts * 1e3 : Date.now()) - t.startedAt) / 1e3) : void 0);
 	} else {
 		if (n === "failed") for (let t of e.blocks) t.kind === "tool" && !t.complete && (t.state = "failed", t.output ||= "The response ended before this tool completed.");
-		Bd(e);
+		tf(e);
 	}
 }
-function Ud(e) {
-	let t = zd();
+function af(e) {
+	let t = ef();
 	for (let n of e) {
 		if (n.blocks) {
 			t.blocks.push(...n.blocks);
 			continue;
 		}
-		if (jd(n) === "message") {
+		if (Kd(n) === "message") {
 			if (n.role === "assistant") {
 				let e = n.reasoning_content || n.reasoning;
-				e && (Hd(t, {
+				e && (rf(t, {
 					type: "reasoning",
 					data: {
 						delta: e,
 						persisted: !0
 					}
-				}), Vd(t));
+				}), nf(t));
 				let r = gs(n.content);
 				r && t.blocks.push({
 					id: `block-${++t.sequence}`,
@@ -6960,7 +7135,7 @@ function Ud(e) {
 						content: ""
 					}, t.blocks.push(e)), e.images = i;
 				}
-				for (let e of n.tool_calls || []) Hd(t, {
+				for (let e of n.tool_calls || []) rf(t, {
 					type: "tool.started",
 					data: {
 						tool_call_id: e.id,
@@ -6975,7 +7150,7 @@ function Ud(e) {
 					let t = JSON.parse(e);
 					r = t?.is_error === !0 || t?.success === !1 || !!t?.error || typeof t?.exit_code == "number" && t.exit_code !== 0;
 				} catch {}
-				Hd(t, {
+				rf(t, {
 					type: r ? "tool.failed" : "tool.completed",
 					data: {
 						tool_call_id: n.tool_call_id,
@@ -6987,9 +7162,9 @@ function Ud(e) {
 			}
 		}
 	}
-	return Vd(t), t.blocks;
+	return nf(t), t.blocks;
 }
-function Wd(e, t, n) {
+function of(e, t, n) {
 	let r = [...e.blocks], i = /* @__PURE__ */ new Map(), a = /* @__PURE__ */ new Map(), o = 0;
 	for (let [e, n] of t.entries()) {
 		if (n.kind !== "tool") continue;
@@ -7013,7 +7188,7 @@ function Wd(e, t, n) {
 		}
 	}
 }
-function Gd(e, t) {
+function sf(e, t) {
 	let n = Math.max(e.length, t.length);
 	if (n < 160) return !1;
 	let r = Math.max(1, Math.min(32, Math.floor(n * .02)));
@@ -7030,7 +7205,7 @@ function Gd(e, t) {
 	}
 	return o[i.length] <= r;
 }
-function Kd(e, t, n) {
+function cf(e, t, n) {
 	let r = e.native ??= {
 		boundary: 0,
 		toolStream: !1,
@@ -7052,9 +7227,9 @@ function Kd(e, t, n) {
 	}
 	if (t !== "thinking.delta" && t !== "tool.generating") {
 		if (t === "message.interim") {
-			let t = Pd(n.text).trim();
+			let t = Yd(n.text).trim();
 			if (!t) return;
-			Vd(e);
+			nf(e);
 			let o = i(r.streamText);
 			if (!o) {
 				let e = i(r.interimText ?? r.finalText);
@@ -7062,14 +7237,14 @@ function Kd(e, t, n) {
 			}
 			o ??= a(t), o.content = t, r.interimText = o.id, r.streamText = void 0, r.finalText = void 0, r.toolStream = !1;
 		} else if (t === "message.delta" || t === "message.complete") {
-			let o = Pd(n.text);
+			let o = Yd(n.text);
 			if (t === "message.delta" && o) {
-				Vd(e);
+				nf(e);
 				let t = i(r.streamText);
 				(!t || t !== e.blocks.at(-1)) && (t = a("")), t.content += o, r.streamText = t.id, r.finalText = void 0;
 			} else if (t === "message.complete" && o.trim() && (!n.response_reused || !e.blocks.some((e) => e.kind === "text"))) {
-				Vd(e);
-				let t = o.trim(), s = i(r.streamText), c = e.blocks.reduce((e, t, n) => t.kind === "tool" ? n : e, -1), l = s && e.blocks.indexOf(s) > c ? s : void 0, u = i(r.interimText), d = !!(n.error || n.status && n.status !== "complete"), f = !d && u && u.content.trim() === t && (!l || l.content.trim() === t), p = !d && !l && !r.toolStream && u && u.content.trim() && (n.response_previewed || n.response_transformed || u.content.trim() === t || t.startsWith(u.content.trim()) || u.content.trim().startsWith(t) || Gd(u.content.trim(), t)), m;
+				nf(e);
+				let t = o.trim(), s = i(r.streamText), c = e.blocks.reduce((e, t, n) => t.kind === "tool" ? n : e, -1), l = s && e.blocks.indexOf(s) > c ? s : void 0, u = i(r.interimText), d = !!(n.error || n.status && n.status !== "complete"), f = !d && u && u.content.trim() === t && (!l || l.content.trim() === t), p = !d && !l && !r.toolStream && u && u.content.trim() && (n.response_previewed || n.response_transformed || u.content.trim() === t || t.startsWith(u.content.trim()) || u.content.trim().startsWith(t) || sf(u.content.trim(), t)), m;
 				if (f || p) m = u, l && l !== u && e.blocks.splice(e.blocks.indexOf(l), 1);
 				else {
 					let e = i(r.finalText);
@@ -7079,22 +7254,22 @@ function Kd(e, t, n) {
 			}
 			if (t === "message.complete") {
 				for (let t of e.blocks) t.kind !== "text" && !t.delegated && (t.complete = !0, (!t.state || t.state === "running" || t.state === "pending") && (t.state = n.status === "cancelled" || n.status === "interrupted" ? "interrupted" : "unknown"));
-				n.reasoning && !e.blocks.some((e) => e.kind === "thinking") && Hd(e, {
+				n.reasoning && !e.blocks.some((e) => e.kind === "thinking") && rf(e, {
 					type: "reasoning",
 					data: { text: n.reasoning }
-				}), Vd(e);
+				}), nf(e);
 			}
 		} else if (t === "reasoning.delta" || t === "reasoning.available") {
 			if (t === "reasoning.available") {
 				let t = i(r.streamText ?? r.finalText)?.content.trim();
-				if (t && t.slice(0, 500).trim() === Pd(n.text).trim()) return;
+				if (t && t.slice(0, 500).trim() === Yd(n.text).trim()) return;
 				let a = [...e.blocks].reverse().find((e) => e.kind === "thinking");
 				if (a && a.kind === "thinking") {
-					a.content = Pd(n.text);
+					a.content = Yd(n.text);
 					return;
 				}
 			}
-			Hd(e, {
+			rf(e, {
 				type: "reasoning",
 				data: {
 					...n,
@@ -7103,8 +7278,8 @@ function Kd(e, t, n) {
 			});
 		} else if (t === "tool.start" || t === "tool.complete" || t === "tool.progress") {
 			t === "tool.start" && (r.toolStream = !0);
-			let i = n.result, a = n.is_error || n.error || Ld(i) || Ld(n.result_text);
-			Hd(e, {
+			let i = n.result, a = n.is_error || n.error || Qd(i) || Qd(n.result_text);
+			rf(e, {
 				type: t === "tool.start" ? "tool.started" : t === "tool.progress" ? "tool.updated" : a ? "tool.failed" : "tool.completed",
 				data: {
 					...n,
@@ -7115,9 +7290,9 @@ function Kd(e, t, n) {
 				}
 			});
 		} else if (t.startsWith("subagent.")) {
-			let r = Id(n);
+			let r = Zd(n);
 			if (!r) return;
-			Hd(e, {
+			rf(e, {
 				type: [
 					"subagent.complete",
 					"subagent.failed",
@@ -7125,8 +7300,8 @@ function Kd(e, t, n) {
 				].includes(t) ? t === "subagent.complete" && n.status === "completed" ? "tool.completed" : "tool.failed" : "tool.updated",
 				data: {
 					tool_call_id: "subagent-" + r,
-					tool_name: Pd(n.name) || "Delegated task",
-					delta: Pd(n.text),
+					tool_name: Yd(n.name) || "Delegated task",
+					delta: Yd(n.text),
 					output: n.summary ?? n.text ?? n.output_tail
 				}
 			});
@@ -7136,203 +7311,13 @@ function Kd(e, t, n) {
 	}
 }
 //#endregion
-//#region src/features/artifacts/artifacts.ts
-var qd = {
-	png: "image/png",
-	jpg: "image/jpeg",
-	jpeg: "image/jpeg",
-	gif: "image/gif",
-	webp: "image/webp",
-	bmp: "image/bmp",
-	svg: "image/svg+xml",
-	pdf: "application/pdf",
-	mp4: "video/mp4",
-	webm: "video/webm",
-	mp3: "audio/mpeg",
-	wav: "audio/wav",
-	ogg: "audio/ogg",
-	html: "text/html",
-	htm: "text/html"
-}, Jd = new Set("txt md csv json xml yaml yml py js ts tsx jsx css sh sql toml rs go java c cpp h html htm svg".split(" ")), Yd = `(?:~/|/|[A-Za-z]:[/\\\\])\\S+?(?:[^\\S\\n]+\\S+?)*?\\.(?:${"png jpg jpeg gif webp bmp tiff svg mp4 mov avi mkv webm 3gp mp3 m2a wav ogg opus m4a flac pdf docx doc odt rtf txt md epub xlsx xls ods csv tsv json xml yaml yml kmz kml geojson gpx pptx ppt odp key zip tar gz tgz bz2 xz 7z rar apk ipa html htm".split(" ").sort((e, t) => t.length - e.length).join("|")})(?=[\\s\`"'*_,;:)\\]}]|MEDIA:|$)`, Xd = RegExp(`MEDIA:\\s*(\`[^\`\n]+\`|"[^"\n]+"|'[^'\n]+'|${Yd}|[^\\s\`"]+)`, "g");
-function Zd(e) {
-	e = e.trim();
-	let t = e[0];
-	if (t && t === e.at(-1) && [
-		"\"",
-		"'",
-		"`"
-	].includes(t)) e = e.slice(1, -1);
-	else {
-		for (e = e.replace(/[`"]$/, ""); /[.,;:!?]$/.test(e) && /[/\\]|\.[^.]/.test(e.slice(0, -1));) e = e.slice(0, -1);
-		e = e.replace(/[`"'*_]{1,3}$/, "");
-	}
-	return /[/\\]|\.[^.]/.test(e) ? e : "";
-}
-function Qd(e, t) {
-	let n = [], r = 0;
-	for (let t of e.matchAll(Xd)) {
-		if (e.slice(r, t.index).trim()) return e;
-		let i = Zd(t[1]);
-		if (!/^(?:file:|\/|[~.][\\/]|\.\.[\\/]|[a-z]:[\\/]|\\\\|https?:\/\/|data:image\/)/i.test(i)) return e;
-		n.push(i), r = t.index + t[0].length;
-	}
-	return !n.length || e.slice(r).trim() ? e : n.every((e) => !!ef(e)) && n.every(t) ? "" : e;
-}
-function $d(e) {
-	return e.split(".").at(-1)?.toLowerCase() || "";
-}
-function ef(e, t) {
-	try {
-		e.startsWith("#media:") && (e = decodeURIComponent(e.slice(7))), e.startsWith("sandbox:") && (e = e.slice(8)), e.startsWith("file:") && (e = decodeURIComponent(new URL(e).pathname));
-	} catch {
-		return;
-	}
-	if (!/^(\/|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\|data:image\/|https?:\/\/)/.test(e)) return;
-	let n = e.split(/[\\/]/).at(-1)?.split(/[?#]/)[0] || "";
-	t = (t && /\.[a-z0-9]{1,12}$/i.test(t) ? t : n) || t || "Attached image";
-	let r = $d(t);
-	return {
-		path: e,
-		name: t,
-		type: qd[r] || (Jd.has(r) ? "text/plain" : "application/octet-stream")
-	};
-}
-function tf(e) {
-	if (e.type.startsWith("image/") && e.type !== "image/svg+xml") return "image";
-	if (e.type === "application/pdf") return "pdf";
-	if (e.type.startsWith("audio/")) return "audio";
-	if (e.type.startsWith("video/")) return "video";
-	if (Jd.has($d(e.name))) return "text";
-}
-function nf(e, t = "", n = !1) {
-	if (/^(https?:\/\/|data:image\/)/.test(e.path)) return e.path;
-	if (e.path.match(/^\/api\/plugins\/chathermes\/images\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i)) {
-		let n = new URLSearchParams();
-		return t && n.set("profile", t), `${e.path}${n.size ? `?${n}` : ""}`;
-	}
-	let r = new URLSearchParams({
-		path: e.path,
-		profile: t || "default"
-	});
-	return e.sessionId && r.set("session_id", e.sessionId), n && r.set("name", e.name), `/api/plugins/chathermes/files/${n ? "download" : "preview"}?${r}`;
-}
-var rf = new kd({ html: !0 });
-function af(e) {
-	let t = [], n = (e, n) => {
-		let r = ef(e, n);
-		return r ? (t.some((e) => e.path === r.path) || t.push(r), !0) : !1;
-	}, r = e.split("\n"), i = [...r], a = !1, o = [], s = rf.parse(e, {}), c = /* @__PURE__ */ new Set();
-	for (let e of s) if (e.map && ([
-		"fence",
-		"code_block",
-		"blockquote_open",
-		"bullet_list_open",
-		"ordered_list_open"
-	].includes(e.type) || e.children?.some((e) => e.type === "code_inline" && /untrusted_tool_result/i.test(e.content)))) for (let t = e.map[0]; t < e.map[1]; t++) c.add(t);
-	let l = /* @__PURE__ */ new Set(), u = 0;
-	for (let [e, t] of r.entries()) if (u && l.add(e), !c.has(e) && /^\s*<\/?untrusted_tool_result\b/i.test(t)) for (let n of t.matchAll(/<(\/?)untrusted_tool_result\b[^>]*(?:>|$)/gi)) l.add(e), u = n[1] ? Math.max(0, u - 1) : u + 1;
-	for (let [e, t] of s.entries()) if (t.type === "paragraph_open" && t.level === 0 && t.map && !s[e + 1]?.children?.some((e) => e.type === "code_inline" && /MEDIA:|Attached (?:image|file) /.test(e.content))) for (let e = t.map[0]; e < t.map[1]; e++) {
-		if (l.has(e)) continue;
-		let t = i[e], r = t.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
-		r && n(r[2].trim(), r[1]) ? (a = !0, i[e] = "") : /^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(t) ? o.push(e) : t.startsWith("MEDIA:") && (i[e] = Qd(t, n));
-	}
-	if (a) for (let e of o) i[e] = "";
-	return {
-		text: t.length ? i.filter((e, t) => e !== "" || r[t] === "").join("\n").trim() : e,
-		files: t
-	};
-}
-function of(e) {
-	if (e.kind !== "tool" || !e.complete || e.state === "failed") return [];
-	let t;
-	try {
-		t = JSON.parse(e.output || "");
-	} catch {
-		return [];
-	}
-	if (!t || typeof t != "object" || Array.isArray(t)) return [];
-	let n = t;
-	if (n.is_error || n.error || n.success === !1 || typeof n.exit_code == "number" && n.exit_code !== 0) return [];
-	let r = n._multimodal === !0 && n.meta && typeof n.meta == "object" && !Array.isArray(n.meta) ? n.meta : n;
-	if (typeof r.media_tag != "string") return [];
-	let i = r.media_tag.replace(/^\[\[audio_as_voice\]\]\r?\n/, "");
-	if (i.split("\n").some((e) => e && !e.startsWith("MEDIA:"))) return [];
-	let a = af(i);
-	return a.text.trim() ? [] : a.files.map((e) => {
-		let t = r.mime_type || r.mime;
-		typeof t == "string" && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(t) && (e.type = t);
-		let n = r.size ?? r.bytes;
-		return typeof n == "number" && Number.isSafeInteger(n) && n >= 0 && (e.size = n), e;
-	});
-}
-function sf(e) {
-	return af(e);
-}
-function cf(e) {
-	if (e.role !== "user" && e.role !== "assistant") return [];
-	let { content: t } = e, n = (e.role === "user" ? sf : af)(gs(t)).files, r = n.filter((e) => tf(e) === "image");
-	if (Array.isArray(t)) {
-		let e = 0;
-		for (let i of t) {
-			let t = i?.image_url?.url;
-			if (typeof t == "string" && /^(data:image\/|https?:\/\/)/.test(t)) {
-				if (r.length) {
-					let n = r[e++];
-					n && (n.imageData = t);
-				} else {
-					let e = ef(t, "Attached image.png");
-					e && n.push(e);
-				}
-			}
-		}
-	}
-	if (e.role === "user" && r.length) for (let e of r) {
-		let t = e.path.match(/\/uploads\/chathermes\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i);
-		t && (e.path = `/api/plugins/chathermes/images/${t[1]}`);
-	}
-	return n.map((t) => ({
-		...t,
-		messageId: e.id,
-		createdAt: e.created_at,
-		direction: e.role === "user" ? "uploaded" : "generated"
-	}));
-}
-async function lf(e, t, n) {
-	let r = [], i = 0;
-	for (let a of t) {
-		if (n.aborted) break;
-		try {
-			let t = await Q.messages(e, a.id, n);
-			for (let e of t) r.push(...cf(e).map((e) => ({
-				...e,
-				sessionId: a.id,
-				sessionTitle: a.title || "Untitled session"
-			})));
-			for (let e of Ud(t)) r.push(...of(e).map((t) => ({
-				...t,
-				direction: "generated",
-				sessionId: a.id,
-				sessionTitle: a.title || "Untitled session",
-				messageId: e.id,
-				createdAt: a.updated_at || a.created_at
-			})));
-		} catch {
-			n.aborted || i++;
-		}
-	}
-	return {
-		files: r.filter((e, t) => r.findIndex((t) => t.sessionId === e.sessionId && t.path === e.path) === t).sort((e, t) => (t.createdAt || "").localeCompare(e.createdAt || "")),
-		failures: i
-	};
-}
-//#endregion
 //#region src/features/chat/utils/transcript-entries.ts
-function uf(e) {
-	let t = e.messages.filter((e) => jd(e) !== "hidden" || !!e.blocks?.length), n = [], r = (e) => [...e].reverse().find((e) => e.role === "assistant" && gs(e.content).trim())?.id, i = 0;
+function lf(e) {
+	let t = e.messages.filter((e) => Kd(e) !== "hidden" || !!e.blocks?.length), n = [], r = (e) => [...e].reverse().find((e) => e.role === "assistant" && gs(e.content).trim())?.id, i = 0;
 	for (let a = 0; a < t.length;) {
 		let o = t[a];
-		if (o.role === "user" || jd(o) === "status") {
-			let s = jd(o);
+		if (o.role === "user" || Kd(o) === "status") {
+			let s = Kd(o);
 			if (o.display_kind === "async_delegation_complete") {
 				let e = o.id || `delegation-${a}`;
 				n.push({
@@ -7341,7 +7326,7 @@ function uf(e) {
 					blocks: [{
 						id: `receipt-${e}`,
 						kind: "tool",
-						title: Md(o),
+						title: qd(o),
 						content: gs(o.content),
 						complete: !0,
 						state: "completed"
@@ -7349,7 +7334,7 @@ function uf(e) {
 				});
 			} else s === "status" ? n.push({
 				kind: "status",
-				text: Md(o),
+				text: qd(o),
 				content: gs(o.content),
 				key: o.id || `status-${a}`
 			}) : s === "message" && (i++, n.push({
@@ -7362,8 +7347,8 @@ function uf(e) {
 				continue;
 			}
 			let c = a + 1;
-			for (; c < t.length && t[c].role !== "user" && jd(t[c]) !== "status";) c++;
-			let l = c === t.length, u = l && (!e.turnUserCount || e.turnUserCount === i) && e.blocks?.length ? e.blocks : o.blocks || Ud(t.slice(a + 1, c)), d = u.length ? u : l ? e.progress : [], f = l && (e.working ?? !!((o.blocks || e.blocks?.length || e.progress.length) && d.some((e) => e.kind !== "text" && !e.complete)));
+			for (; c < t.length && t[c].role !== "user" && Kd(t[c]) !== "status";) c++;
+			let l = c === t.length, u = l && (!e.turnUserCount || e.turnUserCount === i) && e.blocks?.length ? e.blocks : o.blocks || af(t.slice(a + 1, c)), d = u.length ? u : l ? e.progress : [], f = l && (e.working ?? !!((o.blocks || e.blocks?.length || e.progress.length) && d.some((e) => e.kind !== "text" && !e.complete)));
 			(d.length || f) && n.push({
 				kind: "turn",
 				blocks: d,
@@ -7374,10 +7359,10 @@ function uf(e) {
 			}), a = c;
 		} else {
 			let e = a + 1;
-			for (; e < t.length && t[e].role !== "user" && jd(t[e]) !== "status";) e++;
+			for (; e < t.length && t[e].role !== "user" && Kd(t[e]) !== "status";) e++;
 			n.push({
 				kind: "turn",
-				blocks: Ud(t.slice(a, e)),
+				blocks: af(t.slice(a, e)),
 				responseId: r(t.slice(a, e)),
 				key: `history-${a}`
 			}), a = e;
@@ -7387,20 +7372,20 @@ function uf(e) {
 }
 //#endregion
 //#region src/features/chat/utils/saved-response-targets.ts
-function df(e) {
+function uf(e) {
 	let t = gs(e.content);
-	sf(t).files.length && (t = t.replace(/\n@file:[^\n]+\n\n--- Attached Context ---\n[\s\S]*$/, ""));
-	let n = sf(t);
+	Ud(t).files.length && (t = t.replace(/\n@file:[^\n]+\n\n--- Attached Context ---\n[\s\S]*$/, ""));
+	let n = Ud(t);
 	return JSON.stringify([n.text, n.files.map((e) => e.path).sort()]);
 }
-function ff(e, t) {
-	let n = (e) => uf({
+function df(e, t) {
+	let n = (e) => lf({
 		messages: e,
 		progress: []
 	}).flatMap((e) => {
 		if (e.kind === "user") return [{
 			kind: "user",
-			text: df(e.message),
+			text: uf(e.message),
 			key: e.key,
 			id: void 0
 		}];
@@ -7417,33 +7402,33 @@ function ff(e, t) {
 }
 //#endregion
 //#region src/features/chat/runtime/native-admission.ts
-var pf = (e, t) => "chathermes.native-outcome:" + JSON.stringify([e || "default", t]), mf = (e, t) => e && e !== "default" ? [pf(e, t)] : [pf("default", t), "chathermes.native-outcome:" + JSON.stringify(["", t])];
-function hf(e, t) {
+var ff = (e, t) => "chathermes.native-outcome:" + JSON.stringify([e || "default", t]), pf = (e, t) => e && e !== "default" ? [ff(e, t)] : [ff("default", t), "chathermes.native-outcome:" + JSON.stringify(["", t])];
+function mf(e, t) {
 	try {
-		let n = mf(e, t);
+		let n = pf(e, t);
 		return Object.keys(localStorage).some((e) => n.some((t) => e === t || e.startsWith(t + ":")) && localStorage.getItem(e) === "unknown");
 	} catch {
 		return !0;
 	}
 }
-function gf(e, t) {
+function hf(e, t) {
 	let n = Array.from(crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(16)), (e) => e.toString(16).padStart(2, "0")).join("");
 	try {
-		localStorage.setItem(pf(e, t) + ":" + n, "unknown");
+		localStorage.setItem(ff(e, t) + ":" + n, "unknown");
 	} catch {
 		throw Error("Cannot safely record native submission state");
 	}
 	return n;
 }
-function _f(e, t, n) {
+function gf(e, t, n) {
 	try {
-		for (let r of mf(e, t)) if (n) localStorage.removeItem(r + ":" + n);
+		for (let r of pf(e, t)) if (n) localStorage.removeItem(r + ":" + n);
 		else for (let e of Object.keys(localStorage)) (e === r || e.startsWith(r + ":")) && localStorage.removeItem(e);
 	} catch {}
 }
 //#endregion
 //#region src/features/chat/runtime/native-session.ts
-function vf(e, t, n) {
+function _f(e, t, n) {
 	let r = /* @__PURE__ */ V({}), i = /* @__PURE__ */ V([]), a = /* @__PURE__ */ V(!1), o = /* @__PURE__ */ V(!1), s = /* @__PURE__ */ V(""), c = /* @__PURE__ */ V(""), l = /* @__PURE__ */ V("stale"), u = /* @__PURE__ */ V([]), d = /* @__PURE__ */ V(!1), f = X(() => {
 		let e = u.value[0];
 		return e ? {
@@ -7465,7 +7450,7 @@ function vf(e, t, n) {
 			A = !1, j();
 			return;
 		}
-		A = !1, t && C && S && (Hd(S, {
+		A = !1, t && C && S && (rf(S, {
 			type: "reasoning.completed",
 			data: {}
 		}), w.push({
@@ -7478,7 +7463,7 @@ function vf(e, t, n) {
 			content: e,
 			display_kind: r.display_kind,
 			display_metadata: r.display_metadata
-		}, i.value.push(C), S = /* @__PURE__ */ Nt(zd()), C.blocks = S.blocks, a.value = !0, j();
+		}, i.value.push(C), S = /* @__PURE__ */ Nt(ef()), C.blocks = S.blocks, a.value = !0, j();
 	}
 	function ae(e) {
 		h = !0, _++, ne = void 0, S = void 0, C = void 0, A = !1, w = [];
@@ -7495,16 +7480,16 @@ function vf(e, t, n) {
 				display_metadata: e.inflight.display_metadata
 			});
 			else {
-				C = i.value[t], S = /* @__PURE__ */ Nt(zd());
-				let e = Ud(i.value.slice(t + 1));
-				Wd(S, e, a.value), C.blocks = S.blocks;
+				C = i.value[t], S = /* @__PURE__ */ Nt(ef());
+				let e = af(i.value.slice(t + 1));
+				of(S, e, a.value), C.blocks = S.blocks;
 			}
-			e.inflight.assistant && !S.blocks.some((e) => e.kind === "text") && Hd(S, {
+			e.inflight.assistant && !S.blocks.some((e) => e.kind === "text") && rf(S, {
 				type: "text.snapshot",
 				data: { text: e.inflight.assistant }
 			});
 			for (let t of e.inflight.corrections || []) ie(t, !0);
-			e.inflight.error && (s.value = e.inflight.error), c.value = jd(C) === "status" ? Md(C) : e.running ? "Working…" : Nd(e.inflight.status), e.running && !e.inflight.error && (s.value = "Earlier progress is outside retained recovery; saved history is authoritative.");
+			e.inflight.error && (s.value = e.inflight.error), c.value = Kd(C) === "status" ? qd(C) : e.running ? "Working…" : Jd(e.inflight.status), e.running && !e.inflight.error && (s.value = "Earlier progress is outside retained recovery; saved history is authoritative.");
 		}
 		a.value = !!(e.running || e.queued);
 	}
@@ -7522,16 +7507,16 @@ function vf(e, t, n) {
 				} : e;
 			});
 			if (t !== m || n !== _ || h) return;
-			if (a.value || (r.value = ff(i.value, u)), a.value && C && S) {
+			if (a.value || (r.value = df(i.value, u)), a.value && C && S) {
 				let e = ne?.user_row_id, t = e ? u.findIndex((t) => t.id === String(e)) : -1;
-				t >= 0 && Wd(S, Ud(u.slice(t + 1)), !0), j();
+				t >= 0 && of(S, af(u.slice(t + 1)), !0), j();
 				return;
 			}
 			if (C && S && !w.length || w.some((e) => e.hasCorrections)) return j(), !0;
 			for (let e of w) {
 				let { turn: t, receipt: n } = e, r = n?.user_row_id == null ? -1 : u.findIndex((e) => e.id === String(n.user_row_id)), i = r + 1;
 				for (; i < u.length && u[i]?.role !== "user";) i++;
-				r >= 0 && Wd(t, Ud(u.slice(r + 1, i)), !1);
+				r >= 0 && of(t, af(u.slice(r + 1, i)), !1);
 				let a = new Set(u.map((e) => e.id)), o = u.find((e) => e.id === String(n?.final_assistant_row_id)), s = [...t.blocks].reverse().find((e) => e.kind === "text")?.content || "";
 				if (!(n?.complete && r >= 0 && n.row_ids.every((e) => a.has(String(e))) && o && gs(o.content).trim() === s.trim())) return j(), !0;
 				u[r] = {
@@ -7547,7 +7532,7 @@ function vf(e, t, n) {
 		}
 	}
 	async function se(e, t) {
-		(!y || O !== e || k !== t) && (N(), O = e, k = t, y = !0, g = !0, d.value = hf(O, k)), await ue();
+		(!y || O !== e || k !== t) && (N(), O = e, k = t, y = !0, g = !0, d.value = mf(O, k)), await ue();
 	}
 	function ce() {
 		m++, _++, p?.close(), p = void 0, v = void 0, h = !1, o.value = !1, l.value = "stale";
@@ -7572,24 +7557,24 @@ function vf(e, t, n) {
 			input: (e, t, r, i) => n(() => ie(e, t, r, i)),
 			event: (e) => n(() => {
 				let t = e.payload || {}, n = typeof t.text == "string" ? t.text : "";
-				(e.type === "session.title" || e.type === "session.info") && typeof t.title == "string" && re(t.title), e.type === "message.start" ? (M(), a.value = !0, c.value = C && jd(C) === "status" ? Md(C) : "Working…", ne = void 0) : e.type === "thinking.delta" || e.type === "tool.generating" ? c.value = e.type === "tool.generating" ? "Preparing " + (typeof t.name == "string" && t.name ? t.name : "tool") : n || "Working…" : e.type === "status.update" ? c.value = n : e.type === "notice" ? c.value = typeof t.message == "string" ? t.message : "" : e.type === "error" ? s.value = typeof t.message == "string" ? t.message : "Session failed" : e.type === "session.reclaimed" && (a.value = !1, c.value = "Session reclaimed"), !S && C && (S = /* @__PURE__ */ Nt(zd()));
+				(e.type === "session.title" || e.type === "session.info") && typeof t.title == "string" && re(t.title), e.type === "message.start" ? (M(), a.value = !0, c.value = C && Kd(C) === "status" ? qd(C) : "Working…", ne = void 0) : e.type === "thinking.delta" || e.type === "tool.generating" ? c.value = e.type === "tool.generating" ? "Preparing " + (typeof t.name == "string" && t.name ? t.name : "tool") : n || "Working…" : e.type === "status.update" ? c.value = n : e.type === "notice" ? c.value = typeof t.message == "string" ? t.message : "" : e.type === "error" ? s.value = typeof t.message == "string" ? t.message : "Session failed" : e.type === "session.reclaimed" && (a.value = !1, c.value = "Session reclaimed"), !S && C && (S = /* @__PURE__ */ Nt(ef()));
 				let r = S;
 				if (e.type.startsWith("subagent.") || e.type.startsWith("tool.")) {
-					let n = e.type.startsWith("subagent.") ? "subagent-" + Id(t) : t.tool_id;
+					let n = e.type.startsWith("subagent.") ? "subagent-" + Zd(t) : t.tool_id;
 					r = [...w].reverse().find((e) => e.turn.blocks.some((e) => e.id === n))?.turn || S;
 				}
-				if (r && Kd(r, e.type, {
+				if (r && cf(r, e.type, {
 					...t,
 					persisted: h
 				}), e.type === "message.complete") {
 					A = !1;
-					for (let e of w) Kd(e.turn, "message.complete", { status: t.status });
+					for (let e of w) cf(e.turn, "message.complete", { status: t.status });
 					ne = t.persisted_turn, C && S && !w.some((e) => e.user === C && e.turn === S) && w.push({
 						user: C,
 						turn: S,
 						receipt: ne,
 						hasCorrections: ee
-					}), a.value = !1, c.value = Nd(t.status), typeof t.status == "string" && t.status && t.status !== "complete" && (s.value = typeof t.error == "string" && t.error ? t.error : "Response " + t.status), h || oe();
+					}), a.value = !1, c.value = Jd(t.status), typeof t.status == "string" && t.status && t.status !== "complete" && (s.value = typeof t.error == "string" && t.error ? t.error : "Response " + t.status), h || oe();
 				} else e.type === "subagent.complete" && !a.value && !h && oe();
 				j();
 			}),
@@ -7632,7 +7617,7 @@ function vf(e, t, n) {
 	}
 	async function de(e, t, n, r) {
 		if (!b || !x || !p || a.value || d.value || o.value || l.value !== "ready") throw new Z("Native session is not ready. Message not submitted.", "rejected");
-		let c = m, u = p, f = gf(O, k);
+		let c = m, u = p, f = hf(O, k);
 		d.value = !0, s.value = "", A = !1, ie(e), C.content = r ?? t, A = !0, T = f, E = e, D.add(f);
 		let h = C.id, g = !1;
 		try {
@@ -7642,9 +7627,9 @@ function vf(e, t, n) {
 				input: e,
 				admission_id: f,
 				...n
-			}), _f(fe(u), u.stored, f), c === m && (d.value = !1), y && O === u.profile && k === u.stored && T === f && M();
+			}), gf(fe(u), u.stored, f), c === m && (d.value = !1), y && O === u.profile && k === u.stored && T === f && M();
 		} catch (e) {
-			throw !g || e instanceof Z && e.outcome === "rejected" ? (_f(fe(u), u.stored, f), y && O === u.profile && k === u.stored && T === f && (i.value = i.value.filter((e) => e.id !== h), d.value = hf(O, k), A = !1, C?.id === h && (a.value = !1, S = void 0, C = void 0))) : c === m && (s.value = "Submission outcome unknown. Inspect history and native state before sending again."), e;
+			throw !g || e instanceof Z && e.outcome === "rejected" ? (gf(fe(u), u.stored, f), y && O === u.profile && k === u.stored && T === f && (i.value = i.value.filter((e) => e.id !== h), d.value = mf(O, k), A = !1, C?.id === h && (a.value = !1, S = void 0, C = void 0))) : c === m && (s.value = "Submission outcome unknown. Inspect history and native state before sending again."), e;
 		} finally {
 			D.delete(f);
 		}
@@ -7660,7 +7645,7 @@ function vf(e, t, n) {
 				s.value = "Hermes is still working; sending remains locked.";
 				return;
 			}
-			a.value = !1, await oe() && e === m && t.boundary === n && !a.value && (_f(O, k), d.value = hf(O, k), d.value || (s.value = ""));
+			a.value = !1, await oe() && e === m && t.boundary === n && !a.value && (gf(O, k), d.value = mf(O, k), d.value || (s.value = ""));
 		} catch {
 			e === m && (s.value = "Could not verify native session state; sending remains locked.");
 		}
@@ -7697,42 +7682,42 @@ function vf(e, t, n) {
 }
 //#endregion
 //#region src/features/projects/utils/projects.ts
-function yf(e) {
+function vf(e) {
 	return e.path || e.repos.find((e) => e.path)?.path || void 0;
 }
-function bf(e) {
+function yf(e) {
 	let t = e.repos.flatMap((e) => e.groups.flatMap((e) => e.sessions));
 	return [...new Map(t.map((e) => [e.id, e])).values()].sort((e, t) => (t.last_active || 0) - (e.last_active || 0));
 }
 //#endregion
 //#region src/features/notifications/services/push.ts
-var xf = "/api/plugins/chathermes", Sf;
-function Cf() {
+var bf = "/api/plugins/chathermes", xf;
+function Sf() {
 	return typeof window < "u" && window.isSecureContext && typeof navigator < "u" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification < "u";
 }
-async function wf() {
-	if (!Cf()) throw Error("Notifications require a secure browser with Push API support.");
-	return Sf ||= navigator.serviceWorker.register("/api/plugins/chathermes/push-service-worker.js", {
+async function Cf() {
+	if (!Sf()) throw Error("Notifications require a secure browser with Push API support.");
+	return xf ||= navigator.serviceWorker.register("/api/plugins/chathermes/push-service-worker.js", {
 		scope: "/chathermes",
 		updateViaCache: "none"
 	}).catch((e) => {
-		throw Sf = void 0, e;
-	}), Sf;
+		throw xf = void 0, e;
+	}), xf;
 }
-function Tf(e) {
+function wf(e) {
 	let t = e.replace(/-/g, "+").replace(/_/g, "/"), n = atob(t + "=".repeat((4 - t.length % 4) % 4));
 	return Uint8Array.from(n, (e) => e.charCodeAt(0));
 }
-async function Ef() {
-	let e = await fetch(xf + "/push/config", { credentials: "same-origin" });
+async function Tf() {
+	let e = await fetch(bf + "/push/config", { credentials: "same-origin" });
 	if (!e.ok) throw Error("Push configuration unavailable");
 	return e.json();
 }
-async function Df() {
-	return (await wf()).pushManager.getSubscription();
+async function Ef() {
+	return (await Cf()).pushManager.getSubscription();
 }
-async function Of(e, t) {
-	let n = await fetch(xf + "/push/status" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
+async function Df(e, t) {
+	let n = await fetch(bf + "/push/status" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
 		credentials: "same-origin",
 		headers: { "content-type": "application/json" },
@@ -7741,8 +7726,8 @@ async function Of(e, t) {
 	if (!n.ok) throw Error("Could not load notification status for this profile.");
 	return n.json();
 }
-async function kf(e = "") {
-	if (!Cf()) return {
+async function Of(e = "") {
+	if (!Sf()) return {
 		supported: !1,
 		permission: "unsupported",
 		subscribed: !1,
@@ -7750,7 +7735,7 @@ async function kf(e = "") {
 		error: "Notifications require HTTPS and a supported browser."
 	};
 	try {
-		let [t, n] = await Promise.all([Df(), Ef()]), r = t ? await Of(e, t) : null;
+		let [t, n] = await Promise.all([Ef(), Tf()]), r = t ? await Df(e, t) : null;
 		return {
 			supported: !0,
 			permission: Notification.permission,
@@ -7768,17 +7753,17 @@ async function kf(e = "") {
 		};
 	}
 }
-async function Af(e) {
-	if (!Cf()) throw Error("Notifications require HTTPS and a supported browser.");
+async function kf(e) {
+	if (!Sf()) throw Error("Notifications require HTTPS and a supported browser.");
 	let t = await Notification.requestPermission();
 	if (t !== "granted") throw Error(t === "denied" ? "Notification permission is blocked in browser settings." : "Notification permission was not granted.");
-	let n = await wf(), r = await Ef();
+	let n = await Cf(), r = await Tf();
 	if (!r.available || !r.vapid_public_key) throw Error("Push notifications are unavailable on this server.");
 	let i = await n.pushManager.subscribe({
 		userVisibleOnly: !0,
-		applicationServerKey: Tf(r.vapid_public_key)
+		applicationServerKey: wf(r.vapid_public_key)
 	});
-	if (!(await fetch(xf + "/push/subscriptions" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
+	if (!(await fetch(bf + "/push/subscriptions" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
 		credentials: "same-origin",
 		headers: { "content-type": "application/json" },
@@ -7788,24 +7773,24 @@ async function Af(e) {
 		})
 	})).ok) throw Error("Could not save this notification subscription.");
 }
-async function jf(e) {
-	let t = await Df();
+async function Af(e) {
+	let t = await Ef();
 	if (!t) return;
-	let n = await Of(e, t);
-	if (n.enabled && n.id && !(await fetch(xf + "/push/subscriptions/" + encodeURIComponent(n.id) + (e ? "?profile=" + encodeURIComponent(e) : ""), {
+	let n = await Df(e, t);
+	if (n.enabled && n.id && !(await fetch(bf + "/push/subscriptions/" + encodeURIComponent(n.id) + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "DELETE",
 		credentials: "same-origin"
 	})).ok) throw Error("Could not disable notifications for this profile.");
 }
-async function Mf(e) {
-	if (!(await fetch(xf + "/push/test" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
+async function jf(e) {
+	if (!(await fetch(bf + "/push/test" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
 		credentials: "same-origin"
 	})).ok) throw Error("Could not send a test notification.");
 }
 //#endregion
 //#region src/features/notifications/services/push-client.ts
-function Nf(e, t, n = document.visibilityState) {
+function Mf(e, t, n = document.visibilityState) {
 	return {
 		type: "chathermes.session",
 		url: t,
@@ -7820,8 +7805,8 @@ function Nf(e, t, n = document.visibilityState) {
 		connected: e.chat && !!e.session && e.connected
 	};
 }
-function Pf(e, t, n) {
-	let r = !0, i = null, a = () => Nf(t(), n()), o = () => {
+function Nf(e, t, n) {
+	let r = !0, i = null, a = () => Mf(t(), n()), o = () => {
 		r && (e.controller || i)?.postMessage(a());
 	}, s = (e) => {
 		r && e.data?.type === "chathermes.session.query" && e.ports[0]?.postMessage(a());
@@ -7842,34 +7827,34 @@ function Pf(e, t, n) {
 }
 //#endregion
 //#region src/features/sessions/components/SessionSidebar.vue?vue&type=script&setup=true&lang.ts
-var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold text-[#a3a3a3]" }, If = {
+var Pf = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold text-[#a3a3a3]" }, Ff = {
 	key: 0,
 	class: "notice error rounded-lg bg-[#402b2b] p-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]",
 	role: "alert"
-}, Lf = {
+}, If = {
 	key: 1,
 	class: "muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]"
-}, Rf = {
+}, Lf = {
 	key: 2,
 	class: "muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]"
-}, zf = {
+}, Rf = {
 	key: 3,
 	"aria-label": "Sessions",
 	class: "session-list grid min-h-0 flex-1 auto-rows-max gap-0.5 overflow-y-auto"
-}, Bf = ["aria-current", "onClick"], Vf = { class: "truncate" }, Hf = ["title"], Uf = [
+}, zf = ["aria-current", "onClick"], Bf = { class: "truncate" }, Vf = ["title"], Hf = [
 	"aria-label",
 	"disabled",
 	"onClick"
-], Wf = ["disabled"], Gf = ["aria-label"], Kf = {
+], Uf = ["disabled"], Wf = ["aria-label"], Gf = {
 	key: 0,
 	class: "grid gap-1"
-}, qf = ["value"], Jf = {
+}, Kf = ["value"], qf = {
 	key: 0,
 	class: "text-sm text-[#a3a3a3]"
-}, Yf = ["disabled"], Xf = {
+}, Jf = ["disabled"], Yf = {
 	key: 2,
 	class: "grid gap-3 p-1"
-}, Zf = ["disabled"], Qf = /* @__PURE__ */ Wn({
+}, Xf = ["disabled"], Zf = /* @__PURE__ */ Wn({
 	__name: "SessionSidebar",
 	props: {
 		sessions: {},
@@ -7896,7 +7881,7 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 			let e = /* @__PURE__ */ new Map();
 			for (let t of n.projects || []) {
 				if (t.isNoProject) continue;
-				let n = [...t.sessionIds || [], ...bf(t).map((e) => e.id)];
+				let n = [...t.sessionIds || [], ...yf(t).map((e) => e.id)];
 				for (let r of n) e.set(r, t.label);
 			}
 			return e;
@@ -7940,12 +7925,12 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 			d.value && r("delete", d.value.id), _();
 		}
 		return (t, n) => (W(), G(U, null, [
-			q("h2", Ff, F(e.heading || "Recents"), 1),
-			e.error ? (W(), G("p", If, [J(F(e.error) + " ", 1), q("button", {
+			q("h2", Pf, F(e.heading || "Recents"), 1),
+			e.error ? (W(), G("p", Ff, [J(F(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[0] ||= (e) => r("retry")
 			}, "Retry")])) : Y("v-if", !0),
-			e.loading && !e.sessions.length ? (W(), G("p", Lf, " Loading sessions… ")) : e.sessions.length ? (W(), G("nav", zf, [(W(!0), G(U, null, br(e.sessions, (t) => (W(), G("div", {
+			e.loading && !e.sessions.length ? (W(), G("p", If, " Loading sessions… ")) : e.sessions.length ? (W(), G("nav", Rf, [(W(!0), G(U, null, br(e.sessions, (t) => (W(), G("div", {
 				key: t.id,
 				class: pe(["session-row flex items-center rounded-lg hover:bg-[#303030] dark:hover:bg-[#303030]", e.selected === t.id ? "active bg-[#303030] dark:bg-[#303030]" : ""])
 			}, [o.value === t.id ? (W(), G(U, { key: 0 }, [On(q("input", {
@@ -7962,22 +7947,22 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				class: "session-select grid min-h-[44px] min-w-0 flex-1 gap-0 px-2.5 py-1.5 text-left text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 				"aria-current": e.selected === t.id ? "page" : void 0,
 				onClick: (e) => r("select", t.id)
-			}, [q("span", Vf, F(t.title || "Untitled session"), 1), q("span", {
+			}, [q("span", Bf, F(t.title || "Untitled session"), 1), q("span", {
 				class: "truncate text-xs leading-4 text-[#a3a3a3] dark:text-[#a3a3a3]",
 				title: a(t)
-			}, F(a(t)), 9, Hf)], 8, Bf), q("button", {
+			}, F(a(t)), 9, Vf)], 8, zf), q("button", {
 				class: "icon-button rounded-md px-2 py-1 text-xl text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 				"aria-label": `Options for ${t.title || "Untitled session"}`,
 				"aria-haspopup": "dialog",
 				disabled: e.busy,
 				onClick: (e) => g(t, e)
-			}, " ⋮ ", 8, Uf)], 64))], 2))), 128))])) : (W(), G("p", Rf, " No conversations yet. ")),
+			}, " ⋮ ", 8, Hf)], 64))], 2))), 128))])) : (W(), G("p", Lf, " No conversations yet. ")),
 			e.hasMore ? (W(), G("button", {
 				key: 4,
 				class: "load-more self-start rounded-md px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:bg-[#303030] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4] disabled:cursor-not-allowed disabled:opacity-55",
 				disabled: e.loading,
 				onClick: n[3] ||= (e) => r("more")
-			}, F(e.loading ? "Loading…" : "Load more"), 9, Wf)) : Y("v-if", !0),
+			}, F(e.loading ? "Loading…" : "Load more"), 9, Uf)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "popup",
 				ref: u,
@@ -7985,7 +7970,7 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				style: ce(m.value),
 				"aria-label": f.value === "menu" ? "Session options" : f.value === "project" ? "Add to project" : "Delete conversation",
 				onClick: n[7] ||= (e) => e.target === e.currentTarget && _()
-			}, [f.value === "menu" ? (W(), G("div", Kf, [
+			}, [f.value === "menu" ? (W(), G("div", Gf, [
 				q("button", {
 					class: "rounded-lg px-3 py-2 text-left hover:bg-[#303030]",
 					onClick: v
@@ -8020,18 +8005,18 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 				}, "Choose project", -1), (W(!0), G(U, null, br(h.value, (e) => (W(), G("option", {
 					key: e.id,
 					value: e.id
-				}, F(e.label), 9, qf))), 128))], 512), [[To, p.value]]),
-				h.value.length ? Y("v-if", !0) : (W(), G("p", Jf, "No projects available.")),
+				}, F(e.label), 9, Kf))), 128))], 512), [[To, p.value]]),
+				h.value.length ? Y("v-if", !0) : (W(), G("p", qf, "No projects available.")),
 				q("button", {
 					class: "rounded-lg bg-[#303030] px-3 py-2 disabled:opacity-55",
 					disabled: !p.value || e.busy
-				}, " Add ", 8, Yf),
+				}, " Add ", 8, Jf),
 				q("button", {
 					type: "button",
 					class: "rounded-lg px-3 py-2 hover:bg-[#303030]",
 					onClick: _
 				}, " Cancel ")
-			], 32)) : (W(), G("div", Xf, [
+			], 32)) : (W(), G("div", Yf, [
 				n[10] ||= q("p", null, "Delete this conversation? This cannot be undone.", -1),
 				q("button", {
 					class: "rounded-lg px-3 py-2 hover:bg-[#303030]",
@@ -8042,39 +8027,39 @@ var Ff = { class: "session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold 
 					class: "rounded-lg bg-[#402b2b] px-3 py-2 text-[#fecaca]",
 					disabled: e.busy,
 					onClick: x
-				}, " Delete conversation ", 8, Zf)
-			]))], 12, Gf)
+				}, " Delete conversation ", 8, Xf)
+			]))], 12, Wf)
 		], 64));
 	}
-}), $f = Symbol("live chat");
-function ep(e) {
-	An($f, e);
+}), Qf = Symbol("live chat");
+function $f(e) {
+	An(Qf, e);
 }
-function tp() {
-	let e = jn($f);
+function ep() {
+	let e = jn(Qf);
 	if (!e) throw Error("Live chat context is missing");
 	return e;
 }
 //#endregion
 //#region src/assets/file-icons/blank.svg?url
-var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", rp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ip = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ap = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", op = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", sp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", cp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", lp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", up = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", dp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", fp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", pp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", mp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", hp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", gp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", _p = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", vp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", yp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", bp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", xp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", Sp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Cp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", wp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", Tp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Ep = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", Dp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", Op = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, kp = ["aria-label"], Ap = ["src", "alt"], jp = { class: "flex min-w-0 items-center gap-3 p-3" }, Mp = ["src"], Np = { class: "min-w-0 flex-1" }, Pp = ["aria-label"], Fp = {
+var tp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", rp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ip = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ap = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", op = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", sp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", cp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", lp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", up = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", dp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", fp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", pp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", mp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", hp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", gp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", _p = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", vp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", yp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", bp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", xp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Sp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", Cp = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", wp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Tp = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", Ep = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", Dp = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, Op = ["aria-label"], kp = ["src", "alt"], Ap = { class: "flex min-w-0 items-center gap-3 p-3" }, jp = ["src"], Mp = { class: "min-w-0 flex-1" }, Np = ["aria-label"], Pp = {
 	key: 1,
 	class: "block truncate text-sm font-medium"
-}, Ip = { class: "block text-xs text-[#b4b4b4]" }, Lp = [
+}, Fp = { class: "block text-xs text-[#b4b4b4]" }, Ip = [
 	"href",
 	"download",
 	"aria-label"
-], Rp = { class: "mb-4 flex items-center gap-3" }, zp = { class: "min-w-0 flex-1 break-words" }, Bp = ["href", "download"], Vp = {
+], Lp = { class: "mb-4 flex items-center gap-3" }, Rp = { class: "min-w-0 flex-1 break-words" }, zp = ["href", "download"], Bp = {
 	key: 0,
 	role: "status"
-}, Hp = {
+}, Vp = {
 	key: 1,
 	role: "alert",
 	class: "text-red-200"
-}, Up = {
+}, Hp = {
 	key: 2,
 	class: "max-h-[70dvh] overflow-auto whitespace-pre-wrap break-words text-sm"
-}, Wp = ["src", "alt"], Gp = ["src", "title"], Kp = ["src"], qp = ["src"], Jp = /* @__PURE__ */ Wn({
+}, Up = ["src", "alt"], Wp = ["src", "title"], Gp = ["src"], Kp = ["src"], qp = /* @__PURE__ */ Wn({
 	__name: "ArtifactCard",
 	props: {
 		file: {},
@@ -8083,33 +8068,33 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = e, r = t, i = /* #__PURE__ */ Object.assign({
-			"../../../assets/file-icons/blank.svg": np,
-			"../../../assets/file-icons/css.svg": rp,
-			"../../../assets/file-icons/csv.svg": ip,
-			"../../../assets/file-icons/doc.svg": ap,
-			"../../../assets/file-icons/docx.svg": op,
-			"../../../assets/file-icons/gz.svg": sp,
-			"../../../assets/file-icons/html.svg": cp,
-			"../../../assets/file-icons/js.svg": lp,
-			"../../../assets/file-icons/json.svg": up,
-			"../../../assets/file-icons/md.svg": dp,
-			"../../../assets/file-icons/mp3.svg": fp,
-			"../../../assets/file-icons/mp4.svg": pp,
-			"../../../assets/file-icons/pdf.svg": mp,
-			"../../../assets/file-icons/ppt.svg": hp,
-			"../../../assets/file-icons/pptx.svg": gp,
-			"../../../assets/file-icons/py.svg": _p,
-			"../../../assets/file-icons/svg.svg": vp,
-			"../../../assets/file-icons/tar.svg": yp,
-			"../../../assets/file-icons/ts.svg": bp,
-			"../../../assets/file-icons/txt.svg": xp,
-			"../../../assets/file-icons/wav.svg": Sp,
-			"../../../assets/file-icons/xls.svg": Cp,
-			"../../../assets/file-icons/xlsx.svg": wp,
-			"../../../assets/file-icons/xml.svg": Tp,
-			"../../../assets/file-icons/yaml.svg": Ep,
-			"../../../assets/file-icons/zip.svg": Dp
-		}), a = X(() => i[`../../../assets/file-icons/${$d(n.file.name)}.svg`] || i["../../../assets/file-icons/blank.svg"]), o = X(() => tf(n.file)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(""), l = /* @__PURE__ */ V(""), u = /* @__PURE__ */ V(""), d = /* @__PURE__ */ V(!1), f = /* @__PURE__ */ V(!1), p;
+			"../../../assets/file-icons/blank.svg": tp,
+			"../../../assets/file-icons/css.svg": np,
+			"../../../assets/file-icons/csv.svg": rp,
+			"../../../assets/file-icons/doc.svg": ip,
+			"../../../assets/file-icons/docx.svg": ap,
+			"../../../assets/file-icons/gz.svg": op,
+			"../../../assets/file-icons/html.svg": sp,
+			"../../../assets/file-icons/js.svg": cp,
+			"../../../assets/file-icons/json.svg": lp,
+			"../../../assets/file-icons/md.svg": up,
+			"../../../assets/file-icons/mp3.svg": dp,
+			"../../../assets/file-icons/mp4.svg": fp,
+			"../../../assets/file-icons/pdf.svg": pp,
+			"../../../assets/file-icons/ppt.svg": mp,
+			"../../../assets/file-icons/pptx.svg": hp,
+			"../../../assets/file-icons/py.svg": gp,
+			"../../../assets/file-icons/svg.svg": _p,
+			"../../../assets/file-icons/tar.svg": vp,
+			"../../../assets/file-icons/ts.svg": yp,
+			"../../../assets/file-icons/txt.svg": bp,
+			"../../../assets/file-icons/wav.svg": xp,
+			"../../../assets/file-icons/xls.svg": Sp,
+			"../../../assets/file-icons/xlsx.svg": Cp,
+			"../../../assets/file-icons/xml.svg": wp,
+			"../../../assets/file-icons/yaml.svg": Tp,
+			"../../../assets/file-icons/zip.svg": Ep
+		}), a = X(() => i[`../../../assets/file-icons/${Id(n.file.name)}.svg`] || i["../../../assets/file-icons/blank.svg"]), o = X(() => Rd(n.file)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(""), l = /* @__PURE__ */ V(""), u = /* @__PURE__ */ V(""), d = /* @__PURE__ */ V(!1), f = /* @__PURE__ */ V(!1), p;
 		function m() {
 			p?.abort(), c.value.startsWith("blob:") && URL.revokeObjectURL(c.value), c.value = "", l.value = "";
 		}
@@ -8118,8 +8103,8 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 			m(), u.value = "", s.value?.showModal(), d.value = !0;
 			let e = p = new AbortController();
 			try {
-				let t = nf(n.file, n.profile);
-				if (o.value === "image" && /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(t)) {
+				let t = zd(n.file, n.profile);
+				if (o.value === "image" && /^\/api\/plugins\/chathermes\/(?:images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)|artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+)(?:\?|$)/i.test(t)) {
 					c.value = t;
 					return;
 				}
@@ -8167,8 +8152,8 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 			}
 			let i = new AbortController();
 			r(() => i.abort());
-			let a = nf(n.file, n.profile);
-			if (/^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(a)) {
+			let a = zd(n.file, n.profile);
+			if (/^\/api\/plugins\/chathermes\/(?:images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)|artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+)(?:\?|$)/i.test(a)) {
 				g.value = a;
 				return;
 			}
@@ -8188,7 +8173,7 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 			} catch {
 				i.signal.aborted || (f.value = !0);
 			}
-		}, { immediate: !0 }), (t, n) => (W(), G("div", Op, [
+		}, { immediate: !0 }), (t, n) => (W(), G("div", Dp, [
 			o.value === "image" && g.value && !f.value ? (W(), G("button", {
 				key: 0,
 				type: "button",
@@ -8201,23 +8186,23 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 				class: "max-h-72 w-full object-contain",
 				onLoad: n[0] ||= (e) => r("imageLoad"),
 				onError: n[1] ||= (e) => f.value = !0
-			}, null, 40, Ap)], 8, kp)) : Y("v-if", !0),
-			q("div", jp, [
+			}, null, 40, kp)], 8, Op)) : Y("v-if", !0),
+			q("div", Ap, [
 				o.value !== "image" || f.value ? (W(), G("img", {
 					key: 0,
 					src: a.value,
 					alt: "",
 					class: "size-10 shrink-0"
-				}, null, 8, Mp)) : Y("v-if", !0),
-				q("div", Np, [o.value ? (W(), G("button", {
+				}, null, 8, jp)) : Y("v-if", !0),
+				q("div", Mp, [o.value ? (W(), G("button", {
 					key: 0,
 					type: "button",
 					class: "block w-full truncate text-left text-sm font-medium hover:underline",
 					"aria-label": `Preview ${e.file.name}`,
 					onClick: h
-				}, F(e.file.name), 9, Pp)) : (W(), G("span", Fp, F(e.file.name), 1)), q("span", Ip, [J(F(H($d)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + F(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
+				}, F(e.file.name), 9, Np)) : (W(), G("span", Pp, F(e.file.name), 1)), q("span", Fp, [J(F(H(Id)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + F(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
 				q("a", {
-					href: H(nf)(e.file, e.profile, !0),
+					href: H(zd)(e.file, e.profile, !0),
 					download: e.file.name,
 					"aria-label": `Download ${e.file.name}`,
 					class: "grid size-10 shrink-0 place-items-center rounded-xl hover:bg-[#424242]"
@@ -8228,7 +8213,7 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 					stroke: "currentColor",
 					"stroke-width": "1.5",
 					"aria-hidden": "true"
-				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, Lp)
+				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, Ip)
 			]),
 			Sr(t.$slots, "footer"),
 			q("dialog", {
@@ -8237,13 +8222,13 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 				class: "artifact-preview fixed m-auto max-h-[90dvh] w-[min(900px,94vw)] overflow-auto rounded-2xl border border-[#424242] bg-[#212121] p-4 text-white backdrop:bg-black/80",
 				onClose: m,
 				onClick: n[3] ||= (e) => e.target === s.value && s.value?.close()
-			}, [q("div", Rp, [
-				q("h2", zp, F(e.file.name), 1),
+			}, [q("div", Lp, [
+				q("h2", Rp, F(e.file.name), 1),
 				q("a", {
-					href: H(nf)(e.file, e.profile, !0),
+					href: H(zd)(e.file, e.profile, !0),
 					download: e.file.name,
 					class: "text-sm underline"
-				}, "Download", 8, Bp),
+				}, "Download", 8, zp),
 				q("button", {
 					type: "button",
 					autofocus: "",
@@ -8251,41 +8236,41 @@ var np = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/20
 					"aria-label": "Close preview",
 					onClick: n[2] ||= (e) => s.value?.close()
 				}, " ✕ ")
-			]), d.value ? (W(), G("p", Vp, "Loading preview…")) : u.value ? (W(), G("p", Hp, F(u.value), 1)) : o.value === "text" ? (W(), G("pre", Up, F(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
+			]), d.value ? (W(), G("p", Bp, "Loading preview…")) : u.value ? (W(), G("p", Vp, F(u.value), 1)) : o.value === "text" ? (W(), G("pre", Hp, F(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
 				key: 3,
 				src: c.value,
 				alt: e.file.name,
 				class: "max-h-[70dvh] w-full object-contain"
-			}, null, 8, Wp)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
+			}, null, 8, Up)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
 				key: 4,
 				src: c.value,
 				title: e.file.name,
 				class: "h-[70dvh] w-full bg-white"
-			}, null, 8, Gp)) : o.value === "video" && c.value ? (W(), G("video", {
+			}, null, 8, Wp)) : o.value === "video" && c.value ? (W(), G("video", {
 				key: 5,
 				src: c.value,
 				controls: "",
 				class: "max-h-[70dvh] w-full"
-			}, null, 8, Kp)) : o.value === "audio" && c.value ? (W(), G("audio", {
+			}, null, 8, Gp)) : o.value === "audio" && c.value ? (W(), G("audio", {
 				key: 6,
 				src: c.value,
 				controls: "",
 				class: "w-full"
-			}, null, 8, qp)) : Y("v-if", !0)], 544)
+			}, null, 8, Kp)) : Y("v-if", !0)], 544)
 		]));
 	}
-}), Yp = new kd({
+}), Jp = new kd({
 	html: !1,
 	breaks: !0,
 	linkify: !0
 });
-Yp.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
-function Xp(e) {
-	return Yp.render(e);
+Jp.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
+function Yp(e) {
+	return Jp.render(e);
 }
 //#endregion
 //#region src/features/chat/components/UserMessage.vue?vue&type=script&setup=true&lang.ts
-var Zp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, Qp = ["innerHTML"], $p = /* @__PURE__ */ Wn({
+var Xp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, Zp = ["innerHTML"], Qp = /* @__PURE__ */ Wn({
 	__name: "UserMessage",
 	props: {
 		message: {},
@@ -8295,10 +8280,10 @@ var Zp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = t;
-		return (t, r) => (W(), G("article", Zp, [q("div", {
+		return (t, r) => (W(), G("article", Xp, [q("div", {
 			class: "message-content markdown-content break-words text-base leading-7",
-			innerHTML: H(Xp)(H(sf)(H(gs)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
-		}, null, 8, Qp), (W(!0), G(U, null, br(H(cf)(e.message), (t) => (W(), K(Jp, {
+			innerHTML: H(Yp)(H(Ud)(H(gs)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
+		}, null, 8, Zp), (W(!0), G(U, null, br(H(Wd)(e.message), (t) => (W(), K(qp, {
 			key: t.path,
 			file: {
 				...t,
@@ -8311,7 +8296,7 @@ var Zp = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 });
 //#endregion
 //#region src/features/chat/utils/activity-runs.ts
-function em(e) {
+function $p(e) {
 	return !!e.delegated || [
 		"clarify",
 		"setup_choose",
@@ -8321,12 +8306,12 @@ function em(e) {
 		"start_chat"
 	].includes(e.toolName || "");
 }
-function tm(e) {
+function em(e) {
 	let t = [];
 	for (let n of e) {
 		if ((n.kind === "text" || n.kind === "thinking") && !n.content.trim()) continue;
 		let e = t.at(-1);
-		n.kind === "tool" && !em(n) ? e?.kind === "tools" ? e.activities.push(n) : t.push({
+		n.kind === "tool" && !$p(n) ? e?.kind === "tools" ? e.activities.push(n) : t.push({
 			id: n.id,
 			kind: "tools",
 			activities: [n]
@@ -8340,28 +8325,28 @@ function tm(e) {
 }
 //#endregion
 //#region src/features/chat/utils/activity-labels.ts
-var nm = (e) => [
+var tm = (e) => [
 	"terminal",
 	"execute_code",
 	"python"
 ].includes(e.toolName || "");
-function rm(e) {
+function nm(e) {
 	try {
 		return JSON.parse(e.content) || {};
 	} catch {
 		return {};
 	}
 }
-function im(e) {
-	let t = rm(e), n = t.command ?? t.code;
+function rm(e) {
+	let t = nm(e), n = t.command ?? t.code;
 	return typeof n == "string" && n.trim().split("\n")[0] || "";
 }
-function am(e, t) {
-	if (nm(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${im(e) || "command"}`;
+function im(e, t) {
+	if (tm(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${rm(e) || "command"}`;
 	let n = (e.toolName || "tool").replace(/_/g, " ");
 	return /^(used|using) tool$/i.test(e.title) ? `${t ? "Using" : e.state === "completed" ? "Used" : "Tool:"} ${n}` : e.title || n;
 }
-var om = {
+var am = {
 	explore: {
 		past: "Explored",
 		present: "Exploring",
@@ -8403,9 +8388,9 @@ var om = {
 		nouns: ["tool", "tools"]
 	}
 };
-function sm(e) {
+function om(e) {
 	let t = e.toolName || "";
-	return nm(e) ? "run" : [
+	return tm(e) ? "run" : [
 		"read_file",
 		"list_files",
 		"search_files",
@@ -8413,9 +8398,9 @@ function sm(e) {
 		"search"
 	].includes(t) ? "explore" : ["web_search", "session_search_recall"].includes(t) ? "search" : t === "web_extract" ? "read" : t === "browser_navigate" ? "browse" : t.startsWith("browser_") ? "interact" : t === "vision_analyze" ? "analyze" : "other";
 }
-function cm(e, t) {
-	let n = rm(e);
-	if (t === "run") return im(e);
+function sm(e, t) {
+	let n = nm(e);
+	if (t === "run") return rm(e);
 	if (t === "other" || t === "interact") return "";
 	if (t === "search") {
 		let e = n.query ?? n.search_term;
@@ -8432,15 +8417,15 @@ function cm(e, t) {
 	let r = n.path ?? n.file ?? n.filepath;
 	return typeof r == "string" && r.split(/[\\/]/).at(-1) || "";
 }
-function lm(e, t) {
-	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? sm(n) : void 0, i = [];
-	for (let t of Object.keys(om)) {
-		let n = e.filter((e) => sm(e) === t);
+function cm(e, t) {
+	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? om(n) : void 0, i = [];
+	for (let t of Object.keys(am)) {
+		let n = e.filter((e) => om(e) === t);
 		if (!n.length) continue;
-		let a = om[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
-			let r = rm(n).urls;
+		let a = am[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
+			let r = nm(n).urls;
 			return e + (t === "read" && Array.isArray(r) && r.length ? r.length : 1);
-		}, 0), l = c === 1 && (o || t !== "run") ? cm(n[0], t) : "", u = o ? a.present : s ? a.past : "";
+		}, 0), l = c === 1 && (o || t !== "run") ? sm(n[0], t) : "", u = o ? a.present : s ? a.past : "";
 		i.push([u, l || `${c} ${a.nouns[c === 1 ? 0 : 1]}`].filter(Boolean).join(" "));
 	}
 	let a = e.filter((e) => e.state === "failed").length;
@@ -8448,33 +8433,33 @@ function lm(e, t) {
 }
 //#endregion
 //#region src/components/ActivityRow.vue?vue&type=script&setup=true&lang.ts
-var um = ["open"], dm = {
+var lm = ["open"], um = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, fm = {
+}, dm = {
 	key: 1,
 	"aria-hidden": "true"
-}, pm = ["title"], mm = {
+}, fm = ["title"], pm = {
 	key: 2,
 	class: "activity-meta"
-}, hm = {
+}, mm = {
 	key: 3,
 	class: "activity-meta"
-}, gm = {
+}, hm = {
 	key: 4,
 	class: "activity-meta"
-}, _m = {
+}, gm = {
 	key: 5,
 	class: "activity-meta"
-}, vm = {
+}, _m = {
 	key: 6,
 	class: "activity-meta"
-}, ym = {
+}, vm = {
 	key: 1,
 	class: "ml-6 py-1 text-sm",
 	role: "status"
-}, bm = /* @__PURE__ */ Wn({
+}, ym = /* @__PURE__ */ Wn({
 	__name: "ActivityRow",
 	props: {
 		activity: {},
@@ -8506,7 +8491,7 @@ var um = ["open"], dm = {
 		}, { immediate: !0 }), lr(() => {
 			d && clearInterval(d);
 		});
-		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : am(t.activity, n.value));
+		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : im(t.activity, n.value));
 		function m(e) {
 			let t = e.target.open;
 			t !== o.value && (a.value = t);
@@ -8520,14 +8505,14 @@ var um = ["open"], dm = {
 			open: o.value,
 			onToggle: m
 		}, [q("summary", { onClick: c[0] ||= Mo((e) => a.value = !o.value, ["prevent"]) }, [
-			H(nm)(e.activity) ? (W(), G("span", dm, "›_")) : Y("v-if", !0),
-			i.value ? (W(), G("span", fm, "!")) : Y("v-if", !0),
+			H(tm)(e.activity) ? (W(), G("span", um, "›_")) : Y("v-if", !0),
+			i.value ? (W(), G("span", dm, "!")) : Y("v-if", !0),
 			q("span", {
 				class: pe(["activity-label", { "working-shimmer": n.value }]),
 				title: p.value
-			}, F(p.value), 11, pm),
-			r.value === "failed" ? (W(), G("span", mm, " · Failed")) : r.value === "interrupted" ? (W(), G("span", hm, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", gm, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", _m, " · " + F(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
-			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", vm, " · " + F(f.value.toFixed(1)) + "s", 1)),
+			}, F(p.value), 11, fm),
+			r.value === "failed" ? (W(), G("span", pm, " · Failed")) : r.value === "interrupted" ? (W(), G("span", mm, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", hm, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", gm, " · " + F(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
+			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", _m, " · " + F(f.value.toFixed(1)) + "s", 1)),
 			q("span", {
 				class: pe(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
@@ -8541,20 +8526,20 @@ var um = ["open"], dm = {
 			e.activity.toolName,
 			e.activity.content,
 			e.activity.output
-		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", ym, "Working…")) : Y("v-if", !0)], 42, um));
+		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", vm, "Working…")) : Y("v-if", !0)], 42, lm));
 	}
-}), xm = {
+}), bm = {
 	class: "turn-work",
 	"aria-label": "Tool activity"
-}, Sm = ["aria-expanded", "aria-controls"], Cm = {
+}, xm = ["aria-expanded", "aria-controls"], Sm = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, wm = ["title"], Tm = {
+}, Cm = ["title"], wm = {
 	key: 1,
 	class: "sr-only",
 	role: "status"
-}, Em = ["id"], Dm = /* @__PURE__ */ Wn({
+}, Tm = ["id"], Em = /* @__PURE__ */ Wn({
 	__name: "TurnWork",
 	props: {
 		activities: {},
@@ -8562,8 +8547,8 @@ var um = ["open"], dm = {
 		approvalPending: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = /* @__PURE__ */ V(null), r = Gn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? lm(a.value, !1) : "Working…");
-		return (t, a) => (W(), G("section", xm, [o.value || !e.activities.length ? (W(), G("button", {
+		let t = e, n = /* @__PURE__ */ V(null), r = Gn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? cm(a.value, !1) : "Working…");
+		return (t, a) => (W(), G("section", bm, [o.value || !e.activities.length ? (W(), G("button", {
 			key: 0,
 			type: "button",
 			class: "work-summary",
@@ -8571,25 +8556,25 @@ var um = ["open"], dm = {
 			"aria-controls": H(r),
 			onClick: a[0] ||= (e) => n.value = !s.value
 		}, [
-			e.activities.some(H(nm)) ? (W(), G("span", Cm, "›_")) : Y("v-if", !0),
+			e.activities.some(H(tm)) ? (W(), G("span", Sm, "›_")) : Y("v-if", !0),
 			q("span", {
 				class: pe(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
 				title: l.value
-			}, F(l.value), 11, wm),
+			}, F(l.value), 11, Cm),
 			q("span", {
 				class: pe(["work-chevron", { expanded: s.value }]),
 				"aria-hidden": "true"
 			}, "›", 2),
-			e.approvalPending ? (W(), G("span", Tm, "Waiting for approval")) : Y("v-if", !0)
-		], 8, Sm)) : Y("v-if", !0), q("div", {
+			e.approvalPending ? (W(), G("span", wm, "Waiting for approval")) : Y("v-if", !0)
+		], 8, xm)) : Y("v-if", !0), q("div", {
 			id: H(r),
 			class: pe(["work-timeline", { "work-timeline-single": !o.value }])
-		}, [(W(!0), G(U, null, br(e.activities, (n) => (W(), G(U, { key: n.id }, [On(q("div", { class: pe({ "current-activity": i(n) }) }, [Xi(bm, {
+		}, [(W(!0), G(U, null, br(e.activities, (n) => (W(), G(U, { key: n.id }, [On(q("div", { class: pe({ "current-activity": i(n) }) }, [Xi(ym, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Ba, !o.value || s.value || i(n) || c(n)]]), Sr(t.$slots, "result", { activity: n })], 64))), 128))], 10, Em)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Ba, !o.value || s.value || i(n) || c(n)]]), Sr(t.$slots, "result", { activity: n })], 64))), 128))], 10, Tm)]));
 	}
-}), Om = { class: "message assistant w-full self-start" }, km = ["innerHTML"], Am = /* @__PURE__ */ Wn({
+}), Dm = { class: "message assistant w-full self-start" }, Om = ["innerHTML"], km = /* @__PURE__ */ Wn({
 	__name: "AssistantTextBlock",
 	props: {
 		block: {},
@@ -8599,13 +8584,13 @@ var um = ["open"], dm = {
 	},
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
-		let n = e, r = X(() => af(n.block.content)), i = t;
-		return (t, n) => (W(), G("article", Om, [
+		let n = e, r = X(() => Vd(n.block.content)), i = t;
+		return (t, n) => (W(), G("article", Dm, [
 			q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: H(Xp)(r.value.text)
-			}, null, 8, km),
-			(W(!0), G(U, null, br(r.value.files.filter((t) => !e.excludedPaths?.includes(t.path)), (t) => (W(), K(Jp, {
+				innerHTML: H(Yp)(r.value.text)
+			}, null, 8, Om),
+			(W(!0), G(U, null, br(r.value.files.filter((t) => !e.excludedPaths?.includes(t.path)), (t) => (W(), K(qp, {
 				key: t.path,
 				file: {
 					...t,
@@ -8614,7 +8599,7 @@ var um = ["open"], dm = {
 				profile: e.profile,
 				onImageLoad: n[0] ||= (e) => i("imageLoad")
 			}, null, 8, ["file", "profile"]))), 128)),
-			(W(!0), G(U, null, br(e.block.images, (t) => (W(), K(Jp, {
+			(W(!0), G(U, null, br(e.block.images, (t) => (W(), K(qp, {
 				key: t,
 				file: {
 					path: t,
@@ -8627,13 +8612,13 @@ var um = ["open"], dm = {
 			}, null, 8, ["file", "profile"]))), 128))
 		]));
 	}
-}), jm = { class: "assistant-turn grid min-w-0 gap-1" }, Mm = {
+}), Am = { class: "assistant-turn grid min-w-0 gap-1" }, jm = {
 	key: 1,
 	class: "response-actions flex items-center gap-1 text-[#a3a3a3]"
-}, Nm = ["disabled"], Pm = {
+}, Mm = ["disabled"], Nm = {
 	role: "status",
 	class: "text-xs"
-}, Fm = /* @__PURE__ */ Wn({
+}, Pm = /* @__PURE__ */ Wn({
 	__name: "AssistantTurn",
 	props: {
 		entry: {},
@@ -8643,9 +8628,9 @@ var um = ["open"], dm = {
 	},
 	emits: ["imageLoad", "branch"],
 	setup(e, { emit: t }) {
-		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? af(e.content).files.map((e) => e.path) : [])), i = X(() => tm(n.entry.blocks)), a = X(() => {
+		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? Vd(e.content).files.map((e) => e.path) : [])), i = X(() => em(n.entry.blocks)), a = X(() => {
 			let e = new Set(r.value), t = /* @__PURE__ */ new Map();
-			for (let r of n.entry.blocks) r.kind === "tool" && t.set(r.id, of(r).filter((t) => !e.has(t.path) && (e.add(t.path), !0)));
+			for (let r of n.entry.blocks) r.kind === "tool" && t.set(r.id, Hd(r).filter((t) => !e.has(t.path) && (e.add(t.path), !0)));
 			return t;
 		}), o = (e) => a.value.get(e.id) || [], s = t, c = /* @__PURE__ */ V(""), l = X(() => n.entry.blocks.filter((e) => e.kind === "text").map((e) => e.content).join("\n\n"));
 		async function u() {
@@ -8655,13 +8640,13 @@ var um = ["open"], dm = {
 				c.value = "Could not copy. Select the response text to copy it.";
 			}
 		}
-		return (t, n) => (W(), G("div", jm, [
-			(W(!0), G(U, null, br(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(Dm, {
+		return (t, n) => (W(), G("div", Am, [
+			(W(!0), G(U, null, br(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(Em, {
 				key: 0,
 				activities: t.activities,
 				working: !!e.entry.working
 			}, {
-				result: Dn(({ activity: t }) => [(W(!0), G(U, null, br(o(t), (t) => (W(), K(Jp, {
+				result: Dn(({ activity: t }) => [(W(!0), G(U, null, br(o(t), (t) => (W(), K(qp, {
 					key: t.path,
 					file: {
 						...t,
@@ -8671,7 +8656,7 @@ var um = ["open"], dm = {
 					onImageLoad: n[0] ||= (e) => s("imageLoad")
 				}, null, 8, ["file", "profile"]))), 128))]),
 				_: 1
-			}, 8, ["activities", "working"])) : (W(), G(U, { key: 1 }, [t.block.kind === "text" ? (W(), K(Am, {
+			}, 8, ["activities", "working"])) : (W(), G(U, { key: 1 }, [t.block.kind === "text" ? (W(), K(km, {
 				key: 0,
 				block: t.block,
 				profile: e.profile,
@@ -8681,11 +8666,11 @@ var um = ["open"], dm = {
 				"block",
 				"profile",
 				"session-id"
-			])) : (W(), G(U, { key: 1 }, [t.block.kind !== "thinking" || t.block.content.trim() ? (W(), K(bm, {
+			])) : (W(), G(U, { key: 1 }, [t.block.kind !== "thinking" || t.block.content.trim() ? (W(), K(ym, {
 				key: 0,
 				activity: t.block,
 				"turn-complete": !e.entry.working
-			}, null, 8, ["activity", "turn-complete"])) : Y("v-if", !0), (W(!0), G(U, null, br(o(t.block), (t) => (W(), K(Jp, {
+			}, null, 8, ["activity", "turn-complete"])) : Y("v-if", !0), (W(!0), G(U, null, br(o(t.block), (t) => (W(), K(qp, {
 				key: t.path,
 				file: {
 					...t,
@@ -8694,14 +8679,14 @@ var um = ["open"], dm = {
 				profile: e.profile,
 				onImageLoad: n[2] ||= (e) => s("imageLoad")
 			}, null, 8, ["file", "profile"]))), 128))], 64))], 64))], 64))), 128)),
-			e.entry.working && (!e.entry.blocks.length || e.entry.approvalPending) ? (W(), K(Dm, {
+			e.entry.working && (!e.entry.blocks.length || e.entry.approvalPending) ? (W(), K(Em, {
 				key: 0,
 				activities: [],
 				working: !0,
 				"approval-pending": e.entry.approvalPending
 			}, null, 8, ["approval-pending"])) : Y("v-if", !0),
 			Sr(t.$slots, "request"),
-			!e.entry.working && l.value.trim() ? (W(), G("div", Mm, [
+			!e.entry.working && l.value.trim() ? (W(), G("div", jm, [
 				q("button", {
 					type: "button",
 					"aria-label": "Copy response",
@@ -8732,36 +8717,36 @@ var um = ["open"], dm = {
 					class: "flex size-9 items-center justify-center rounded-lg hover:bg-[#303030] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white",
 					onPointerdown: n[4] ||= Mo(() => {}, ["prevent"]),
 					onClick: n[5] ||= (t) => s("branch", e.entry.responseId)
-				}, [...n[7] ||= [ea("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Nm)) : Y("v-if", !0),
-				q("span", Pm, F(c.value), 1)
+				}, [...n[7] ||= [ea("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Mm)) : Y("v-if", !0),
+				q("span", Nm, F(c.value), 1)
 			])) : Y("v-if", !0)
 		]));
 	}
-}), Im = { class: "relative flex min-h-0 w-full flex-1" }, Lm = {
+}), Fm = { class: "relative flex min-h-0 w-full flex-1" }, Im = {
 	key: 0,
 	class: "muted text-sm text-[#a3a3a3]"
-}, Rm = {
+}, Lm = {
 	key: 1,
 	class: "empty-state mx-auto flex w-full max-w-[760px] flex-1 flex-col"
-}, zm = {
+}, Rm = {
 	key: 1,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, Bm = { class: "system-notices" }, Vm = { class: "cursor-pointer select-none" }, Hm = { class: "mt-2 whitespace-pre-wrap break-words" }, Um = {
+}, zm = { class: "system-notices" }, Bm = { class: "cursor-pointer select-none" }, Vm = { class: "mt-2 whitespace-pre-wrap break-words" }, Hm = {
 	key: 2,
 	class: "assistant-turn",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, Wm = {
+}, Um = {
 	key: 3,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, Gm = {
+}, Wm = {
 	key: 5,
 	class: "message assistant w-full self-start",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, Km = ["innerHTML"], qm = /* @__PURE__ */ Wn({
+}, Gm = ["innerHTML"], Km = /* @__PURE__ */ Wn({
 	__name: "ChatTranscript",
 	props: {
 		branchDisabled: { type: Boolean },
@@ -8786,7 +8771,7 @@ var um = ["open"], dm = {
 	},
 	emits: ["branch"],
 	setup(e, { expose: t, emit: n }) {
-		let r = e, i = n, a = X(() => o.value), o = X(() => uf(r)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(), l = /* @__PURE__ */ V(r.followInitially !== !1), u = /* @__PURE__ */ V(!0), d;
+		let r = e, i = n, a = X(() => o.value), o = X(() => lf(r)), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V(), l = /* @__PURE__ */ V(r.followInitially !== !1), u = /* @__PURE__ */ V(!0), d;
 		function f() {
 			let e = s.value;
 			if (!e || !l.value || document.activeElement !== e && document.activeElement !== d) return;
@@ -8832,7 +8817,7 @@ var um = ["open"], dm = {
 		}, {
 			deep: !0,
 			flush: "post"
-		}), (t, n) => (W(), G("div", Im, [q("div", {
+		}), (t, n) => (W(), G("div", Fm, [q("div", {
 			ref_key: "transcript",
 			ref: s,
 			class: "transcript flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-6 text-white min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9",
@@ -8847,8 +8832,8 @@ var um = ["open"], dm = {
 			ref: c,
 			class: "flex min-h-full shrink-0 flex-col gap-7"
 		}, [
-			e.loading ? (W(), G("div", Lm, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", Rm, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
-			(W(!0), G(U, null, br(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "user" ? (W(), K($p, {
+			e.loading ? (W(), G("div", Im, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", Lm, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
+			(W(!0), G(U, null, br(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "user" ? (W(), K(Qp, {
 				key: 0,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -8860,7 +8845,7 @@ var um = ["open"], dm = {
 				"message",
 				"profile",
 				"session-id"
-			])) : r.kind === "status" ? (W(), G("div", zm, [q("details", Bm, [q("summary", Vm, F(r.text), 1), q("p", Hm, F(r.content), 1)])])) : (W(), K(Fm, {
+			])) : r.kind === "status" ? (W(), G("div", Rm, [q("details", zm, [q("summary", Bm, F(r.text), 1), q("p", Vm, F(r.content), 1)])])) : (W(), K(Pm, {
 				key: 2,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -8883,17 +8868,17 @@ var um = ["open"], dm = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", Um, [Xi(Dm, {
+			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", Hm, [Xi(Em, {
 				activities: e.progress,
 				working: !0,
 				"approval-pending": e.approvalPending
 			}, null, 8, ["activities", "approval-pending"])])) : Y("v-if", !0),
-			e.statusLabel && !e.working ? (W(), G("div", Wm, F(e.statusLabel), 1)) : Y("v-if", !0),
+			e.statusLabel && !e.working ? (W(), G("div", Um, F(e.statusLabel), 1)) : Y("v-if", !0),
 			o.value.some((e) => e.kind === "turn" && e.working) ? Y("v-if", !0) : Sr(t.$slots, "request", {}, void 0, void 0, 4),
-			e.draft && !e.blocks?.length ? (W(), G("article", Gm, [q("div", {
+			e.draft && !e.blocks?.length ? (W(), G("article", Wm, [q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: H(Xp)(e.draft)
-			}, null, 8, Km)])) : Y("v-if", !0)
+				innerHTML: H(Yp)(e.draft)
+			}, null, 8, Gm)])) : Y("v-if", !0)
 		], 512)], 544), !u.value && !e.home && !e.loading ? (W(), G("button", {
 			key: 0,
 			type: "button",
@@ -8910,7 +8895,7 @@ var um = ["open"], dm = {
 			"stroke-width": "2"
 		}, [q("path", { d: "M12 5v14m-7-7 7 7 7-7" })], -1)]])) : Y("v-if", !0)]));
 	}
-}), Jm = [
+}), qm = [
 	"none",
 	"minimal",
 	"low",
@@ -8919,41 +8904,41 @@ var um = ["open"], dm = {
 	"xhigh",
 	"max",
 	"ultra"
-], Ym = {
+], Jm = {
 	key: 0,
 	class: "flex flex-wrap gap-2 px-2 pb-2"
-}, Xm = ["src", "alt"], Zm = { class: "truncate" }, Qm = [
+}, Ym = ["src", "alt"], Xm = { class: "truncate" }, Zm = [
 	"disabled",
 	"onClick",
 	"aria-label"
-], $m = ["aria-label", "onClick"], eh = {
+], Qm = ["aria-label", "onClick"], $m = {
 	key: 1,
 	class: "px-2 pb-2 text-sm text-[#d4d4d4]",
 	role: "status"
-}, th = {
+}, eh = {
 	key: 2,
 	class: "px-2 text-sm text-red-300",
 	role: "alert"
-}, nh = {
+}, th = {
 	key: 3,
 	class: "px-2 text-sm text-red-300",
 	role: "alert"
-}, rh = { class: "composer-body" }, ih = ["placeholder"], ah = { class: "composer-controls flex items-center gap-3" }, oh = ["aria-expanded", "disabled"], sh = { class: "composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]" }, ch = [
+}, nh = { class: "composer-body" }, rh = ["placeholder"], ih = { class: "composer-controls flex items-center gap-3" }, ah = ["aria-expanded", "disabled"], oh = { class: "composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]" }, sh = [
 	"aria-expanded",
 	"aria-controls",
 	"disabled"
-], lh = { class: "truncate" }, uh = [
+], ch = { class: "truncate" }, lh = [
 	"type",
 	"disabled",
 	"aria-label",
 	"title"
-], dh = {
+], uh = {
 	key: 0,
 	viewBox: "0 0 24 24",
 	class: "size-5",
 	fill: "currentColor",
 	"aria-hidden": "true"
-}, fh = {
+}, dh = {
 	key: 1,
 	viewBox: "0 0 24 24",
 	fill: "none",
@@ -8963,22 +8948,22 @@ var um = ["open"], dm = {
 	"stroke-linejoin": "round",
 	class: "size-5",
 	"aria-hidden": "true"
-}, ph = ["id", "aria-label"], mh = { class: "flex shrink-0 items-center gap-2 border-b border-[#424242] p-2" }, hh = { class: "min-w-0 flex-1 truncate" }, gh = {
+}, fh = ["id", "aria-label"], ph = { class: "flex shrink-0 items-center gap-2 border-b border-[#424242] p-2" }, mh = { class: "min-w-0 flex-1 truncate" }, hh = {
 	key: 0,
 	class: "flex shrink-0 items-center justify-between gap-3 border-b border-[#424242] px-3 py-2"
-}, _h = ["value", "disabled"], vh = ["value"], yh = { class: "min-h-0 overflow-y-auto overscroll-contain" }, bh = ["data-provider", "onClick"], xh = { class: "min-w-0 flex-1 truncate" }, Sh = {
+}, gh = ["value", "disabled"], _h = ["value"], vh = { class: "min-h-0 overflow-y-auto overscroll-contain" }, yh = ["data-provider", "onClick"], bh = { class: "min-w-0 flex-1 truncate" }, xh = {
 	key: 0,
 	class: "text-sm text-[#a3a3a3]"
-}, Ch = ["data-model", "onClick"], wh = { class: "min-w-0 flex-1 break-all" }, Th = {
+}, Sh = ["data-model", "onClick"], Ch = { class: "min-w-0 flex-1 break-all" }, wh = {
 	key: 0,
 	"aria-label": "Selected"
-}, Eh = {
+}, Th = {
 	key: 0,
 	class: "px-3 py-3 text-[#a3a3a3]"
-}, Dh = {
+}, Eh = {
 	key: 5,
 	class: "absolute bottom-full left-0 mb-2 grid min-w-48 gap-1 rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base shadow-xl"
-}, Oh = /* @__PURE__ */ Wn({
+}, Dh = /* @__PURE__ */ Wn({
 	__name: "ChatComposer",
 	props: {
 		profile: {},
@@ -9188,7 +9173,7 @@ var um = ["open"], dm = {
 			class: "composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]",
 			onSubmit: Mo(pe, ["prevent"])
 		}, [
-			c.value.length ? (W(), G("div", Ym, [(W(!0), G(U, null, br(c.value, (e, t) => (W(), G("div", {
+			c.value.length ? (W(), G("div", Jm, [(W(!0), G(U, null, br(c.value, (e, t) => (W(), G("div", {
 				key: t,
 				class: "flex max-w-full items-center gap-2 rounded-xl bg-[#424242] p-2 text-sm"
 			}, [
@@ -9197,8 +9182,8 @@ var um = ["open"], dm = {
 					src: e.data,
 					alt: e.name,
 					class: "size-12 rounded-lg object-cover"
-				}, null, 8, Xm)) : Y("v-if", !0),
-				q("span", Zm, F(e.name), 1),
+				}, null, 8, Ym)) : Y("v-if", !0),
+				q("span", Xm, F(e.name), 1),
 				e.uploadError ? (W(), G("button", {
 					key: 1,
 					type: "button",
@@ -9206,22 +9191,22 @@ var um = ["open"], dm = {
 					disabled: u.value,
 					onClick: (t) => he(e),
 					"aria-label": `Retry upload ${e.name}`
-				}, " Retry upload", 8, Qm)) : Y("v-if", !0),
+				}, " Retry upload", 8, Zm)) : Y("v-if", !0),
 				q("button", {
 					type: "button",
 					"aria-label": `Remove ${e.name}`,
 					onMousedown: y,
 					onClick: (e) => c.value.splice(t, 1)
-				}, " × ", 40, $m)
+				}, " × ", 40, Qm)
 			]))), 128))])) : Y("v-if", !0),
-			o.value ? (W(), G("p", eh, [J(F(o.value === "goal" ? "Goal mode" : "Plan mode") + " · next message ", 1), q("button", {
+			o.value ? (W(), G("p", $m, [J(F(o.value === "goal" ? "Goal mode" : "Plan mode") + " · next message ", 1), q("button", {
 				type: "button",
 				class: "ml-2 underline",
 				onClick: n[0] ||= (e) => o.value = null
 			}, "Turn off")])) : Y("v-if", !0),
-			A.value ? (W(), G("p", th, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
-			l.value ? (W(), G("p", nh, F(l.value), 1)) : Y("v-if", !0),
-			q("div", rh, [
+			A.value ? (W(), G("p", eh, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
+			l.value ? (W(), G("p", th, F(l.value), 1)) : Y("v-if", !0),
+			q("div", nh, [
 				n[16] ||= q("label", {
 					class: "sr-only",
 					for: "prompt"
@@ -9240,7 +9225,7 @@ var um = ["open"], dm = {
 					onKeydown: fe,
 					onCompositionstart: n[2] ||= (e) => g.value = !0,
 					onCompositionend: n[3] ||= (e) => g.value = !1
-				}, null, 40, ih), [[So, a.value]]),
+				}, null, 40, rh), [[So, a.value]]),
 				q("input", {
 					ref_key: "files",
 					ref: d,
@@ -9260,7 +9245,7 @@ var um = ["open"], dm = {
 					"aria-label": "Take a photo",
 					onChange: _e
 				}, null, 544),
-				q("div", ah, [
+				q("div", ih, [
 					On(q("button", {
 						class: "attach-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#424242] p-0 text-white disabled:opacity-55",
 						type: "button",
@@ -9278,8 +9263,8 @@ var um = ["open"], dm = {
 						"stroke-linecap": "round",
 						class: "size-5",
 						"aria-hidden": "true"
-					}, [q("path", { d: "M12 5v14M5 12h14" })], -1)]], 8, oh), [[Ba, !h.value]]),
-					q("p", sh, F(u.value ? "Preparing attachments…" : e.reason || ""), 1),
+					}, [q("path", { d: "M12 5v14M5 12h14" })], -1)]], 8, ah), [[Ba, !h.value]]),
+					q("p", oh, F(u.value ? "Preparing attachments…" : e.reason || ""), 1),
 					q("button", {
 						ref_key: "pill",
 						ref: D,
@@ -9291,14 +9276,14 @@ var um = ["open"], dm = {
 						"aria-controls": H(k),
 						disabled: ee.value,
 						onClick: ae
-					}, [q("span", lh, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[13] ||= q("svg", {
+					}, [q("span", ch, F(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[13] ||= q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
 						"stroke-width": "2",
 						class: "size-4 shrink-0",
 						"aria-hidden": "true"
-					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, ch),
+					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, sh),
 					q("button", {
 						class: "send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
 						type: e.sending && !a.value.trim() ? "button" : "submit",
@@ -9307,13 +9292,13 @@ var um = ["open"], dm = {
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						onMousedown: y,
 						onClick: n[5] ||= (t) => e.sending ? a.value.trim() ? pe() : e.stoppable && i("stop") : pe()
-					}, [e.sending && !a.value.trim() ? (W(), G("svg", dh, [...n[14] ||= [q("rect", {
+					}, [e.sending && !a.value.trim() ? (W(), G("svg", uh, [...n[14] ||= [q("rect", {
 						x: "6",
 						y: "6",
 						width: "12",
 						height: "12",
 						rx: "2"
-					}, null, -1)]])) : (W(), G("svg", fh, [...n[15] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, uh)
+					}, null, -1)]])) : (W(), G("svg", dh, [...n[15] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, lh)
 				])
 			]),
 			w.value ? (W(), G("div", {
@@ -9326,7 +9311,7 @@ var um = ["open"], dm = {
 				"aria-label": T.value === null ? "Choose provider" : ne.value,
 				class: "model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl"
 			}, [
-				q("div", mh, [
+				q("div", ph, [
 					T.value === null ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
@@ -9341,7 +9326,7 @@ var um = ["open"], dm = {
 						class: "size-5",
 						"aria-hidden": "true"
 					}, [q("path", { d: "m15 18-6-6 6-6" })], -1)]])),
-					q("h2", hh, F(T.value === null ? "Choose provider" : ne.value), 1),
+					q("h2", mh, F(T.value === null ? "Choose provider" : ne.value), 1),
 					q("button", {
 						type: "button",
 						"aria-label": "Close model picker",
@@ -9349,23 +9334,23 @@ var um = ["open"], dm = {
 						onClick: ie
 					}, " × ")
 				]),
-				j.value ? (W(), G("label", gh, [n[19] ||= q("span", null, "Reasoning effort", -1), q("select", {
+				j.value ? (W(), G("label", hh, [n[19] ||= q("span", null, "Reasoning effort", -1), q("select", {
 					"aria-label": "Reasoning effort",
 					class: "min-w-0 rounded-lg bg-[#303030] px-2 py-1 text-base text-white",
 					value: e.reasoningEffort || "",
 					disabled: ee.value,
 					onChange: n[6] ||= (e) => i("update:reasoningEffort", e.target.value)
-				}, [n[18] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, br(H(Jm), (e) => (W(), G("option", {
+				}, [n[18] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, br(H(qm), (e) => (W(), G("option", {
 					key: e,
 					value: e
-				}, F(e === "xhigh" ? "XHigh" : e[0].toUpperCase() + e.slice(1)), 9, vh))), 128))], 40, _h)])) : Y("v-if", !0),
-				q("div", yh, [T.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
+				}, F(e === "xhigh" ? "XHigh" : e[0].toUpperCase() + e.slice(1)), 9, _h))), 128))], 40, gh)])) : Y("v-if", !0),
+				q("div", vh, [T.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, br(e.providers, (e) => (W(), G("button", {
 					key: e.slug,
 					type: "button",
 					class: "provider-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": e.slug,
 					onClick: (t) => oe(e.slug)
-				}, [q("span", xh, F(e.name), 1), e.is_current ? (W(), G("span", Sh, "Current")) : Y("v-if", !0)], 8, bh))), 128)), q("button", {
+				}, [q("span", bh, F(e.name), 1), e.is_current ? (W(), G("span", xh, "Current")) : Y("v-if", !0)], 8, yh))), 128)), q("button", {
 					type: "button",
 					class: "provider-option w-full rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": "",
@@ -9376,9 +9361,9 @@ var um = ["open"], dm = {
 					class: "model-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-model": t,
 					onClick: (e) => ce(t)
-				}, [q("span", wh, F(t), 1), (e.provider || "") === T.value && t === (e.model || e.defaultModel) ? (W(), G("span", Th, "✓")) : Y("v-if", !0)], 8, Ch))), 128)), M.value.length ? Y("v-if", !0) : (W(), G("p", Eh, "No models available"))], 64))])
-			], 8, ph)) : Y("v-if", !0),
-			s.value ? (W(), G("div", Dh, [
+				}, [q("span", Ch, F(t), 1), (e.provider || "") === T.value && t === (e.model || e.defaultModel) ? (W(), G("span", wh, "✓")) : Y("v-if", !0)], 8, Sh))), 128)), M.value.length ? Y("v-if", !0) : (W(), G("p", Th, "No models available"))], 64))])
+			], 8, fh)) : Y("v-if", !0),
+			s.value ? (W(), G("div", Eh, [
 				q("button", {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
@@ -9408,10 +9393,10 @@ var um = ["open"], dm = {
 			])) : Y("v-if", !0)
 		], 544));
 	}
-}), kh = {
+}), Oh = {
 	key: 0,
 	class: "approval-choices grid grid-cols-1 gap-2 my-3"
-}, Ah = ["disabled", "onClick"], jh = /* @__PURE__ */ Wn({
+}, kh = ["disabled", "onClick"], Ah = /* @__PURE__ */ Wn({
 	__name: "ApprovalRequest",
 	props: {
 		request: {},
@@ -9431,18 +9416,18 @@ var um = ["open"], dm = {
 				}
 			}
 		}
-		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + F(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", kh, [(W(!0), G(U, null, br(e.request.params.choices, (t) => (W(), G("button", {
+		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + F(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", Oh, [(W(!0), G(U, null, br(e.request.params.choices, (t) => (W(), G("button", {
 			key: t,
 			class: pe(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
 			disabled: e.disabled || n.value,
 			onMousedown: i[0] ||= Mo(() => {}, ["prevent"]),
 			onClick: (e) => r(t)
-		}, F(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, Ah))), 128))])) : Y("v-if", !0)], 64));
+		}, F(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, kh))), 128))])) : Y("v-if", !0)], 64));
 	}
-}), Mh = { class: "clarification-card" }, Nh = ["disabled"], Ph = {
+}), jh = { class: "clarification-card" }, Mh = ["disabled"], Nh = {
 	key: 0,
 	class: "clarification-choices"
-}, Fh = ["aria-pressed", "onClick"], Ih = { class: "clarification-other" }, Lh = ["onUpdate:modelValue", "aria-label"], Rh = ["disabled"], zh = /*#__PURE__*/ ((e, t) => {
+}, Ph = ["aria-pressed", "onClick"], Fh = { class: "clarification-other" }, Ih = ["onUpdate:modelValue", "aria-label"], Lh = ["disabled"], Rh = /*#__PURE__*/ ((e, t) => {
 	let n = e.__vccOpts || e;
 	for (let [e, r] of t) n[e] = r;
 	return n;
@@ -9474,28 +9459,28 @@ var um = ["open"], dm = {
 		function c() {
 			!n.disabled && Object.keys(o()).length && r("answer", o());
 		}
-		return (t, n) => (W(), G("div", Mh, [(W(!0), G(U, null, br(e.questions, (t) => (W(), G("form", {
+		return (t, n) => (W(), G("div", jh, [(W(!0), G(U, null, br(e.questions, (t) => (W(), G("form", {
 			key: t.qid,
 			onSubmit: Mo(c, ["prevent"])
 		}, [q("fieldset", { disabled: e.disabled }, [
 			q("legend", null, F(t.question), 1),
-			t.choices?.length ? (W(), G("div", Ph, [(W(!0), G(U, null, br(t.choices, (e) => (W(), G("button", {
+			t.choices?.length ? (W(), G("div", Nh, [(W(!0), G(U, null, br(t.choices, (e) => (W(), G("button", {
 				key: e,
 				type: "button",
 				"aria-pressed": t.multi_select ? i.value[t.qid]?.includes(e) ?? !1 : void 0,
 				onClick: (n) => s(t, e)
-			}, F(e), 9, Fh))), 128))])) : Y("v-if", !0),
-			q("div", Ih, [On(q("input", {
+			}, F(e), 9, Ph))), 128))])) : Y("v-if", !0),
+			q("div", Fh, [On(q("input", {
 				"onUpdate:modelValue": (e) => a.value[t.qid] = e,
 				placeholder: "Other response",
 				"aria-label": t.question + " — Other response"
-			}, null, 8, Lh), [[So, a.value[t.qid]]]), q("button", {
+			}, null, 8, Ih), [[So, a.value[t.qid]]]), q("button", {
 				type: "submit",
 				disabled: e.disabled || !Object.keys(o()).length
-			}, "Send", 8, Rh)])
-		], 8, Nh)], 32))), 128))]));
+			}, "Send", 8, Lh)])
+		], 8, Mh)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-4672d460"]]), Bh = /* @__PURE__ */ Wn({
+}), [["__scopeId", "data-v-4672d460"]]), zh = /* @__PURE__ */ Wn({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},
@@ -9514,13 +9499,13 @@ var um = ["open"], dm = {
 				}
 			}
 		}
-		return (t, i) => (W(), K(zh, {
+		return (t, i) => (W(), K(Rh, {
 			questions: e.request.params.questions,
 			disabled: e.disabled || n.value,
 			onAnswer: r
 		}, null, 8, ["questions", "disabled"]));
 	}
-}), Vh = { class: "block my-3" }, Hh = ["aria-label", "disabled"], Uh = ["disabled"], Wh = /* @__PURE__ */ Wn({
+}), Bh = { class: "block my-3" }, Vh = ["aria-label", "disabled"], Hh = ["disabled"], Uh = /* @__PURE__ */ Wn({
 	__name: "SecretRequest",
 	props: {
 		request: {},
@@ -9539,23 +9524,23 @@ var um = ["open"], dm = {
 				r.value = !1;
 			}
 		}
-		return (t, a) => (W(), G(U, null, [q("p", null, F(e.request.params.prompt), 1), q("form", { onSubmit: Mo(i, ["prevent"]) }, [q("label", Vh, [J(F(e.request.params.env_var) + " ", 1), On(q("input", {
+		return (t, a) => (W(), G(U, null, [q("p", null, F(e.request.params.prompt), 1), q("form", { onSubmit: Mo(i, ["prevent"]) }, [q("label", Bh, [J(F(e.request.params.env_var) + " ", 1), On(q("input", {
 			"onUpdate:modelValue": a[0] ||= (e) => n.value = e,
 			type: "password",
 			autocomplete: "off",
 			"aria-label": e.request.params.prompt || "Secret",
 			disabled: e.disabled || r.value,
 			class: "block w-full rounded-lg bg-[#303030] p-2 text-base"
-		}, null, 8, Hh), [[So, n.value]])]), q("button", {
+		}, null, 8, Vh), [[So, n.value]])]), q("button", {
 			type: "submit",
 			disabled: e.disabled || r.value || !n.value,
 			class: "rounded-lg bg-[#303030] p-2 text-base"
-		}, " Submit secret ", 8, Uh)], 32)], 64));
+		}, " Submit secret ", 8, Hh)], 32)], 64));
 	}
-}), Gh = { key: 3 }, Kh = /* @__PURE__ */ Wn({
+}), Wh = { key: 3 }, Gh = /* @__PURE__ */ Wn({
 	__name: "LiveRequest",
 	setup(e) {
-		let { view: t, scope: n, actions: r } = tp(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
+		let { view: t, scope: n, actions: r } = ep(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
 		return (e, t) => H(i) ? (W(), G("div", {
 			key: JSON.stringify([
 				H(s),
@@ -9564,7 +9549,7 @@ var um = ["open"], dm = {
 			]),
 			class: "notice px-5 py-3 text-sm",
 			role: "status"
-		}, [H(i).kind === "approval" ? (W(), K(jh, {
+		}, [H(i).kind === "approval" ? (W(), K(Ah, {
 			key: 0,
 			request: H(i),
 			disabled: H(a),
@@ -9575,7 +9560,7 @@ var um = ["open"], dm = {
 			"disabled",
 			"active",
 			"answer"
-		])) : H(i).kind === "clarify" ? (W(), K(Bh, {
+		])) : H(i).kind === "clarify" ? (W(), K(zh, {
 			key: 1,
 			request: H(i),
 			disabled: H(a),
@@ -9584,7 +9569,7 @@ var um = ["open"], dm = {
 			"request",
 			"disabled",
 			"answer"
-		])) : H(i).kind === "secret" ? (W(), K(Wh, {
+		])) : H(i).kind === "secret" ? (W(), K(Uh, {
 			key: 2,
 			request: H(i),
 			disabled: H(a),
@@ -9593,25 +9578,25 @@ var um = ["open"], dm = {
 			"request",
 			"disabled",
 			"answer"
-		])) : (W(), G("p", Gh, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
+		])) : (W(), G("p", Wh, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
 	}
-}), qh = { class: "chat-interface relative flex min-h-0 flex-1 flex-col overflow-hidden" }, Jh = {
+}), Kh = { class: "chat-interface relative flex min-h-0 flex-1 flex-col overflow-hidden" }, qh = {
 	key: 0,
 	class: "pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-3xl border-2 border-dashed border-[#a3a3a3] bg-[#212121]/95 text-lg",
 	role: "status"
-}, Yh = { class: "chat-content flex min-h-0 flex-1 flex-col overflow-hidden" }, Xh = {
+}, Jh = { class: "chat-content flex min-h-0 flex-1 flex-col overflow-hidden" }, Yh = {
 	key: 0,
 	class: "notice bg-[#303030] px-5 py-3 text-sm text-white dark:bg-[#303030] dark:text-white",
 	role: "status"
-}, Zh = {
+}, Xh = {
 	key: 1,
 	class: "notice px-5 py-3 text-sm text-[#b4b4b4]",
 	role: "status"
-}, Qh = {
+}, Zh = {
 	key: 2,
 	class: "notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]",
 	role: "alert"
-}, $h = { class: "composer-dock shrink-0" }, eg = /* @__PURE__ */ Wn({
+}, Qh = { class: "composer-dock shrink-0" }, $h = /* @__PURE__ */ Wn({
 	__name: "ChatInterface",
 	props: {
 		showPage: { type: Boolean },
@@ -9657,17 +9642,17 @@ var um = ["open"], dm = {
 		}), lr(() => {
 			document.removeEventListener("dragenter", u), document.removeEventListener("dragover", d), document.removeEventListener("dragleave", f), document.removeEventListener("drop", p);
 		});
-		let { view: m, scope: h, composer: g, actions: _ } = tp(), { profile: v, session: y, settingsPage: b, scheduledPage: x, offline: S, canStream: C, reasoningEffort: w, models: T, providers: E, modelsLoading: D, model: O, provider: k, defaultModel: A, suggestedPrompt: ee } = h, { messages: te, loading: ne, busy: j, approvalPending: M, active: re, reconnect: ie, error: ae, unavailable: oe, connection: se, status: ce } = m;
-		return (t, i) => (W(), G("div", qh, [
-			c.value && !e.showPage ? (W(), G("div", Jh, " Drop files to attach ")) : Y("v-if", !0),
-			q("div", Yh, [
-				H(S) ? (W(), G("div", Xh, " You are offline. Messages cannot be loaded or sent. ")) : Y("v-if", !0),
-				!H(b) && !H(x) && H(ie) ? (W(), G("div", Zh, [J(F(H(se) === "reconnecting" ? "Reconnecting…" : "Session is read-only until reconnected.") + " ", 1), H(C) && H(se) === "stale" && !H(S) ? (W(), G("button", {
+		let { view: m, scope: h, composer: g, actions: _ } = ep(), { profile: v, session: y, settingsPage: b, scheduledPage: x, offline: S, canStream: C, reasoningEffort: w, models: T, providers: E, modelsLoading: D, model: O, provider: k, defaultModel: A, suggestedPrompt: ee } = h, { messages: te, loading: ne, busy: j, approvalPending: M, active: re, reconnect: ie, error: ae, unavailable: oe, connection: se, status: ce } = m;
+		return (t, i) => (W(), G("div", Kh, [
+			c.value && !e.showPage ? (W(), G("div", qh, " Drop files to attach ")) : Y("v-if", !0),
+			q("div", Jh, [
+				H(S) ? (W(), G("div", Yh, " You are offline. Messages cannot be loaded or sent. ")) : Y("v-if", !0),
+				!H(b) && !H(x) && H(ie) ? (W(), G("div", Xh, [J(F(H(se) === "reconnecting" ? "Reconnecting…" : "Session is read-only until reconnected.") + " ", 1), H(C) && H(se) === "stale" && !H(S) ? (W(), G("button", {
 					key: 0,
 					class: "ml-3 underline",
 					onClick: i[0] ||= (...e) => H(_).retry && H(_).retry(...e)
 				}, " Reconnect ")) : Y("v-if", !0)])) : Y("v-if", !0),
-				!H(b) && !H(x) && H(ae) ? (W(), G("div", Qh, [
+				!H(b) && !H(x) && H(ae) ? (W(), G("div", Zh, [
 					J(F(H(ae)) + " ", 1),
 					H(y) ? (W(), G("button", {
 						key: 0,
@@ -9680,7 +9665,7 @@ var um = ["open"], dm = {
 						onClick: i[2] ||= (...e) => H(_).resolve && H(_).resolve(...e)
 					}, " Resolve uncertain submission ")) : Y("v-if", !0)
 				])) : Y("v-if", !0),
-				e.showPage ? Sr(t.$slots, "page", {}, void 0, void 0, 3) : (W(), K(qm, {
+				e.showPage ? Sr(t.$slots, "page", {}, void 0, void 0, 3) : (W(), K(Km, {
 					key: 4,
 					ref_key: "transcript",
 					ref: r,
@@ -9699,7 +9684,7 @@ var um = ["open"], dm = {
 					"response-targets": H(m).responseTargets.value,
 					onBranch: H(_).branch
 				}, {
-					request: Dn(() => [Xi(Kh)]),
+					request: Dn(() => [Xi(Gh)]),
 					_: 1
 				}, 8, [
 					"profile",
@@ -9716,7 +9701,7 @@ var um = ["open"], dm = {
 					"onBranch"
 				]))
 			]),
-			q("div", $h, [On((W(), K(Oh, {
+			q("div", Qh, [On((W(), K(Dh, {
 				ref_key: "picker",
 				ref: n,
 				profile: H(v),
@@ -9762,16 +9747,16 @@ var um = ["open"], dm = {
 			])), [[Ba, !H(b) && !e.hideComposer]])])
 		]));
 	}
-}), tg = [
+}), eg = [
 	"once",
 	"session",
 	"always",
 	"deny"
 ];
-function ng(e) {
+function tg(e) {
 	if (!e) return;
 	let { id: t, method: n, params: r } = e;
-	return n === "approval" && (r.choices === void 0 || Array.isArray(r.choices) && r.choices.every((e) => tg.includes(e))) ? {
+	return n === "approval" && (r.choices === void 0 || Array.isArray(r.choices) && r.choices.every((e) => eg.includes(e))) ? {
 		kind: "approval",
 		id: t,
 		params: {
@@ -9796,10 +9781,10 @@ function ng(e) {
 }
 //#endregion
 //#region src/features/chat/composables/useChatController.ts
-function rg(e, t) {
+function ng(e, t) {
 	return `Attached ${e.type.startsWith("image/") ? "image" : "file"} ${e.name.replace(/[\r\n]/g, " ")}: ${t}\nMEDIA:"${t}"`;
 }
-function ig(e, t) {
+function rg(e, t) {
 	let { profile: n, session: r, messages: i, chatLoading: a, chatError: o, canStream: s, scheduledPage: c, projectView: l, projectsPage: u, projectPage: d, settingsPage: f, selectedProject: p, creating: m, offline: h, models: g, providers: _, modelsLoading: v, model: y, provider: b, defaultModel: x, suggestedPrompt: S } = t, C = /* @__PURE__ */ V(/* @__PURE__ */ new Map()), w = () => JSON.stringify([n.value || "default", r.value]), T = X(() => C.value.get(w()) || ""), E = /* @__PURE__ */ V(!1), D = X(() => E.value || !s.value || j.value || ee.value || te.value || M.value || h.value || !r.value);
 	async function O(i) {
 		if (D.value) return;
@@ -9828,7 +9813,7 @@ function ig(e, t) {
 			text: i
 		}, ...a.flatMap((e) => [{
 			type: "text",
-			text: e.path ? rg(e, e.path) : "📎 " + e.name
+			text: e.path ? ng(e, e.path) : "📎 " + e.name
 		}, ...e.type.startsWith("image/") ? [{
 			type: "image_url",
 			image_url: { url: e.data }
@@ -9844,7 +9829,7 @@ function ig(e, t) {
 					if (f !== t.generation()) throw Error("Session changed before submission");
 					e.push({
 						type: "text",
-						text: rg(n, r.path)
+						text: ng(n, r.path)
 					}), n.type.startsWith("image/") && e.push({
 						type: "image_url",
 						image_url: { url: n.data }
@@ -9887,7 +9872,7 @@ function ig(e, t) {
 	}
 	let le = X(() => {
 		let t = e.approval.value;
-		return t && typeof t.request_id == "string" && typeof t.kind == "string" ? ng({
+		return t && typeof t.request_id == "string" && typeof t.kind == "string" ? tg({
 			id: t.request_id,
 			method: t.kind,
 			params: t
@@ -9905,8 +9890,8 @@ function ig(e, t) {
 	}
 	let fe = X(() => ({
 		projectName: !c.value && !u.value && !p.value?.isNoProject ? p.value?.label : void 0,
-		disabled: !!(E.value || d.value || c.value || u.value || l.value && p.value?.archived || l.value && (!p.value || !p.value.isNoProject && !yf(p.value)) || h.value || m.value || v.value || te.value || j.value || re.value || M.value || !s.value),
-		reason: c.value ? "Open a chat to discuss a run." : u.value ? "Select a project or start a new chat." : l.value && p.value?.archived ? "Restore this project to start a new chat." : l.value && p.value && !p.value.isNoProject && !yf(p.value) ? "This Project has no workspace." : h.value ? "Offline · sending is unavailable." : j.value ? "Approval is pending in Hermes." : s.value ? void 0 : "Streaming turns are unavailable for this profile."
+		disabled: !!(E.value || d.value || c.value || u.value || l.value && p.value?.archived || l.value && (!p.value || !p.value.isNoProject && !vf(p.value)) || h.value || m.value || v.value || te.value || j.value || re.value || M.value || !s.value),
+		reason: c.value ? "Open a chat to discuss a run." : u.value ? "Select a project or start a new chat." : l.value && p.value?.archived ? "Restore this project to start a new chat." : l.value && p.value && !p.value.isNoProject && !vf(p.value) ? "This Project has no workspace." : h.value ? "Offline · sending is unavailable." : j.value ? "Approval is pending in Hermes." : s.value ? void 0 : "Streaming turns are unavailable for this profile."
 	})), pe = {
 		branch: O,
 		send: oe,
@@ -9967,8 +9952,8 @@ function ig(e, t) {
 }
 //#endregion
 //#region src/composables/useDrawerSwipe.ts
-var ag = "button, a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not(.transcript), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
-function og(e, t, n, r) {
+var ig = "button, a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not(.transcript), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
+function ag(e, t, n, r) {
 	let i = /* @__PURE__ */ V(null), a, o = 0, s = 0, c = 0, l = 0, u = () => window.matchMedia("(max-width: 700px)").matches;
 	function d() {
 		a = void 0, i.value = null;
@@ -9977,7 +9962,7 @@ function og(e, t, n, r) {
 	function f(r) {
 		if (d(), !u() || r.touches.length !== 1) return;
 		let i = r.touches[0], l = r.target;
-		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(ag)) && (e.value || l.closest(".transcript"))) {
+		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(ig)) && (e.value || l.closest(".transcript"))) {
 			if (l.closest(".scrim")) {
 				let e = n()?.getBoundingClientRect();
 				if (!e || i.clientY < e.top || i.clientY > e.bottom) return;
@@ -10033,16 +10018,16 @@ function og(e, t, n, r) {
 }
 //#endregion
 //#region src/features/settings/composables/useWakeLock.ts
-var sg = "chathermes.keep-screen-awake";
-function cg() {
+var og = "chathermes.keep-screen-awake";
+function sg() {
 	try {
-		return localStorage.getItem(sg) === "true";
+		return localStorage.getItem(og) === "true";
 	} catch {
 		return !1;
 	}
 }
-function lg() {
-	let e = /* @__PURE__ */ V(cg()), t = /* @__PURE__ */ V(!1), n = !1, r = !0, i = null, a = null, o = 0, s = null;
+function cg() {
+	let e = /* @__PURE__ */ V(sg()), t = /* @__PURE__ */ V(!1), n = !1, r = !0, i = null, a = null, o = 0, s = null;
 	function c() {
 		return n && r && e.value && document.visibilityState === "visible";
 	}
@@ -10077,7 +10062,7 @@ function lg() {
 	function f(t) {
 		e.value = t;
 		try {
-			localStorage.setItem(sg, String(t));
+			localStorage.setItem(og, String(t));
 		} catch {}
 		t ? d() : u();
 	}
@@ -10102,86 +10087,86 @@ function lg() {
 }
 //#endregion
 //#region node_modules/vue-router/dist/devtools-BLCumUwL.mjs
-var ug = typeof document < "u";
-function dg(e) {
+var lg = typeof document < "u";
+function ug(e) {
 	return typeof e == "object" || "displayName" in e || "props" in e || "__vccOpts" in e;
 }
-function fg(e) {
-	return e.__esModule || e[Symbol.toStringTag] === "Module" || e.default && dg(e.default);
+function dg(e) {
+	return e.__esModule || e[Symbol.toStringTag] === "Module" || e.default && ug(e.default);
 }
-var pg = Object.assign;
-function mg(e, t) {
+var fg = Object.assign;
+function pg(e, t) {
 	let n = {};
 	for (let r in t) {
 		let i = t[r];
-		n[r] = gg(i) ? i.map(e) : e(i);
+		n[r] = hg(i) ? i.map(e) : e(i);
 	}
 	return n;
 }
-var hg = () => {}, gg = Array.isArray;
-function _g(e, t) {
+var mg = () => {}, hg = Array.isArray;
+function gg(e, t) {
 	let n = {};
 	for (let r in e) n[r] = r in t ? t[r] : e[r];
 	return n;
 }
-var vg = /#/g, yg = /&/g, bg = /\//g, xg = /=/g, Sg = /\?/g, Cg = /\+/g, wg = /%5B/g, Tg = /%5D/g, Eg = /%5E/g, Dg = /%60/g, Og = /%7B/g, kg = /%7C/g, Ag = /%7D/g, jg = /%20/g;
+var _g = /#/g, vg = /&/g, yg = /\//g, bg = /=/g, xg = /\?/g, Sg = /\+/g, Cg = /%5B/g, wg = /%5D/g, Tg = /%5E/g, Eg = /%60/g, Dg = /%7B/g, Og = /%7C/g, kg = /%7D/g, Ag = /%20/g;
+function jg(e) {
+	return e == null ? "" : encodeURI("" + e).replace(Og, "|").replace(Cg, "[").replace(wg, "]");
+}
 function Mg(e) {
-	return e == null ? "" : encodeURI("" + e).replace(kg, "|").replace(wg, "[").replace(Tg, "]");
+	return jg(e).replace(Dg, "{").replace(kg, "}").replace(Tg, "^");
 }
 function Ng(e) {
-	return Mg(e).replace(Og, "{").replace(Ag, "}").replace(Eg, "^");
+	return jg(e).replace(Sg, "%2B").replace(Ag, "+").replace(_g, "%23").replace(vg, "%26").replace(Eg, "`").replace(Dg, "{").replace(kg, "}").replace(Tg, "^");
 }
 function Pg(e) {
-	return Mg(e).replace(Cg, "%2B").replace(jg, "+").replace(vg, "%23").replace(yg, "%26").replace(Dg, "`").replace(Og, "{").replace(Ag, "}").replace(Eg, "^");
+	return Ng(e).replace(bg, "%3D");
 }
 function Fg(e) {
-	return Pg(e).replace(xg, "%3D");
+	return jg(e).replace(_g, "%23").replace(xg, "%3F");
 }
 function Ig(e) {
-	return Mg(e).replace(vg, "%23").replace(Sg, "%3F");
+	return Fg(e).replace(yg, "%2F");
 }
 function Lg(e) {
-	return Ig(e).replace(bg, "%2F");
-}
-function Rg(e) {
 	if (e == null) return null;
 	try {
 		return decodeURIComponent("" + e);
 	} catch {}
 	return "" + e;
 }
-function zg(e, t, n = "/") {
+function Rg(e, t, n = "/") {
 	let r, i = {}, a = "", o = "", s = t.indexOf("#"), c = t.indexOf("?");
-	return c = s >= 0 && c > s ? -1 : c, c >= 0 && (r = t.slice(0, c), a = t.slice(c, s > 0 ? s : t.length), i = e(a.slice(1))), s >= 0 && (r ||= t.slice(0, s), o = t.slice(s, t.length)), r = Kg(r ?? t, n), {
+	return c = s >= 0 && c > s ? -1 : c, c >= 0 && (r = t.slice(0, c), a = t.slice(c, s > 0 ? s : t.length), i = e(a.slice(1))), s >= 0 && (r ||= t.slice(0, s), o = t.slice(s, t.length)), r = Gg(r ?? t, n), {
 		fullPath: r + a + o,
 		path: r,
 		query: i,
-		hash: Rg(o)
+		hash: Lg(o)
 	};
 }
-function Bg(e, t) {
+function zg(e, t) {
 	let n = t.query ? e(t.query) : "";
 	return t.path + (n && "?") + n + (t.hash || "");
 }
-function Vg(e, t, n) {
+function Bg(e, t, n) {
 	let r = t.matched.length - 1, i = n.matched.length - 1;
-	return r > -1 && r === i && Hg(t.matched[r], n.matched[i]) && Ug(t.params, n.params) && e(t.query) === e(n.query) && t.hash === n.hash;
+	return r > -1 && r === i && Vg(t.matched[r], n.matched[i]) && Hg(t.params, n.params) && e(t.query) === e(n.query) && t.hash === n.hash;
 }
-function Hg(e, t) {
+function Vg(e, t) {
 	return (e.aliasOf || e) === (t.aliasOf || t);
 }
-function Ug(e, t) {
+function Hg(e, t) {
 	if (Object.keys(e).length !== Object.keys(t).length) return !1;
-	for (let n in e) if (!Wg(e[n], t[n])) return !1;
+	for (let n in e) if (!Ug(e[n], t[n])) return !1;
 	return !0;
 }
+function Ug(e, t) {
+	return hg(e) ? Wg(e, t) : hg(t) ? Wg(t, e) : e === t;
+}
 function Wg(e, t) {
-	return gg(e) ? Gg(e, t) : gg(t) ? Gg(t, e) : e === t;
+	return hg(t) ? e.length === t.length && e.every((e, n) => e === t[n]) : e.length === 1 && e[0] === t;
 }
 function Gg(e, t) {
-	return gg(t) ? e.length === t.length && e.every((e, n) => e === t[n]) : e.length === 1 && e[0] === t;
-}
-function Kg(e, t) {
 	if (e.startsWith("/")) return e;
 	if (!e) return t;
 	let n = t.split("/"), r = e.split("/"), i = r[r.length - 1];
@@ -10193,7 +10178,7 @@ function Kg(e, t) {
 	}
 	return n.slice(0, a).join("/") + "/" + r.slice(o).join("/");
 }
-var qg = {
+var Kg = {
 	path: "/",
 	name: void 0,
 	params: {},
@@ -10203,10 +10188,10 @@ var qg = {
 	matched: [],
 	meta: {},
 	redirectedFrom: void 0
-}, Jg = /* @__PURE__ */ function(e) {
+}, qg = /* @__PURE__ */ function(e) {
 	return e.pop = "pop", e.push = "push", e;
 }({});
-function Yg(e, t) {
+function Jg(e, t) {
 	let n = document.documentElement.getBoundingClientRect(), r = e.getBoundingClientRect();
 	return {
 		behavior: t.behavior,
@@ -10214,86 +10199,86 @@ function Yg(e, t) {
 		top: r.top - n.top - (t.top || 0)
 	};
 }
-var Xg = () => ({
+var Yg = () => ({
 	left: window.scrollX,
 	top: window.scrollY
 });
-function Zg(e) {
+function Xg(e) {
 	let t;
 	if ("el" in e) {
 		let n = e.el, r = typeof n == "string" && n.startsWith("#"), i = typeof n == "string" ? r ? document.getElementById(n.slice(1)) : document.querySelector(n) : n;
 		if (!i) return;
-		t = Yg(i, e);
+		t = Jg(i, e);
 	} else t = e;
 	"scrollBehavior" in document.documentElement.style ? window.scrollTo(t) : window.scrollTo(t.left == null ? window.scrollX : t.left, t.top == null ? window.scrollY : t.top);
 }
-function Qg(e, t) {
+function Zg(e, t) {
 	return (history.state ? history.state.position - t : -1) + e;
 }
-var $g = /* @__PURE__ */ new Map();
-function e_(e, t) {
-	$g.set(e, t);
+var Qg = /* @__PURE__ */ new Map();
+function $g(e, t) {
+	Qg.set(e, t);
+}
+function e_(e) {
+	let t = Qg.get(e);
+	return Qg.delete(e), t;
 }
 function t_(e) {
-	let t = $g.get(e);
-	return $g.delete(e), t;
-}
-function n_(e) {
 	return typeof e == "string" || e && typeof e == "object";
 }
-function r_(e) {
+function n_(e) {
 	return typeof e == "string" || typeof e == "symbol";
 }
-var i_ = /* @__PURE__ */ function(e) {
+var r_ = /* @__PURE__ */ function(e) {
 	return e[e.MATCHER_NOT_FOUND = 1] = "MATCHER_NOT_FOUND", e[e.NAVIGATION_GUARD_REDIRECT = 2] = "NAVIGATION_GUARD_REDIRECT", e[e.NAVIGATION_ABORTED = 4] = "NAVIGATION_ABORTED", e[e.NAVIGATION_CANCELLED = 8] = "NAVIGATION_CANCELLED", e[e.NAVIGATION_DUPLICATED = 16] = "NAVIGATION_DUPLICATED", e;
-}({}), a_ = Symbol("");
-i_.MATCHER_NOT_FOUND, i_.NAVIGATION_GUARD_REDIRECT, i_.NAVIGATION_ABORTED, i_.NAVIGATION_CANCELLED, i_.NAVIGATION_DUPLICATED;
-function o_(e, t) {
-	return pg(/* @__PURE__ */ Error(), {
+}({}), i_ = Symbol("");
+r_.MATCHER_NOT_FOUND, r_.NAVIGATION_GUARD_REDIRECT, r_.NAVIGATION_ABORTED, r_.NAVIGATION_CANCELLED, r_.NAVIGATION_DUPLICATED;
+function a_(e, t) {
+	return fg(/* @__PURE__ */ Error(), {
 		type: e,
-		[a_]: !0
+		[i_]: !0
 	}, t);
 }
-function s_(e, t) {
-	return e instanceof Error && a_ in e && (t == null || !!(e.type & t));
+function o_(e, t) {
+	return e instanceof Error && i_ in e && (t == null || !!(e.type & t));
 }
-function c_(e) {
+function s_(e) {
 	let t = {};
 	if (e === "" || e === "?") return t;
 	let n = (e[0] === "?" ? e.slice(1) : e).split("&");
 	for (let e = 0; e < n.length; ++e) {
-		let r = n[e].replace(Cg, " "), i = r.indexOf("="), a = Rg(i < 0 ? r : r.slice(0, i)), o = i < 0 ? null : Rg(r.slice(i + 1));
+		let r = n[e].replace(Sg, " "), i = r.indexOf("="), a = Lg(i < 0 ? r : r.slice(0, i)), o = i < 0 ? null : Lg(r.slice(i + 1));
 		if (a in t) {
 			let e = t[a];
-			gg(e) || (e = t[a] = [e]), e.push(o);
+			hg(e) || (e = t[a] = [e]), e.push(o);
 		} else t[a] = o;
 	}
 	return t;
 }
-function l_(e) {
+function c_(e) {
 	let t = "";
 	for (let n in e) {
 		let r = e[n];
-		if (n = Fg(n), r == null) {
+		if (n = Pg(n), r == null) {
 			r !== void 0 && (t += (t.length ? "&" : "") + n);
 			continue;
 		}
-		(gg(r) ? r.map((e) => e && Pg(e)) : [r && Pg(r)]).forEach((e) => {
+		(hg(r) ? r.map((e) => e && Ng(e)) : [r && Ng(r)]).forEach((e) => {
 			e !== void 0 && (t += (t.length ? "&" : "") + n, e != null && (t += "=" + e));
 		});
 	}
 	return t;
 }
-function u_(e) {
+function l_(e) {
 	let t = {};
 	for (let n in e) {
 		let r = e[n];
-		r !== void 0 && (t[n] = gg(r) ? r.map((e) => e == null ? null : "" + e) : r == null ? r : "" + r);
+		r !== void 0 && (t[n] = hg(r) ? r.map((e) => e == null ? null : "" + e) : r == null ? r : "" + r);
 	}
 	return t;
 }
-var d_ = Symbol(""), f_ = Symbol(""), p_ = Symbol(""), m_ = Symbol(""), h_ = Symbol("");
-function g_() {
+var u_ = Symbol(""), d_ = Symbol(""), f_ = Symbol(""), p_ = Symbol(""), m_ = Symbol("");
+function h_() {
 	let e = [];
 	function t(t) {
 		return e.push(t), () => {
@@ -10310,14 +10295,14 @@ function g_() {
 		reset: n
 	};
 }
-function __(e, t, n, r, i, a = (e) => e()) {
+function g_(e, t, n, r, i, a = (e) => e()) {
 	let o = r && (r.enterCallbacks[i] = r.enterCallbacks[i] || []);
 	return () => new Promise((s, c) => {
 		let l = (e) => {
-			e === !1 ? c(o_(i_.NAVIGATION_ABORTED, {
+			e === !1 ? c(a_(r_.NAVIGATION_ABORTED, {
 				from: n,
 				to: t
-			})) : e instanceof Error ? c(e) : n_(e) ? c(o_(i_.NAVIGATION_GUARD_REDIRECT, {
+			})) : e instanceof Error ? c(e) : t_(e) ? c(a_(r_.NAVIGATION_GUARD_REDIRECT, {
 				from: t,
 				to: e
 			})) : (o && r.enterCallbacks[i] === o && typeof e == "function" && o.push(e), s());
@@ -10325,35 +10310,35 @@ function __(e, t, n, r, i, a = (e) => e()) {
 		e.length < 3 && (d = d.then(l)), d.catch((e) => c(e));
 	});
 }
-function v_(e, t, n, r, i = (e) => e()) {
+function __(e, t, n, r, i = (e) => e()) {
 	let a = [];
 	for (let o of e) for (let e in o.components) {
 		let s = o.components[e];
 		if (t === "beforeRouteEnter" || o.instances[e]) {
-			if (dg(s)) {
+			if (ug(s)) {
 				let c = (s.__vccOpts || s)[t];
-				c && a.push(__(c, n, r, o, e, i));
+				c && a.push(g_(c, n, r, o, e, i));
 			} else {
 				let c = s();
 				a.push(() => c.then((a) => {
 					if (!a) throw Error(`Couldn't resolve component "${e}" at "${o.path}"`);
-					let s = fg(a) ? a.default : a;
+					let s = dg(a) ? a.default : a;
 					o.mods[e] = a, o.components[e] = s;
 					let c = (s.__vccOpts || s)[t];
-					return c && __(c, n, r, o, e, i)();
+					return c && g_(c, n, r, o, e, i)();
 				}));
 			}
 		}
 	}
 	return a;
 }
-function y_(e, t) {
+function v_(e, t) {
 	let n = [], r = [], i = [], a = Math.max(t.matched.length, e.matched.length);
 	for (let o = 0; o < a; o++) {
 		let a = t.matched[o];
-		a && (e.matched.find((e) => Hg(e, a)) ? r.push(a) : n.push(a));
+		a && (e.matched.find((e) => Vg(e, a)) ? r.push(a) : n.push(a));
 		let s = e.matched[o];
-		s && (t.matched.find((e) => Hg(e, s)) || i.push(s));
+		s && (t.matched.find((e) => Vg(e, s)) || i.push(s));
 	}
 	return [
 		n,
@@ -10363,32 +10348,32 @@ function y_(e, t) {
 }
 //#endregion
 //#region node_modules/vue-router/dist/vue-router.mjs
-var b_ = /* @__PURE__ */ function(e) {
+var y_ = /* @__PURE__ */ function(e) {
 	return e[e.Static = 0] = "Static", e[e.Param = 1] = "Param", e[e.Group = 2] = "Group", e;
-}({}), x_ = /* @__PURE__ */ function(e) {
+}({}), b_ = /* @__PURE__ */ function(e) {
 	return e[e.Static = 0] = "Static", e[e.Param = 1] = "Param", e[e.ParamRegExp = 2] = "ParamRegExp", e[e.ParamRegExpEnd = 3] = "ParamRegExpEnd", e[e.EscapeNext = 4] = "EscapeNext", e;
-}(x_ || {}), S_ = {
-	type: b_.Static,
+}(b_ || {}), x_ = {
+	type: y_.Static,
 	value: ""
-}, C_ = /[a-zA-Z0-9_]/;
-function w_(e) {
+}, S_ = /[a-zA-Z0-9_]/;
+function C_(e) {
 	if (!e) return [[]];
-	if (e === "/") return [[S_]];
+	if (e === "/") return [[x_]];
 	if (!e.startsWith("/")) throw Error(`Invalid path "${e}"`);
 	function t(e) {
 		throw Error(`ERR (${n})/"${l}": ${e}`);
 	}
-	let n = x_.Static, r = n, i = [], a;
+	let n = b_.Static, r = n, i = [], a;
 	function o() {
 		a && i.push(a), a = [];
 	}
 	let s = 0, c, l = "", u = "";
 	function d() {
-		l &&= (n === x_.Static ? a.push({
-			type: b_.Static,
+		l &&= (n === b_.Static ? a.push({
+			type: y_.Static,
 			value: l
-		}) : n === x_.Param || n === x_.ParamRegExp || n === x_.ParamRegExpEnd ? (a.length > 1 && (c === "*" || c === "+") && t(`A repeatable param (${l}) must be alone in its segment. eg: '/:ids+.`), a.push({
-			type: b_.Param,
+		}) : n === b_.Param || n === b_.ParamRegExp || n === b_.ParamRegExpEnd ? (a.length > 1 && (c === "*" || c === "+") && t(`A repeatable param (${l}) must be alone in its segment. eg: '/:ids+.`), a.push({
+			type: y_.Param,
 			value: l,
 			regexp: u,
 			repeatable: c === "*" || c === "+",
@@ -10399,57 +10384,57 @@ function w_(e) {
 		l += c;
 	}
 	for (; s < e.length;) {
-		if (c = e[s++], c === "\\" && n !== x_.ParamRegExp) {
-			r = n, n = x_.EscapeNext;
+		if (c = e[s++], c === "\\" && n !== b_.ParamRegExp) {
+			r = n, n = b_.EscapeNext;
 			continue;
 		}
 		switch (n) {
-			case x_.Static:
-				c === "/" ? (l && d(), o()) : c === ":" ? (d(), n = x_.Param) : f();
+			case b_.Static:
+				c === "/" ? (l && d(), o()) : c === ":" ? (d(), n = b_.Param) : f();
 				break;
-			case x_.EscapeNext:
+			case b_.EscapeNext:
 				f(), n = r;
 				break;
-			case x_.Param:
-				c === "(" ? n = x_.ParamRegExp : C_.test(c) ? f() : (d(), n = x_.Static, c !== "*" && c !== "?" && c !== "+" && s--);
+			case b_.Param:
+				c === "(" ? n = b_.ParamRegExp : S_.test(c) ? f() : (d(), n = b_.Static, c !== "*" && c !== "?" && c !== "+" && s--);
 				break;
-			case x_.ParamRegExp:
-				c === ")" ? u[u.length - 1] == "\\" ? u = u.slice(0, -1) + c : n = x_.ParamRegExpEnd : u += c;
+			case b_.ParamRegExp:
+				c === ")" ? u[u.length - 1] == "\\" ? u = u.slice(0, -1) + c : n = b_.ParamRegExpEnd : u += c;
 				break;
-			case x_.ParamRegExpEnd:
-				d(), n = x_.Static, c !== "*" && c !== "?" && c !== "+" && s--, u = "";
+			case b_.ParamRegExpEnd:
+				d(), n = b_.Static, c !== "*" && c !== "?" && c !== "+" && s--, u = "";
 				break;
 			default: t("Unknown state");
 		}
 	}
-	return n === x_.ParamRegExp && t(`Unfinished custom RegExp for param "${l}"`), d(), o(), i;
+	return n === b_.ParamRegExp && t(`Unfinished custom RegExp for param "${l}"`), d(), o(), i;
 }
-var T_ = "[^/]+?", E_ = {
+var w_ = "[^/]+?", T_ = {
 	sensitive: !1,
 	strict: !1,
 	start: !0,
 	end: !0
-}, D_ = /* @__PURE__ */ function(e) {
+}, E_ = /* @__PURE__ */ function(e) {
 	return e[e._multiplier = 10] = "_multiplier", e[e.Root = 90] = "Root", e[e.Segment = 40] = "Segment", e[e.SubSegment = 30] = "SubSegment", e[e.Static = 40] = "Static", e[e.Dynamic = 20] = "Dynamic", e[e.BonusCustomRegExp = 10] = "BonusCustomRegExp", e[e.BonusWildcard = -50] = "BonusWildcard", e[e.BonusRepeatable = -20] = "BonusRepeatable", e[e.BonusOptional = -8] = "BonusOptional", e[e.BonusStrict = .7000000000000001] = "BonusStrict", e[e.BonusCaseSensitive = .25] = "BonusCaseSensitive", e;
-}(D_ || {}), O_ = /[.+*?^${}()[\]/\\]/g;
-function k_(e, t) {
-	let n = pg({}, E_, t), r = [], i = n.start ? "^" : "", a = [];
+}(E_ || {}), D_ = /[.+*?^${}()[\]/\\]/g;
+function O_(e, t) {
+	let n = fg({}, T_, t), r = [], i = n.start ? "^" : "", a = [];
 	for (let t of e) {
-		let e = t.length ? [] : [D_.Root];
+		let e = t.length ? [] : [E_.Root];
 		n.strict && !t.length && (i += "/");
 		for (let r = 0; r < t.length; r++) {
-			let o = t[r], s = D_.Segment + (n.sensitive ? D_.BonusCaseSensitive : 0);
-			if (o.type === b_.Static) r || (i += "/"), i += o.value.replace(O_, "\\$&"), s += D_.Static;
-			else if (o.type === b_.Param) {
+			let o = t[r], s = E_.Segment + (n.sensitive ? E_.BonusCaseSensitive : 0);
+			if (o.type === y_.Static) r || (i += "/"), i += o.value.replace(D_, "\\$&"), s += E_.Static;
+			else if (o.type === y_.Param) {
 				let { value: e, repeatable: n, optional: c, regexp: l } = o;
 				a.push({
 					name: e,
 					repeatable: n,
 					optional: c
 				});
-				let u = l || T_;
-				if (u !== T_) {
-					s += D_.BonusCustomRegExp;
+				let u = l || w_;
+				if (u !== w_) {
+					s += E_.BonusCustomRegExp;
 					try {
 						`${u}`;
 					} catch (t) {
@@ -10457,7 +10442,7 @@ function k_(e, t) {
 					}
 				}
 				let d = n ? `((?:${u})(?:/(?:${u}))*)` : `(${u})`;
-				r || (d = c && t.length < 2 ? `(?:/${d})` : "/" + d), c && (d += "?"), i += d, s += D_.Dynamic, c && (s += D_.BonusOptional), n && (s += D_.BonusRepeatable), u === ".*" && (s += D_.BonusWildcard);
+				r || (d = c && t.length < 2 ? `(?:/${d})` : "/" + d), c && (d += "?"), i += d, s += E_.Dynamic, c && (s += E_.BonusOptional), n && (s += E_.BonusRepeatable), u === ".*" && (s += E_.BonusWildcard);
 			}
 			e.push(s);
 		}
@@ -10465,7 +10450,7 @@ function k_(e, t) {
 	}
 	if (n.strict && n.end) {
 		let e = r.length - 1;
-		r[e][r[e].length - 1] += D_.BonusStrict;
+		r[e][r[e].length - 1] += E_.BonusStrict;
 	}
 	n.strict || (i += "/?"), n.end ? i += "$" : n.strict && !i.endsWith("/") && (i += "(?:/|$)");
 	let o = new RegExp(i, n.sensitive ? "" : "i");
@@ -10482,11 +10467,11 @@ function k_(e, t) {
 		let n = "", r = !1;
 		for (let i of e) {
 			(!r || !n.endsWith("/")) && (n += "/"), r = !1;
-			for (let e of i) if (e.type === b_.Static) n += e.value;
-			else if (e.type === b_.Param) {
+			for (let e of i) if (e.type === y_.Static) n += e.value;
+			else if (e.type === y_.Param) {
 				let { value: a, repeatable: o, optional: s } = e, c = a in t ? t[a] : "";
-				if (gg(c) && !o) throw Error(`Provided param "${a}" is an array but it is not repeatable (* or + modifiers)`);
-				let l = gg(c) ? c.join("/") : c;
+				if (hg(c) && !o) throw Error(`Provided param "${a}" is an array but it is not repeatable (* or + modifiers)`);
+				let l = hg(c) ? c.join("/") : c;
 				if (!l) {
 					if (s) i.length < 2 && (n.endsWith("/") ? n = n.slice(0, -1) : r = !0);
 					else throw Error(`Missing required param "${a}"`);
@@ -10504,39 +10489,39 @@ function k_(e, t) {
 		stringify: c
 	};
 }
-function A_(e, t) {
+function k_(e, t) {
 	let n = 0;
 	for (; n < e.length && n < t.length;) {
 		let r = t[n] - e[n];
 		if (r) return r;
 		n++;
 	}
-	return e.length < t.length ? e.length === 1 && e[0] === D_.Static + D_.Segment ? -1 : 1 : e.length > t.length ? t.length === 1 && t[0] === D_.Static + D_.Segment ? 1 : -1 : 0;
+	return e.length < t.length ? e.length === 1 && e[0] === E_.Static + E_.Segment ? -1 : 1 : e.length > t.length ? t.length === 1 && t[0] === E_.Static + E_.Segment ? 1 : -1 : 0;
 }
-function j_(e, t) {
+function A_(e, t) {
 	let n = 0, r = e.score, i = t.score;
 	for (; n < r.length && n < i.length;) {
-		let e = A_(r[n], i[n]);
+		let e = k_(r[n], i[n]);
 		if (e) return e;
 		n++;
 	}
 	if (Math.abs(i.length - r.length) === 1) {
-		if (M_(r)) return 1;
-		if (M_(i)) return -1;
+		if (j_(r)) return 1;
+		if (j_(i)) return -1;
 	}
 	return i.length - r.length;
 }
-function M_(e) {
+function j_(e) {
 	let t = e[e.length - 1];
 	return e.length > 0 && t[t.length - 1] < 0;
 }
-var N_ = {
+var M_ = {
 	strict: !1,
 	end: !0,
 	sensitive: !1
 };
-function P_(e, t, n) {
-	let r = pg(k_(w_(e.path), n), {
+function N_(e, t, n) {
+	let r = fg(O_(C_(e.path), n), {
 		record: e,
 		parent: t,
 		children: [],
@@ -10544,19 +10529,19 @@ function P_(e, t, n) {
 	});
 	return t && !r.record.aliasOf == !t.record.aliasOf && t.children.push(r), r;
 }
-function F_(e, t) {
+function P_(e, t) {
 	let n = [], r = /* @__PURE__ */ new Map();
-	t = _g(N_, t);
+	t = gg(M_, t);
 	function i(e) {
 		return r.get(e);
 	}
 	function a(e, n, r) {
-		let i = !r, s = L_(e);
+		let i = !r, s = I_(e);
 		s.aliasOf = r && r.record;
-		let l = _g(t, e), u = [s];
+		let l = gg(t, e), u = [s];
 		if ("alias" in e) {
 			let t = typeof e.alias == "string" ? [e.alias] : e.alias;
-			for (let e of t) u.push(L_(pg({}, s, {
+			for (let e of t) u.push(I_(fg({}, s, {
 				components: r ? r.record.components : s.components,
 				path: e,
 				aliasOf: r ? r.record : s
@@ -10569,7 +10554,7 @@ function F_(e, t) {
 				let e = n.record.path, r = e[e.length - 1] === "/" ? "" : "/";
 				t.path = n.record.path + (u && r + u);
 			}
-			if (d = P_(t, n, l), r ? r.alias.push(d) : (f ||= d, f !== d && f.alias.push(d), i && e.name && !z_(d) && o(e.name)), U_(d) && c(d), s.children) {
+			if (d = N_(t, n, l), r ? r.alias.push(d) : (f ||= d, f !== d && f.alias.push(d), i && e.name && !R_(d) && o(e.name)), H_(d) && c(d), s.children) {
 				let e = s.children;
 				for (let t = 0; t < e.length; t++) a(e[t], d, r && r.children[t]);
 			}
@@ -10577,10 +10562,10 @@ function F_(e, t) {
 		}
 		return f ? () => {
 			o(f);
-		} : hg;
+		} : mg;
 	}
 	function o(e) {
-		if (r_(e)) {
+		if (n_(e)) {
 			let t = r.get(e);
 			t && (r.delete(e), n.splice(n.indexOf(t), 1), t.children.forEach(o), t.alias.forEach(o));
 		} else {
@@ -10592,21 +10577,21 @@ function F_(e, t) {
 		return n;
 	}
 	function c(e) {
-		let t = V_(e, n);
-		n.splice(t, 0, e), e.record.name && !z_(e) && r.set(e.record.name, e);
+		let t = B_(e, n);
+		n.splice(t, 0, e), e.record.name && !R_(e) && r.set(e.record.name, e);
 	}
 	function l(e, t) {
 		let i, a = {}, o, s;
 		if ("name" in e && e.name) {
-			if (i = r.get(e.name), !i) throw o_(i_.MATCHER_NOT_FOUND, { location: e });
-			s = i.record.name, a = pg(I_(t.params, i.keys.filter((e) => !e.optional).concat(i.parent ? i.parent.keys.filter((e) => e.optional) : []).map((e) => e.name)), e.params && I_(e.params, i.keys.map((e) => e.name))), o = i.stringify(a);
+			if (i = r.get(e.name), !i) throw a_(r_.MATCHER_NOT_FOUND, { location: e });
+			s = i.record.name, a = fg(F_(t.params, i.keys.filter((e) => !e.optional).concat(i.parent ? i.parent.keys.filter((e) => e.optional) : []).map((e) => e.name)), e.params && F_(e.params, i.keys.map((e) => e.name))), o = i.stringify(a);
 		} else if (e.path != null) o = e.path, i = n.find((e) => e.re.test(o)), i && (a = i.parse(o), s = i.record.name);
 		else {
-			if (i = t.name ? r.get(t.name) : n.find((e) => e.re.test(t.path)), !i) throw o_(i_.MATCHER_NOT_FOUND, {
+			if (i = t.name ? r.get(t.name) : n.find((e) => e.re.test(t.path)), !i) throw a_(r_.MATCHER_NOT_FOUND, {
 				location: e,
 				currentLocation: t
 			});
-			s = i.record.name, a = pg({}, t.params, e.params), o = i.stringify(a);
+			s = i.record.name, a = fg({}, t.params, e.params), o = i.stringify(a);
 		}
 		let c = [], l = i;
 		for (; l;) c.unshift(l.record), l = l.parent;
@@ -10615,7 +10600,7 @@ function F_(e, t) {
 			path: o,
 			params: a,
 			matched: c,
-			meta: B_(c)
+			meta: z_(c)
 		};
 	}
 	e.forEach((e) => a(e));
@@ -10631,12 +10616,12 @@ function F_(e, t) {
 		getRecordMatcher: i
 	};
 }
-function I_(e, t) {
+function F_(e, t) {
 	let n = {};
 	for (let r of t) r in e && (n[r] = e[r]);
 	return n;
 }
-function L_(e) {
+function I_(e) {
 	let t = {
 		path: e.path,
 		redirect: e.redirect,
@@ -10644,7 +10629,7 @@ function L_(e) {
 		meta: e.meta || {},
 		aliasOf: e.aliasOf,
 		beforeEnter: e.beforeEnter,
-		props: R_(e),
+		props: L_(e),
 		children: e.children || [],
 		instances: {},
 		leaveGuards: /* @__PURE__ */ new Set(),
@@ -10654,53 +10639,53 @@ function L_(e) {
 	};
 	return Object.defineProperty(t, "mods", { value: {} }), t;
 }
-function R_(e) {
+function L_(e) {
 	let t = {}, n = e.props || !1;
 	if ("component" in e) t.default = n;
 	else for (let r in e.components) t[r] = typeof n == "object" ? n[r] : n;
 	return t;
 }
-function z_(e) {
+function R_(e) {
 	for (; e;) {
 		if (e.record.aliasOf) return !0;
 		e = e.parent;
 	}
 	return !1;
 }
-function B_(e) {
-	return e.reduce((e, t) => pg(e, t.meta), {});
+function z_(e) {
+	return e.reduce((e, t) => fg(e, t.meta), {});
 }
-function V_(e, t) {
+function B_(e, t) {
 	let n = 0, r = t.length;
 	for (; n !== r;) {
 		let i = n + r >> 1;
-		j_(e, t[i]) < 0 ? r = i : n = i + 1;
+		A_(e, t[i]) < 0 ? r = i : n = i + 1;
 	}
-	let i = H_(e);
+	let i = V_(e);
 	return i && (r = t.lastIndexOf(i, r - 1)), r;
 }
-function H_(e) {
+function V_(e) {
 	let t = e;
-	for (; t = t.parent;) if (U_(t) && j_(e, t) === 0) return t;
+	for (; t = t.parent;) if (H_(t) && A_(e, t) === 0) return t;
 }
-function U_({ record: e }) {
+function H_({ record: e }) {
 	return !!(e.name || e.components && Object.keys(e.components).length || e.redirect);
 }
-function W_(e) {
-	let t = jn(p_), n = jn(m_), r = X(() => {
+function U_(e) {
+	let t = jn(f_), n = jn(p_), r = X(() => {
 		let n = H(e.to);
 		return t.resolve(n);
 	}), i = X(() => {
 		let { matched: e } = r.value, { length: t } = e, i = e[t - 1], a = n.matched;
 		if (!i || !a.length) return -1;
-		let o = a.findIndex(Hg.bind(null, i));
+		let o = a.findIndex(Vg.bind(null, i));
 		if (o > -1) return o;
-		let s = Y_(e[t - 2]);
-		return t > 1 && Y_(i) === s && a[a.length - 1].path !== s ? a.findIndex(Hg.bind(null, e[t - 2])) : o;
-	}), a = X(() => i.value > -1 && J_(n.params, r.value.params)), o = X(() => i.value > -1 && i.value === n.matched.length - 1 && Ug(n.params, r.value.params));
+		let s = J_(e[t - 2]);
+		return t > 1 && J_(i) === s && a[a.length - 1].path !== s ? a.findIndex(Vg.bind(null, e[t - 2])) : o;
+	}), a = X(() => i.value > -1 && q_(n.params, r.value.params)), o = X(() => i.value > -1 && i.value === n.matched.length - 1 && Hg(n.params, r.value.params));
 	function s(n = {}) {
-		if (q_(n)) {
-			let n = t[H(e.replace) ? "replace" : "push"](H(e.to)).catch(hg);
+		if (K_(n)) {
+			let n = t[H(e.replace) ? "replace" : "push"](H(e.to)).catch(mg);
 			return e.viewTransition && typeof document < "u" && "startViewTransition" in document && document.startViewTransition(() => n), n;
 		}
 		return Promise.resolve();
@@ -10713,10 +10698,10 @@ function W_(e) {
 		navigate: s
 	};
 }
-function G_(e) {
+function W_(e) {
 	return e.length === 1 ? e[0] : e;
 }
-var K_ = /* @__PURE__ */ Wn({
+var G_ = /* @__PURE__ */ Wn({
 	name: "RouterLink",
 	compatConfig: { MODE: 3 },
 	props: {
@@ -10734,14 +10719,14 @@ var K_ = /* @__PURE__ */ Wn({
 		},
 		viewTransition: Boolean
 	},
-	useLink: W_,
+	useLink: U_,
 	setup(e, { slots: t }) {
-		let n = /* @__PURE__ */ Nt(W_(e)), { options: r } = jn(p_), i = X(() => ({
-			[X_(e.activeClass, r.linkActiveClass, "router-link-active")]: n.isActive,
-			[X_(e.exactActiveClass, r.linkExactActiveClass, "router-link-exact-active")]: n.isExactActive
+		let n = /* @__PURE__ */ Nt(U_(e)), { options: r } = jn(f_), i = X(() => ({
+			[Y_(e.activeClass, r.linkActiveClass, "router-link-active")]: n.isActive,
+			[Y_(e.exactActiveClass, r.linkExactActiveClass, "router-link-exact-active")]: n.isExactActive
 		}));
 		return () => {
-			let r = t.default && G_(t.default(n));
+			let r = t.default && W_(t.default(n));
 			return e.custom ? r : Ea("a", {
 				"aria-current": n.isExactActive ? e.ariaCurrentValue : null,
 				href: n.href,
@@ -10751,7 +10736,7 @@ var K_ = /* @__PURE__ */ Wn({
 		};
 	}
 });
-function q_(e) {
+function K_(e) {
 	if (!(e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) && !e.defaultPrevented && (e.button === void 0 || e.button === 0)) {
 		if (e.currentTarget && e.currentTarget.getAttribute) {
 			let t = e.currentTarget.getAttribute("target");
@@ -10760,19 +10745,19 @@ function q_(e) {
 		return e.preventDefault && e.preventDefault(), !0;
 	}
 }
-function J_(e, t) {
+function q_(e, t) {
 	for (let n in t) {
 		let r = t[n], i = e[n];
 		if (typeof r == "string") {
 			if (r !== i) return !1;
-		} else if (!gg(i) || i.length !== r.length || r.some((e, t) => e !== i[t])) return !1;
+		} else if (!hg(i) || i.length !== r.length || r.some((e, t) => e !== i[t])) return !1;
 	}
 	return !0;
 }
-function Y_(e) {
+function J_(e) {
 	return e ? e.aliasOf ? e.aliasOf.path : e.path : "";
 }
-var X_ = (e, t, n) => e ?? t ?? n, Z_ = /* @__PURE__ */ Wn({
+var Y_ = (e, t, n) => e ?? t ?? n, X_ = /* @__PURE__ */ Wn({
 	name: "RouterView",
 	inheritAttrs: !1,
 	props: {
@@ -10784,51 +10769,51 @@ var X_ = (e, t, n) => e ?? t ?? n, Z_ = /* @__PURE__ */ Wn({
 	},
 	compatConfig: { MODE: 3 },
 	setup(e, { attrs: t, slots: n }) {
-		let r = jn(h_), i = X(() => e.route || r.value), a = jn(f_, 0), o = X(() => {
+		let r = jn(m_), i = X(() => e.route || r.value), a = jn(d_, 0), o = X(() => {
 			let e = H(a), { matched: t } = i.value, n;
 			for (; (n = t[e]) && !n.components;) e++;
 			return e;
 		}), s = X(() => i.value.matched[o.value]);
-		An(f_, X(() => o.value + 1)), An(d_, s), An(h_, i);
+		An(d_, X(() => o.value + 1)), An(u_, s), An(m_, i);
 		let c = /* @__PURE__ */ V();
 		return Pn(() => [
 			c.value,
 			s.value,
 			e.name
 		], ([e, t, n], [r, i, a]) => {
-			t && (t.instances[n] = e, i && i !== t && e && e === r && (t.leaveGuards.size || (t.leaveGuards = i.leaveGuards), t.updateGuards.size || (t.updateGuards = i.updateGuards))), e && t && (!i || !Hg(t, i) || !r) && (t.enterCallbacks[n] || []).forEach((t) => t(e));
+			t && (t.instances[n] = e, i && i !== t && e && e === r && (t.leaveGuards.size || (t.leaveGuards = i.leaveGuards), t.updateGuards.size || (t.updateGuards = i.updateGuards))), e && t && (!i || !Vg(t, i) || !r) && (t.enterCallbacks[n] || []).forEach((t) => t(e));
 		}, { flush: "post" }), () => {
 			let r = i.value, a = e.name, o = s.value, l = o && o.components[a];
-			if (!l) return Q_(n.default, {
+			if (!l) return Z_(n.default, {
 				Component: l,
 				route: r
 			});
-			let u = o.props[a], d = Ea(l, pg({}, u ? u === !0 ? r.params : typeof u == "function" ? u(r) : u : null, t, {
+			let u = o.props[a], d = Ea(l, fg({}, u ? u === !0 ? r.params : typeof u == "function" ? u(r) : u : null, t, {
 				onVnodeUnmounted: (e) => {
 					e.component.isUnmounted && (o.instances[a] = null);
 				},
 				ref: c
 			}));
-			return Q_(n.default, {
+			return Z_(n.default, {
 				Component: d,
 				route: r
 			}) || d;
 		};
 	}
 });
-function Q_(e, t) {
+function Z_(e, t) {
 	if (!e) return null;
 	let n = e(t);
 	return n.length === 1 ? n[0] : n;
 }
-var $_ = Z_;
-function ev(e) {
-	let t = F_(e.routes, e), n = e.parseQuery || c_, r = e.stringifyQuery || l_, i = e.history, a = g_(), o = g_(), s = g_(), c = /* @__PURE__ */ Wt(qg), l = qg;
-	ug && e.scrollBehavior && "scrollRestoration" in history && (history.scrollRestoration = "manual");
-	let u = mg.bind(null, (e) => "" + e), d = mg.bind(null, Lg), f = mg.bind(null, Rg);
+var Q_ = X_;
+function $_(e) {
+	let t = P_(e.routes, e), n = e.parseQuery || s_, r = e.stringifyQuery || c_, i = e.history, a = h_(), o = h_(), s = h_(), c = /* @__PURE__ */ Wt(Kg), l = Kg;
+	lg && e.scrollBehavior && "scrollRestoration" in history && (history.scrollRestoration = "manual");
+	let u = pg.bind(null, (e) => "" + e), d = pg.bind(null, Ig), f = pg.bind(null, Lg);
 	function p(e, n) {
 		let r, i;
-		return r_(e) ? (r = t.getRecordMatcher(e), i = n) : i = e, t.addRoute(i, r);
+		return n_(e) ? (r = t.getRecordMatcher(e), i = n) : i = e, t.addRoute(i, r);
 	}
 	function m(e) {
 		let n = t.getRecordMatcher(e);
@@ -10841,42 +10826,42 @@ function ev(e) {
 		return !!t.getRecordMatcher(e);
 	}
 	function _(e, a) {
-		if (a = pg({}, a || c.value), typeof e == "string") {
-			let r = zg(n, e, a.path), o = t.resolve({ path: r.path }, a), s = i.createHref(r.fullPath);
-			return pg(r, o, {
+		if (a = fg({}, a || c.value), typeof e == "string") {
+			let r = Rg(n, e, a.path), o = t.resolve({ path: r.path }, a), s = i.createHref(r.fullPath);
+			return fg(r, o, {
 				params: f(o.params),
-				hash: Rg(r.hash),
+				hash: Lg(r.hash),
 				redirectedFrom: void 0,
 				href: s
 			});
 		}
 		let o;
-		if (e.path != null) o = pg({}, e, { path: zg(n, e.path, a.path).path });
+		if (e.path != null) o = fg({}, e, { path: Rg(n, e.path, a.path).path });
 		else {
-			let t = pg({}, e.params);
+			let t = fg({}, e.params);
 			for (let e in t) t[e] ?? delete t[e];
-			o = pg({}, e, { params: d(t) }), a.params = d(a.params);
+			o = fg({}, e, { params: d(t) }), a.params = d(a.params);
 		}
 		let s = t.resolve(o, a), l = e.hash || "";
 		s.params = u(f(s.params));
-		let p = Bg(r, pg({}, e, {
-			hash: Ng(l),
+		let p = zg(r, fg({}, e, {
+			hash: Mg(l),
 			path: s.path
 		})), m = i.createHref(p);
-		return pg({
+		return fg({
 			fullPath: p,
 			hash: l,
-			query: r === l_ ? u_(e.query) : e.query || {}
+			query: r === c_ ? l_(e.query) : e.query || {}
 		}, s, {
 			redirectedFrom: void 0,
 			href: m
 		});
 	}
 	function v(e) {
-		return typeof e == "string" ? zg(n, e, c.value.path) : pg({}, e);
+		return typeof e == "string" ? Rg(n, e, c.value.path) : fg({}, e);
 	}
 	function y(e, t) {
-		if (l !== e) return o_(i_.NAVIGATION_CANCELLED, {
+		if (l !== e) return a_(r_.NAVIGATION_CANCELLED, {
 			from: t,
 			to: e
 		});
@@ -10885,13 +10870,13 @@ function ev(e) {
 		return C(e);
 	}
 	function x(e) {
-		return b(pg(v(e), { replace: !0 }));
+		return b(fg(v(e), { replace: !0 }));
 	}
 	function S(e, t) {
 		let n = e.matched[e.matched.length - 1];
 		if (n && n.redirect) {
 			let { redirect: r } = n, i = typeof r == "function" ? r(e, t) : r;
-			return typeof i == "string" && (i = i.includes("?") || i.includes("#") ? i = v(i) : { path: i }, i.params = {}), pg({
+			return typeof i == "string" && (i = i.includes("?") || i.includes("#") ? i = v(i) : { path: i }, i.params = {}), fg({
 				query: e.query,
 				hash: e.hash,
 				params: i.path == null ? e.params : {}
@@ -10900,21 +10885,21 @@ function ev(e) {
 	}
 	function C(e, t) {
 		let n = l = _(e), i = c.value, a = e.state, o = e.force, s = e.replace === !0, u = S(n, i);
-		if (u) return C(pg(v(u), {
-			state: typeof u == "object" ? pg({}, a, u.state) : a,
+		if (u) return C(fg(v(u), {
+			state: typeof u == "object" ? fg({}, a, u.state) : a,
 			force: o,
 			replace: s
 		}), t || n);
 		let d = n;
 		d.redirectedFrom = t;
 		let f;
-		return !o && Vg(r, i, n) && (f = o_(i_.NAVIGATION_DUPLICATED, {
+		return !o && Bg(r, i, n) && (f = a_(r_.NAVIGATION_DUPLICATED, {
 			to: d,
 			from: i
-		}), ie(i, i, !0, !1)), (f ? Promise.resolve(f) : E(d, i)).catch((e) => s_(e) ? s_(e, i_.NAVIGATION_GUARD_REDIRECT) ? e : re(e) : j(e, d, i)).then((e) => {
+		}), ie(i, i, !0, !1)), (f ? Promise.resolve(f) : E(d, i)).catch((e) => o_(e) ? o_(e, r_.NAVIGATION_GUARD_REDIRECT) ? e : re(e) : j(e, d, i)).then((e) => {
 			if (e) {
-				if (s_(e, i_.NAVIGATION_GUARD_REDIRECT)) return C(pg({ replace: s }, v(e.to), {
-					state: typeof e.to == "object" ? pg({}, a, e.to.state) : a,
+				if (o_(e, r_.NAVIGATION_GUARD_REDIRECT)) return C(fg({ replace: s }, v(e.to), {
+					state: typeof e.to == "object" ? fg({}, a, e.to.state) : a,
 					force: o
 				}), t || d);
 			} else e = O(d, i, !0, s, a);
@@ -10930,34 +10915,34 @@ function ev(e) {
 		return t && typeof t.runWithContext == "function" ? t.runWithContext(e) : e();
 	}
 	function E(e, t) {
-		let n, [r, i, s] = y_(e, t);
-		n = v_(r.reverse(), "beforeRouteLeave", e, t);
+		let n, [r, i, s] = v_(e, t);
+		n = __(r.reverse(), "beforeRouteLeave", e, t);
 		for (let i of r) i.leaveGuards.forEach((r) => {
-			n.push(__(r, e, t));
+			n.push(g_(r, e, t));
 		});
 		let c = w.bind(null, e, t);
 		return n.push(c), le(n).then(() => {
 			n = [];
-			for (let r of a.list()) n.push(__(r, e, t));
+			for (let r of a.list()) n.push(g_(r, e, t));
 			return n.push(c), le(n);
 		}).then(() => {
-			n = v_(i, "beforeRouteUpdate", e, t);
+			n = __(i, "beforeRouteUpdate", e, t);
 			for (let r of i) r.updateGuards.forEach((r) => {
-				n.push(__(r, e, t));
+				n.push(g_(r, e, t));
 			});
 			return n.push(c), le(n);
 		}).then(() => {
 			n = [];
 			for (let r of s) if (r.beforeEnter) {
-				if (gg(r.beforeEnter)) for (let i of r.beforeEnter) n.push(__(i, e, t));
-				else n.push(__(r.beforeEnter, e, t));
+				if (hg(r.beforeEnter)) for (let i of r.beforeEnter) n.push(g_(i, e, t));
+				else n.push(g_(r.beforeEnter, e, t));
 			}
 			return n.push(c), le(n);
-		}).then(() => (e.matched.forEach((e) => e.enterCallbacks = {}), n = v_(s, "beforeRouteEnter", e, t, T), n.push(c), le(n))).then(() => {
+		}).then(() => (e.matched.forEach((e) => e.enterCallbacks = {}), n = __(s, "beforeRouteEnter", e, t, T), n.push(c), le(n))).then(() => {
 			n = [];
-			for (let r of o.list()) n.push(__(r, e, t));
+			for (let r of o.list()) n.push(g_(r, e, t));
 			return n.push(c), le(n);
-		}).catch((e) => s_(e, i_.NAVIGATION_CANCELLED) ? e : Promise.reject(e));
+		}).catch((e) => o_(e, r_.NAVIGATION_CANCELLED) ? e : Promise.reject(e));
 	}
 	function D(e, t, n) {
 		s.list().forEach((r) => T(() => r(e, t, n)));
@@ -10965,8 +10950,8 @@ function ev(e) {
 	function O(e, t, n, r, a) {
 		let o = y(e, t);
 		if (o) return o;
-		let s = t === qg, l = ug ? history.state : {};
-		n && (r || s ? i.replace(e.fullPath, pg({ scroll: s && l && l.scroll }, a)) : i.push(e.fullPath, a)), c.value = e, ie(e, t, n, s), re();
+		let s = t === Kg, l = lg ? history.state : {};
+		n && (r || s ? i.replace(e.fullPath, fg({ scroll: s && l && l.scroll }, a)) : i.push(e.fullPath, a)), c.value = e, ie(e, t, n, s), re();
 	}
 	let k;
 	function A() {
@@ -10974,29 +10959,29 @@ function ev(e) {
 			if (!ce.listening) return;
 			let r = _(e), a = S(r, ce.currentRoute.value);
 			if (a) {
-				C(pg(a, {
+				C(fg(a, {
 					replace: !0,
 					force: !0
-				}), r).catch(hg);
+				}), r).catch(mg);
 				return;
 			}
 			l = r;
 			let o = c.value;
-			ug && e_(Qg(o.fullPath, n.delta), Xg()), E(r, o).catch((e) => s_(e, i_.NAVIGATION_ABORTED | i_.NAVIGATION_CANCELLED) ? e : s_(e, i_.NAVIGATION_GUARD_REDIRECT) ? (C(pg(v(e.to), { force: !0 }), r).then((e) => {
-				s_(e, i_.NAVIGATION_ABORTED | i_.NAVIGATION_DUPLICATED) && !n.delta && n.type === Jg.pop && i.go(-1, !1);
-			}).catch(hg), Promise.reject()) : (n.delta && i.go(-n.delta, !1), j(e, r, o))).then((e) => {
-				e ||= O(r, o, !1), e && (n.delta && !s_(e, i_.NAVIGATION_CANCELLED) ? i.go(-n.delta, !1) : n.type === Jg.pop && s_(e, i_.NAVIGATION_ABORTED | i_.NAVIGATION_DUPLICATED) && i.go(-1, !1)), D(r, o, e);
-			}).catch(hg);
+			lg && $g(Zg(o.fullPath, n.delta), Yg()), E(r, o).catch((e) => o_(e, r_.NAVIGATION_ABORTED | r_.NAVIGATION_CANCELLED) ? e : o_(e, r_.NAVIGATION_GUARD_REDIRECT) ? (C(fg(v(e.to), { force: !0 }), r).then((e) => {
+				o_(e, r_.NAVIGATION_ABORTED | r_.NAVIGATION_DUPLICATED) && !n.delta && n.type === qg.pop && i.go(-1, !1);
+			}).catch(mg), Promise.reject()) : (n.delta && i.go(-n.delta, !1), j(e, r, o))).then((e) => {
+				e ||= O(r, o, !1), e && (n.delta && !o_(e, r_.NAVIGATION_CANCELLED) ? i.go(-n.delta, !1) : n.type === qg.pop && o_(e, r_.NAVIGATION_ABORTED | r_.NAVIGATION_DUPLICATED) && i.go(-1, !1)), D(r, o, e);
+			}).catch(mg);
 		});
 	}
-	let ee = g_(), te = g_(), ne;
+	let ee = h_(), te = h_(), ne;
 	function j(e, t, n) {
 		re(e);
 		let r = te.list();
 		return r.length ? r.forEach((r) => r(e, t, n)) : console.error(e), Promise.reject(e);
 	}
 	function M() {
-		return ne && c.value !== qg ? Promise.resolve() : new Promise((e, t) => {
+		return ne && c.value !== Kg ? Promise.resolve() : new Promise((e, t) => {
 			ee.add([e, t]);
 		});
 	}
@@ -11005,9 +10990,9 @@ function ev(e) {
 	}
 	function ie(t, n, r, i) {
 		let { scrollBehavior: a } = e;
-		if (!ug || !a) return Promise.resolve();
-		let o = !r && t_(Qg(t.fullPath, 0)) || (i || !r) && history.state && history.state.scroll || null;
-		return hn().then(() => a(t, n, o)).then((e) => e && Zg(e)).catch((e) => j(e, t, n));
+		if (!lg || !a) return Promise.resolve();
+		let o = !r && e_(Zg(t.fullPath, 0)) || (i || !r) && history.state && history.state.scroll || null;
+		return hn().then(() => a(t, n, o)).then((e) => e && Xg(e)).catch((e) => j(e, t, n));
 	}
 	let ae = (e) => i.go(e), oe, se = /* @__PURE__ */ new Set(), ce = {
 		currentRoute: c,
@@ -11030,19 +11015,19 @@ function ev(e) {
 		onError: te.add,
 		isReady: M,
 		install(e) {
-			e.component("RouterLink", K_), e.component("RouterView", $_), e.config.globalProperties.$router = ce, Object.defineProperty(e.config.globalProperties, "$route", {
+			e.component("RouterLink", G_), e.component("RouterView", Q_), e.config.globalProperties.$router = ce, Object.defineProperty(e.config.globalProperties, "$route", {
 				enumerable: !0,
 				get: () => H(c)
-			}), ug && !oe && c.value === qg && (oe = !0, b(i.location).catch((e) => {}));
+			}), lg && !oe && c.value === Kg && (oe = !0, b(i.location).catch((e) => {}));
 			let t = {};
-			for (let e in qg) Object.defineProperty(t, e, {
+			for (let e in Kg) Object.defineProperty(t, e, {
 				get: () => c.value[e],
 				enumerable: !0
 			});
-			e.provide(p_, ce), e.provide(m_, /* @__PURE__ */ Pt(t)), e.provide(h_, c);
+			e.provide(f_, ce), e.provide(p_, /* @__PURE__ */ Pt(t)), e.provide(m_, c);
 			let n = e.unmount;
 			se.add(e), e.unmount = function() {
-				se.delete(e), se.size < 1 && (l = qg, k && k(), k = null, c.value = qg, oe = !1, ne = !1), n();
+				se.delete(e), se.size < 1 && (l = Kg, k && k(), k = null, c.value = Kg, oe = !1, ne = !1), n();
 			};
 		}
 	};
@@ -11051,28 +11036,28 @@ function ev(e) {
 	}
 	return ce;
 }
-function tv() {
-	return jn(p_);
+function ev() {
+	return jn(f_);
 }
-function nv(e) {
-	return jn(m_);
+function tv(e) {
+	return jn(p_);
 }
 //#endregion
 //#region src/router/links.ts
-var rv = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
-function iv(e) {
+var nv = /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/;
+function rv(e) {
 	return typeof e == "string" && e.length > 0 && e.length <= 4096 && !Array.from(e).some((e) => e.charCodeAt(0) < 32 || e === "?" || e === "#") && !e.split(/[\\/]/).some((e) => e === "." || e === "..");
 }
-var av = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-function ov(e) {
+var iv = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+function av(e) {
 	return typeof e == "string" ? e : "";
 }
-function sv(e) {
+function ov(e) {
 	if (typeof e != "string" || !e.startsWith("/") || e.startsWith("//") || /[\\#\r\n]/.test(e)) return "/";
 	let t = new URL(e, "https://plugin.invalid");
 	return t.pathname === "/settings" || !/^\/(?:chat\/[^/]+|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(t.pathname) ? "/" : t.pathname + t.search;
 }
-function cv(e, t = "", n = "", r = "", i = {}) {
+function sv(e, t = "", n = "", r = "", i = {}) {
 	return {
 		name: e,
 		query: {
@@ -11083,7 +11068,7 @@ function cv(e, t = "", n = "", r = "", i = {}) {
 		}
 	};
 }
-function lv(e, t = window.location.origin) {
+function cv(e, t = window.location.origin) {
 	try {
 		let n = new URL(e, t);
 		if (n.origin === t && n.pathname === "/chathermes" && n.hash.startsWith("#/")) return n.hash.slice(1);
@@ -11091,20 +11076,20 @@ function lv(e, t = window.location.origin) {
 }
 //#endregion
 //#region src/App.vue?vue&type=script&setup=true&lang.ts
-var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white" }, dv = { class: "brand mb-3 shrink-0 flex items-center gap-2 px-2 text-xl font-semibold" }, fv = { class: "sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]" }, pv = { class: "drawer-account flex min-w-0 items-center gap-2" }, mv = ["value"], hv = ["value"], gv = ["value"], _v = ["disabled"], vv = ["aria-current"], yv = { class: "main-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" }, bv = { class: "topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8" }, xv = ["aria-expanded"], Sv = { class: "min-w-0 flex-1" }, Cv = { class: "header-title truncate text-base font-medium" }, wv = {
+var lv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white" }, uv = { class: "brand mb-3 shrink-0 flex items-center gap-2 px-2 text-xl font-semibold" }, dv = { class: "sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]" }, fv = { class: "drawer-account flex min-w-0 items-center gap-2" }, pv = ["value"], mv = ["value"], hv = ["value"], gv = ["disabled"], _v = ["aria-current"], vv = { class: "main-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" }, yv = { class: "topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8" }, bv = ["aria-expanded"], xv = { class: "min-w-0 flex-1" }, Sv = { class: "header-title truncate text-base font-medium" }, Cv = {
 	key: 0,
 	class: "header-project-subtitle truncate text-xs text-[#a3a3a3]"
-}, Tv = { class: "topbar-profile sr-only" }, Ev = ["aria-expanded"], Dv = {
+}, wv = { class: "topbar-profile sr-only" }, Tv = ["aria-expanded"], Ev = {
 	class: "truncate px-3 py-2 text-xs text-[#a3a3a3]",
 	role: "presentation"
-}, Ov = ["disabled"], kv = ["disabled"], Av = ["disabled"], jv = ["disabled"], Mv = ["aria-checked"], Nv = ["aria-checked"], Pv = ["disabled"], Fv = ["disabled"], Iv = ["disabled"], Lv = ["disabled"], Rv = { id: "project-confirmation-text" }, zv = {
+}, Dv = ["disabled"], Ov = ["disabled"], kv = ["disabled"], Av = ["disabled"], jv = ["aria-checked"], Mv = ["aria-checked"], Nv = ["disabled"], Pv = ["disabled"], Fv = ["disabled"], Iv = ["disabled"], Lv = { id: "project-confirmation-text" }, Rv = {
 	key: 0,
 	role: "alert",
 	class: "project-error"
-}, Bv = { class: "project-actions" }, Vv = ["disabled"], Hv = ["disabled"], Uv = /* @__PURE__ */ Wn({
+}, zv = { class: "project-actions" }, Bv = ["disabled"], Vv = ["disabled"], Hv = /* @__PURE__ */ Wn({
 	__name: "App",
 	setup(e) {
-		let t = tv(), n = nv(), r = X(() => String(n.name || "home")), i = X(() => r.value === "artifacts"), a = X(() => r.value === "project-artifacts"), o = X(() => r.value.startsWith("scheduled")), s = X(() => r.value === "projects"), c = X(() => [
+		let t = ev(), n = tv(), r = X(() => String(n.name || "home")), i = X(() => r.value === "artifacts"), a = X(() => r.value === "project-artifacts"), o = X(() => r.value.startsWith("scheduled")), s = X(() => r.value === "projects"), c = X(() => [
 			"project",
 			"project-artifacts",
 			"project-settings",
@@ -11114,7 +11099,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			_ = r ? t.resolve(e).fullPath : "", r || (I.value = !1), zt(!1), f++, await t[n ? "replace" : "push"](e), await g, _ = "";
 		}
 		function y(e, t = {}) {
-			return cv(e, N.value, P.value, O.value, t);
+			return sv(e, N.value, P.value, O.value, t);
 		}
 		let b = /* @__PURE__ */ V(null), x = /* @__PURE__ */ V("");
 		async function S(e) {
@@ -11134,7 +11119,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 		function C(e) {
 			b.value = e;
 		}
-		let w = /* @__PURE__ */ V(), T = /* @__PURE__ */ V(), E = /* @__PURE__ */ V(!1), D = /* @__PURE__ */ V(""), O = /* @__PURE__ */ V(""), k = /* @__PURE__ */ V([]), A = /* @__PURE__ */ V(), ee = /* @__PURE__ */ V(!1), te = /* @__PURE__ */ V(!1), ne = /* @__PURE__ */ V(""), j = /* @__PURE__ */ V(""), M = /* @__PURE__ */ V([]), re = /* @__PURE__ */ V(!1), ie = X(() => (c.value || !!P.value) && !s.value && !o.value && !!O.value && !!A.value && !A.value.isNoProject), ae = X(() => O.value ? A.value ? bf(A.value) : [] : me.value.filter((e) => !M.value.includes(e.id))), oe, se;
+		let w = /* @__PURE__ */ V(), T = /* @__PURE__ */ V(), E = /* @__PURE__ */ V(!1), D = /* @__PURE__ */ V(""), O = /* @__PURE__ */ V(""), k = /* @__PURE__ */ V([]), A = /* @__PURE__ */ V(), ee = /* @__PURE__ */ V(!1), te = /* @__PURE__ */ V(!1), ne = /* @__PURE__ */ V(""), j = /* @__PURE__ */ V(""), M = /* @__PURE__ */ V([]), re = /* @__PURE__ */ V(!1), ie = X(() => (c.value || !!P.value) && !s.value && !o.value && !!O.value && !!A.value && !A.value.isNoProject), ae = X(() => O.value ? A.value ? yf(A.value) : [] : me.value.filter((e) => !M.value.includes(e.id))), oe, se;
 		function le() {
 			oe?.(), oe = void 0, typeof EventSource < "u" && (oe = Q.projectEvents(N.value, ue));
 		}
@@ -11159,10 +11144,10 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 				title: n
 			} : e));
 		}
-		let Ze = vf(() => {
+		let Ze = _f(() => {
 			ue(), _t();
 		}, Ye, Xe);
-		ep(ig(Ze, {
+		$f(rg(Ze, {
 			profile: N,
 			session: P,
 			messages: he,
@@ -11193,7 +11178,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 				await jt(e), ue(), _t();
 			}
 		}));
-		let Qe = lg(), $e = Re;
+		let Qe = cg(), $e = Re;
 		function et(e) {
 			return v({
 				...y(e ? "project-artifacts" : "project"),
@@ -11248,7 +11233,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			return v(e ? {
 				...y("project", { project: e }),
 				params: { projectId: e }
-			} : cv("home", N.value, P.value));
+			} : sv("home", N.value, P.value));
 		}
 		function ct(e = !1) {
 			return v(y("projects", e ? { archived: "1" } : {}));
@@ -11256,7 +11241,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 		async function lt(e) {
 			let t = ++f, n = N.value;
 			if (re.value || await it(), t !== f || n !== N.value) return;
-			let r = k.value.find((t) => t.sessionIds?.includes(e) || bf(t).some((t) => t.id === e));
+			let r = k.value.find((t) => t.sessionIds?.includes(e) || yf(t).some((t) => t.id === e));
 			return v({
 				name: "chat",
 				params: { sessionId: e },
@@ -11440,7 +11425,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 				Se.value = "Invalid profile name";
 				return;
 			}
-			return v(d.value ? cv("settings", e, "", "", { return_to: t.resolve(cv("home", e)).fullPath }) : cv("home", e), !1, !0);
+			return v(d.value ? sv("settings", e, "", "", { return_to: t.resolve(sv("home", e)).fullPath }) : sv("home", e), !1, !0);
 		}
 		function jt(e, t = O.value) {
 			return v({
@@ -11453,9 +11438,9 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			});
 		}
 		async function Mt(e) {
-			let t = ov(n.query.profile);
+			let t = av(n.query.profile);
 			if ((!m || t !== N.value) && (m = !0, h = yt(t), await h, e !== f) || (await h, e !== f)) return;
-			let i = typeof n.params.sessionId == "string" ? n.params.sessionId : ov(n.query.session), a = typeof n.params.projectId == "string" ? n.params.projectId : ov(n.query.project), o = () => k.value.find((e) => e.sessionIds?.includes(i) || bf(e).some((e) => e.id === i)), s = a || r.value === "chat" && o()?.id || "";
+			let i = typeof n.params.sessionId == "string" ? n.params.sessionId : av(n.query.session), a = typeof n.params.projectId == "string" ? n.params.projectId : av(n.query.project), o = () => k.value.find((e) => e.sessionIds?.includes(i) || yf(e).some((e) => e.id === i)), s = a || r.value === "chat" && o()?.id || "";
 			if (s !== O.value && (fe?.abort(), O.value = s, A.value = void 0, j.value = "", te.value = !1, s && ot()), i !== P.value && (i ? await bt(i) : (tt(), P.value = "", he.value = [], Me.value = "")), i && !a && r.value === "chat" && !re.value) {
 				if (await rt, e !== f || t !== N.value || i !== P.value) return;
 				let n = o();
@@ -11473,11 +11458,11 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 		async function Pt() {
 			I.value = !0, await hn(), Pe.value?.focus();
 		}
-		let Ft = /* @__PURE__ */ V(null), It = /* @__PURE__ */ V(null), z = og(I, () => Ft.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * .85), () => It.value?.$el.querySelector(".transcript") || null, (e) => {
+		let Ft = /* @__PURE__ */ V(null), It = /* @__PURE__ */ V(null), z = ag(I, () => Ft.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * .85), () => It.value?.$el.querySelector(".transcript") || null, (e) => {
 			e !== I.value && (e ? Pt() : Nt());
 		});
 		async function Lt() {
-			await v(sv(ov(n.query.return_to))), await hn(), window.matchMedia?.("(min-width: 701px)").matches ?? !0 ? qe.value?.focus() : Ne.value?.focus();
+			await v(ov(av(n.query.return_to))), await hn(), window.matchMedia?.("(min-width: 701px)").matches ?? !0 ? qe.value?.focus() : Ne.value?.focus();
 		}
 		function Rt() {
 			if (!d.value) return v(y("settings", { return_to: n.fullPath }));
@@ -11494,7 +11479,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 		async function Vt() {
 			let e = N.value, t = ++Ke;
 			We.value = !0;
-			let n = await kf(e);
+			let n = await Of(e);
 			t === Ke && e === N.value && (He.value = n, We.value = !1);
 		}
 		Pn(N, () => {
@@ -11508,7 +11493,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			let e = N.value;
 			Ue.value = !0, Ge.value = "";
 			try {
-				He.value.subscribed ? await jf(e) : await Af(e), await Vt();
+				He.value.subscribed ? await Af(e) : await kf(e), await Vt();
 			} catch (t) {
 				e === N.value && (Ge.value = t instanceof Error ? t.message : "Could not update notifications."), await Vt();
 			} finally {
@@ -11520,7 +11505,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			let e = N.value;
 			Ue.value = !0, Ge.value = "";
 			try {
-				await Mf(e), e === N.value && (Ge.value = "Test notification scheduled.");
+				await jf(e), e === N.value && (Ge.value = "Test notification scheduled.");
 			} catch {
 				e === N.value && (Ge.value = "Could not send a test notification.");
 			} finally {
@@ -11540,7 +11525,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 		Pn(Gt, () => Wt?.publish(), { flush: "post" });
 		function Kt(e) {
 			if (e.data?.type !== "chathermes.navigate" || typeof e.data.url != "string") return;
-			let t = lv(e.data.url);
+			let t = cv(e.data.url);
 			t && v(t);
 		}
 		let qt = X(() => d.value ? {
@@ -11599,14 +11584,14 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			manageProject: ht
 		} : {});
 		return or(async () => {
-			"serviceWorker" in navigator && (Wt = Pf(navigator.serviceWorker, () => Gt.value, () => location.href)), Q.profiles().then((e) => {
+			"serviceWorker" in navigator && (Wt = Nf(navigator.serviceWorker, () => Gt.value, () => location.href)), Q.profiles().then((e) => {
 				we.value = e.profiles || [];
 			}).catch(() => {
 				Se.value = "Could not load profiles";
 			}), Vt(), "serviceWorker" in navigator && navigator.serviceWorker.addEventListener("message", Kt), je.value = !!Ne.value?.closest(".chathermes-embedded"), document.addEventListener("visibilitychange", Dt), addEventListener("online", kt), addEventListener("offline", kt), addEventListener("keydown", Bt), document.addEventListener("click", B), await t.isReady(), p = !0, g = Mt(++f), await g;
 		}), ur(() => {
 			p = !1, f++, t.options.history.destroy(), Wt?.stop(), Wt = void 0, R++, oe?.(), clearTimeout(se), document.removeEventListener("visibilitychange", Dt), "serviceWorker" in navigator && navigator.serviceWorker.removeEventListener("message", Kt), nt(), de?.abort(), fe?.abort(), removeEventListener("online", kt), removeEventListener("offline", kt), removeEventListener("keydown", Bt), document.removeEventListener("click", B);
-		}), (e, t) => (W(), G("div", uv, [
+		}), (e, t) => (W(), G("div", lv, [
 			q("aside", {
 				ref_key: "sidebar",
 				ref: Ft,
@@ -11619,7 +11604,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 				onClickCapture: t[14] ||= (...e) => H(z).click && H(z).click(...e),
 				"aria-label": "Navigation"
 			}, [
-				q("div", dv, [
+				q("div", uv, [
 					t[36] ||= q("span", { class: "min-w-0 truncate" }, "ChatHermes", -1),
 					je.value ? (W(), G("button", {
 						key: 0,
@@ -11643,7 +11628,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 						onClick: Nt
 					}, " × ", 512)
 				]),
-				Xi(H(K_), {
+				Xi(H(G_), {
 					class: "projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": s.value || c.value ? "page" : void 0,
 					to: y("projects"),
@@ -11659,7 +11644,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					}, [q("path", { d: "M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" })], -1), J("Projects ", -1)]]),
 					_: 1
 				}, 8, ["aria-current", "to"]),
-				Xi(H(K_), {
+				Xi(H(G_), {
 					class: "scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": o.value ? "page" : void 0,
 					to: y("scheduled"),
@@ -11681,7 +11666,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					}), q("path", { d: "M7 3v4M17 3v4M3 11h18M8 15h3M8 18h6" })], -1), J("Scheduled ", -1)]]),
 					_: 1
 				}, 8, ["aria-current", "to"]),
-				Xi(H(K_), {
+				Xi(H(G_), {
 					class: "artifacts-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": i.value ? "page" : void 0,
 					to: y("artifacts"),
@@ -11697,7 +11682,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					}, [q("path", { d: "M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6" })], -1), J("Artifacts ", -1)]]),
 					_: 1
 				}, 8, ["aria-current", "to"]),
-				(W(), K(Qf, {
+				(W(), K(Zf, {
 					heading: "Recents",
 					sessions: me.value,
 					selected: P.value,
@@ -11724,9 +11709,9 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					"busy",
 					"projects"
 				])),
-				q("div", fv, [
+				q("div", dv, [
 					t[43] ||= q("label", { for: "profile-field" }, "Profile", -1),
-					q("div", pv, [
+					q("div", fv, [
 						q("select", {
 							id: "profile-field",
 							class: "profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white",
@@ -11737,12 +11722,12 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 							N.value && !we.value.some((e) => e.name === N.value) ? (W(), G("option", {
 								key: 0,
 								value: N.value
-							}, F(N.value), 9, hv)) : Y("v-if", !0),
+							}, F(N.value), 9, mv)) : Y("v-if", !0),
 							(W(!0), G(U, null, br(we.value, (e) => (W(), G("option", {
 								key: e.name,
 								value: e.name
-							}, F(e.name), 9, gv))), 128))
-						], 40, mv),
+							}, F(e.name), 9, hv))), 128))
+						], 40, pv),
 						q("button", {
 							class: "drawer-chat grid size-11 shrink-0 place-items-center rounded-lg bg-[#2563eb] text-white hover:bg-[#1d4ed8] focus-visible:outline-3 focus-visible:outline-[#b4b4b4] disabled:opacity-55",
 							"aria-label": "New chat",
@@ -11756,7 +11741,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 							stroke: "currentColor",
 							"stroke-width": "1.5",
 							"aria-hidden": "true"
-						}, [q("path", { d: "M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8M16 3l5 5M10 14l1-5 7-7 5 5-7 7Z" })], -1)]], 8, _v),
+						}, [q("path", { d: "M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8M16 3l5 5M10 14l1-5 7-7 5 5-7 7Z" })], -1)]], 8, gv),
 						q("button", {
 							ref_key: "settingsButton",
 							ref: qe,
@@ -11775,7 +11760,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 							cx: "12",
 							cy: "12",
 							r: "3"
-						})], -1)]], 8, vv)
+						})], -1)]], 8, _v)
 					]),
 					q("span", null, [q("span", { class: pe(["status-dot mr-2 inline-block size-2 rounded-full", xe.value ? "disconnected bg-[#dcae6e]" : "bg-[#94c9a5]"]) }, null, 2), J(F(xe.value ? "Offline · read only" : "Connected through dashboard"), 1)])
 				])
@@ -11791,8 +11776,8 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 				onClickCapture: t[19] ||= (...e) => H(z).click && H(z).click(...e),
 				onClick: Nt
 			}, null, 36)) : Y("v-if", !0),
-			q("main", yv, [
-				q("header", bv, [
+			q("main", vv, [
+				q("header", yv, [
 					q("button", {
 						ref_key: "menuButton",
 						ref: Ne,
@@ -11807,9 +11792,9 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 						stroke: "currentColor",
 						"stroke-width": "1.5",
 						"aria-hidden": "true"
-					}, [q("path", { d: "M3 6h18M3 13h12" })], -1)]], 8, xv),
-					q("div", Sv, [q("h1", Cv, F(d.value ? "Settings" : i.value ? "Artifacts" : o.value ? "Scheduled" : s.value ? "Projects" : me.value.find((e) => e.id === P.value)?.title || (P.value ? "Conversation" : A.value?.label || "ChatHermes")), 1), !d.value && O.value && P.value && A.value ? (W(), G("p", wv, F(A.value.label), 1)) : Y("v-if", !0)]),
-					q("span", Tv, F(N.value || "Current profile"), 1),
+					}, [q("path", { d: "M3 6h18M3 13h12" })], -1)]], 8, bv),
+					q("div", xv, [q("h1", Sv, F(d.value ? "Settings" : i.value ? "Artifacts" : o.value ? "Scheduled" : s.value ? "Projects" : me.value.find((e) => e.id === P.value)?.title || (P.value ? "Conversation" : A.value?.label || "ChatHermes")), 1), !d.value && O.value && P.value && A.value ? (W(), G("p", Cv, F(A.value.label), 1)) : Y("v-if", !0)]),
+					q("span", wv, F(N.value || "Current profile"), 1),
 					d.value ? Y("v-if", !0) : (W(), G("div", {
 						key: 0,
 						ref_key: "screenMenuWrap",
@@ -11825,7 +11810,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 						"aria-expanded": Ie.value,
 						"aria-controls": "screen-menu",
 						onClick: t[20] ||= (e) => Ie.value = !Ie.value
-					}, " ··· ", 8, Ev), Ie.value ? (W(), G("div", {
+					}, " ··· ", 8, Tv), Ie.value ? (W(), G("div", {
 						key: 0,
 						id: "screen-menu",
 						class: "screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl",
@@ -11833,53 +11818,53 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 						"aria-label": "Screen options",
 						onClick: t[32] ||= (e) => zt()
 					}, [
-						q("span", Dv, F(N.value || "Current profile"), 1),
+						q("span", Ev, F(N.value || "Current profile"), 1),
 						q("button", {
 							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
 							role: "menuitem",
-							disabled: xe.value || De.value || c.value && (!A.value || A.value.archived || !A.value.isNoProject && !H(yf)(A.value)),
+							disabled: xe.value || De.value || c.value && (!A.value || A.value.archived || !A.value.isNoProject && !H(vf)(A.value)),
 							onClick: t[21] ||= (e) => {
 								c.value ? xt() : ut(), zt();
 							}
-						}, " New chat ", 8, Ov),
+						}, " New chat ", 8, Dv),
 						ie.value ? (W(), G("button", {
 							key: 0,
 							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
 							role: "menuitem",
-							disabled: xe.value || De.value || !A.value || A.value.archived || !H(yf)(A.value),
+							disabled: xe.value || De.value || !A.value || A.value.archived || !H(vf)(A.value),
 							onClick: t[22] ||= (e) => {
 								xt(), zt();
 							}
-						}, " New Project Chat ", 8, kv)) : Y("v-if", !0),
+						}, " New Project Chat ", 8, Ov)) : Y("v-if", !0),
 						o.value ? (W(), G(U, { key: 1 }, [q("button", {
 							role: "menuitem",
 							"data-test": "refresh-scheduled",
 							disabled: !b.value || b.value.loading,
 							onClick: t[23] ||= (e) => b.value?.retry()
-						}, " Refresh ", 8, Av), b.value?.sessionId ? (W(), G("button", {
+						}, " Refresh ", 8, kv), b.value?.sessionId ? (W(), G("button", {
 							key: 0,
 							role: "menuitem",
 							"data-test": "resume-scheduled-session",
 							disabled: xe.value || De.value || b.value.loading,
 							onClick: t[24] ||= (e) => lt(b.value.sessionId)
-						}, " Resume Session ", 8, jv)) : Y("v-if", !0)], 64)) : s.value ? (W(), G(U, { key: 2 }, [q("button", {
+						}, " Resume Session ", 8, Av)) : Y("v-if", !0)], 64)) : s.value ? (W(), G(U, { key: 2 }, [q("button", {
 							role: "menuitemradio",
 							"aria-checked": !u.value,
 							onClick: t[25] ||= (e) => ct(!1)
-						}, " Active projects ", 8, Mv), q("button", {
+						}, " Active projects ", 8, jv), q("button", {
 							role: "menuitemradio",
 							"aria-checked": u.value,
 							onClick: t[26] ||= (e) => ct(!0)
-						}, " Archived projects ", 8, Nv)], 64)) : !o.value && A.value && !A.value.isNoProject ? (W(), G(U, { key: 3 }, [
+						}, " Archived projects ", 8, Mv)], 64)) : !o.value && A.value && !A.value.isNoProject ? (W(), G(U, { key: 3 }, [
 							q("button", {
 								role: "menuitem",
 								onClick: t[27] ||= (e) => dt("edit")
 							}, "Edit project"),
 							q("button", {
 								role: "menuitem",
-								disabled: xe.value || !H(yf)(A.value),
+								disabled: xe.value || !H(vf)(A.value),
 								onClick: t[28] ||= (e) => dt("instructions")
-							}, " Edit Instructions ", 8, Pv),
+							}, " Edit Instructions ", 8, Nv),
 							A.value.isAuto ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [A.value.archived ? (W(), G("button", {
 								key: 0,
 								role: "menuitem",
@@ -11888,17 +11873,17 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 									id: O.value,
 									restore: !0
 								})
-							}, " Restore project ", 8, Fv)) : (W(), G("button", {
+							}, " Restore project ", 8, Pv)) : (W(), G("button", {
 								key: 1,
 								role: "menuitem",
 								disabled: E.value || xe.value,
 								onClick: t[30] ||= (e) => ft("archive")
-							}, " Archive project ", 8, Iv)), q("button", {
+							}, " Archive project ", 8, Fv)), q("button", {
 								class: "project-danger",
 								role: "menuitem",
 								disabled: E.value || xe.value,
 								onClick: t[31] ||= (e) => ft("delete")
-							}, " Delete project ", 8, Lv)], 64))
+							}, " Delete project ", 8, Iv)], 64))
 						], 64)) : Y("v-if", !0)
 					])) : Y("v-if", !0)], 544))
 				]),
@@ -11909,21 +11894,21 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					"aria-labelledby": "project-confirmation-text",
 					onKeydown: t[34] ||= Po(Mo((e) => !E.value && pt(), ["stop", "prevent"]), ["esc"])
 				}, [
-					q("p", Rv, F(w.value === "delete" ? `Delete ${A.value.label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${A.value.label}? You can restore it from Archived projects.`), 1),
-					D.value ? (W(), G("p", zv, F(D.value), 1)) : Y("v-if", !0),
-					q("div", Bv, [q("button", {
+					q("p", Lv, F(w.value === "delete" ? `Delete ${A.value.label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${A.value.label}? You can restore it from Archived projects.`), 1),
+					D.value ? (W(), G("p", Rv, F(D.value), 1)) : Y("v-if", !0),
+					q("div", zv, [q("button", {
 						ref_key: "projectConfirmCancel",
 						ref: T,
 						class: "project-button",
 						disabled: E.value,
 						onClick: pt
-					}, " Cancel", 8, Vv), q("button", {
+					}, " Cancel", 8, Bv), q("button", {
 						class: "project-button project-danger",
 						disabled: E.value || xe.value,
 						onClick: mt
-					}, F(w.value === "delete" ? "Delete project permanently" : "Confirm archive"), 9, Hv)])
+					}, F(w.value === "delete" ? "Delete project permanently" : "Confirm archive"), 9, Vv)])
 				], 32)) : Y("v-if", !0),
-				Xi(eg, {
+				Xi($h, {
 					ref_key: "chatPlane",
 					ref: It,
 					onTouchstart: H(z).start,
@@ -11934,7 +11919,7 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 					"show-page": d.value || o.value || i.value || s.value || !!l.value || c.value,
 					"hide-composer": i.value || c.value && a.value
 				}, {
-					page: Dn(() => [Xi(H($_), null, {
+					page: Dn(() => [Xi(H(Q_), null, {
 						default: Dn(({ Component: e }) => [(W(), K(_r(e), ia({
 							ref: o.value ? C : void 0,
 							key: N.value
@@ -11958,9 +11943,9 @@ var uv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			])
 		]));
 	}
-}), Wv = "chathermes";
-function Gv() {
-	let e = [], t = !1, n = !1, r = () => lv(window.location.href) || "/", i = r(), a = () => window.history.state?.[Wv], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), Uv = "chathermes";
+function Wv() {
+	let e = [], t = !1, n = !1, r = () => cv(window.location.href) || "/", i = r(), a = () => window.history.state?.[Uv], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -11969,7 +11954,7 @@ function Gv() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[Wv] = {
+		}, a[Uv] = {
 			current: e,
 			position: o,
 			state: s
@@ -12011,24 +11996,24 @@ function Gv() {
 }
 //#endregion
 //#region src/features/artifacts/components/ArtifactsPage.vue?vue&type=script&setup=true&lang.ts
-var Kv = {
+var Gv = {
 	class: "min-h-0 flex-1 overflow-y-auto px-5 py-6",
 	"aria-label": "Artifacts"
-}, qv = { class: "mx-auto max-w-[1100px]" }, Jv = { class: "mb-5 flex items-center justify-between" }, Yv = ["disabled"], Xv = {
+}, Kv = { class: "mx-auto max-w-[1100px]" }, qv = { class: "mb-5 flex items-center justify-between" }, Jv = ["disabled"], Yv = {
 	key: 0,
 	role: "status",
 	class: "text-sm text-[#b4b4b4]"
-}, Zv = {
+}, Xv = {
 	key: 1,
 	role: "alert",
 	class: "mb-4 text-sm text-red-200"
-}, Qv = {
+}, Zv = {
 	key: 2,
 	class: "text-sm text-[#b4b4b4]"
-}, $v = { class: "grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),20rem))] items-start gap-4 [&>.artifact-card]:my-0" }, ey = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, ty = {
+}, Qv = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, $v = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, ey = {
 	key: 0,
 	class: "mb-1 block truncate"
-}, ny = { class: "flex min-w-0 items-center gap-3" }, ry = { class: "shrink-0" }, iy = ["title", "onClick"], ay = ["aria-label", "onClick"], oy = { key: 0 }, sy = { class: "mb-3 break-words" }, cy = { class: "flex justify-end gap-4" }, ly = ["disabled"], uy = ["disabled"], dy = /* @__PURE__ */ Wn({
+}, ty = { class: "flex min-w-0 items-center gap-3" }, ny = { class: "shrink-0" }, ry = ["title", "onClick"], iy = ["aria-label", "onClick"], ay = ["disabled"], oy = { key: 0 }, sy = { class: "mb-3 break-words" }, cy = { class: "flex justify-end gap-4" }, ly = ["disabled"], uy = ["disabled"], dy = /* @__PURE__ */ Wn({
 	__name: "ArtifactsPage",
 	props: {
 		profile: {},
@@ -12042,37 +12027,26 @@ var Kv = {
 		Pn(s, async (e) => {
 			await hn(), e ? l.value?.showModal() : l.value?.close();
 		});
-		let u;
-		async function d() {
-			u?.abort();
-			let e = u = new AbortController();
-			a.value = !0, i.value = [], o.value = "", s.value = void 0;
+		let u = /* @__PURE__ */ V(null), d;
+		async function f(e = !1) {
+			d?.abort();
+			let t = d = new AbortController();
+			a.value = !0, e || (i.value = [], u.value = null), o.value = "", s.value = void 0;
 			try {
-				let t = n.sessions ? [...n.sessions] : [];
-				if (!n.sessions) for (let r = 0;;) {
-					let i = await Q.sessions(n.profile, r, e.signal);
-					if (t.push(...i.sessions), r += i.sessions.length, !i.sessions.length || i.has_more === !1 || i.has_more === void 0 && i.sessions.length < (i.limit || 30)) break;
-				}
-				let r = await lf(n.profile, t, e.signal);
-				if (e.signal.aborted) return;
-				i.value = r.files.map((e) => {
-					let t = n.project || n.projects?.find((t) => t.sessionIds?.includes(e.sessionId) || bf(t).some((t) => t.id === e.sessionId));
-					return {
-						...e,
-						projectId: t?.id,
-						projectTitle: t && !t.isNoProject ? t.label : void 0
-					};
-				}), r.failures && (o.value = `${r.failures} conversations could not be loaded. Retry to see their artifacts.`);
+				let r = await Q.artifacts(n.profile, n.project?.id, e && u.value || void 0, t.signal);
+				if (t.signal.aborted) return;
+				let a = e ? [...i.value, ...r.files] : r.files;
+				i.value = a.filter((e, t) => a.findIndex((t) => t.sessionId === e.sessionId && t.path === e.path) === t), u.value = r.nextCursor;
 			} catch {
-				e.signal.aborted || (o.value = "Could not load artifacts.");
+				t.signal.aborted || (o.value = "Could not load artifacts.");
 			} finally {
-				u === e && (a.value = !1);
+				d === t && (a.value = !1);
 			}
 		}
-		async function f() {
+		async function p() {
 			let e = s.value;
 			if (!e?.sessionId || c.value) return;
-			let t = u;
+			let t = d;
 			c.value = !0;
 			try {
 				let r = new URLSearchParams({
@@ -12085,63 +12059,70 @@ var Kv = {
 					credentials: "same-origin",
 					redirect: "error"
 				})).ok) throw Error();
-				if (t !== u) return;
+				if (t !== d) return;
 				i.value = i.value.filter((t) => t.path !== e.path), s.value = void 0;
 			} catch {
-				t === u && (o.value = "Hermes could not delete this file. It may be outside the managed files area or deletion may be unsupported.");
+				t === d && (o.value = "Hermes could not delete this file. It may be outside the managed files area or deletion may be unsupported.");
 			} finally {
 				c.value = !1;
 			}
 		}
-		return Pn(() => [n.profile, n.sessions], d, { immediate: !0 }), lr(() => u?.abort()), (t, n) => (W(), G("section", Kv, [q("div", qv, [
-			q("div", Jv, [n[3] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
+		return Pn(() => [n.profile, n.project?.id], () => f(), { immediate: !0 }), lr(() => d?.abort()), (t, n) => (W(), G("section", Gv, [q("div", Kv, [
+			q("div", qv, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
 				class: "text-sm underline",
 				disabled: a.value,
-				onClick: d
-			}, "Refresh", 8, Yv)]),
-			a.value ? (W(), G("p", Xv, " Loading conversation artifacts… ")) : Y("v-if", !0),
-			o.value ? (W(), G("p", Zv, F(o.value), 1)) : Y("v-if", !0),
-			!a.value && !i.value.length ? (W(), G("p", Qv, "No artifacts found.")) : Y("v-if", !0),
-			q("div", $v, [(W(!0), G(U, null, br(i.value, (t) => (W(), K(Jp, {
+				onClick: n[0] ||= (e) => f()
+			}, "Refresh", 8, Jv)]),
+			a.value ? (W(), G("p", Yv, "Loading artifacts…")) : Y("v-if", !0),
+			o.value ? (W(), G("p", Xv, F(o.value), 1)) : Y("v-if", !0),
+			!a.value && !i.value.length ? (W(), G("p", Zv, "No artifacts found.")) : Y("v-if", !0),
+			q("div", Qv, [(W(!0), G(U, null, br(i.value, (t) => (W(), K(qp, {
 				key: `${t.sessionId}:${t.path}`,
 				file: t,
 				profile: e.profile
 			}, {
-				footer: Dn(() => [q("div", ey, [t.projectTitle ? (W(), G("span", ty, F(t.projectTitle), 1)) : Y("v-if", !0), q("div", ny, [
-					q("span", ry, F(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
+				footer: Dn(() => [q("div", $v, [t.projectTitle ? (W(), G("span", ey, F(t.projectTitle), 1)) : Y("v-if", !0), q("div", ty, [
+					q("span", ny, F(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
 					q("button", {
 						type: "button",
 						class: "min-w-0 flex-1 truncate py-2 text-left underline",
 						title: t.sessionTitle,
 						onClick: (e) => r("openSession", t.sessionId)
-					}, F(t.sessionTitle), 9, iy),
-					/^(https?:|data:)/.test(t.path) ? Y("v-if", !0) : (W(), G("button", {
+					}, F(t.sessionTitle), 9, ry),
+					/^(https?:|data:)|^\/api\/plugins\/chathermes\/artifact-images\//.test(t.path) ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
 						class: "shrink-0 py-2 hover:text-white",
 						"aria-label": `Delete ${t.name}`,
 						onClick: (e) => s.value = t
-					}, " Delete ", 8, ay))
+					}, " Delete ", 8, iy))
 				])])]),
 				_: 2
 			}, 1032, ["file", "profile"]))), 128))]),
+			u.value ? (W(), G("button", {
+				key: 3,
+				type: "button",
+				class: "my-6 rounded-full border border-[#555] px-5 py-2 text-sm",
+				disabled: a.value,
+				onClick: n[1] ||= (e) => f(!0)
+			}, F(a.value ? "Loading…" : "Load More"), 9, ay)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "confirmation",
 				ref: l,
 				class: "fixed m-auto w-[min(380px,94vw)] rounded-2xl bg-[#303030] p-5 text-white backdrop:bg-black/80",
 				"aria-label": "Delete artifact",
-				onCancel: n[1] ||= (e) => c.value && e.preventDefault(),
-				onClose: n[2] ||= (e) => s.value = void 0
+				onCancel: n[3] ||= (e) => c.value && e.preventDefault(),
+				onClose: n[4] ||= (e) => s.value = void 0
 			}, [s.value ? (W(), G("div", oy, [
 				q("h3", sy, "Delete " + F(s.value.name) + " from Hermes?", 1),
-				n[4] ||= q("p", { class: "mb-5 text-sm text-[#b4b4b4]" }, " This removes the server file. References in conversation history remain. ", -1),
+				n[6] ||= q("p", { class: "mb-5 text-sm text-[#b4b4b4]" }, " This removes the server file. References in conversation history remain. ", -1),
 				q("div", cy, [q("button", {
 					autofocus: "",
 					disabled: c.value,
-					onClick: n[0] ||= (e) => s.value = void 0
+					onClick: n[2] ||= (e) => s.value = void 0
 				}, "Cancel", 8, ly), q("button", {
 					disabled: c.value,
-					onClick: f
+					onClick: p
 				}, F(c.value ? "Deleting…" : "Delete file"), 9, uy)])
 			])) : Y("v-if", !0)], 544)
 		])]));
@@ -12609,7 +12590,7 @@ var Kv = {
 				"onOpenSession"
 			])) : (W(), G(U, { key: 1 }, [
 				e.selectedProject.archived ? (W(), G("p", fb, "Archived project")) : Y("v-if", !0),
-				q("p", pb, F(H(yf)(e.selectedProject) ? "Workspace: " + H(yf)(e.selectedProject) : e.selectedProject.isNoProject ? "No project workspace" : "No workspace configured"), 1),
+				q("p", pb, F(H(vf)(e.selectedProject) ? "Workspace: " + H(vf)(e.selectedProject) : e.selectedProject.isNoProject ? "No project workspace" : "No workspace configured"), 1),
 				e.visibleSessions.length ? Y("v-if", !0) : (W(), G("p", mb, "No conversations yet.")),
 				q("nav", hb, [(W(!0), G(U, null, br(e.visibleSessions, (t) => (W(), G("button", {
 					key: t.id,
@@ -12819,7 +12800,7 @@ var Kv = {
 		offline: { type: Boolean }
 	},
 	setup(e, { expose: t }) {
-		let n = e, r = nv(), i = tv(), a = 0, o = /* @__PURE__ */ V([]), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V([]), l = /* @__PURE__ */ V(), u = /* @__PURE__ */ V(), d = /* @__PURE__ */ V("active"), f = /* @__PURE__ */ V(!1), p = /* @__PURE__ */ V(""), m = /* @__PURE__ */ V(!1), h = /* @__PURE__ */ V(0), g, _ = X(() => o.value.filter((e) => y(e) === d.value)), v = X(() => {
+		let n = e, r = tv(), i = ev(), a = 0, o = /* @__PURE__ */ V([]), s = /* @__PURE__ */ V(), c = /* @__PURE__ */ V([]), l = /* @__PURE__ */ V(), u = /* @__PURE__ */ V(), d = /* @__PURE__ */ V("active"), f = /* @__PURE__ */ V(!1), p = /* @__PURE__ */ V(""), m = /* @__PURE__ */ V(!1), h = /* @__PURE__ */ V(0), g, _ = X(() => o.value.filter((e) => y(e) === d.value)), v = X(() => {
 			let e = gs(u.value?.messages.slice().reverse().find((e) => e.role === "assistant" && gs(e.content))?.content) || u.value?.output;
 			return e ? [{
 				role: "assistant",
@@ -12936,7 +12917,7 @@ var Kv = {
 				class: "underline",
 				onClick: O
 			}, "Retry")])) : Y("v-if", !0)
-		])]), l.value && v.value.length ? (W(), K(qm, {
+		])]), l.value && v.value.length ? (W(), K(Km, {
 			key: l.value.id,
 			"follow-initially": !1,
 			messages: v.value,
@@ -12973,8 +12954,8 @@ var Kv = {
 		]))]));
 	}
 }), dx = /* @__PURE__ */ Wn({ render: () => null });
-function fx(e = Gv(), t) {
-	let n = ev({
+function fx(e = Wv(), t) {
+	let n = $_({
 		history: e,
 		routes: [
 			{
@@ -13044,9 +13025,9 @@ function fx(e = Gv(), t) {
 		]
 	});
 	n.beforeEach((e) => {
-		let t = ov(e.query.profile);
-		if (e.query.profile && typeof e.query.profile != "string" || t && !av.test(t) || Object.entries(e.params).some(([e, t]) => e === "projectId" ? !iv(t) : typeof t != "string" || !rv.test(t)) || e.query.project && !iv(e.query.project) || [e.query.session].some((e) => e && (typeof e != "string" || !rv.test(e)))) return { name: "home" };
-		if (e.name === "settings" && e.query.return_to && sv(e.query.return_to) !== e.query.return_to) return {
+		let t = av(e.query.profile);
+		if (e.query.profile && typeof e.query.profile != "string" || t && !iv.test(t) || Object.entries(e.params).some(([e, t]) => e === "projectId" ? !rv(t) : typeof t != "string" || !nv.test(t)) || e.query.project && !rv(e.query.project) || [e.query.session].some((e) => e && (typeof e != "string" || !nv.test(e)))) return { name: "home" };
+		if (e.name === "settings" && e.query.return_to && ov(e.query.return_to) !== e.query.return_to) return {
 			name: "settings",
 			query: {
 				...e.query,
@@ -13055,13 +13036,13 @@ function fx(e = Gv(), t) {
 			replace: !0
 		};
 	});
-	let r = t && lv(t);
+	let r = t && cv(t);
 	return r && e.replace(r), n;
 }
 //#endregion
 //#region src/main.ts
 function px(e) {
-	return Ro(Uv).use(fx(void 0, e));
+	return Ro(Hv).use(fx(void 0, e));
 }
 //#endregion
-export { Uv as App, px as createChatHermesApp };
+export { Hv as App, px as createChatHermesApp };
