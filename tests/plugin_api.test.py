@@ -2,6 +2,7 @@
 import importlib.util
 import asyncio
 import re
+import sys
 from functools import wraps
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from fastapi import FastAPI
 MODULE = Path(__file__).resolve().parents[1] / "plugin/chathermes/dashboard/plugin_api.py"
 spec = importlib.util.spec_from_file_location("chathermes_plugin_api", MODULE)
 plugin = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = plugin
 spec.loader.exec_module(plugin)
 KEY = "test-gateway-key-never-expose"
 
@@ -1272,7 +1274,8 @@ async def test_native_artifact_file_routes(app, monkeypatch):
 
 
 @run_async
-async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(app, monkeypatch):
+async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(app, monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin._push_store_module, '_path', lambda: tmp_path / 'push.json')
     import sys
     from types import ModuleType, SimpleNamespace
     from fastapi import HTTPException
@@ -1633,3 +1636,73 @@ async def test_native_reasoning_preparation_validates_effort_without_dispatch(ap
         for effort in (None, False, 0, [], {}, '', 'show', 'hide', 'HIGH', 'high --global', 'bogus'):
             response = await client.post('/api/plugins/chathermes/chat/prepare', json={'input': 'Hello', 'reasoning_effort': effort})
             assert response.status_code == 422
+
+
+@run_async
+async def test_artifact_api_pages_index_without_gateway_and_validates_scope(app, monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin._push_store_module, '_path', lambda: tmp_path / 'push.json')
+    session = {'id': 's', 'title': 'Files', 'projectId': 'project/path'}
+    files = [{'path': f'/tmp/{i}.txt', 'name': f'{i}.txt', 'type': 'text/plain', 'direction': 'generated', 'createdAt': '2026-10-26T00:00:00+00:00'} for i in range(4)]
+    plugin._artifact_store.replace_session(plugin._push_store_module, 'alpha', session, 'revision', files)
+    monkeypatch.setattr(plugin, '_client', lambda: pytest.fail('Artifact pages cannot fetch histories'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        root = '/api/plugins/chathermes/artifacts'
+        first = await client.get(root, params={'profile': 'alpha', 'project_id': 'project/path', 'limit': 2})
+        assert first.status_code == 200
+        assert first.headers['cache-control'] == 'private, no-store'
+        assert len(first.json()['files']) == 2
+        cursor = first.json()['nextCursor']
+        second = await client.get(root, params={'profile': 'alpha', 'project_id': 'project/path', 'limit': 2, 'cursor': cursor})
+        assert second.json()['nextCursor'] is None
+        assert len({row['path'] for page in (first, second) for row in page.json()['files']}) == 4
+        empty = await client.get(root, params={'profile': 'beta'})
+        assert empty.json() == {'files': [], 'nextCursor': None}
+        for query in ({'limit': 0}, {'limit': 101}, {'cursor': 'invalid'}, {'profile': 'beta', 'cursor': cursor}, {'profile': '../alpha'}):
+            assert (await client.get(root, params={'profile': 'alpha', **query})).status_code == 422
+
+
+@run_async
+async def test_artifact_index_profile_host_boundary(app, monkeypatch, tmp_path):
+    import sys
+    from types import SimpleNamespace
+    monkeypatch.setattr(plugin._push_store_module, '_path', lambda: tmp_path / 'push.json')
+    monkeypatch.setenv('HERMES_PLUGIN_HOST_PROCESS', '1')
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', SimpleNamespace(serving_profile_name=lambda: 'alpha'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        assert (await client.get('/api/plugins/chathermes/artifacts?profile=beta')).status_code == 422
+        assert (await client.get('/api/plugins/chathermes/artifacts')).json() == {'files': [], 'nextCursor': None}
+
+
+@run_async
+async def test_indexed_inline_images_are_authenticated_profile_history_addresses(app, monkeypatch):
+    seen = []
+    async def messages(source, profile, session, inline=False):
+        seen.append((profile, session, inline))
+        return [{'id': 12, 'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,aGVsbG8='}}]}]
+    monkeypatch.setattr(plugin._artifact_indexer.Source, 'messages', messages)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        root = '/api/plugins/chathermes/artifact-images/s/12/0?profile=alpha'
+        response = await client.get(root)
+        assert response.status_code == 200 and response.content == b'hello'
+        assert response.headers['content-type'] == 'image/png'
+        assert response.headers['cache-control'] == 'private, no-store'
+        assert 'attachment' in (await client.get(root + '&download=true')).headers['content-disposition']
+        assert (await client.get(root.replace('/12/', '/13/'))).status_code == 404
+        assert (await client.get(root.replace('/0?', '/1?'))).status_code == 404
+        assert (await client.get(root.replace('/0?', '/-1?'))).status_code == 422
+    assert all(profile == 'alpha' and session == 's' and inline for profile, session, inline in seen)
+
+
+@run_async
+async def test_start_and_stop_artifact_service_are_nonblocking_and_join_workers(monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin._push_store_module, '_path', lambda: tmp_path / 'push.json')
+    waiting = asyncio.Event()
+    async def profiles(source):
+        await waiting.wait()
+        return []
+    monkeypatch.setattr(plugin._artifact_indexer.Source, 'profiles', profiles)
+    await asyncio.wait_for(plugin._start_artifact_indexing(), timeout=1)
+    service = plugin._artifact_service
+    assert len(service.tasks) == 4
+    await asyncio.wait_for(plugin._stop_artifact_indexing(), timeout=1)
+    assert service.tasks == [] and plugin._artifact_service is None

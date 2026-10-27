@@ -84,7 +84,8 @@ pre-existing port-9119 container was left alone.
 - `npm test`: 725 passed (723 baseline, two new cases).
 - Activated this worktree's `.venv`, installed `plugin/chathermes[dev]` and the
   API test harness dependencies; `npm run test:api`: 120 passed.
-- `CHATHERMES_BUILD_OUT_DIR=dist/notification-current npm run build` passed.
+- `npm run build` passed using the historical alternate output path
+  `dist/notification-current`.
 - For the browser red/green check, swapped only the worker in the launcher's
   disposable **live** `/opt/data/plugins/chathermes/dashboard/dist/` directory.
   Changing `/opt/chathermes/plugin/` alone changes the seed, not the served copy.

@@ -45,3 +45,6 @@ __pycache__/
 plugin/chathermes/build/
 compose.override.yml
 .vitest/
+
+# Optional isolated plugin build output for container validation.
+/test-build/

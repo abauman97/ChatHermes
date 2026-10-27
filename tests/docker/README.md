@@ -21,6 +21,11 @@ npm run test:integration -- tests/workflows/messaging.spec.ts --grep streaming
 to refresh the latest official Hermes base. Ordinary test runs never rebuild,
 replace, or reseed running containers. After a rebuild, explicitly apply it with
 `docker compose --project-directory . -f tests/docker/compose.yml up -d --no-build`.
+Builds always write to `plugin/chathermes/dashboard/dist/`, and Docker copies
+assets from that same production plugin path. Keep generated output uncommitted;
+after validation, restore only any tracked generated files to `HEAD` and leave
+untracked generated output ignored.
+
 Stop Android first if replacing Hermes while an installed app is in use.
 
 Use standard Compose commands for infrastructure only:

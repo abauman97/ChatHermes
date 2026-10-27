@@ -38,7 +38,9 @@ async function open() {
     let url = fileUrl(props.file, props.profile);
     if (
       kind.value === "image" &&
-      /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(url)
+      /^\/api\/plugins\/chathermes\/(?:images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)|artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+)(?:\?|$)/i.test(
+        url,
+      )
     ) {
       source.value = url;
       return;
@@ -103,7 +105,9 @@ watch(
     cleanup(() => pending.abort());
     const url = fileUrl(props.file, props.profile);
     if (
-      /^\/api\/plugins\/chathermes\/images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)(?:\?|$)/i.test(url)
+      /^\/api\/plugins\/chathermes\/(?:images\/[a-f0-9]{32}\.(?:png|jpe?g|gif|webp)|artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+)(?:\?|$)/i.test(
+        url,
+      )
     ) {
       thumbnail.value = url;
       return;

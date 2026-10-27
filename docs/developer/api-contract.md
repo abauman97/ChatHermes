@@ -197,8 +197,8 @@ reference and filename annotation while preserving quotation/untrusted boundarie
 Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
-Timeline cards and the global/project Artifacts views share history-based
-reference detection and one preview/download component. Generated artifact cards
+Timeline cards and the backend index use the same explicit delivery contract
+and share one preview/download component. Generated artifact cards
 require explicit `MEDIA:` delivery directives or existing `Attached file` /
 `Attached image` annotations. MEDIA parsing retains quoted paths, spaced media
 filenames, unknown formats, and extensionless files; no extension eligibility
@@ -214,9 +214,20 @@ and arbitrary structured output fields remain data. Tool input arguments, failed
 and incomplete blocks never produce cards. Explicit deliveries retain available
 file metadata. User upload/image-content cards and authenticated session/profile
 retrieval remain unchanged.
-Artifact browsing pages through the authoritative sessions and message APIs,
-and project browsing uses native session membership. No client transcript or
-artifact metadata journal is introduced.
+`GET /artifacts?profile=…&project_id=…&limit=50&cursor=…` returns
+`{files: Artifact[], nextCursor: string | null}` from the shared SQLite index.
+`project_id` and `cursor` are optional; `limit` accepts 1–100. Cursors are scoped
+to the profile and Project and order by creation time, session and path descending.
+Invalid page sizes or cursors return 422. Responses are private/no-store.
+The route inherits dashboard authentication and hosted-profile boundaries.
+An empty index returns immediately while background indexing continues.
+Global and Project library views request only the first page and provide Load
+More and Refresh. The browser no longer discovers artifacts from histories.
+Background reconciliation uses authoritative profile histories and native Project
+membership; see [architecture](architecture.md#shared-sqlite-state-and-artifact-library).
+`GET /artifact-images/{session}/{message}/{part}?profile=…` resolves legacy
+multipart raster image addresses from owning-profile history; `download=true`
+returns an attachment. Inline image bytes are never persisted in the index.
 
 | Plugin route                                               | Native dashboard handler | Behavior                                                                                           |
 | ---------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -229,8 +240,9 @@ including the release's hosted-files read guard. Native file policy and preview
 size limits apply, and native errors are reduced to generic status messages.
 Remote SSH preview/download use Hermes's filesystem adapter; remote deletion is
 explicitly unsupported because the native managed deletion route is host-local.
-Missing native handlers return 501. Deleting a file leaves its historical
-references intact; subsequent preview/download reports it unavailable.
+Missing native handlers return 501. Deleting a file removes its indexed cards
+and persists suppression metadata so reconciliation cannot restore them. Historical
+conversation references remain; subsequent preview/download reports it unavailable.
 
 Raster images have thumbnails and a larger viewer; PDFs and browser media use
 browser viewers. Source/text formats, including HTML and SVG, display as escaped

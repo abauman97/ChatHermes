@@ -201,3 +201,36 @@ beyond the native dashboard's 100-run cap, checks exact job/run ownership, and
 returns a compatibility message when these helpers are unavailable. Deleted
 jobs or pruned output cannot be recovered. Scheduling and job mutation remain
 in Hermes's native dashboard.
+
+## Shared SQLite state and artifact library
+
+`dashboard/database.py` owns `state/chathermes.sqlite3` under Hermes's persistent
+state root. Short-lived, thread-local connections use WAL, a 10-second busy
+timeout, foreign keys, private permissions, and ordered `user_version` upgrades.
+Transactions commit on success and roll back on failure. Completion addresses
+and per-device delivery receipts share this database with artifact metadata;
+there is no migration from the former development outbox database.
+
+`artifact_store.py` keeps feature SQL separate from infrastructure. Each indexed
+session is replaced transactionally, alongside its successful checkpoint. The
+unique `(profile, session, path)` identity preserves first-reference deduplication.
+Only metadata and addresses are stored, never file contents. Legacy inline images
+use authenticated addresses back into Hermes history. Confirmed ChatHermes file
+deletions persist suppression markers because history retains the old references.
+
+`artifact_indexer.py` starts in the background and uses three history workers.
+Startup and approximately 60-second reconciliation discover sessions through the
+profile's pinned REST API and obtain Project membership through native RPC.
+`last_active`, message count, title and membership identify changed sessions;
+an hourly per-session audit catches missed changes. Uploads and committed native
+turn completions wake reconciliation. Pending session work is deduplicated;
+failures retain existing metadata and retry. Missing list entries are removed
+only after an exact session lookup confirms 404. No SQLite transaction spans a
+Hermes request or message parsing. Shutdown cancels and joins the service tasks.
+
+Artifact queries never fetch histories. The shared global/Project Vue component
+requests 50 indexed records initially, appends pages through Load More, resets on
+profile/Project changes, and aborts obsolete requests. SQL filters scope and uses
+newest-first keyset pagination with session/path tie breakers. Refresh reads the
+current index while background indexing continues. A responsive CSS Grid fills
+available width; the bounded page scrolls vertically.

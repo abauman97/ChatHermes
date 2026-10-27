@@ -175,6 +175,9 @@ class Viewer:
                 continue
             if row is not None:
                 self.notifications.add((row, 'turn.complete'))
+                index = getattr(self.service.api, '_index_artifacts', None)
+                if index is not None:
+                    index(self.profile, self.stored)
                 self.watermark = row
                 self.completions.remove(text)
         for identity, kind in list(self.notifications):

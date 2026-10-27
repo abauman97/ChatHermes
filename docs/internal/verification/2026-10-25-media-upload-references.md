@@ -52,7 +52,8 @@ with profile scoping. Other files and generated artifacts retain native
   installed via `pip install -e 'plugin/chathermes[dev]'`, and
   `PYTHONPATH=/opt/hermes:plugin`. This includes native staging contract,
   cross-profile delivery, MIME and symlink rejection, and generic file handlers.
-- `npm run build`: passed with `CHATHERMES_BUILD_OUT_DIR=tests/media-upload-dist`.
+- `npm run build`: passed using the historical alternate output path
+  `tests/media-upload-dist`.
   The validated output was used by Docker and then moved to ignored
   `tmp/media-upload/validated-build`. Tracked dist assets were untouched.
 - `vp lint`, `vp fmt`, `vp fmt --check`, and `git diff --check`: passed.

@@ -1,7 +1,6 @@
 import MarkdownIt from "markdown-it";
-import { historyBlocks } from "../chat/runtime/assistant-turn";
-import { api, messageText } from "../../services/hermes-api";
-import type { Message, Session, TurnBlock } from "../../types/hermes";
+import { messageText } from "../../services/hermes-api";
+import type { Message, TurnBlock } from "../../types/hermes";
 
 export interface Artifact {
   path: string;
@@ -113,6 +112,15 @@ export function previewKind(
 }
 export function fileUrl(file: Artifact, profile = "", download = false): string {
   if (/^(https?:\/\/|data:image\/)/.test(file.path)) return file.path;
+  if (
+    /^\/api\/plugins\/chathermes\/artifact-images\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/\d+$/.test(
+      file.path,
+    )
+  ) {
+    const query = new URLSearchParams({ profile: profile || "default" });
+    if (download) query.set("download", "true");
+    return `${file.path}?${query}`;
+  }
   const nativeImage = file.path.match(
     /^\/api\/plugins\/chathermes\/images\/([a-f0-9]{32}\.(?:png|jpe?g|gif|webp))$/i,
   );
@@ -131,6 +139,7 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
 const deliveryMarkdown = new MarkdownIt({ html: true });
 export function textArtifacts(text: string): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
+  if (!/MEDIA:|Attached (?:image|file) /.test(text)) return { text, files };
   const add = (path: string, name?: string) => {
     const file = artifact(path, name);
     if (!file) return false;
@@ -278,50 +287,4 @@ export function messageArtifacts(message: Message): Artifact[] {
     createdAt: message.created_at,
     direction: message.role === "user" ? "uploaded" : "generated",
   }));
-}
-export async function loadArtifacts(
-  profile: string,
-  sessions: Session[],
-  signal: AbortSignal,
-): Promise<{ files: Artifact[]; failures: number }> {
-  const files: Artifact[] = [];
-  let failures = 0;
-  for (const session of sessions) {
-    if (signal.aborted) break;
-    try {
-      const messages = await api.messages(profile, session.id, signal);
-      for (const message of messages)
-        files.push(
-          ...messageArtifacts(message).map((file) => ({
-            ...file,
-            sessionId: session.id,
-            sessionTitle: session.title || "Untitled session",
-          })),
-        );
-      for (const block of historyBlocks(messages))
-        files.push(
-          ...toolArtifacts(block).map((file) => ({
-            ...file,
-            direction: "generated" as const,
-            sessionId: session.id,
-            sessionTitle: session.title || "Untitled session",
-            messageId: block.id,
-            createdAt: session.updated_at || session.created_at,
-          })),
-        );
-    } catch {
-      if (!signal.aborted) failures++;
-    }
-  }
-  return {
-    files: files
-      .filter(
-        (file, index) =>
-          files.findIndex(
-            (item) => item.sessionId === file.sessionId && item.path === file.path,
-          ) === index,
-      )
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
-    failures,
-  };
 }

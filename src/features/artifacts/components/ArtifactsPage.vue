@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/hermes-api";
-import { projectSessions } from "../../projects/utils/projects";
 import type { Project, Session } from "../../../types/hermes";
-import { loadArtifacts, type Artifact } from "../artifacts";
+import { type Artifact } from "../artifacts";
 import ArtifactCard from "./ArtifactCard.vue";
 const props = defineProps<{
   profile: string;
@@ -23,46 +22,35 @@ watch(deletion, async (file) => {
   if (file) confirmation.value?.showModal();
   else confirmation.value?.close();
 });
+const nextCursor = ref<string | null>(null);
 let controller: AbortController | undefined;
-async function load() {
+async function load(more = false) {
   controller?.abort();
   const current = (controller = new AbortController());
   loading.value = true;
-  files.value = [];
+  if (!more) {
+    files.value = [];
+    nextCursor.value = null;
+  }
   error.value = "";
   deletion.value = undefined;
   try {
-    const sessions = props.sessions ? [...props.sessions] : [];
-    if (!props.sessions)
-      for (let offset = 0; ;) {
-        const page = await api.sessions(props.profile, offset, current.signal);
-        sessions.push(...page.sessions);
-        offset += page.sessions.length;
-        if (
-          !page.sessions.length ||
-          page.has_more === false ||
-          (page.has_more === undefined && page.sessions.length < (page.limit || 30))
-        )
-          break;
-      }
-    const result = await loadArtifacts(props.profile, sessions, current.signal);
+    const result = await api.artifacts(
+      props.profile,
+      props.project?.id,
+      more ? nextCursor.value || undefined : undefined,
+      current.signal,
+    );
     if (current.signal.aborted) return;
-    files.value = result.files.map((file) => {
-      const project =
-        props.project ||
-        props.projects?.find(
-          (project) =>
-            project.sessionIds?.includes(file.sessionId!) ||
-            projectSessions(project).some((session) => session.id === file.sessionId),
-        );
-      return {
-        ...file,
-        projectId: project?.id,
-        projectTitle: project && !project.isNoProject ? project.label : undefined,
-      };
-    });
-    if (result.failures)
-      error.value = `${result.failures} conversations could not be loaded. Retry to see their artifacts.`;
+    // Reconciliation may update ordering between pages. Keep each card once.
+    const combined = more ? [...files.value, ...result.files] : result.files;
+    files.value = combined.filter(
+      (file, index) =>
+        combined.findIndex(
+          (item) => item.sessionId === file.sessionId && item.path === file.path,
+        ) === index,
+    );
+    nextCursor.value = result.nextCursor;
   } catch {
     if (!current.signal.aborted) error.value = "Could not load artifacts.";
   } finally {
@@ -97,7 +85,11 @@ async function remove() {
     deleting.value = false;
   }
 }
-watch(() => [props.profile, props.sessions], load, { immediate: true });
+watch(
+  () => [props.profile, props.project?.id],
+  () => load(),
+  { immediate: true },
+);
 onBeforeUnmount(() => controller?.abort());
 </script>
 <template>
@@ -105,15 +97,13 @@ onBeforeUnmount(() => controller?.abort());
     <div class="mx-auto max-w-[1100px]">
       <div class="mb-5 flex items-center justify-between">
         <h2 class="text-xl font-medium">Artifacts</h2>
-        <button class="text-sm underline" :disabled="loading" @click="load">Refresh</button>
+        <button class="text-sm underline" :disabled="loading" @click="load()">Refresh</button>
       </div>
-      <p v-if="loading" role="status" class="text-sm text-[#b4b4b4]">
-        Loading conversation artifacts…
-      </p>
+      <p v-if="loading" role="status" class="text-sm text-[#b4b4b4]">Loading artifacts…</p>
       <p v-if="error" role="alert" class="mb-4 text-sm text-red-200">{{ error }}</p>
       <p v-if="!loading && !files.length" class="text-sm text-[#b4b4b4]">No artifacts found.</p>
       <div
-        class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),20rem))] items-start gap-4 [&>.artifact-card]:my-0"
+        class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0"
       >
         <ArtifactCard
           v-for="file in files"
@@ -139,7 +129,11 @@ onBeforeUnmount(() => controller?.abort());
                   {{ file.sessionTitle }}
                 </button>
                 <button
-                  v-if="!/^(https?:|data:)/.test(file.path)"
+                  v-if="
+                    !/^(https?:|data:)|^\/api\/plugins\/chathermes\/artifact-images\//.test(
+                      file.path,
+                    )
+                  "
                   type="button"
                   class="shrink-0 py-2 hover:text-white"
                   :aria-label="`Delete ${file.name}`"
@@ -152,6 +146,15 @@ onBeforeUnmount(() => controller?.abort());
           </template>
         </ArtifactCard>
       </div>
+      <button
+        v-if="nextCursor"
+        type="button"
+        class="my-6 rounded-full border border-[#555] px-5 py-2 text-sm"
+        :disabled="loading"
+        @click="load(true)"
+      >
+        {{ loading ? "Loading…" : "Load More" }}
+      </button>
       <dialog
         ref="confirmation"
         class="fixed m-auto w-[min(380px,94vw)] rounded-2xl bg-[#303030] p-5 text-white backdrop:bg-black/80"

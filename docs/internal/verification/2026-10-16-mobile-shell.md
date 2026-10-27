@@ -23,8 +23,8 @@ listeners, keyboard state, or runtime/API changes were added.
 - `npm test`: 669 tests passed.
 - `npm run test:api`: 115 tests passed using a temporary Python environment with
   `tests/requirements.txt`; the suite required execution outside the sandbox.
-- `npm run build` passed. The final build used
-  `CHATHERMES_BUILD_OUT_DIR=.shell-validation/dist` to keep generated assets
+- `npm run build` passed. The final build used the historical alternate output path
+  `.shell-validation/dist` to keep generated assets
   ignored and leave the checkout's pre-existing tracked dist files unchanged.
 - Used `npm run live` with `tests/docker/Dockerfile`, the latest official Hermes
   image, synthetic login, and a real provider. No personal Hermes state or bind

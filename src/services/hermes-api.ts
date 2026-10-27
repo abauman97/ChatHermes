@@ -30,7 +30,7 @@ function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile))
     throw new Error("Invalid profile name");
   if (
-    !/^\/(?:project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(
+    !/^\/(?:artifacts\?[^#]*|project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(
       path,
     )
   )
@@ -116,6 +116,15 @@ function messagePage(value: unknown): {
   };
 }
 export const api = {
+  artifacts: (profile: string, projectId?: string, cursor?: string, signal?: AbortSignal) => {
+    const query = new URLSearchParams({ limit: "50" });
+    if (projectId !== undefined) query.set("project_id", projectId);
+    if (cursor) query.set("cursor", cursor);
+    return request<{
+      files: import("../features/artifacts/artifacts").Artifact[];
+      nextCursor: string | null;
+    }>(profile, `/artifacts?${query}`, { signal });
+  },
   // Explicit inspection only. No silent switch or mutation retry after admission.
   nativeChatCapabilities: probeChatGateway,
   isNative: (profile: string) => nativeProfiles.has(profile),

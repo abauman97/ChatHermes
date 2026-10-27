@@ -1,9 +1,12 @@
-import { quotedDeliveries, toolBodyDeliveries } from "./delivery-fixtures";
-import { api } from "../../services/hermes-api";
-import type { Message } from "../../types/hermes";
-import { describe, expect, it, vi } from "vite-plus/test";
 import {
-  loadArtifacts,
+  positiveTextDeliveries,
+  positiveToolDeliveries,
+  quotedDeliveries,
+  toolBodyDeliveries,
+} from "./delivery-fixtures";
+import type { Message } from "../../types/hermes";
+import { describe, expect, it } from "vite-plus/test";
+import {
   artifact,
   fileUrl,
   messageArtifacts,
@@ -292,6 +295,31 @@ it("keeps requested output paths in the user prompt and does not collect arbitra
 });
 
 // These inputs are data or examples, even when their paths are otherwise valid.
+it.each(positiveTextDeliveries)("extracts explicit text delivery: %s", (content) => {
+  const files = textArtifacts(content).files;
+  expect(files.length).toBeGreaterThan(0);
+  expect(files.map((file) => file.path)).toEqual(
+    messageArtifacts({ role: "assistant", content }).map((file) => file.path),
+  );
+});
+it.each(positiveToolDeliveries)("extracts explicit tool delivery: %s", (output) => {
+  const files = toolArtifacts({
+    id: "t",
+    title: "Tool",
+    kind: "tool",
+    toolName: "generate",
+    content: "",
+    output,
+    complete: true,
+    state: "completed",
+  });
+  expect(files.length).toBeGreaterThan(0);
+  const metadata = JSON.parse(output);
+  const tag = metadata.media_tag || metadata.meta.media_tag;
+  expect(files.map((file) => file.path)).toEqual(
+    textArtifacts(tag.replace(/^\[\[audio_as_voice\]\]\r?\n/, "")).files.map((file) => file.path),
+  );
+});
 it.each(quotedDeliveries)("preserves quoted/example delivery text: %s", (content) => {
   expect(textArtifacts(content)).toEqual({ text: content, files: [] });
   expect(messageArtifacts({ role: "assistant", content })).toEqual([]);
@@ -301,8 +329,8 @@ it.each(toolBodyDeliveries)("does not promote arbitrary tool body: %s", (output)
     expect(
       toolArtifacts({
         id: "t",
-        kind: "tool",
         title: "Tool",
+        kind: "tool",
         toolName,
         content: "",
         output,
@@ -323,15 +351,17 @@ it.each([...quotedDeliveries, ...toolBodyDeliveries])(
       },
       { role: "tool", tool_call_id: "t", tool_name: "read_file", content },
     ];
-    const mock = vi.spyOn(api, "messages").mockResolvedValue(messages);
-    try {
-      expect(await loadArtifacts("work", [{ id: "s" }], new AbortController().signal)).toEqual({
-        files: [],
-        failures: 0,
-      });
-    } finally {
-      mock.mockRestore();
-    }
+    expect(messages.flatMap(messageArtifacts)).toEqual([]);
+    expect(
+      toolArtifacts({
+        id: "t",
+        title: "Tool",
+        kind: "tool",
+        content: "",
+        complete: true,
+        output: content,
+      }),
+    ).toEqual([]);
   },
 );
 
@@ -394,24 +424,23 @@ it("reconstructs intentional delivery and uploaded images in the global list", a
       content: JSON.stringify({ media_tag: "MEDIA:/tmp/voice.wav" }),
     },
   ];
-  const mock = vi.spyOn(api, "messages").mockResolvedValue(messages);
-  try {
-    const result = await loadArtifacts(
-      "work",
-      [{ id: "s", title: "Files" }],
-      new AbortController().signal,
-    );
-    expect(result.failures).toBe(0);
-    expect(result.files.map((file) => file.path)).toEqual([
-      "/tmp/input.txt",
-      "/tmp/input.png",
-      "/tmp/final.pdf",
-      "/tmp/voice.wav",
-    ]);
-    expect(result.files.every((file) => file.sessionId === "s")).toBe(true);
-  } finally {
-    mock.mockRestore();
-  }
+  const files = messages.flatMap(messageArtifacts);
+  files.push(
+    ...toolArtifacts({
+      id: "tts",
+      title: "Tool",
+      kind: "tool",
+      content: "",
+      complete: true,
+      output: String(messages[2]!.content),
+    }),
+  );
+  expect(files.map((file) => file.path)).toEqual([
+    "/tmp/input.txt",
+    "/tmp/input.png",
+    "/tmp/final.pdf",
+    "/tmp/voice.wav",
+  ]);
 });
 
 it.each([
