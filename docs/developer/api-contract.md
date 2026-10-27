@@ -34,7 +34,10 @@ profile's store before resume. Session creation via ordinary HTTP uses the
 existing gateway API, including from secondary plugin hosts.
 
 `POST /chat/prepare` verifies profile-local image/file references and resolves
-model aliases without admitting a turn. Images remain one native multipart input;
+model aliases without admitting a turn. Provider identities accept Hermes’s native
+`custom:<name>` slugs as well as ordinary provider IDs; profile names retain their
+separate strict validation. Invalid selections fail before native submission.
+Images remain one native multipart input;
 other files use native `file.attach`. Model selection waits for `approval.pending`,
 applies session-only `config.set`, and verifies the resulting model/provider.
 An optional `reasoning_effort` on `/chat/prepare` accepts only `none`, `minimal`,

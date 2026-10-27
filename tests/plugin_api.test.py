@@ -1706,3 +1706,31 @@ async def test_start_and_stop_artifact_service_are_nonblocking_and_join_workers(
     assert len(service.tasks) == 4
     await asyncio.wait_for(plugin._stop_artifact_indexing(), timeout=1)
     assert service.tasks == [] and plugin._artifact_service is None
+
+
+@pytest.mark.parametrize('provider', ['openai', 'chathermes-test', 'custom:workflow-legacy', 'custom:local.endpoint'])
+@run_async
+async def test_native_preparation_preserves_native_provider_identity(app, monkeypatch, provider):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    # Keep the real resolver/validators, with isolated configuration readers.
+    monkeypatch.setitem(sys.modules, 'hermes_cli.web_server_profiles', SimpleNamespace(_config_profile_scope=lambda name: nullcontext()))
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', SimpleNamespace(load_config=lambda: {}))
+    monkeypatch.setitem(sys.modules, 'agent.secret_scope', SimpleNamespace(get_secret=lambda name, default: default))
+    monkeypatch.setattr(plugin, '_new_rpc_transport', lambda *args: pytest.fail('preparation must not dispatch'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/chat/prepare', json={
+            'input': 'Hello', 'model': 'workflow-model', 'provider': provider})
+        assert response.status_code == 200
+        assert response.json() == {'input': 'Hello', 'files': [], 'model': 'workflow-model', 'provider': provider}
+
+
+@pytest.mark.parametrize('provider', ['custom:', 'custom:local:other', 'custom:../other', 'custom:local --global',
+                                      'local\n--session', 'https://local', '../alpha', 42, ''])
+@run_async
+async def test_native_preparation_rejects_invalid_provider_without_dispatch(app, monkeypatch, provider):
+    monkeypatch.setattr(plugin._native_validation, 'model_selection', lambda *args: pytest.fail('invalid selection must fail before resolution'))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        response = await client.post('/api/plugins/chathermes/chat/prepare', json={
+            'input': 'Hello', 'model': 'workflow-model', 'provider': provider})
+        assert response.status_code == 422

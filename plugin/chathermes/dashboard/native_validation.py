@@ -1,5 +1,16 @@
 """Profile-local validation for native sessions, models and attachments."""
+import re
+
 from fastapi import HTTPException
+
+
+# Hermes provider identities include legacy custom:<name> slugs. Keep this
+# separate from profile names, and safe as one native /model flag argument.
+_PROVIDER = re.compile(r'(?:custom:)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z')
+
+
+def valid_provider(provider):
+    return isinstance(provider, str) and _PROVIDER.fullmatch(provider) is not None
 
 
 def model_selection(profile, model, provider, transport):
@@ -32,7 +43,7 @@ def model_selection(profile, model, provider, transport):
             model = route.get('model')
         if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,255}', model):
             raise HTTPException(422, 'Invalid native model')
-        if provider and (not isinstance(provider, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', provider)):
+        if provider and not valid_provider(provider):
             raise HTTPException(422, 'Invalid native provider')
         return model, provider
 
