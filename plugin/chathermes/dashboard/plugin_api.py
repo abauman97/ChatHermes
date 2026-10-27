@@ -1093,7 +1093,7 @@ def _validated_workspace_turn(body):
     model, provider = body.get('model'), body.get('provider')
     if model is not None and (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+~-]{0,255}', model)):
         raise HTTPException(422, 'Invalid workspace model')
-    if provider is not None and (not model or not isinstance(provider, str) or not _PROFILE.fullmatch(provider)):
+    if provider is not None and (not model or not _native_validation.valid_provider(provider)):
         raise HTTPException(422, 'Invalid workspace provider')
     parts = body.get('input')
     if isinstance(parts, str):

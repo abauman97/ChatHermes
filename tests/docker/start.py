@@ -93,6 +93,12 @@ def configure(asset_root=Path("/opt/chathermes")):
         profile_home = home if name == "default" else home / "profiles" / name
         profile_home.mkdir(parents=True, exist_ok=True)
         profile_config = copy.deepcopy(config)
+        # Exercise Hermes's legacy custom:<name> identity in real contracts;
+        # the default/beta profiles retain the modern keyed provider setup.
+        if name == "alpha":
+            legacy = profile_config["providers"].pop("chathermes-test")
+            profile_config["custom_providers"] = [dict(legacy, name="workflow-legacy")]
+            profile_config["model"]["provider"] = "custom:workflow-legacy"
         # Named profiles share the listener, but authenticate with their own key.
         if name != "default":
             profile_config.pop("gateway", None)
