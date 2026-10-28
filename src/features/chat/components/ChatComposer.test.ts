@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount } from "@vue/test-utils";
 import ChatComposer from "./ChatComposer.vue";
+afterEach(() => vi.unstubAllGlobals());
 describe("composer", () => {
   it.each([false, true])(
     "submits a focused draft once when blur before click is %s",
@@ -42,6 +43,7 @@ describe("composer", () => {
     },
   );
   it("hides attachment options while editing and restores them only after focus leaves the composer", async () => {
+    vi.stubGlobal("innerWidth", 390);
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: false, sending: false },
@@ -72,6 +74,7 @@ describe("composer", () => {
     }
   });
   it("restores attachment options when textarea focus leaves without a related target, including during a run", async () => {
+    vi.stubGlobal("innerWidth", 390);
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: true, sending: true, stoppable: true },
@@ -255,6 +258,7 @@ describe("composer", () => {
     }
   });
   it("recalculates an empty input on focus and blur and keeps growing with draft content", async () => {
+    vi.stubGlobal("innerWidth", 390);
     const wrapper = mount(ChatComposer, {
       attachTo: document.body,
       props: { disabled: false, sending: false },
@@ -646,4 +650,45 @@ it("shares file staging, retains the draft and other files on upload failure, an
   expect(upload.mock.calls.every(([profile]) => profile === "work")).toBe(true);
   upload.mockRestore();
   wrapper.unmount();
+});
+
+describe("context composer follow-ups", () => {
+  const create = (props = {}) =>
+    mount(ChatComposer, {
+      attachTo: document.body,
+      props: { disabled: false, sending: false, sessionId: "active-session", ...props },
+    });
+  it.each([false, true])(
+    "keeps context, model and attachment controls visible on focus while sending=%s",
+    async (sending) => {
+      vi.stubGlobal("innerWidth", 1024);
+      const wrapper = create({ sending });
+      try {
+        const meter = wrapper.get(".context-meter");
+        await meter.trigger("click");
+        expect(wrapper.find(".context-panel").exists()).toBe(true);
+        const area = wrapper.get("textarea");
+        (area.element as HTMLTextAreaElement).focus();
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find(".context-panel").exists()).toBe(false);
+        for (const selector of [".context-meter", ".model-pill", ".attach-button"])
+          expect(wrapper.get(selector).isVisible()).toBe(true);
+        await meter.trigger("pointerenter", { pointerType: "mouse" });
+        await meter.trigger("click");
+        expect(wrapper.find(".context-panel").exists()).toBe(false);
+        expect(document.activeElement).toBe(area.element);
+        (area.element as HTMLTextAreaElement).blur();
+        await wrapper.vm.$nextTick();
+        for (const selector of [".context-meter", ".model-pill", ".attach-button"])
+          expect(wrapper.get(selector).isVisible()).toBe(true);
+        await meter.trigger("click");
+        expect(wrapper.find(".context-panel").exists()).toBe(true);
+        await wrapper.setProps({ sessionId: "another-session" });
+        expect(wrapper.find(".context-panel").exists()).toBe(false);
+      } finally {
+        wrapper.unmount();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 });

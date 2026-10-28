@@ -11,6 +11,7 @@ const props = defineProps<{
   breakdown: SessionContextBreakdownResult | null;
   loading: boolean;
   active: boolean;
+  visible?: boolean;
   model?: string;
 }>();
 const emit = defineEmits<{ open: [open: boolean] }>();
@@ -112,7 +113,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="root"
-    v-show="active"
+    v-show="visible ?? active"
     class="context-control shrink-0"
     @pointerenter="cancelClose"
     @pointerleave="leave"

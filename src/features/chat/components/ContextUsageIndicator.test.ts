@@ -25,6 +25,7 @@ const breakdown = {
 afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 describe("context usage control", () => {
   it.each([
@@ -125,6 +126,7 @@ describe("context usage control", () => {
   it.each([false, true])(
     "hides the single meter and dismisses details on textarea focus (sending %s)",
     async (sending) => {
+      vi.stubGlobal("innerWidth", 390);
       const wrapper = mount(ChatComposer, {
         attachTo: document.body,
         props: {

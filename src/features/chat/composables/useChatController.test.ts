@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vite-plus/test";
-import { ref } from "vue";
+import { defineComponent, h, ref } from "vue";
+import { flushPromises, mount } from "@vue/test-utils";
+import { provideChat } from "../context";
+import ChatInterface from "../components/ChatInterface.vue";
 import { api } from "../../../services/hermes-api";
 import { useChatController } from "./useChatController";
 import { useNativeSession } from "../runtime/native-session";
@@ -58,6 +61,111 @@ function setup() {
   };
 }
 describe("live chat controller", () => {
+  it("renders raw session RPC results through the active scope and composer click", async () => {
+    const usage = {
+      model: "qwen3.8:27b",
+      context_used: 14584,
+      context_max: 131072,
+      context_percent: 11,
+      calls: 1,
+    };
+    const breakdown = {
+      model: usage.model,
+      categories: [
+        { id: "system_prompt", label: "System prompt", tokens: 1200, color: "var(--system)" },
+      ],
+    };
+    const sent: { id: string; method: string; params: Record<string, unknown> }[] = [];
+    let holdBreakdown = false;
+    const delayed: (() => void)[] = [];
+    class Socket {
+      static OPEN = 1;
+      readyState = 1;
+      onopen?: () => void;
+      onmessage?: (event: { data: string }) => void;
+      onclose?: () => void;
+      onerror?: () => void;
+      constructor() {
+        queueMicrotask(() => this.onopen?.());
+      }
+      send(text: string) {
+        const frame = JSON.parse(text);
+        sent.push(frame);
+        const result =
+          frame.method === "session.resume"
+            ? {
+                session_id: "runtime",
+                messages: [],
+                info: { model: usage.model },
+                recovery: { epoch: "epoch", through: 0, complete: true, base_row_ids: [] },
+              }
+            : frame.method === "session.usage"
+              ? usage
+              : frame.method === "session.context_breakdown"
+                ? breakdown
+                : { settled: false };
+        const reply = () =>
+          this.onmessage?.({ data: JSON.stringify({ jsonrpc: "2.0", id: frame.id, result }) });
+        if (holdBreakdown && frame.method === "session.context_breakdown") delayed.push(reply);
+        else queueMicrotask(reply);
+      }
+      close() {
+        this.readyState = 3;
+      }
+    }
+    vi.stubGlobal("WebSocket", Socket);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ticket: "test-ticket" }))),
+    );
+    const messages = vi.spyOn(api, "messages").mockResolvedValue([]);
+    const { native, controller } = setup();
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          provideChat(controller);
+          return () => h(ChatInterface, { showPage: false });
+        },
+      }),
+    );
+    try {
+      await native.attach("alpha", "one");
+      await flushPromises();
+      // The real request channel resolves frame.result into the active session refs.
+      expect(controller.view.contextUsage.value).toEqual(usage);
+      const meter = wrapper.get(".context-meter");
+      await meter.trigger("click");
+      await flushPromises();
+      expect(controller.view.contextBreakdown.value).toEqual(breakdown);
+      expect(
+        sent
+          .filter((frame) => ["session.usage", "session.context_breakdown"].includes(frame.method))
+          .map((frame) => frame.params),
+      ).toEqual(Array(2).fill({ session_id: "runtime", profile: "alpha" }));
+      expect(meter.attributes("aria-label")).toBe("Context 11 percent used");
+      const panel = wrapper.get(".context-panel");
+      expect(panel.text()).toContain("qwen3.8:27b");
+      expect(panel.text()).toContain("14,584 / 131,072 tokens");
+      expect(panel.text()).toContain("System prompt");
+      expect(panel.text()).toContain("1,200 tokens");
+      expect(panel.text()).not.toContain("unavailable");
+      // A late result from the previous profile/session cannot refill the new scope.
+      holdBreakdown = true;
+      native.setContextOpen(true);
+      await flushPromises();
+      expect(delayed).toHaveLength(1);
+      await native.attach("beta", "two");
+      delayed[0]!();
+      await flushPromises();
+      expect(controller.view.contextBreakdown.value).toBeNull();
+    } finally {
+      wrapper.unmount();
+      native.close();
+      messages.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps projections reactive and model commands affect native submission", async () => {
     const { native, scope, controller } = setup();
     native.submit = vi.fn(async () => {});
