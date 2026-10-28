@@ -8,6 +8,8 @@ The model picker also has a **Reasoning effort** select. Choose None, Minimal, L
 
 Attach files or images with the composer, drag files onto the chat, or use camera capture where supported. Failed uploads can be retried or removed without losing the draft. Uploads are limited to 20 MB decoded per file. Images retain their originals for later viewing. Other files are made available to the agent in the selected profile's filesystem.
 
+Saved chats open at their latest messages. Scroll toward the top to load older history, or use **Show earlier messages**. Earlier messages remain available after context compaction and session rotation; **Context compacted** dividers mark persisted compression boundaries. Internal summaries and rewound messages stay hidden. Loading older messages preserves your reading position.
+
 Thinking and tool disclosures show the activity Hermes provides. Open a completed disclosure to inspect it. Approvals and clarification requests appear in the conversation; respond there to continue.
 
 ## Projects and instructions

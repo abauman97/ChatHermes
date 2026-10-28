@@ -5,7 +5,7 @@ import { transcriptEntries } from "./transcript-entries";
 
 // Native file.attach appends @file references to the authenticated upload path.
 // Compare the same prose and file identities that UserMessage renders.
-function userProjection(message: Message): string {
+export function userProjection(message: Message): string {
   let text = messageText(message.content);
   const files = uploadedArtifacts(text).files;
   if (files.length) {

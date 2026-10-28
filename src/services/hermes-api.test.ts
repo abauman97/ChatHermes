@@ -135,3 +135,55 @@ it("requests a single indexed artifact page with encoded Project and cursor scop
   expect(fake).toHaveBeenCalledTimes(1);
   expect(fake.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
 });
+
+it("loads a bounded compacted tail and echoes revision-scoped older offsets", async () => {
+  const fetcher = vi.fn(
+    async (_url: string) =>
+      new Response(
+        JSON.stringify({
+          data: [{ id: 12, role: "user", content: "internal", display_content: "Visible" }],
+          pagination: { order: "latest", returned: 120, limit: 120 },
+          transcript: { revision: "r1", next_offset: 120, has_more: true },
+        }),
+      ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const page = await api.latestMessages("alpha", "large");
+  expect(page).toMatchObject({
+    messages: [{ id: "12", content: "Visible" }],
+    revision: "r1",
+    hasMore: true,
+    nextOffset: 120,
+  });
+  await api.latestMessages("alpha", "large", undefined, 120, "r1");
+  expect(fetcher.mock.calls[0]?.[0]).toContain(
+    "limit=120&offset=0&order=latest&inline_images=false&include_compacted=true&transcript=1",
+  );
+  expect(fetcher.mock.calls[1]?.[0]).toContain("offset=120");
+  expect(fetcher.mock.calls[1]?.[0]).toContain("revision=r1");
+});
+
+it("does not treat an orderless oldest page as the tail on older gateways", async () => {
+  const fetcher = vi.fn(
+    async (url: string) =>
+      new Response(
+        JSON.stringify({
+          data: url.includes("order=oldest")
+            ? [
+                { id: 1, role: "user", content: "Old" },
+                { id: 2, role: "assistant", content: "New" },
+              ]
+            : [{ id: 1, role: "user", content: "Old" }],
+          pagination: { returned: url.includes("order=oldest") ? 2 : 1, limit: 500 },
+        }),
+      ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  expect(await api.latestMessages("alpha", "old")).toMatchObject({
+    messages: [{ id: "1" }, { id: "2" }],
+    hasMore: false,
+  });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[1]?.[0]).toContain("order=oldest");
+  expect(fetcher.mock.calls[1]?.[0]).toContain("include_compacted=true");
+});

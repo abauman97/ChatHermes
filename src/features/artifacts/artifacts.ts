@@ -1,3 +1,4 @@
+import { isMessageImage } from "../../utils/message-image";
 import MarkdownIt from "markdown-it";
 import { messageText } from "../../services/hermes-api";
 import type { Message, TurnBlock } from "../../types/hermes";
@@ -321,10 +322,11 @@ export function messageArtifacts(message: Message): Artifact[] {
     let imageIndex = 0;
     for (const part of content) {
       const url = part?.image_url?.url;
-      if (typeof url !== "string" || !/^(data:image\/|https?:\/\/)/.test(url)) continue;
+      if (!isMessageImage(url)) continue;
       if (uploadedImages.length) {
         const file = uploadedImages[imageIndex++];
-        if (file) file.imageData = url;
+        if (file && !url.startsWith("/api/plugins/chathermes/artifact-images/"))
+          file.imageData = url;
       } else {
         const file = artifact(url, "Attached image.png");
         if (file) files.push(file);

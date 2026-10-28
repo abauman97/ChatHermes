@@ -315,6 +315,7 @@ export function useChatController(
                   : undefined,
   }));
   const actions = {
+    loadEarlier: () => native.loadEarlier(),
     branch,
     send,
     stop: stopResponse,
@@ -339,6 +340,9 @@ export function useChatController(
   };
   return {
     view: {
+      hasEarlier: native.hasEarlier,
+      loadingEarlier: native.loadingEarlier,
+      earlierError: native.earlierError,
       contextUsage: computed(() => (resumed.value ? native.contextUsage.value : null)),
       contextBreakdown: computed(() => (resumed.value ? native.contextBreakdown.value : null)),
       contextLoading: native.contextLoading,

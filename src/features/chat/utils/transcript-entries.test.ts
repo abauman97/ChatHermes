@@ -138,3 +138,34 @@ it("keeps live assistant blocks attached to hidden or status-only internal input
     expect(entries.find((entry) => entry.kind === "turn")).toMatchObject({ blocks });
   }
 });
+
+it("renders multiple authoritative boundaries and projected content without internal summaries", () => {
+  const result = transcriptEntries({
+    messages: [
+      {
+        id: "11",
+        display_id: "1",
+        role: "user",
+        content: "model context",
+        display_content: "Visible ask",
+      },
+      { id: "12", role: "assistant", content: "Before" },
+      { id: "hidden", role: "user", content: "Secret summary", display_kind: "hidden" },
+      { id: "compaction-13", role: "system", content: "", display_kind: "compaction" },
+      { id: "14", role: "assistant", content: "After" },
+      { id: "compaction-15", role: "system", content: "", display_kind: "compaction" },
+    ],
+    progress: [],
+  });
+  expect(result.map((entry) => entry.kind)).toEqual([
+    "user",
+    "turn",
+    "compaction",
+    "turn",
+    "compaction",
+  ]);
+  expect(result[0]).toMatchObject({ key: "1", message: { content: "Visible ask" } });
+  expect(JSON.stringify(result)).not.toContain("Secret summary");
+  expect(result[1]).toMatchObject({ responseId: "12", blocks: [{ content: "Before" }] });
+  expect(result[3]).toMatchObject({ responseId: "14", blocks: [{ content: "After" }] });
+});

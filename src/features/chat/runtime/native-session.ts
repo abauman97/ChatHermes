@@ -1,7 +1,7 @@
 import type { ReasoningEffort } from "../../../types/hermes";
 import { computed, reactive, ref } from "vue";
-import { savedResponseTargets } from "../utils/saved-response-targets";
-import { api, messageText } from "../../../services/hermes-api";
+import { savedResponseTargets, userProjection } from "../utils/saved-response-targets";
+import { api, ApiError, messageText } from "../../../services/hermes-api";
 import { NativeViewer, NativeError, type NativeSnapshot, type NativeHooks } from "./native-chat";
 import {
   createTurn,
@@ -19,7 +19,7 @@ import {
   gatewayOutcome,
   type DisplayMetadata,
 } from "./gateway-display";
-import type { Message } from "../../../types/hermes";
+import type { Message, MessageWindow } from "../../../types/hermes";
 import type {
   OpenRequestEntry,
   PersistedTurn,
@@ -115,6 +115,103 @@ export function useNativeSession(
     invalidateBreakdown();
     if (open) void refreshBreakdown();
   }
+  const hasEarlier = ref(false),
+    loadingEarlier = ref(false),
+    earlierError = ref("");
+  let window: MessageWindow | undefined;
+  let backfillRevision = 0;
+  let refreshingHistory = false;
+  let earlierPending = false;
+  let historyAbort: AbortController | undefined;
+  async function readWindow(signal?: AbortSignal, minimum = 0): Promise<MessageWindow> {
+    const target = Math.max(120, minimum, window?.nextOffset || 0);
+    const firstLoaded = window?.messages.find((row) => row.display_kind !== "compaction");
+    const anchor = firstLoaded?.display_id || firstLoaded?.id;
+    const containsAnchor = (rows: Message[]) =>
+      !anchor || rows.some((row) => (row.display_id || row.id) === anchor);
+    const ownerProfile = p,
+      ownerSession = s;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        let result = await api.latestMessages(ownerProfile, ownerSession, signal);
+        const head = JSON.stringify(result.messages);
+        while (result.hasMore && (result.nextOffset < target || !containsAnchor(result.messages))) {
+          const older = await api.latestMessages(
+            ownerProfile,
+            ownerSession,
+            signal,
+            result.nextOffset,
+            result.revision,
+          );
+          if (result.revision && older.revision !== result.revision)
+            throw new ApiError(409, "Transcript changed");
+          if (older.hasMore && older.nextOffset <= result.nextOffset)
+            throw new Error("History pagination did not advance");
+          if (!older.hasMore && older.nextOffset === 0) {
+            result = older;
+            break;
+          }
+          result = { ...older, messages: [...older.messages, ...result.messages] };
+        }
+        if (!result.revision && result.nextOffset > 120) {
+          const confirmed = await api.latestMessages(ownerProfile, ownerSession, signal);
+          if (JSON.stringify(confirmed.messages) !== head)
+            throw new ApiError(409, "Transcript changed");
+        }
+        return result;
+      } catch (cause) {
+        if (!(cause instanceof ApiError) || cause.status !== 409 || attempt >= 2) throw cause;
+      }
+    }
+  }
+  function adoptWindow(value: MessageWindow) {
+    window = value;
+    hasEarlier.value = value.hasMore;
+    earlierError.value = "";
+    backfillRevision++;
+  }
+  async function loadEarlier() {
+    if (!window?.hasMore || loadingEarlier.value || loading.value || recovering) return;
+    if (refreshingHistory) {
+      earlierPending = true;
+      return;
+    }
+    const current = generation,
+      revision = backfillRevision,
+      saved = window;
+    loadingEarlier.value = true;
+    earlierError.value = "";
+    try {
+      // Orderless legacy gateways have already supplied their complete history.
+      // Without a revision fence, refresh the loaded tail before advancing offsets.
+      if (!saved.revision) {
+        await hydrate(saved.nextOffset + 120);
+        return;
+      }
+      const controller = new AbortController();
+      historyAbort?.abort();
+      historyAbort = controller;
+      const page = await api.latestMessages(
+        p,
+        s,
+        controller.signal,
+        saved.nextOffset,
+        saved.revision,
+      );
+      if (current !== generation || revision !== backfillRevision || window !== saved) return;
+      if (page.revision !== saved.revision) throw new ApiError(409, "Transcript changed");
+      const ids = new Set(messages.value.map((row) => row.id).filter(Boolean));
+      const older = page.messages.filter((row) => !row.id || !ids.has(row.id));
+      messages.value = [...older, ...messages.value];
+      adoptWindow({ ...page, messages: [...page.messages, ...saved.messages] });
+    } catch (cause) {
+      if (current !== generation || revision !== backfillRevision) return;
+      if (cause instanceof ApiError && cause.status === 409) await hydrate();
+      else earlierError.value = "Could not load earlier messages. Try again.";
+    } finally {
+      if (current === generation) loadingEarlier.value = false;
+    }
+  }
   const responseTargets = ref<Record<string, string>>({});
   const messages = ref<Message[]>([]),
     busy = ref(false),
@@ -147,6 +244,8 @@ export function useNativeSession(
     receipt?: PersistedTurn;
     hasCorrections: boolean;
   }[] = [];
+  let omittedRecovery = false;
+  let recoveryQueued = false;
   let pendingAttempt = "";
   let pendingText = "";
   const admitting = new Set<string>();
@@ -215,6 +314,8 @@ export function useNativeSession(
     if (current === generation && selected && s)
       settings.value = { profile: p, session: s, info: value.info, generation: current };
     recovering = true;
+    omittedRecovery = value.messages_omitted === true;
+    recoveryQueued = Boolean(value.queued);
     hydrating++;
     receipt = undefined;
     turn = undefined;
@@ -231,9 +332,13 @@ export function useNativeSession(
         }) as Message,
     );
     const baseline = new Set(value.recovery.base_row_ids || []);
-    messages.value = value.recovery.complete
+    const recovered = value.recovery.complete
       ? history.filter((row) => row.id && baseline.has(row.id))
       : history;
+    const persistedIds = new Set(window?.messages.map((row) => row.id));
+    messages.value = window
+      ? [...window.messages, ...recovered.filter((row) => !persistedIds.has(row.id))]
+      : recovered;
     busy.value = !!(value.running || value.queued);
     if (!value.recovery.complete && value.inflight?.user) {
       const last = messages.value.reduce(
@@ -243,7 +348,8 @@ export function useNativeSession(
       if (
         last < 0 ||
         messageText(messages.value[last]!.content) !== value.inflight.user ||
-        messages.value[last]!.display_kind !== (value.inflight.display_kind || undefined)
+        (messages.value[last]!.display_kind || undefined) !==
+          (value.inflight.display_kind || undefined)
       ) {
         input(value.inflight.user, false, undefined, {
           display_kind: value.inflight.display_kind || undefined,
@@ -272,17 +378,24 @@ export function useNativeSession(
     }
     busy.value = !!(value.running || value.queued);
   }
-  async function hydrate() {
+  async function hydrate(minimum = 0) {
     const current = generation,
       flight = ++hydrating,
       currentViewer = viewer;
     if (!currentViewer || recovering || connection.value !== "ready") return;
+    backfillRevision++;
+    refreshingHistory = true;
+    const controller = new AbortController();
+    historyAbort?.abort();
+    historyAbort = controller;
     try {
-      const stored = await api.messages(p, s);
+      const loaded = await readWindow(controller.signal, minimum);
+      const stored = loaded.messages;
       if (current !== generation || flight !== hydrating || recovering) return;
-      const display = stored.length
-        ? await currentViewer.rpc<{ messages?: Message[] }>("history").catch(() => null)
-        : { messages: [] };
+      const display =
+        stored.length && !loaded.projected
+          ? await currentViewer.rpc<{ messages?: Message[] }>("history").catch(() => null)
+          : { messages: [] };
       // The pinned HTTP serializer omits display_metadata. Join the native
       // projection by durable identity, preserving REST attachments/tool output.
       const projected = new Map(
@@ -302,6 +415,41 @@ export function useNativeSession(
       // The pinned gateway may omit persistence receipts. Match the complete
       // ordered prose projection before exposing any durable branch targets;
       // keep the richer live tool/thinking projection intact.
+      adoptWindow(loaded);
+      if (
+        omittedRecovery &&
+        !busy.value &&
+        user &&
+        turn &&
+        !hasCorrections &&
+        !completed.some((entry) => entry.hasCorrections)
+      ) {
+        // An omitted resume may retain the final in-flight text after the turn
+        // settles. Recover its tools from the latest saved occurrence only when
+        // the whole ordered user/assistant prose agrees; never bind by prompt alone.
+        const lastUser = history.reduce(
+          (last, row, index) => (row.role === "user" ? index : last),
+          -1,
+        );
+        const savedUser = history[lastUser];
+        if (
+          savedUser &&
+          (savedUser.display_kind || undefined) === (user.display_kind || undefined) &&
+          Object.keys(savedResponseTargets([user], history.slice(lastUser))).length
+        ) {
+          mergeHistoryBlocks(turn, historyBlocks(history.slice(lastUser + 1)), false);
+          history[lastUser] = { ...savedUser, blocks: turn.blocks };
+          user = undefined;
+          turn = undefined;
+          completed = [];
+          omittedRecovery = false;
+          if (
+            error.value ===
+            "Earlier progress is outside retained recovery; saved history is authoritative."
+          )
+            error.value = "";
+        }
+      }
       if (!busy.value) responseTargets.value = savedResponseTargets(messages.value, history);
       // A newer turn may start while REST is pending. Preserve its projection;
       // only a receipt with durable row identities retires covered live parts.
@@ -309,6 +457,43 @@ export function useNativeSession(
         const anchor = receipt?.user_row_id;
         const index = anchor ? history.findIndex((row) => row.id === String(anchor)) : -1;
         if (index >= 0) mergeHistoryBlocks(turn, historyBlocks(history.slice(index + 1)), true);
+        // Backfill and reconnect can refresh persisted history during a turn.
+        // Keep the live suffix behind its last durable baseline, until receipt
+        // reconciliation can retire it without guessing repeated prompt text.
+        const liveUser = completed[0]?.user || user;
+        const liveStart = messages.value.findIndex(
+          (row) => row === liveUser || Boolean(row.id && row.id === liveUser.id),
+        );
+        if (liveStart >= 0) {
+          const prefixIds = new Set(messages.value.slice(0, liveStart).map((row) => row.id));
+          const baselineIndex = history.reduce(
+            (last, row, i) => (prefixIds.has(row.id) ? i : last),
+            -1,
+          );
+          let baseline = baselineIndex >= 0 ? history.slice(0, baselineIndex + 1) : [];
+          // A running omitted resume has no native display prefix. Under the
+          // pin, its user is persisted before execution starts. Match that last
+          // user projection exactly, with no queued/correction ambiguity, and
+          // recover the prefix without retiring the active synthetic turn.
+          const lastUser = history.reduce(
+            (last, row, index) => (row.role === "user" ? index : last),
+            -1,
+          );
+          const savedUser = history[lastUser];
+          if (
+            omittedRecovery &&
+            !recoveryQueued &&
+            !hasCorrections &&
+            !completed.length &&
+            savedUser &&
+            (savedUser.display_kind || undefined) === (user.display_kind || undefined) &&
+            userProjection(savedUser) === userProjection(user)
+          ) {
+            baseline = history.slice(0, lastUser);
+            mergeHistoryBlocks(turn, historyBlocks(history.slice(lastUser + 1)), true);
+          }
+          messages.value = [...baseline, ...messages.value.slice(liveStart)];
+        }
         repaint();
         return;
       }
@@ -356,10 +541,19 @@ export function useNativeSession(
       if (current === generation && result.settled) onSettled();
       return true;
     } catch {
-      if (current === generation)
+      if (current === generation && flight === hydrating)
         error.value =
           "Response ended; saved history could not be reconciled. Refresh history before sending again.";
       return false;
+    } finally {
+      if (current === generation && flight === hydrating) {
+        refreshingHistory = false;
+        loading.value = false;
+        if (earlierPending) {
+          earlierPending = false;
+          void loadEarlier();
+        }
+      }
     }
   }
   async function attach(profile: string, stored: string) {
@@ -376,6 +570,12 @@ export function useNativeSession(
   }
   function stale() {
     clearContext();
+    historyAbort?.abort();
+    historyAbort = undefined;
+    backfillRevision++;
+    refreshingHistory = false;
+    earlierPending = false;
+    loadingEarlier.value = false;
     setGeneration(generation + 1);
     hydrating++;
     viewer?.close();
@@ -544,7 +744,7 @@ export function useNativeSession(
         connection.value = "ready";
         void refreshContext();
         if (contextOpen) void refreshBreakdown();
-        if (!busy.value) void hydrate();
+        void hydrate();
       },
     };
     const target = new NativeViewer(p, s, hooks);
@@ -685,6 +885,10 @@ export function useNativeSession(
     pendingPersistence = false;
     pendingAttempt = "";
     messages.value = [];
+    window = undefined;
+    omittedRecovery = false;
+    hasEarlier.value = false;
+    earlierError.value = "";
     responseTargets.value = {};
     busy.value = false;
     loading.value = false;
@@ -702,6 +906,10 @@ export function useNativeSession(
     return viewer;
   }
   return {
+    hasEarlier,
+    loadingEarlier,
+    earlierError,
+    loadEarlier,
     contextUsage,
     contextBreakdown,
     contextLoading,

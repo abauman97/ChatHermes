@@ -18,7 +18,9 @@ export interface SessionPage {
   has_more?: boolean;
 }
 export interface Message {
-  display_kind?: string;
+  display_id?: string;
+  display_content?: unknown;
+  display_kind?: string | null;
   display_metadata?: unknown;
   id?: string;
   role: string;
@@ -30,6 +32,13 @@ export interface Message {
   reasoning_content?: string;
   tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
   blocks?: TurnBlock[];
+}
+export interface MessageWindow {
+  messages: Message[];
+  nextOffset: number;
+  hasMore: boolean;
+  revision?: string;
+  projected?: boolean;
 }
 export interface Capabilities {
   features?: Record<string, unknown>;

@@ -13,7 +13,8 @@ const labels: Record<string, string> = {
 /** Presentation only. Retain the original row for runtime context and receipts.
  * Origin comes from the gateway's display contract, never from prompt prose.
  * Untyped legacy rows remain visible; upstream owns legacy migrations. */
-export function gatewayDisplay(row: Message): "hidden" | "status" | "message" {
+export function gatewayDisplay(row: Message): "hidden" | "status" | "message" | "compaction" {
+  if (row.display_kind === "compaction") return "compaction";
   if (row.display_kind === "hidden") return "hidden";
   if (row.display_kind && Object.hasOwn(labels, row.display_kind)) return "status";
   return row.role === "system" ? "hidden" : "message";

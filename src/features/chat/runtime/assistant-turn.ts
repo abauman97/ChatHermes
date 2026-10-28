@@ -1,3 +1,4 @@
+import { isMessageImage } from "../../../utils/message-image";
 import { gatewayDisplay } from "./gateway-display";
 import type { Activity, Message, TurnBlock } from "../../../types/hermes";
 import { messageText } from "../../../services/hermes-api";
@@ -252,7 +253,7 @@ export function historyBlocks(messages: Message[]): TurnBlock[] {
       const images = Array.isArray(message.content)
         ? message.content.flatMap((part) => {
             const url = part?.image_url?.url;
-            return typeof url === "string" && /^(data:image\/|https?:\/\/)/.test(url) ? [url] : [];
+            return isMessageImage(url) ? [url] : [];
           })
         : [];
       if (images.length) {

@@ -1,10 +1,11 @@
+import { isMessageImage } from "../../../utils/message-image";
 import type { Message } from "../../../types/hermes";
 import { messageText } from "../../../services/hermes-api";
 export function images(messageContent: unknown, profile?: string): string[] {
   const inline = Array.isArray(messageContent)
     ? messageContent.flatMap((part) => {
         const url = part?.image_url?.url;
-        return typeof url === "string" && /^(data:image\/|https?:\/\/)/.test(url) ? [url] : [];
+        return isMessageImage(url) ? [url] : [];
       })
     : [];
   if (inline.length) return inline;

@@ -34,6 +34,14 @@ For UI changes, inspect screenshots of the actual dashboard plugin at desktop an
 
 Real-provider testing is explicit opt-in through `npm run live:real` with root `.env` settings in a separate Compose project. `npm run live` uses deterministic inference. Never expose fixture ports publicly or share raw authentication traces.
 
+The transcript workflow (`tests/workflows/transcript.spec.ts`) seeds real Hermes
+compaction/rotation/rewind history, then checks bounded HTTP/native reads, scroll
+and fallback pagination, anchors, reconnect, live backfill and restored tool output
+in the authenticated desktop/mobile plugin. `tests/transcript.test.py` integrates
+with the pinned runtime's SQLite and display projection, including page sizes
+1, 7, 119 and 120. Run it with the same virtualenv and runtime `PYTHONPATH` as the
+other Python contracts.
+
 ## Documentation checks
 
 Resolve relative Markdown links from each document's own directory, including fragments and image paths. Check links to moved records and source files as well as the documentation index. Historical local evidence may be absent; label it as an unavailable historical path rather than a working link. Keep commands aligned with `package.json`, installation scripts, plugin configuration, and the reviewed native contract.

@@ -1,6 +1,7 @@
 import type { Message, TurnBlock } from "../../../types/hermes";
 export type TextBlock = Extract<TurnBlock, { kind: "text" }>;
 export type TranscriptEntry =
+  | { kind: "compaction"; key: string }
   | { kind: "status"; text: string; content: string; key: string }
   | { kind: "user"; message: Message; key: string }
   | {
