@@ -66,6 +66,7 @@ Reports record what was tested and the limits of that evidence. Older protocol d
 - [2026-10-25-persisted-image-preview](verification/2026-10-25-persisted-image-preview.md)
 
 - [2026-10-28-transcript-history](verification/2026-10-28-transcript-history.md)
+- [2026-10-28-mid-flight-resume](verification/2026-10-28-mid-flight-resume.md)
 
 ## Visual references
 

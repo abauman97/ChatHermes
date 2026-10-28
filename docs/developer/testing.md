@@ -37,7 +37,12 @@ Real-provider testing is explicit opt-in through `npm run live:real` with root `
 The transcript workflow (`tests/workflows/transcript.spec.ts`) seeds real Hermes
 compaction/rotation/rewind history, then checks bounded HTTP/native reads, scroll
 and fallback pagination, anchors, reconnect, live backfill and restored tool output
-in the authenticated desktop/mobile plugin. `tests/transcript.test.py` integrates
+in the authenticated desktop/mobile plugin. Its mid-flight resume scenario uses
+a paced `[workflow-resume]` SSE fixture, takes the browser context offline, and
+uses a separate authenticated native viewer to witness a missed delta before
+reconnecting. It checks the running omitted-history snapshot, subsequent deltas,
+exact final text, saved history, draft/focus and scroll anchoring without route
+mocks. `tests/transcript.test.py` integrates
 with the pinned runtime's SQLite and display projection, including page sizes
 1, 7, 119 and 120. Run it with the same virtualenv and runtime `PYTHONPATH` as the
 other Python contracts.

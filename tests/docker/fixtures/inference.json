@@ -78,6 +78,32 @@
     }
   },
   {
+    "id": "chathermes-resume",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-resume\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Before disconnect. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Arrived while disconnected. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"After live resume. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Still streaming. \"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Resume complete.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-resume\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 200,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 1500
+        }
+      }
+    }
+  },
+  {
     "id": "chathermes-continue",
     "priority": 30,
     "httpRequest": {
