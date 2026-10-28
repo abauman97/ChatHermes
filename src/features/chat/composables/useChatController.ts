@@ -324,6 +324,7 @@ export function useChatController(
       return (result: RequestAnswer) => answer(id, result, owner);
     },
     suggest: scope.suggest,
+    setContextOpen: (open: boolean) => native.setContextOpen(open),
     retry: () => (viewReconnect.value ? native.reconnect() : scope.retryHistory()),
     resolve: () => native.resolveUncertainty(),
     setReasoningEffort: (value: ReasoningEffort | "") => {
@@ -338,6 +339,9 @@ export function useChatController(
   };
   return {
     view: {
+      contextUsage: computed(() => (resumed.value ? native.contextUsage.value : null)),
+      contextBreakdown: computed(() => (resumed.value ? native.contextBreakdown.value : null)),
+      contextLoading: native.contextLoading,
       messages: viewMessages,
       branchDisabled,
       responseTargets: native.responseTargets,

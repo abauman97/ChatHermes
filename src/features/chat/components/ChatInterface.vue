@@ -182,6 +182,11 @@ const {
       <ChatComposer
         ref="picker"
         :profile="profile"
+        :session-id="nativeMode ? session || undefined : undefined"
+        :context-usage="view.contextUsage.value"
+        :context-breakdown="view.contextBreakdown.value"
+        :context-loading="view.contextLoading.value"
+        @context-open="actions.setContextOpen"
         v-show="!settingsPage && !hideComposer"
         :project-name="composer.projectName"
         :key="JSON.stringify([profile, session])"
