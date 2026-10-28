@@ -1,6 +1,6 @@
 # Test and validate changes
 
-Use the [developer setup](getting-started.md) first. Run commands from the repository root. Vite+ owns linting, formatting, and the unit test runner; the npm scripts remain the project validation entry points.
+Use the [developer setup](getting-started.md) first. Run commands from the repository root. Vite+ owns frontend linting, formatting, and the unit test runner; the npm scripts remain the project validation entry points.
 
 ## Local checks
 
@@ -8,19 +8,27 @@ Use the [developer setup](getting-started.md) first. Run commands from the repos
 vp fmt --check
 vp lint
 npm test
-# With the project virtualenv active and reviewed Hermes source available:
-PYTHONPATH=/path/to/hermes-source:plugin npm run test:api
+uv sync --locked
+uv run ruff format --check .
+uv run ruff check .
+uv run ty check
+PYTHONPATH=.hermes-source:plugin uv run pytest
+PYTHONPATH=.hermes-source:plugin npm run test:api
 npm run build
 git diff --check
 ```
 
 Use `vp fmt` to apply formatting. Build output under `plugin/chathermes/dashboard/dist/` is ignored and excluded from formatting/linting; never stage or commit it.
 
-`npm run test:api` runs `tests/plugin_api.test.py`. For focused Python contracts, use the same environment, for example:
+`npm run test:api` runs `uv run pytest tests/plugin_api.test.py`; `npm run test:docker` runs the Docker helper unittest suite through uv. For focused Python contracts, use the same environment, for example:
 
 ```sh
-PYTHONPATH=/path/to/hermes-source:plugin python -m pytest tests/cron_delivery.test.py tests/execution_viewer.test.py tests/artifacts.test.py
+PYTHONPATH=.hermes-source:plugin uv run pytest tests/cron_delivery.test.py tests/execution_viewer.test.py tests/artifacts.test.py
 ```
+
+For Python edits, use `uv run ruff format .` and `uv run ruff check --fix .`, then resolve remaining lint and `uv run ty check` diagnostics. Ruff checks all first-party Python; only generated/ignored files and the external `.hermes-source` checkout are excluded. ty retains its default correctness rules, promotes possible unresolved references/imports/attributes to errors, and checks override and suppression hygiene. Warnings fail the check too.
+
+The default pytest suite collects both `test_*.py` and `*.test.py`, including Docker helper tests. `tests/integration/` probes require the isolated image and copied `/opt/plugins-src` path, so run them through the [Docker workflow](../../tests/docker/README.md), not the local default suite. Docker Compose validation skips when the Docker CLI is unavailable; the Android browser helper tests need Node.js. No provider credentials are needed. The `Python quality` GitHub Actions job runs the locked environment, non-modifying Ruff checks, ty, and the default suite against the exact source pin on PRs and main pushes. Repository administrators can require that job in branch protection.
 
 Prefer observable user contracts. Retain focused protocol, security, deduplication, and pure-logic tests until replacements pass. See the [coverage migration audit](../../tests/test-audit.md).
 
@@ -44,7 +52,7 @@ reconnecting. It checks the running omitted-history snapshot, subsequent deltas,
 exact final text, saved history, draft/focus and scroll anchoring without route
 mocks. `tests/transcript.test.py` integrates
 with the pinned runtime's SQLite and display projection, including page sizes
-1, 7, 119 and 120. Run it with the same virtualenv and runtime `PYTHONPATH` as the
+1, 7, 119 and 120. Run it with the same uv environment and runtime `PYTHONPATH` as the
 other Python contracts.
 
 ## Documentation checks

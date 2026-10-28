@@ -4,19 +4,23 @@ Read [AGENTS.md](../../AGENTS.md) before changing the repository. Use the [archi
 
 ## Prepare a checkout
 
-Use Node.js 22 (the asset workflow uses it), npm, Vite+ (`vp`), and Python 3.11+ with venv support. Docker Compose is needed for the real-Hermes environment; Android additionally requires daemon-side KVM.
+Use Node.js 22 (the asset workflow uses it), npm, Vite+ (`vp`), and Python 3.14+ managed by [uv](https://docs.astral.sh/uv/getting-started/installation/). Docker Compose is needed for the real-Hermes environment; Android additionally requires daemon-side KVM.
 
 From the repository root:
 
 ```sh
 npm ci
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r tests/requirements.txt
-pip install -e 'plugin/chathermes[dev]'
+uv sync --locked
+# Separate reviewed runtime source, ignored by Git and Ruff:
+git clone --no-checkout https://github.com/NousResearch/hermes-agent.git .hermes-source
+git -C .hermes-source checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
 ```
 
-The API tests need a complete reviewed Hermes runtime source checkout and its runtime dependencies, not just the plugin package. Missing Hermes imports can skip profile/host contracts; inspect skips before claiming full coverage. Use a separate checkout of Hermes at the [native contract pin](api-contract.md#native-chat-contract) and set `PYTHONPATH` when running them. Do not use personal Hermes state or credentials for deterministic tests.
+Install uv using its linked installer before running these commands; `uv sync --locked` creates `.venv` and downloads the Python version in `.python-version` if needed. Do not create or activate a venv manually or install development tools with pip. The root non-packaged development project and committed `uv.lock` own tooling and test dependencies. The plugin's separate `pyproject.toml` remains a metadata-only runtime dependency package; development tools must not enter its runtime dependencies.
+
+Use `uv add --dev <package>` and `uv remove --dev <package>` for development dependencies. Use `uv lock --upgrade-package <package>` for a deliberate update, then `uv sync --locked` and validate. Include both root dependency files in the change. Runtime dependency changes belong in `plugin/chathermes/pyproject.toml`; regenerate the root lock with `uv lock` after editing that metadata.
+
+The Python contracts need the complete reviewed Hermes source at the [native contract pin](api-contract.md#native-chat-contract). The root dev group supplies dependencies used by these contracts, not the full Hermes application. ty resolves runtime imports from `.hermes-source` and the uv environment while checking first-party `plugin/`, `tests/`, and Python scripts. For a checkout elsewhere, pass `uv run ty check --extra-search-path /path/to/hermes-source`. Set `PYTHONPATH=.hermes-source:plugin` for tests (or substitute the absolute runtime checkout). Missing Hermes imports can skip profile/host contracts; inspect skips before claiming full coverage. Do not use personal Hermes state or credentials for deterministic tests.
 
 Follow [testing](testing.md) for checks and dashboard reproduction, then [deployment](deployment.md) to build and install into a development dashboard. Vite alone is not the supported product runtime; verify the React-mounted plugin in Hermes.
 

@@ -1,13 +1,14 @@
 """Configure an isolated Hermes home without putting provider secrets in YAML."""
+
+import copy
+import json
 import os
 import re
-import json
-import copy
-from pathlib import Path
 import secrets
-import shutil
 import shlex
+import shutil
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 
@@ -19,8 +20,10 @@ def load_env(path=Path(".env")):
         name, separator, value = line.strip().removeprefix("export ").partition("=")
         name = name.strip()
         if not separator or name not in (
-            "TEST_LLM_API_BASE_URL", "TEST_LLM_API_KEY", "TEST_LLM_API_MODEL",
-            "HERMES_DASHBOARD_PUBLIC_URL"
+            "TEST_LLM_API_BASE_URL",
+            "TEST_LLM_API_KEY",
+            "TEST_LLM_API_MODEL",
+            "HERMES_DASHBOARD_PUBLIC_URL",
         ):
             continue
         lexer = shlex.shlex(value.strip(), posix=True)
@@ -43,7 +46,9 @@ def configure(asset_root=Path("/opt/chathermes")):
     if endpoint.scheme not in ("http", "https") or not endpoint.hostname:
         raise ValueError("TEST_LLM_API_BASE_URL must be an HTTP(S) provider endpoint")
     if endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
-        raise ValueError("Use TEST_LLM_API_KEY for credentials; the base URL must have no credentials, query, or fragment")
+        raise ValueError(
+            "Use TEST_LLM_API_KEY for credentials; the base URL must have no credentials, query, or fragment"
+        )
     for name in ("HERMES_DASHBOARD_PORT", "API_SERVER_PORT"):
         value = os.environ[name]
         if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 65535:
@@ -59,17 +64,25 @@ def configure(asset_root=Path("/opt/chathermes")):
         try:
             public = urlsplit(public_url)
             host = public.hostname or ""
-            valid = (public.scheme == "https" and public.username is None and
-                     public.password is None and not public.query and not public.fragment and
-                     public.port is None and not public.netloc.endswith(":") and
-                     not any(c.isspace() or ord(c) < 32 for c in public_url) and
-                     "\\" not in public_url and
-                     re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", host) and
-                     not host.lower().rstrip(".").endswith(".localhost"))
+            valid = (
+                public.scheme == "https"
+                and public.username is None
+                and public.password is None
+                and not public.query
+                and not public.fragment
+                and public.port is None
+                and not public.netloc.endswith(":")
+                and not any(c.isspace() or ord(c) < 32 for c in public_url)
+                and "\\" not in public_url
+                and re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", host)
+                and not host.lower().rstrip(".").endswith(".localhost")
+            )
         except ValueError:
             valid = False
         if not valid:
-            raise ValueError("HERMES_DASHBOARD_PUBLIC_URL must be a valid HTTPS dashboard URL without credentials, query, fragment or port")
+            raise ValueError(
+                "HERMES_DASHBOARD_PUBLIC_URL must be a valid HTTPS dashboard URL without credentials, query, fragment or port"
+            )
 
     home = Path(os.environ.get("HERMES_HOME", "/opt/data"))
     home.mkdir(parents=True, exist_ok=True)
@@ -109,7 +122,12 @@ def configure(asset_root=Path("/opt/chathermes")):
         env_file.chmod(0o600)
         # Named native runtimes intentionally do not inherit the launch home's
         # provider secrets. Seed their own private credential, never YAML/image.
-        lines = [line for line in env_file.read_text().splitlines() if not line.startswith("TEST_LLM_API_KEY=") and not (public_url and line.startswith("HERMES_DASHBOARD_PUBLIC_URL="))]
+        lines = [
+            line
+            for line in env_file.read_text().splitlines()
+            if not line.startswith("TEST_LLM_API_KEY=")
+            and not (public_url and line.startswith("HERMES_DASHBOARD_PUBLIC_URL="))
+        ]
         lines.append("TEST_LLM_API_KEY=" + json.dumps(os.environ["TEST_LLM_API_KEY"]))
         if public_url:
             lines.append("HERMES_DASHBOARD_PUBLIC_URL=" + json.dumps(public_url))
