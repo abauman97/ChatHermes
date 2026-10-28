@@ -64,6 +64,42 @@ function mediaValue(value: string) {
   }
   return /[/\\]|\.[^.]/.test(value) ? value : "";
 }
+// Parse image syntax rather than searching raw text, so escapes and code spans
+// retain their Markdown meaning. Only explicit MEDIA sources assert delivery.
+const imageMarkdown = new MarkdownIt({ html: true });
+const imageRule = imageMarkdown.inline.ruler.__rules__.find((rule) => rule.name === "image")!.fn;
+imageMarkdown.inline.ruler.at("image", (state, silent) => {
+  const start = state.pos;
+  const count = state.tokens.length;
+  const matched = imageRule(state, silent);
+  const token = state.tokens.at(-1);
+  if (!silent && state.tokens.length > count && token?.type === "image")
+    token.meta = { deliveryRange: [start, state.pos] };
+  return matched;
+});
+function collectMediaImages(line: string, add: (path: string) => boolean) {
+  const images = imageMarkdown.parseInline(line, {})[0]?.children || [];
+  let removed = 0;
+  for (const image of images) {
+    const src = image.attrGet("src");
+    if (image.type !== "image" || typeof src !== "string" || !src.startsWith("MEDIA:")) continue;
+    let path: string;
+    try {
+      path = decodeURIComponent(src.slice(6));
+    } catch {
+      continue;
+    }
+    if (/^https?:\/\//i.test(path)) continue;
+    if (!/^(?:\/(?!\/)|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(path)) continue;
+    if (path.split("").some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
+      continue;
+    if (!image.meta?.deliveryRange || !add(path)) continue;
+    const [start, end] = image.meta.deliveryRange as [number, number];
+    line = line.slice(0, start - removed) + line.slice(end - removed);
+    removed += end - start;
+  }
+  return line;
+}
 // Delivery directives must occupy a whole line. Validate before collecting so a
 // trailing example/explanation cannot partially assert delivery.
 function collectMedia(text: string, add: (path: string) => boolean) {
@@ -217,6 +253,7 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
       } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
         references.push(index);
       } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
+      else lines[index] = collectMediaImages(line, add);
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";

@@ -9,7 +9,12 @@
     "Use `MEDIA:/tmp/private.pdf` as a syntax example.\nMEDIA:/tmp/report.pdf",
     "MEDIA:/tmp/report.pdf\nThe syntax example is `MEDIA:/tmp/private.pdf`.",
     "Example: ``MEDIA:/tmp/private.pdf``\nMEDIA:/tmp/report.pdf",
-    "Example: `do not send\nMEDIA:/tmp/private.pdf\n`\nMEDIA:/tmp/report.pdf"
+    "Example: `do not send\nMEDIA:/tmp/private.pdf\n`\nMEDIA:/tmp/report.pdf",
+    "![Chart](MEDIA:/opt/data/chart.png)",
+    "Here is ![Chart](MEDIA:/opt/data/chart.png) for review.",
+    "![Chart](<MEDIA:/opt/data/a chart.png>)",
+    "![Chart](MEDIA:./chart.png \"Generated chart\")",
+    "![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png"
   ],
   "positiveToolDeliveries": [
     "{\"media_tag\":\"MEDIA:/tmp/report.pdf\"}",
@@ -39,7 +44,25 @@
     "~~~text\nAttached file private.pdf: /tmp/private.pdf\n~~~",
     "Example: `do not send\nMEDIA:/tmp/private.pdf\n`",
     "Example: ``a literal ` backtick\nMEDIA:/tmp/private.pdf\n``",
-    "Example: \\`escaped then `quoted\nMEDIA:/tmp/private.pdf\n`"
+    "Example: \\`escaped then `quoted\nMEDIA:/tmp/private.pdf\n`",
+    "![Chart](/opt/data/chart.png)",
+    "![Chart](https://example.test/chart.png)",
+    "[Chart](MEDIA:/opt/data/chart.png)",
+    "![Chart](MEDIA:javascript:alert%281%29)",
+    "![Chart](MEDIA:data:text/html;base64,AAAA)",
+    "![Chart](MEDIA:sandbox:/opt/data/chart.png)",
+    "![Chart](MEDIA:chart.png)",
+    "![Chart](MEDIA:/opt/data/bad%00.png)",
+    "`![Chart](MEDIA:/opt/data/chart.png)`",
+    "```md\n![Chart](MEDIA:/opt/data/chart.png)\n```",
+    "> ![Chart](MEDIA:/opt/data/chart.png)",
+    "- ![Chart](MEDIA:/opt/data/chart.png)",
+    "<untrusted_tool_result>\n\n![Chart](MEDIA:/opt/data/chart.png)\n</untrusted_tool_result>",
+    "\\![Chart](MEDIA:/opt/data/chart.png)",
+    "![Chart](MEDIA:https://example.test/chart.png)",
+    "![Chart](MEDIA://example.test/chart.png)",
+    "![Chart](MEDIA:file:///opt/data/chart.png)",
+    "![Chart](MEDIA:/opt/data/bad%FF.png)"
   ],
   "toolBodyDeliveries": [
     "MEDIA:/tmp/private.pdf",

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { quotedDeliveries, toolBodyDeliveries } from "../../artifacts/delivery-fixtures";
-import { expect, it } from "vite-plus/test";
-import { mount } from "@vue/test-utils";
+import { afterEach, expect, it, vi } from "vite-plus/test";
+import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { createTurn, historyBlocks, reduceNativeTurn, reduceTurn } from "../runtime/assistant-turn";
 import AssistantTurn from "./AssistantTurn.vue";
@@ -280,3 +280,48 @@ it.each([...quotedDeliveries, ...toolBodyDeliveries])(
     wrapper.unmount();
   },
 );
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("renders local MEDIA Markdown images through authenticated artifact previews and keeps HTTPS images inline", async () => {
+  const fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ dataUrl: "data:image/png;base64,AA==" }),
+  });
+  vi.stubGlobal("fetch", fetch);
+  const wrapper = mount(AssistantTurn, {
+    props: {
+      profile: "work",
+      sessionId: "session-1",
+      entry: {
+        kind: "turn",
+        key: "turn",
+        working: false,
+        blocks: [
+          {
+            id: "answer",
+            kind: "text",
+            content:
+              "Here is the chart. ![Local](MEDIA:/opt/data/chart.png)\n![Remote](https://example.test/chart.png)",
+          },
+        ],
+      },
+    },
+  });
+  await flushPromises();
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    "/api/plugins/chathermes/files/preview?path=%2Fopt%2Fdata%2Fchart.png&profile=work&session_id=session-1",
+    expect.objectContaining({ credentials: "same-origin", redirect: "error" }),
+  );
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  expect(wrapper.get(".artifact-card button img").attributes("src")).toBe(
+    "data:image/png;base64,AA==",
+  );
+  expect(wrapper.get(".markdown-content img").attributes()).toMatchObject({
+    src: "https://example.test/chart.png",
+    alt: "Remote",
+  });
+  expect(wrapper.find('img[src^="MEDIA:"]').exists()).toBe(false);
+  expect(wrapper.text()).toContain("Here is the chart.");
+  wrapper.unmount();
+});
