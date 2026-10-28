@@ -120,10 +120,11 @@ def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
 @pytest.mark.parametrize("has_session", [False, True])
 def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch, has_session):
     home, _, delivery = runtime
-    from cron import delivery_queue
     from cron.execution_identity import exit_cron_execution
     from cron.executions import finish_execution
     from cron.jobs import save_job_output
+
+    from cron import delivery_queue
 
     job = {"id": "audit", "name": "Audit", "deliver": "chathermes"}
     execution, token = _execution(home, job)
@@ -232,12 +233,13 @@ def test_scheduler_routes_wrapped_queue_payload_without_live_adapter(runtime, mo
     monkeypatch.setenv("CHATHERMES_HOME_CHANNEL", "scheduled")
     from types import SimpleNamespace
 
-    from cron import delivery_queue
     from cron.execution_identity import exit_cron_execution
     from cron.executions import finish_execution
     from cron.jobs import save_job_output
     from cron.scheduler_delivery import _deliver_result
     from gateway.platform_registry import PlatformEntry, platform_registry
+
+    from cron import delivery_queue
 
     plugin.register(
         SimpleNamespace(
@@ -306,6 +308,7 @@ def test_discovered_yaml_home_is_a_native_cron_ui_target(
     from cron.scheduler_delivery import _resolve_delivery_targets
     from gateway.config import Platform, load_gateway_config
     from gateway.platform_registry import platform_registry
+    from gateway.platforms.base import BasePlatformAdapter
     from hermes_cli.plugins import PluginManager
     from hermes_cli.web_routers.cron import get_cron_delivery_targets
 
@@ -325,7 +328,10 @@ def test_discovered_yaml_home_is_a_native_cron_ui_target(
     (home / "config.yaml").write_text(block)
     PluginManager().discover_and_load()
     entry = platform_registry.get("chathermes")
-    assert entry and entry.adapter_factory(None) is None
+    assert entry and isinstance(
+        entry.adapter_factory(load_gateway_config().platforms[Platform("chathermes")]),
+        BasePlatformAdapter,
+    )
     targets = asyncio.run(get_cron_delivery_targets())["targets"]
     target = next((t for t in targets if t["id"] == "chathermes"), None)
     assert bool(target) is visible
@@ -551,8 +557,9 @@ def test_deep_link_matches_execution_window_and_exact_job(runtime, monkeypatch, 
     from datetime import datetime
 
     from chathermes.dashboard import plugin_api
-    from cron import executions
     from cron.execution_identity import exit_cron_execution
+
+    from cron import executions
 
     execution, token = _execution(home, {"id": "audit"})
     exit_cron_execution(token)
