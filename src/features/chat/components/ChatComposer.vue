@@ -125,6 +125,7 @@ const imageGated = computed(
     attachments.value.some((file) => file.type.startsWith("image/")),
 );
 const pickerDisabled = computed(() => props.sending || props.modelsLoading);
+const compactEditing = computed(() => editing.value && window.innerWidth <= 700);
 const selectedProvider = computed(() =>
   props.providers?.find((item) => item.slug === pickerProvider.value),
 );
@@ -452,7 +453,7 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
       />
       <div class="composer-controls flex items-center gap-3">
         <button
-          v-show="!editing"
+          v-show="!compactEditing"
           class="attach-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#424242] p-0 text-white disabled:opacity-55"
           type="button"
           aria-label="Attachment options"
@@ -480,6 +481,8 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         </p>
         <ContextUsageIndicator
           v-if="sessionId"
+          :key="sessionId"
+          :visible="!compactEditing && !pickerOpen && !attachmentsOpen"
           :active="!editing && !pickerOpen && !attachmentsOpen"
           :usage="contextUsage ?? null"
           :breakdown="contextBreakdown ?? null"
@@ -489,6 +492,7 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         />
         <button
           ref="pill"
+          v-show="!compactEditing"
           type="button"
           class="model-pill flex h-[30px] min-w-0 max-w-[55%] items-center gap-2 rounded-full bg-[#424242] px-3 py-0 text-[16px] text-white disabled:opacity-55"
           aria-label="Choose model"
