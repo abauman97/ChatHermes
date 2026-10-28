@@ -39,6 +39,7 @@ def _register_cron_display_name():
 
 
 def register(ctx):
+    from .adapter import ChatHermesAdapter
     from .cron_delivery import standalone_send
 
     _register_cron_display_name()
@@ -46,8 +47,8 @@ def register(ctx):
     ctx.register_platform(
         name="chathermes",
         label="ChatHermes",
-        # No inbound adapter, agent session, or TUI owner is needed.
-        adapter_factory=lambda config: None,
+        # Native UI conversations remain on their existing dashboard transport.
+        adapter_factory=lambda config: ChatHermesAdapter(config),
         check_fn=lambda: True,
         cron_deliver_env_var="CHATHERMES_HOME_CHANNEL",
         standalone_sender_fn=standalone_send,
