@@ -1,19 +1,25 @@
 """Exercise runtime configuration with disposable paths and synthetic secrets."""
+
 import importlib.util
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
+from typing import override
 from unittest.mock import patch
 
 import yaml
 
-spec = importlib.util.spec_from_file_location("container_start", Path(__file__).with_name("start.py"))
+spec = importlib.util.spec_from_file_location(
+    "container_start", Path(__file__).with_name("start.py")
+)
+assert spec is not None and spec.loader is not None
 start = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(start)
 
 
 class RuntimeConfigTest(unittest.TestCase):
+    @override
     def setUp(self):
         self.yaml_patch = patch.dict("sys.modules", {"hermes_yaml": yaml})
         self.yaml_patch.start()
@@ -42,15 +48,20 @@ class RuntimeConfigTest(unittest.TestCase):
             home = Path(self.env["HERMES_HOME"])
             config = yaml.safe_load((home / "config.yaml").read_text())
             self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
-            self.assertEqual(config["providers"]["chathermes-test"]["base_url"], self.env["TEST_LLM_API_BASE_URL"])
+            self.assertEqual(
+                config["providers"]["chathermes-test"]["base_url"],
+                self.env["TEST_LLM_API_BASE_URL"],
+            )
             self.assertEqual(config["platforms"]["api_server"]["port"], 8643)
             self.assertTrue(config["platforms"]["chathermes"]["enabled"])
-            self.assertEqual(config["platforms"]["chathermes"]["home_channel"]["chat_id"], "scheduled")
+            self.assertEqual(
+                config["platforms"]["chathermes"]["home_channel"]["chat_id"], "scheduled"
+            )
             self.assertIn("chathermes", config["plugins"]["enabled"])
             self.assertTrue(config["gateway"]["multiplex_profiles"])
             self.assertTrue((home / "plugins/chathermes/dashboard/test.js").exists())
             for filename in ("config.yaml", ".env"):
-                if filename == 'config.yaml':
+                if filename == "config.yaml":
                     self.assertNotIn(self.env["TEST_LLM_API_KEY"], (home / filename).read_text())
                 self.assertEqual((home / filename).stat().st_mode & 0o777, 0o600)
             key = (home / ".env").read_text()
@@ -71,24 +82,34 @@ class RuntimeConfigTest(unittest.TestCase):
                 self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
                 self.assertNotIn(self.env["TEST_LLM_API_KEY"], (path / "config.yaml").read_text())
                 import json
-                values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
-                self.assertEqual(json.loads(values['TEST_LLM_API_KEY']), self.env['TEST_LLM_API_KEY'])
+
+                values = dict(
+                    line.split("=", 1) for line in (path / ".env").read_text().splitlines()
+                )
+                self.assertEqual(
+                    json.loads(values["TEST_LLM_API_KEY"]), self.env["TEST_LLM_API_KEY"]
+                )
                 self.assertEqual((path / ".env").stat().st_mode & 0o777, 0o600)
             start.configure(self.assets)
             self.assertEqual([(path / ".env").read_text() for path in homes], keys)
 
     def test_explicit_push_url_is_seeded_for_every_plugin_host(self):
         import json
+
         public = "https://dashboard.example.test/chathermes"
         with patch.dict(os.environ, self.env | {"HERMES_DASHBOARD_PUBLIC_URL": public}, clear=True):
             start.configure(self.assets)
             home = Path(self.env["HERMES_HOME"])
             for path in (home, home / "profiles/alpha", home / "profiles/beta"):
-                values = dict(line.split("=", 1) for line in (path / ".env").read_text().splitlines())
+                values = dict(
+                    line.split("=", 1) for line in (path / ".env").read_text().splitlines()
+                )
                 self.assertEqual(json.loads(values["HERMES_DASHBOARD_PUBLIC_URL"]), public)
             start.configure(self.assets)
             for path in (home, home / "profiles/alpha", home / "profiles/beta"):
-                self.assertEqual((path / ".env").read_text().count("HERMES_DASHBOARD_PUBLIC_URL="), 1)
+                self.assertEqual(
+                    (path / ".env").read_text().count("HERMES_DASHBOARD_PUBLIC_URL="), 1
+                )
 
     def test_absent_push_setting_preserves_existing_profile_configuration(self):
         public = "https://dashboard.example.test/chathermes"
@@ -96,18 +117,32 @@ class RuntimeConfigTest(unittest.TestCase):
             start.configure(self.assets)
             home = Path(self.env["HERMES_HOME"])
             homes = (home, home / "profiles/alpha", home / "profiles/beta")
+
             def values(path):
                 return dict(line.split("=", 1) for line in (path / ".env").read_text().splitlines())
+
             before = [values(path) for path in homes]
             del os.environ["HERMES_DASHBOARD_PUBLIC_URL"]
             start.configure(self.assets)
             self.assertEqual([values(path) for path in homes], before)
 
     def test_invalid_push_url_fails_before_seeding_without_disclosing_value(self):
-        for public in ("http://dashboard.test", "https://user:secret@dashboard.test", "https://[broken",
-                       "https://dashboard.test:8443", "https://dashboard.test?secret=value",
-                       "https://dashboard.test/\nsecret", "https://localhost", "https://a.localhost"):
-            with self.subTest(public=public), patch.dict(os.environ, self.env | {"HERMES_DASHBOARD_PUBLIC_URL": public}, clear=True):
+        for public in (
+            "http://dashboard.test",
+            "https://user:secret@dashboard.test",
+            "https://[broken",
+            "https://dashboard.test:8443",
+            "https://dashboard.test?secret=value",
+            "https://dashboard.test/\nsecret",
+            "https://localhost",
+            "https://a.localhost",
+        ):
+            with (
+                self.subTest(public=public),
+                patch.dict(
+                    os.environ, self.env | {"HERMES_DASHBOARD_PUBLIC_URL": public}, clear=True
+                ),
+            ):
                 with self.assertRaisesRegex(ValueError, "HERMES_DASHBOARD_PUBLIC_URL") as error:
                     start.configure(self.assets)
                 self.assertNotIn(public, str(error.exception))
@@ -131,7 +166,10 @@ class RuntimeConfigTest(unittest.TestCase):
             {"TEST_LLM_API_BASE_URL": "https://user:secret@provider.example/v1"},
             {"TEST_LLM_API_BASE_URL": "https://provider.example/v1?key=secret"},
         ):
-            with self.subTest(overrides=overrides), patch.dict(os.environ, self.env | overrides, clear=True):
+            with (
+                self.subTest(overrides=overrides),
+                patch.dict(os.environ, self.env | overrides, clear=True),
+            ):
                 with self.assertRaises(ValueError):
                     start.configure(self.assets)
 
@@ -141,31 +179,44 @@ class DotEnvTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
             path.write_bytes(
-                b'# Synthetic provider only\r\n'
+                b"# Synthetic provider only\r\n"
                 b'export TEST_LLM_API_BASE_URL="https://provider.example/v1"\r\n'
                 b"TEST_LLM_API_KEY='literal-$(touch sentinel)-$key'\r\n"
                 b'TEST_LLM_API_MODEL="vendor/model:latest" # model\r\n'
                 b'HERMES_DASHBOARD_PUBLIC_URL="https://dashboard.example.test/chathermes"\r\n'
-                b'UNRELATED_SECRET=ignored\r\n'
+                b"UNRELATED_SECRET=ignored\r\n"
             )
             for override in (None, "synthetic-exported-override"):
                 env = {} if override is None else {"TEST_LLM_API_KEY": override}
                 with self.subTest(override=override), patch.dict(os.environ, env, clear=True):
                     start.load_env(path)
-                    self.assertEqual(os.environ["TEST_LLM_API_BASE_URL"], "https://provider.example/v1")
+                    self.assertEqual(
+                        os.environ["TEST_LLM_API_BASE_URL"], "https://provider.example/v1"
+                    )
                     self.assertEqual(os.environ["TEST_LLM_API_MODEL"], "vendor/model:latest")
-                    self.assertEqual(os.environ["HERMES_DASHBOARD_PUBLIC_URL"], "https://dashboard.example.test/chathermes")
-                    self.assertEqual(os.environ["TEST_LLM_API_KEY"], override or "literal-$(touch sentinel)-$key")
+                    self.assertEqual(
+                        os.environ["HERMES_DASHBOARD_PUBLIC_URL"],
+                        "https://dashboard.example.test/chathermes",
+                    )
+                    self.assertEqual(
+                        os.environ["TEST_LLM_API_KEY"], override or "literal-$(touch sentinel)-$key"
+                    )
                     self.assertNotIn("UNRELATED_SECRET", os.environ)
             self.assertFalse((Path(directory) / "sentinel").exists())
 
     def test_exported_push_public_url_takes_precedence(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
-            path.write_text('HERMES_DASHBOARD_PUBLIC_URL=https://dotenv.example.test\n')
-            with patch.dict(os.environ, {"HERMES_DASHBOARD_PUBLIC_URL": "https://exported.example.test"}, clear=True):
+            path.write_text("HERMES_DASHBOARD_PUBLIC_URL=https://dotenv.example.test\n")
+            with patch.dict(
+                os.environ,
+                {"HERMES_DASHBOARD_PUBLIC_URL": "https://exported.example.test"},
+                clear=True,
+            ):
                 start.load_env(path)
-                self.assertEqual(os.environ["HERMES_DASHBOARD_PUBLIC_URL"], "https://exported.example.test")
+                self.assertEqual(
+                    os.environ["HERMES_DASHBOARD_PUBLIC_URL"], "https://exported.example.test"
+                )
 
     def test_invalid_quotes_fail_without_exposing_value(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -4,15 +4,17 @@ A delegated, single-use dashboard ticket attaches a native peer before the
 browser dispatches. Browser departure therefore cannot trigger orphan teardown.
 The native runtime still owns execution, cancellation, requests and persistence.
 """
+
 import asyncio
 import json
 import os
 
-PIN = 'bf0203a794a07aac3ff764972ab9087baa4e4f4e'
+PIN = "bf0203a794a07aac3ff764972ab9087baa4e4f4e"
 
 
 def transcript(profile, stored):
     from hermes_cli.web_server_sessions import _open_session_db_for_profile
+
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
         return db.get_messages(stored) if db.get_session(stored) is not None else []
@@ -21,7 +23,9 @@ def transcript(profile, stored):
 
 
 def watermark(profile, stored):
-    return max((row['id'] for row in transcript(profile, stored) if type(row.get('id')) is int), default=0)
+    return max(
+        (row["id"] for row in transcript(profile, stored) if type(row.get("id")) is int), default=0
+    )
 
 
 def committed_completion(profile, stored, after, text):
@@ -31,35 +35,54 @@ def committed_completion(profile, stored, after, text):
     status/text plus exact profile-local row identity, never seq or latest output
     alone. Equal text from an earlier turn is below the admission watermark.
     """
-    rows = [row for row in transcript(profile, stored) if type(row.get('id')) is int and row['id'] > after]
-    users = [row['id'] for row in rows if row.get('role') == 'user']
+    rows = [
+        row
+        for row in transcript(profile, stored)
+        if type(row.get("id")) is int and row["id"] > after
+    ]
+    users = [row["id"] for row in rows if row.get("role") == "user"]
     if not users:
         return None
-    candidates = [row for row in rows if row.get('role') == 'assistant' and
-                  row['id'] > min(users) and row.get('content') == text]
-    return min((row['id'] for row in candidates), default=None)
+    candidates = [
+        row
+        for row in rows
+        if row.get("role") == "assistant" and row["id"] > min(users) and row.get("content") == text
+    ]
+    return min((row["id"] for row in candidates), default=None)
 
 
 def read_body(api, profile, stored, row_id):
     # Use the profile's actual read-only store, never the live process's default.
     from hermes_cli.web_server_sessions import _open_session_db_for_profile
+
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
         if db.get_session(stored) is None:
             return None
-        row = next((row for row in db.get_messages(stored)
-                    if row.get('id') == row_id and row.get('role') == 'assistant'), None)
-        if row is None or not isinstance(row.get('content'), str):
+        row = next(
+            (
+                row
+                for row in db.get_messages(stored)
+                if row.get("id") == row_id and row.get("role") == "assistant"
+            ),
+            None,
+        )
+        if row is None or not isinstance(row.get("content"), str):
             return None
         # Configured provider secrets and gateway key are collected server-side.
         from types import SimpleNamespace
+
         collector = SimpleNamespace(secrets=set())
         api._native_validation.register_profile_secrets(profile, collector)
-        key = (api._gateway_settings()[1] if profile == 'default' else api._profile_gateway_key(profile)) or ''
-        body = row['content']
+        key = (
+            api._gateway_settings()[1]
+            if profile == "default"
+            else api._profile_gateway_key(profile)
+        ) or ""
+        body = row["content"]
         for secret in collector.secrets | {key}:
             if secret:
-                body = body.replace(secret, '[redacted]')
+                body = body.replace(secret, "[redacted]")
         return body
     finally:
         db.close()
@@ -68,7 +91,7 @@ def read_body(api, profile, stored, row_id):
 class Viewer:
     def __init__(self, service, profile, stored):
         self.service, self.profile, self.stored = service, profile, stored
-        self.runtime = ''
+        self.runtime = ""
         self.pending = {}
         self.sequence = 0
         self.children = set()
@@ -85,78 +108,112 @@ class Viewer:
         self.ready = asyncio.get_running_loop().create_future()
 
     async def call(self, method, params=None):
+        assert self.ws is not None
         self.sequence += 1
         rid = str(self.sequence)
         future = asyncio.get_running_loop().create_future()
         self.pending[rid] = future
         try:
-            await self.ws.send(json.dumps({'jsonrpc': '2.0', 'id': rid, 'method': method,
-                                          'params': (params or {}) if method == 'client.capabilities' else {**(params or {}), 'profile': self.profile}}))
+            await self.ws.send(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rid,
+                        "method": method,
+                        "params": (params or {})
+                        if method == "client.capabilities"
+                        else {**(params or {}), "profile": self.profile},
+                    }
+                )
+            )
             return await asyncio.wait_for(future, 95)
         finally:
             self.pending.pop(rid, None)
 
     async def receive(self):
+        assert self.ws is not None
         async for text in self.ws:
             if not isinstance(text, str):
-                raise ValueError('Unsupported native frame')
+                raise ValueError("Unsupported native frame")
             for line in text.splitlines():
                 frame = json.loads(line)
-                if not isinstance(frame, dict) or frame.get('jsonrpc') != '2.0':
-                    raise ValueError('Unsupported native frame')
-                if 'method' not in frame:
-                    future = self.pending.get(str(frame.get('id')))
+                if not isinstance(frame, dict) or frame.get("jsonrpc") != "2.0":
+                    raise ValueError("Unsupported native frame")
+                if "method" not in frame:
+                    future = self.pending.get(str(frame.get("id")))
                     if future is not None and not future.done():
-                        if 'error' in frame:
-                            future.set_exception(ValueError('Native operation unavailable'))
+                        if "error" in frame:
+                            future.set_exception(ValueError("Native operation unavailable"))
                         else:
-                            future.set_result(frame.get('result'))
-                elif frame.get('method') == 'event':
-                    event = frame.get('params') or {}
-                    if event.get('type') == 'gateway.ready':
-                        if (event.get('payload') or {}).get('session_authority'):
-                            raise ValueError('Unsupported native contract')
+                            future.set_result(frame.get("result"))
+                elif frame.get("method") == "event":
+                    event = frame.get("params") or {}
+                    if event.get("type") == "gateway.ready":
+                        if (event.get("payload") or {}).get("session_authority"):
+                            raise ValueError("Unsupported native contract")
                         if not self.ready.done():
                             self.ready.set_result(True)
                     await self.capture(event)
-                elif frame.get('method') in ('approval', 'clarify', 'secret'):
-                    params = frame.get('params') or {}
-                    if self.runtime and params.get('session_id') == self.runtime:
-                        kind = frame['method'] if frame['method'] != 'secret' else 'attention'
-                        await self.record_notice(str(frame.get('id')), kind)
+                elif frame.get("method") in ("approval", "clarify", "secret"):
+                    params = frame.get("params") or {}
+                    if self.runtime and params.get("session_id") == self.runtime:
+                        kind = frame["method"] if frame["method"] != "secret" else "attention"
+                        await self.record_notice(str(frame.get("id")), kind)
 
-                elif 'id' in frame and (frame.get('params') or {}).get('session_id') == self.runtime:
+                elif (
+                    "id" in frame and (frame.get("params") or {}).get("session_id") == self.runtime
+                ):
                     # Abstain from window-owned bridges without settling another
                     # viewer's request. 4404 is the pinned native decline code.
-                    await self.ws.send(json.dumps({'jsonrpc': '2.0', 'id': frame['id'],
-                                                   'error': {'code': 4404, 'message': 'No window in this viewer'}}))
+                    await self.ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": frame["id"],
+                                "error": {"code": 4404, "message": "No window in this viewer"},
+                            }
+                        )
+                    )
                 # Supported questions remain open for native browser viewers.
 
     async def capture(self, event):
-        if not self.runtime or event.get('session_id') != self.runtime or event.get('profile', self.profile) != self.profile:
+        if (
+            not self.runtime
+            or event.get("session_id") != self.runtime
+            or event.get("profile", self.profile) != self.profile
+        ):
             return
-        kind, payload = event.get('type'), event.get('payload') or {}
-        if kind == 'message.start':
+        kind, payload = event.get("type"), event.get("payload") or {}
+        if kind == "message.start":
             self.started, self.terminal = True, False
-        elif kind in ('subagent.start', 'subagent.complete', 'subagent.failed', 'subagent.cancelled'):
-            child = payload.get('subagent_id') or payload.get('child_session_id')
-            if not child and payload.get('delegation_id') and type(payload.get('task_index')) is int:
+        elif kind in (
+            "subagent.start",
+            "subagent.complete",
+            "subagent.failed",
+            "subagent.cancelled",
+        ):
+            child = payload.get("subagent_id") or payload.get("child_session_id")
+            if (
+                not child
+                and payload.get("delegation_id")
+                and type(payload.get("task_index")) is int
+            ):
                 child = f"{payload['delegation_id']}:{payload['task_index']}"
             if child:
-                if kind == 'subagent.start':
+                if kind == "subagent.start":
                     self.children.add(child)
                 else:
                     self.children.discard(child)
-        elif kind == 'message.complete':
+        elif kind == "message.complete":
             if not self.started or self.terminal:
                 return
             self.terminal = True
-            text = payload.get('text')
-            if payload.get('status') == 'complete' and isinstance(text, str) and text:
+            text = payload.get("text")
+            if payload.get("status") == "complete" and isinstance(text, str) and text:
                 self.completions.append(text)
                 await self.flush_notifications()
 
-        if kind in ('approval.request', 'clarify.request'):
+        if kind in ("approval.request", "clarify.request"):
             self.terminal = False
 
     async def record_notice(self, identity, kind):
@@ -170,20 +227,28 @@ class Viewer:
     async def _flush_notifications(self):
         for text in list(self.completions):
             try:
-                row = await asyncio.to_thread(committed_completion, self.profile, self.stored, self.watermark, text)
+                row = await asyncio.to_thread(
+                    committed_completion, self.profile, self.stored, self.watermark, text
+                )
             except Exception:
                 continue
             if row is not None:
-                self.notifications.add((row, 'turn.complete'))
-                index = getattr(self.service.api, '_index_artifacts', None)
+                self.notifications.add((row, "turn.complete"))
+                index = getattr(self.service.api, "_index_artifacts", None)
                 if index is not None:
                     index(self.profile, self.stored)
                 self.watermark = row
                 self.completions.remove(text)
         for identity, kind in list(self.notifications):
             try:
-                await asyncio.to_thread(self.service.outbox.enqueue, self.service.api._push_store_module,
-                                        self.profile, self.stored, identity, kind=kind)
+                await asyncio.to_thread(
+                    self.service.outbox.enqueue,
+                    self.service.api._push_store_module,
+                    self.profile,
+                    self.stored,
+                    identity,
+                    kind=kind,
+                )
             except Exception:
                 # Push storage is optional to execution. Preserve the native peer
                 # and retry the address; never tear down an active tool for this.
@@ -194,24 +259,39 @@ class Viewer:
         reader = None
         try:
             from websockets.asyncio.client import connect
+            from websockets.typing import Subprotocol
+
             # Fixed loopback target: never accept a URL/Host from the caller.
-            port = int(os.environ.get('HERMES_DASHBOARD_PORT', '9119'))
-            async with connect(f'ws://127.0.0.1:{port}/api/ws',
-                               subprotocols=['hermes-gateway-v1', 'hermes-gateway-ticket.' + ticket],
-                               max_size=29 * 1024 * 1024, open_timeout=10) as self.ws:
+            port = int(os.environ.get("HERMES_DASHBOARD_PORT", "9119"))
+            async with connect(
+                f"ws://127.0.0.1:{port}/api/ws",
+                subprotocols=[
+                    Subprotocol("hermes-gateway-v1"),
+                    Subprotocol("hermes-gateway-ticket." + ticket),
+                ],
+                max_size=29 * 1024 * 1024,
+                open_timeout=10,
+            ) as self.ws:
                 reader = asyncio.create_task(self.receive())
                 await asyncio.wait_for(asyncio.shield(self.ready), 10)
-                capabilities = await self.call('client.capabilities', {'server_requests': True})
-                if capabilities.get('declines_not_shown') is not True:
-                    raise ValueError('Unsupported native request contract')
-                snapshot = await self.call('session.resume', {'session_id': self.stored, 'source': 'desktop', 'inline_images': False})
-                if 'revision' in snapshot or 'execution_generation' in snapshot or not isinstance(snapshot.get('messages'), list):
-                    raise ValueError('Unsupported native contract')
-                if snapshot.get('running') or snapshot.get('queued'):
-                    raise ValueError('Session is busy')
-                self.runtime = snapshot['session_id']
+                capabilities = await self.call("client.capabilities", {"server_requests": True})
+                if capabilities.get("declines_not_shown") is not True:
+                    raise ValueError("Unsupported native request contract")
+                snapshot = await self.call(
+                    "session.resume",
+                    {"session_id": self.stored, "source": "desktop", "inline_images": False},
+                )
+                if (
+                    "revision" in snapshot
+                    or "execution_generation" in snapshot
+                    or not isinstance(snapshot.get("messages"), list)
+                ):
+                    raise ValueError("Unsupported native contract")
+                if snapshot.get("running") or snapshot.get("queued"):
+                    raise ValueError("Session is busy")
+                self.runtime = snapshot["session_id"]
                 self.watermark = await asyncio.to_thread(watermark, self.profile, self.stored)
-                self.started = bool(snapshot.get('running') or snapshot.get('queued'))
+                self.started = bool(snapshot.get("running") or snapshot.get("queued"))
                 self.service.attached[self].set_result(self.runtime)
                 self.armed_until = asyncio.get_running_loop().time() + 120
                 while True:
@@ -222,13 +302,30 @@ class Viewer:
                     await self.flush_notifications()
                     # Only reclaim an unused or settled viewer; active turns,
                     # queued prompts and delegated work retain their native peer.
-                    if self.completions or self.notifications or self.children or not self.terminal and (self.started or asyncio.get_running_loop().time() < self.armed_until):
+                    if (
+                        self.completions
+                        or self.notifications
+                        or self.children
+                        or not self.terminal
+                        and (self.started or asyncio.get_running_loop().time() < self.armed_until)
+                    ):
                         continue
                     generation = self.generation
-                    state = await self.call('session.activate', {'session_id': self.runtime, 'omit_messages': True})
-                    if generation != self.generation or self.children or self.notifications or self.completions:
+                    state = await self.call(
+                        "session.activate", {"session_id": self.runtime, "omit_messages": True}
+                    )
+                    if (
+                        generation != self.generation
+                        or self.children
+                        or self.notifications
+                        or self.completions
+                    ):
                         continue
-                    if not state.get('running') and not state.get('queued') and not state.get('open_requests'):
+                    if (
+                        not state.get("running")
+                        and not state.get("queued")
+                        and not state.get("open_requests")
+                    ):
                         break
         finally:
             if reader is not None:
@@ -236,10 +333,10 @@ class Viewer:
                 await asyncio.gather(reader, return_exceptions=True)
             for future in self.pending.values():
                 if not future.done():
-                    future.set_exception(ValueError('Native viewer disconnected'))
+                    future.set_exception(ValueError("Native viewer disconnected"))
             attached = self.service.attached.pop(self, None)
             if attached is not None and not attached.done():
-                attached.set_exception(ValueError('Native retention unavailable'))
+                attached.set_exception(ValueError("Native retention unavailable"))
             key = (self.profile, self.stored)
             if self.service.viewers.get(key) is self:
                 del self.service.viewers[key]
@@ -258,14 +355,16 @@ class Service:
             viewer = self.viewers.get(key)
             if viewer is None:
                 if len(self.viewers) >= 128:
-                    raise ValueError('Native retention capacity reached')
+                    raise ValueError("Native retention capacity reached")
                 viewer = self.viewers[key] = Viewer(self, profile, stored)
                 self.attached[viewer] = asyncio.get_running_loop().create_future()
                 viewer.task = asyncio.create_task(viewer.run(ticket))
                 # Consume background errors without logging credential-bearing URLs.
-                viewer.task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+                viewer.task.add_done_callback(
+                    lambda task: None if task.cancelled() else task.exception()
+                )
             if viewer.started and not viewer.terminal:
-                raise ValueError('Session is busy')
+                raise ValueError("Session is busy")
             if self.worker is None or self.worker.done():
                 self.worker = asyncio.create_task(self.deliver())
             runtime = await asyncio.shield(self.attached[viewer])
@@ -277,9 +376,12 @@ class Service:
     async def deliver(self):
         while True:
             try:
-                await asyncio.to_thread(self.outbox.drain, self.api._push_store_module,
-                                        self.api._push_sender_module,
-                                        lambda *args: read_body(self.api, *args))
+                await asyncio.to_thread(
+                    self.outbox.drain,
+                    self.api._push_store_module,
+                    self.api._push_sender_module,
+                    lambda *args: read_body(self.api, *args),
+                )
             except Exception:
                 # A temporary storage/configuration failure must not stop retries.
                 pass

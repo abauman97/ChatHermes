@@ -1,4 +1,5 @@
 """Check the dashboard and gateway without printing credentials or responses."""
+
 import os
 import sys
 from urllib.request import urlopen

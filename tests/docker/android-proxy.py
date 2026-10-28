@@ -1,11 +1,14 @@
 """Ephemeral HTTP/WebSocket forwarding inside the Android container."""
+
 import select
 import socket
 import socketserver
 import sys
+from typing import override
 
 
 class Proxy(socketserver.BaseRequestHandler):
+    @override
     def handle(self):
         with socket.create_connection((sys.argv[2], int(sys.argv[3])), timeout=15) as upstream:
             upstream.settimeout(None)
