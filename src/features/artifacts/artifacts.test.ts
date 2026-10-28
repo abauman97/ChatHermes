@@ -16,6 +16,35 @@ import {
   uploadedArtifacts,
 } from "./artifacts";
 describe("native artifact references", () => {
+  it("collects explicit MEDIA Markdown images and preserves ordinary images and prose", () => {
+    const web = "![web](https://example.test/chart.png)";
+    const result = textArtifacts(
+      `Chart: ![alt](MEDIA:/opt/data/chart.png) ${web}\nMEDIA:/opt/data/chart.png`,
+    );
+    expect(result.files.map((file) => file.path)).toEqual(["/opt/data/chart.png"]);
+    expect(result.text).toBe(`Chart:  ${web}`);
+    expect(textArtifacts("![alt](<MEDIA:/opt/data/a chart.png>)").files[0]?.path).toBe(
+      "/opt/data/a chart.png",
+    );
+  });
+  it.each([
+    "![alt](/opt/data/chart.png)",
+    "[alt](MEDIA:/opt/data/chart.png)",
+    "![alt](MEDIA:javascript:alert(1))",
+    "![alt](MEDIA:data:text/html,unsafe)",
+    "![alt](MEDIA:https://example.test/chart.png)",
+    "![alt](MEDIA://example.test/chart.png)",
+    "![alt](MEDIA:/opt/data/%00chart.png)",
+    "![alt](MEDIA:sandbox:/opt/data/chart.png)",
+    "`![alt](MEDIA:/opt/data/chart.png)`",
+    "\\![alt](MEDIA:/opt/data/chart.png)",
+    "> ![alt](MEDIA:/opt/data/chart.png)",
+    "- ![alt](MEDIA:/opt/data/chart.png)",
+    "```\n![alt](MEDIA:/opt/data/chart.png)\n```",
+    "<untrusted_tool_result>\n\n![alt](MEDIA:/opt/data/chart.png)\n</untrusted_tool_result>",
+  ])("does not promote unsupported or quoted image sources: %s", (text) => {
+    expect(textArtifacts(text)).toEqual({ text, files: [] });
+  });
   it("reconstructs uploaded files without showing internal paths", () => {
     const content =
       "Review this\nAttached file quarterly report.csv: /srv/hermes/uploads/chathermes/abc.csv\nAttached image chart.png: /srv/hermes/uploads/chathermes/abc.png";
@@ -507,4 +536,22 @@ it.each([
   expect(messageArtifacts({ role: "assistant", content }).map((file) => file.path)).toEqual([
     "/tmp/report.pdf",
   ]);
+});
+
+it("extracts only explicit MEDIA images and preserves surrounding Markdown", () => {
+  const web = "![Remote](https://example.test/chart.png)";
+  const result = textArtifacts(
+    `Before ![Local](<MEDIA:/opt/data/a chart.png>) between ![Second](MEDIA:./second.png) after. ${web}`,
+  );
+  expect(result.text).toBe(`Before  between  after. ${web}`);
+  expect(result.files.map((file) => file.path)).toEqual(["/opt/data/a chart.png", "./second.png"]);
+  expect(
+    textArtifacts("![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png"),
+  ).toMatchObject({
+    text: "",
+    files: [{ path: "/opt/data/chart.png" }],
+  });
+  expect(
+    textArtifacts("![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png").files,
+  ).toHaveLength(1);
 });

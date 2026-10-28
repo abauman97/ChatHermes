@@ -1,6 +1,6 @@
 """Explicit delivery grammar shared with the conversation artifact contract.
 
-Do not mine arbitrary tool output, Markdown links, or context references.
+Do not mine arbitrary tool output, ordinary Markdown links, or context references.
 The marker fast path avoids Markdown parsing for ordinary conversation text.
 """
 import json
@@ -22,6 +22,27 @@ def _delivery_code_span(state, silent):
 
 _MARKDOWN = MarkdownIt('default', {'html': True})
 _MARKDOWN.inline.ruler.at('backticks', _delivery_code_span)
+_IMAGE_MARKDOWN = MarkdownIt('default', {'html': True})
+
+
+def _media_images(line):
+    files = []
+    for token in _IMAGE_MARKDOWN.parseInline(line)[0].children or []:
+        src = token.attrGet('src')
+        if token.type != 'image' or not src or not src.startswith('MEDIA:'):
+            continue
+        try:
+            path = unquote(src[6:], errors='strict')
+        except UnicodeDecodeError:
+            continue
+        if not re.match(r'^(?:/(?!/)|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)', path, re.I) or re.search(r'[\x00-\x1f\x7f]', path):
+            continue
+        file = artifact(path)
+        if file:
+            files.append(file)
+    return files
+
+
 _EXTENSIONS = 'png jpg jpeg gif webp bmp tiff svg mp4 mov avi mkv webm 3gp mp3 m2a wav ogg opus m4a flac pdf docx doc odt rtf txt md epub xlsx xls ods csv tsv json xml yaml yml kmz kml geojson gpx pptx ppt odp key zip tar gz tgz bz2 xz 7z rar apk ipa html htm'
 _ANCHORED = r'''(?:~/|/|[A-Za-z]:[/\\])\S+?(?:[^\S\n]+\S+?)*?\.(?:''' + '|'.join(sorted(_EXTENSIONS.split(), key=len, reverse=True)) + r''')(?=[\s`"'*_,;:)\]}]|MEDIA:|$)'''
 _MEDIA = re.compile(r'''MEDIA:\s*(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|''' + _ANCHORED + r'''|[^\s`"]+)''')
@@ -113,6 +134,8 @@ def text_artifacts(text):
                     found = [file]
             elif line.startswith('MEDIA:'):
                 found = _media(line)
+            else:
+                found = _media_images(line)
             for file in found:
                 files.setdefault(file['path'], file)
     return list(files.values())

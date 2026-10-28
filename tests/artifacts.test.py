@@ -341,3 +341,16 @@ def test_source_projects_uses_complete_native_membership_and_closes_transport():
 def test_delivery_with_surrounding_text_does_not_promote_examples_or_paths(text):
     files = extraction.extract([{'id': 1, 'role': 'assistant', 'content': text}], {'id': 's'})
     assert [file['path'] for file in files] == ['/tmp/report.pdf']
+
+
+@pytest.mark.parametrize('source,path', [
+    ('![Chart](MEDIA:/opt/data/chart.png)', '/opt/data/chart.png'),
+    ('Here is ![Chart](<MEDIA:/opt/data/a chart.png>) for review.', '/opt/data/a chart.png'),
+    ('![Chart](MEDIA:./chart.png "Generated chart")', './chart.png'),
+    ('![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png', '/opt/data/chart.png'),
+])
+def test_media_markdown_images_are_indexed_as_explicit_delivery(source, path):
+    files = extraction.extract([{'id': 1, 'role': 'assistant', 'content': source}], {'id': 's'})
+    assert len(files) == 1
+    assert files[0]['path'] == path
+    assert files[0]['type'] == 'image/png'

@@ -6,6 +6,51 @@ import { mount, flushPromises } from "@vue/test-utils";
 import ChatTranscript from "./ChatTranscript.vue";
 
 describe("chat markdown", () => {
+  it.each(["history", "live"])(
+    "previews MEDIA Markdown images in %s through authenticated artifacts and keeps HTTPS images in Markdown",
+    async (mode) => {
+      const fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ dataUrl: "data:image/png;base64,AA==" }),
+      });
+      vi.stubGlobal("fetch", fetch);
+      const content =
+        "Chart: ![local](MEDIA:/opt/data/chart.png)\n\n![web](https://example.test/chart.png)";
+      const wrapper = mount(ChatTranscript, {
+        props: {
+          loading: false,
+          progress: [],
+          draft: "",
+          blocks: mode === "live" ? [{ id: "live", kind: "text", content }] : [],
+          profile: "work",
+          sessionId: "session-1",
+          messages:
+            mode === "history"
+              ? [{ role: "assistant", content }]
+              : [{ role: "user", content: "Make a chart" }],
+        },
+      });
+      try {
+        await flushPromises();
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch).toHaveBeenCalledWith(
+          "/api/plugins/chathermes/files/preview?path=%2Fopt%2Fdata%2Fchart.png&profile=work&session_id=session-1",
+          expect.objectContaining({ credentials: "same-origin", redirect: "error" }),
+        );
+        expect(wrapper.findAll(".artifact-card button img")).toHaveLength(1);
+        expect(wrapper.findAll(".markdown-content img")).toHaveLength(1);
+        for (const img of wrapper.findAll(".markdown-content img"))
+          expect(img.attributes()).toMatchObject({
+            src: "https://example.test/chart.png",
+            alt: "web",
+          });
+        expect(wrapper.html()).not.toContain("MEDIA:");
+      } finally {
+        wrapper.unmount();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
   it.each([
     ["model_switch", "Model changed to openai/gpt-test"],
     ["personality_switch", "Personality changed"],
