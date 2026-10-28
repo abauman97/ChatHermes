@@ -3,6 +3,10 @@ import {
   JsonRpcGatewayError,
   type ServerRequest,
 } from "../../../vendor/hermes/json-rpc-channel";
+import type {
+  SessionUsageResult,
+  SessionContextBreakdownResult,
+} from "../../../vendor/hermes/gateway-contract.generated";
 import type { GatewayEvent } from "../../../vendor/hermes/gateway-events";
 import { NativeError, type NativeHooks, type NativeSnapshot } from "./native-chat";
 
@@ -342,6 +346,14 @@ export class NativeGatewayViewer {
             : { running: !!live.running, queued: !!live.queued, delegating: false };
     } else throw new NativeError("Unsupported native operation", "rejected");
     return result as T;
+  }
+  usage() {
+    return this.call<SessionUsageResult>("session.usage", { session_id: this.runtime });
+  }
+  contextBreakdown() {
+    return this.call<SessionContextBreakdownResult>("session.context_breakdown", {
+      session_id: this.runtime,
+    });
   }
   private async submit(params: Record<string, unknown>) {
     if (this.preparing) throw new NativeError("Submission already in progress", "rejected");

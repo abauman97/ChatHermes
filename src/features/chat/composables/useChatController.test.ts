@@ -371,3 +371,22 @@ it("does not open a late branch after navigating to another page", async () => {
   expect(scope.openBranch).not.toHaveBeenCalled();
   branch.mockRestore();
 });
+
+it("projects context only for the selected profile/session and keeps usage reactive", () => {
+  const { native, scope, controller } = setup();
+  native.settings.value = {
+    profile: "alpha",
+    session: "one",
+    info: { model: "saved" },
+    generation: native.generationRef.value,
+  };
+  native.contextUsage.value = { context_percent: 42 };
+  expect(controller.view.contextUsage.value?.context_percent).toBe(42);
+  native.contextUsage.value = { context_percent: 10 };
+  expect(controller.view.contextUsage.value?.context_percent).toBe(10);
+  scope.session.value = "two";
+  expect(controller.view.contextUsage.value).toBeNull();
+  scope.session.value = "one";
+  scope.profile.value = "beta";
+  expect(controller.view.contextUsage.value).toBeNull();
+});

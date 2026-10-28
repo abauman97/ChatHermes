@@ -9,6 +9,8 @@ import { NativeError } from "./native-chat";
 const fake = vi.hoisted(() => ({
   hooks: undefined as NativeHooks | undefined,
   rpc: vi.fn(),
+  usage: vi.fn(),
+  breakdown: vi.fn(),
   boundary: 10,
 }));
 vi.mock("./native-chat", async (importOriginal) => {
@@ -37,6 +39,8 @@ vi.mock("./native-chat", async (importOriginal) => {
         fake.hooks!.recovered();
       }
       rpc = fake.rpc;
+      usage = fake.usage;
+      contextBreakdown = fake.breakdown;
       close() {}
     },
   };
@@ -45,6 +49,8 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   fake.rpc.mockReset();
+  fake.usage.mockReset();
+  fake.breakdown.mockReset();
   fake.boundary = 10;
 });
 describe("native session state", () => {
@@ -768,4 +774,163 @@ it("projects live batch delivery as completed activity without hiding its assist
   });
   expect(session.messages.value[0]!.content).toBe(receipt);
   session.close();
+});
+
+describe("session context accounting", () => {
+  const usage = (percent: number, compressions = 0) => ({
+    context_percent: percent,
+    context_used: percent * 10,
+    context_max: 1000,
+    model: "model",
+    compressions,
+  });
+  const event = (type: string, payload: unknown) => fake.hooks!.event({ type, payload } as any);
+  async function setup() {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    fake.usage.mockResolvedValue(usage(80));
+    fake.breakdown.mockResolvedValue({
+      categories: [{ id: "conversation", label: "Conversation", tokens: 800 }],
+    });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    return session;
+  }
+  it("loads usage on resume, consumes nested live and final usage, and loads details only while opened", async () => {
+    const session = await setup();
+    expect(session.contextUsage.value).toEqual(usage(80));
+    expect(fake.breakdown).not.toHaveBeenCalled();
+    event("session.usage", { usage: usage(85), total_tokens: 999999 });
+    expect(session.contextUsage.value).toEqual(usage(85));
+    expect(fake.usage).toHaveBeenCalledTimes(1);
+    session.setContextOpen(true);
+    await vi.waitFor(() => expect(session.contextBreakdown.value?.categories).toHaveLength(1));
+    const calls = fake.breakdown.mock.calls.length;
+    event("session.usage", { usage: usage(86) });
+    event("session.usage", { usage: usage(87) });
+    expect(fake.breakdown).toHaveBeenCalledTimes(calls);
+    let resolve!: (value: unknown) => void;
+    fake.usage.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    event("message.complete", { usage: usage(88), status: "complete" });
+    expect(session.contextUsage.value).toEqual(usage(88));
+    resolve(usage(89));
+    await vi.waitFor(() => expect(session.contextUsage.value).toEqual(usage(89)));
+    expect(fake.breakdown.mock.calls.length).toBeGreaterThan(calls);
+    session.setContextOpen(false);
+    event("message.complete", { usage: usage(90), status: "complete" });
+    expect(session.contextBreakdown.value).toBeNull();
+    session.close();
+  });
+  it.each([
+    ["alpha", "two"],
+    ["beta", "one"],
+  ])("rejects delayed responses and events across selection of %s/%s", async (profile, id) => {
+    const session = await setup();
+    let resolveUsage!: (value: unknown) => void, resolveDetails!: (value: unknown) => void;
+    fake.usage.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolveUsage = r;
+        }),
+    );
+    fake.breakdown.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolveDetails = r;
+        }),
+    );
+    const pending = session.refreshContext();
+    session.setContextOpen(true);
+    const previous = fake.hooks!;
+    await session.attach(profile, id);
+    resolveUsage(usage(99));
+    resolveDetails({ categories: [{ label: "stale" }] });
+    await pending;
+    previous.event({ type: "session.usage", payload: { usage: usage(99) } } as any);
+    expect(session.contextUsage.value).toEqual(usage(80));
+    expect(session.contextBreakdown.value).toBeNull();
+    session.close();
+  });
+  it("does not let an earlier RPC overwrite a newer event, completion, or same-session RPC", async () => {
+    const session = await setup();
+    let resolve!: (value: unknown) => void;
+    fake.usage.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    const pending = session.refreshContext();
+    event("session.usage", { usage: usage(40, 1) });
+    resolve(usage(90));
+    await pending;
+    expect(session.contextUsage.value).toEqual(usage(40, 1));
+    fake.usage.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    const older = session.refreshContext();
+    await session.refreshContext();
+    resolve(usage(99));
+    await older;
+    expect(session.contextUsage.value).toEqual(usage(80));
+    session.close();
+  });
+  it("invalidates old details after compression, reclamation, disconnection and reconnects", async () => {
+    const session = await setup();
+    session.setContextOpen(true);
+    await vi.waitFor(() => expect(session.contextBreakdown.value).not.toBeNull());
+    let resolve!: (value: unknown) => void;
+    fake.breakdown.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    event("session.usage", { usage: usage(30, 1) });
+    expect(session.contextUsage.value?.context_percent).toBe(30);
+    expect(session.contextBreakdown.value).toBeNull();
+    event("session.reclaimed", {});
+    resolve({ categories: [{ label: "before reclamation" }] });
+    await vi.waitFor(() =>
+      expect(session.contextBreakdown.value?.categories[0]?.label).toBe("Conversation"),
+    );
+    await session.availability(true, false);
+    expect(session.contextUsage.value).toBeNull();
+    expect(session.contextBreakdown.value).toBeNull();
+    await session.availability(true, true);
+    expect(session.contextUsage.value).toEqual(usage(80));
+    session.close();
+  });
+  it("ignores closed detail replies and handles unavailable usage without cumulative-token fallback", async () => {
+    const session = await setup();
+    let resolve!: (value: unknown) => void;
+    fake.breakdown.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    );
+    session.setContextOpen(true);
+    session.setContextOpen(false);
+    resolve({ categories: [{ label: "closed" }] });
+    await Promise.resolve();
+    expect(session.contextBreakdown.value).toBeNull();
+    event("session.usage", { total_tokens: 99999 });
+    expect(session.contextUsage.value).toBeNull();
+    fake.usage.mockRejectedValueOnce(new Error("unavailable"));
+    await session.refreshContext();
+    expect(session.contextUsage.value).toBeNull();
+    fake.breakdown.mockRejectedValueOnce(new Error("not initialized"));
+    session.setContextOpen(true);
+    await vi.waitFor(() => expect(session.contextLoading.value).toBe(false));
+    expect(session.contextBreakdown.value).toBeNull();
+    session.close();
+  });
 });

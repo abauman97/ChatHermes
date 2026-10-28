@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+import ContextUsageIndicator from "./ContextUsageIndicator.vue";
+import type {
+  Usage,
+  SessionContextBreakdownResult,
+} from "../../../vendor/hermes/gateway-contract.generated";
 import { api } from "../../../services/hermes-api";
 import { reasoningEfforts } from "../../../types/hermes";
 import type {
@@ -11,6 +16,10 @@ import type {
 const props = withDefaults(
   defineProps<{
     profile?: string;
+    sessionId?: string;
+    contextUsage?: Usage | null;
+    contextBreakdown?: SessionContextBreakdownResult | null;
+    contextLoading?: boolean;
     disabled: boolean;
     sending: boolean;
     projectName?: string;
@@ -30,6 +39,7 @@ const props = withDefaults(
 );
 const emit = defineEmits<{
   stop: [];
+  "context-open": [open: boolean];
   steer: [text: string];
   send: [text: string, attachments: Attachment[]];
   "update:model": [model: string];
@@ -68,6 +78,7 @@ function preserveInputFocus(event: MouseEvent) {
 function focusInput() {
   editing.value = true;
   pickerOpen.value = false;
+  attachmentsOpen.value = false;
   resizeOnFocusChange();
 }
 function resizeOnFocusChange() {
@@ -467,6 +478,15 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">
           {{ reading ? "Preparing attachments…" : reason || "" }}
         </p>
+        <ContextUsageIndicator
+          v-if="sessionId"
+          :active="!editing && !pickerOpen && !attachmentsOpen"
+          :usage="contextUsage ?? null"
+          :breakdown="contextBreakdown ?? null"
+          :loading="contextLoading ?? false"
+          :model="model || defaultModel"
+          @open="emit('context-open', $event)"
+        />
         <button
           ref="pill"
           type="button"

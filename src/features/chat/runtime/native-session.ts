@@ -24,6 +24,10 @@ import type {
   OpenRequestEntry,
   PersistedTurn,
   SessionLiveInfo,
+  Usage,
+  SessionUsagePayload,
+  MessageCompletePayload,
+  SessionContextBreakdownResult,
 } from "../../../vendor/hermes/gateway-contract.generated.ts";
 
 /** One state owner for TUI chat execution and recovery. */
@@ -38,6 +42,79 @@ export function useNativeSession(
     info: SessionLiveInfo;
     generation: number;
   }>();
+  const contextUsage = ref<Usage | null>(null);
+  const contextBreakdown = ref<SessionContextBreakdownResult | null>(null);
+  const contextLoading = ref(false);
+  let contextOpen = false,
+    usageRevision = 0,
+    breakdownRevision = 0;
+  function invalidateBreakdown() {
+    breakdownRevision++;
+    contextBreakdown.value = null;
+    contextLoading.value = false;
+  }
+  function clearContext() {
+    usageRevision++;
+    contextUsage.value = null;
+    invalidateBreakdown();
+  }
+  function applyUsage(usage: Usage | null | undefined, refreshDetails = true) {
+    const previous = contextUsage.value;
+    usageRevision++;
+    contextUsage.value = usage || null;
+    const compressed =
+      previous &&
+      usage &&
+      ((typeof usage.compressions === "number" && usage.compressions !== previous.compressions) ||
+        (typeof usage.context_used === "number" &&
+          typeof previous.context_used === "number" &&
+          usage.context_used < previous.context_used) ||
+        usage.model !== previous.model ||
+        usage.context_max !== previous.context_max);
+    if (compressed) {
+      invalidateBreakdown();
+      if (contextOpen && refreshDetails) void refreshBreakdown();
+    }
+  }
+  async function refreshBreakdown() {
+    const current = generation,
+      target = viewer,
+      revision = ++breakdownRevision;
+    if (!contextOpen || !target || connection.value !== "ready") return;
+    contextLoading.value = true;
+    try {
+      const details = await target.contextBreakdown();
+      if (
+        current === generation &&
+        revision === breakdownRevision &&
+        target === viewer &&
+        contextOpen
+      )
+        contextBreakdown.value = details;
+    } catch {
+      if (current === generation && revision === breakdownRevision) contextBreakdown.value = null;
+    } finally {
+      if (current === generation && revision === breakdownRevision) contextLoading.value = false;
+    }
+  }
+  async function refreshContext() {
+    const current = generation,
+      target = viewer,
+      revision = ++usageRevision;
+    if (!selected || !target || connection.value !== "ready") return;
+    try {
+      const usage = await target.usage();
+      if (current === generation && revision === usageRevision && target === viewer)
+        applyUsage(usage);
+    } catch {
+      if (current === generation && revision === usageRevision) contextUsage.value = null;
+    }
+  }
+  function setContextOpen(open: boolean) {
+    contextOpen = open;
+    invalidateBreakdown();
+    if (open) void refreshBreakdown();
+  }
   const responseTargets = ref<Record<string, string>>({});
   const messages = ref<Message[]>([]),
     busy = ref(false),
@@ -298,6 +375,7 @@ export function useNativeSession(
     await reconnect();
   }
   function stale() {
+    clearContext();
     setGeneration(generation + 1);
     hydrating++;
     viewer?.close();
@@ -355,6 +433,8 @@ export function useNativeSession(
       event: (event) =>
         deliver(() => {
           const data = (event.payload || {}) as Record<string, unknown>;
+          if (event.type === "session.usage")
+            applyUsage((event.payload as SessionUsagePayload).usage);
           const text = typeof data.text === "string" ? data.text : "";
           if (
             (event.type === "session.title" || event.type === "session.info") &&
@@ -381,6 +461,9 @@ export function useNativeSession(
           else if (event.type === "error")
             error.value = typeof data.message === "string" ? data.message : "Session failed";
           else if (event.type === "session.reclaimed") {
+            clearContext();
+            void refreshContext();
+            if (contextOpen) void refreshBreakdown();
             busy.value = false;
             status.value = "Session reclaimed";
           }
@@ -397,6 +480,12 @@ export function useNativeSession(
           }
           if (target) reduceNativeTurn(target, event.type, { ...data, persisted: recovering });
           if (event.type === "message.complete") {
+            invalidateBreakdown();
+            applyUsage((event.payload as MessageCompletePayload).usage, false);
+            if (!recovering) {
+              void refreshContext();
+              if (contextOpen) void refreshBreakdown();
+            }
             pendingInput = false;
             for (const entry of completed)
               reduceNativeTurn(entry.turn, "message.complete", { status: data.status });
@@ -453,6 +542,8 @@ export function useNativeSession(
         recovering = false;
         loading.value = false;
         connection.value = "ready";
+        void refreshContext();
+        if (contextOpen) void refreshBreakdown();
         if (!busy.value) void hydrate();
       },
     };
@@ -589,6 +680,7 @@ export function useNativeSession(
   function close() {
     stale();
     selected = false;
+    contextOpen = false;
     settings.value = undefined;
     pendingPersistence = false;
     pendingAttempt = "";
@@ -610,6 +702,11 @@ export function useNativeSession(
     return viewer;
   }
   return {
+    contextUsage,
+    contextBreakdown,
+    contextLoading,
+    setContextOpen,
+    refreshContext,
     generationRef,
     settings,
     messages,

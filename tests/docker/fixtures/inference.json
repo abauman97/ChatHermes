@@ -1,5 +1,57 @@
 [
   {
+    "id": "chathermes-context-usage",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-context\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_context_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"printf workflow-context-start; sleep 2; printf workflow-context-ok\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: {\"id\":\"chatcmpl-context\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":14000,\"completion_tokens\":32,\"total_tokens\":14032}}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-context-usage-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*workflow-context-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Tool completed: workflow-context-ok.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-context\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[],\"usage\":{\"prompt_tokens\":14000,\"completion_tokens\":32,\"total_tokens\":14032}}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
     "id": "chathermes-stream",
     "priority": 10,
     "httpRequest": {

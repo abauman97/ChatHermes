@@ -118,6 +118,14 @@ describe("profile-bound native gateway", () => {
         await viewer.rpc("session.interrupt");
         await viewer.rpc("session.steer", { text: "guidance" });
         await viewer.rpc("history");
+        await viewer.usage();
+        await viewer.contextBreakdown();
+        expect(sockets).toHaveLength(1);
+        for (const method of ["session.usage", "session.context_breakdown"])
+          expect(frames.find((frame) => frame.method === method).params).toEqual({
+            profile,
+            session_id: "runtime",
+          });
         expect(frames.filter((f) => f.method).every((f) => f.params.profile === profile)).toBe(
           true,
         );
