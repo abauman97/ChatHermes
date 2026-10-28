@@ -10,6 +10,47 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 | History      | `GET /api/sessions/{id}/messages?limit=500&offset=N&order=oldest&inline_images=false` | None               | `{ "object":"list", "session_id":…, "data":[message…], "pagination":{ "limit":500, "offset":N, "order":"oldest", "returned":count } }` |
 | Capabilities | `GET /v1/capabilities`                                                                | None               | Feature and endpoint flags                                                                                                             |
 
+## Persisted transcript pages
+
+The chat viewer requests `GET /api/sessions/{id}/messages?limit=120&offset=N&order=latest&inline_images=false&include_compacted=true&transcript=1`
+through the authenticated plugin proxy. `offset` counts Hermes display rows from
+the newest end; each page is chronological. Native resume/activation requests use
+`omit_messages=true`; persisted hydration no longer downloads the native display
+history as well.
+
+The opt-in plugin extension opens the owning profile's SessionDB read-only,
+resolves the resume tip, and delegates ancestor expansion, generation deduplication
+and rewind removal to `get_messages(...include_compacted=True, include_ancestors=True)`.
+It applies the pinned Desktop `_project_for_display` and honors `display_content`;
+standalone compaction summaries never reach the browser. Inline image bytes become authenticated `artifact-images` addresses; image reads select one profile-owned lineage row rather than scanning the transcript. `display_id` is a stable
+logical first-row identity for rendering; `id` remains the durable representative
+used by response actions.
+
+The response adds `transcript: {revision, next_offset, has_more}`. Marker rows
+have `display_kind: "compaction"`, an empty body and a stable `compaction-{row}` ID;
+they do not count toward the next offset. Historical markers come only from
+persisted `_compressed_summary` carriers and proven `end_reason="compression"`
+lineage edges. Copies of one carrier are one boundary; changed carriers preserve
+multiple compactions. Markers follow the pre-compaction retained tail in logical
+message order. Unrecorded/provider-only rewrites without durable row anchors
+cannot be reconstructed and are never guessed from message text or token counts.
+
+A content-free identity/active-state revision (with flagged carrier fingerprints)
+fences pagination. Changed append, rewind, compaction or rotation state returns
+409; the client refreshes its loaded window before advancing. Refresh and backfill
+results are guarded by profile/session generation and request identity. Live
+projections remain until their persistence coverage is proven. A settled omitted
+snapshot recovers persisted tool blocks only when its complete ordered prose
+agrees with the latest saved occurrence. Earlier pages load
+near scroll-top and through a retryable button; a DOM anchor preserves the reader
+while pages prepend or live content grows.
+
+Older Hermes versions without the storage helpers keep the ordinary gateway
+proxy. An explicit `pagination.order="latest"` is required to adopt a bounded tail.
+An orderless response falls back to oldest-first full pagination, matching Desktop;
+responses without pagination are complete. Legacy latest paging without revision
+support revalidates the loaded tail before advancing.
+
 ## Native chat contract
 
 ChatHermes targets Hermes release 0.22.5, source

@@ -3,6 +3,7 @@ import { probeChatGateway } from "./chat-gateway";
 import type {
   Capabilities,
   Message,
+  MessageWindow,
   Session,
   SessionPage,
   Attachment,
@@ -94,7 +95,8 @@ function sessionsPage(value: unknown): SessionPage {
 }
 function messagePage(value: unknown): {
   messages: Message[];
-  pagination?: { returned: number; limit: number };
+  pagination?: { returned: number; limit: number; order?: string };
+  transcript?: { revision: string; next_offset: number; has_more: boolean };
 } {
   const row = record(value);
   const entries = Array.isArray(value) ? value : (row?.data ?? row?.messages);
@@ -107,12 +109,18 @@ function messagePage(value: unknown): {
   return {
     messages: entries.map((row) => ({
       ...row,
+      ...(Object.hasOwn(row, "display_content") ? { content: row.display_content } : {}),
       id: row.id == null ? undefined : String(row.id),
     })) as Message[],
     pagination:
       typeof pagination?.returned === "number" && typeof pagination.limit === "number"
-        ? { returned: pagination.returned, limit: pagination.limit }
+        ? {
+            returned: pagination.returned,
+            limit: pagination.limit,
+            order: typeof pagination.order === "string" ? pagination.order : undefined,
+          }
         : undefined,
+    transcript: record(row?.transcript) as ReturnType<typeof messagePage>["transcript"],
   };
 }
 export const api = {
@@ -283,15 +291,56 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ project_id: projectId }),
     }),
+  async latestMessages(
+    profile: string,
+    id: string,
+    signal?: AbortSignal,
+    offset = 0,
+    revision?: string,
+  ): Promise<MessageWindow> {
+    let page: ReturnType<typeof messagePage>;
+    try {
+      page = messagePage(
+        await request<unknown>(
+          profile,
+          `/api/sessions/${encodeURIComponent(id)}/messages?limit=120&offset=${offset}&order=latest&inline_images=false&include_compacted=true&transcript=1${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`,
+          { signal },
+        ),
+      );
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.status !== 404 || !api.isWorkspace(profile, id))
+        throw cause;
+      return { messages: await api.messages(profile, id, signal), nextOffset: 0, hasMore: false };
+    }
+    // Old gateways may ignore order while still echoing pagination. Adopt only
+    // an explicitly confirmed tail; otherwise use the shared oldest-page contract.
+    if (page.pagination && page.pagination.order !== "latest")
+      return { messages: await api.messages(profile, id, signal), nextOffset: 0, hasMore: false };
+    return {
+      messages: page.messages,
+      nextOffset: page.transcript?.next_offset ?? offset + page.messages.length,
+      hasMore:
+        page.transcript?.has_more ??
+        Boolean(
+          page.pagination &&
+          page.pagination.returned >= page.pagination.limit &&
+          page.messages.length,
+        ),
+      revision: page.transcript?.revision,
+      projected: Boolean(page.transcript),
+    };
+  },
   async messages(profile: string, id: string, signal?: AbortSignal): Promise<Message[]> {
     const messages: Message[] = [];
+    let previousPage = "";
+    const ids = new Set<string>();
     for (let offset = 0; ;) {
       let page: ReturnType<typeof messagePage>;
       try {
         page = messagePage(
           await request<unknown>(
             profile,
-            `/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false`,
+            `/api/sessions/${encodeURIComponent(id)}/messages?limit=500&offset=${offset}&order=oldest&inline_images=false&include_compacted=true`,
             { signal },
           ),
         );
@@ -313,7 +362,17 @@ export const api = {
           ).messages;
         throw cause;
       }
-      messages.push(...page.messages);
+      const signature = JSON.stringify(page.messages);
+      if (offset && signature === previousPage) return messages;
+      previousPage = signature;
+      messages.push(
+        ...page.messages.filter((row) => {
+          if (!row.id) return true;
+          if (ids.has(row.id)) return false;
+          ids.add(row.id);
+          return true;
+        }),
+      );
       if (
         !page.pagination ||
         page.pagination.returned < page.pagination.limit ||

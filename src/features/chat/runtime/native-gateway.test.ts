@@ -103,6 +103,9 @@ describe("profile-bound native gateway", () => {
         viewer = new NativeGatewayViewer(profile, "stored", h);
       try {
         await Promise.all([viewer.ensure(), viewer.ensure()]);
+        expect(frames.find((frame) => frame.method === "session.resume").params.omit_messages).toBe(
+          true,
+        );
         expect(sockets).toHaveLength(1);
         expect(sockets[0]!.url.href).toBe("wss://dashboard.test/api/ws");
         expect(sockets[0]!.protocols).toEqual([

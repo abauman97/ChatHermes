@@ -1676,10 +1676,13 @@ async def test_artifact_index_profile_host_boundary(app, monkeypatch, tmp_path):
 @run_async
 async def test_indexed_inline_images_are_authenticated_profile_history_addresses(app, monkeypatch):
     seen = []
-    async def messages(source, profile, session, inline=False):
-        seen.append((profile, session, inline))
-        return [{'id': 12, 'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,aGVsbG8='}}]}]
-    monkeypatch.setattr(plugin._artifact_indexer.Source, 'messages', messages)
+    from types import SimpleNamespace
+    def image(profile, session, message, part):
+        seen.append((profile, session, message, part))
+        if message != '12' or part != 0:
+            raise ValueError('Missing image')
+        return 'data:image/png;base64,aGVsbG8='
+    monkeypatch.setattr(plugin, '_load_sibling', lambda name: SimpleNamespace(read_inline_image=image))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
         root = '/api/plugins/chathermes/artifact-images/s/12/0?profile=alpha'
         response = await client.get(root)
@@ -1690,7 +1693,7 @@ async def test_indexed_inline_images_are_authenticated_profile_history_addresses
         assert (await client.get(root.replace('/12/', '/13/'))).status_code == 404
         assert (await client.get(root.replace('/0?', '/1?'))).status_code == 404
         assert (await client.get(root.replace('/0?', '/-1?'))).status_code == 422
-    assert all(profile == 'alpha' and session == 's' and inline for profile, session, inline in seen)
+    assert all(profile == 'alpha' and session == 's' for profile, session, _, _ in seen)
 
 
 @run_async
@@ -1734,3 +1737,22 @@ async def test_native_preparation_rejects_invalid_provider_without_dispatch(app,
         response = await client.post('/api/plugins/chathermes/chat/prepare', json={
             'input': 'Hello', 'model': 'workflow-model', 'provider': provider})
         assert response.status_code == 422
+
+
+@run_async
+async def test_transcript_extension_validates_pages_and_redacts_credentials(app, monkeypatch):
+    from types import SimpleNamespace
+    seen = []
+    def page(profile, session, limit, offset, revision):
+        seen.append((profile, session, limit, offset, revision))
+        return {'data': [{'id': '1', 'role': 'user', 'content': KEY}],
+                'transcript': {'revision': 'safe', 'next_offset': 240, 'has_more': True}}
+    monkeypatch.setattr(plugin, '_load_sibling', lambda name: SimpleNamespace(read_profile_page=page))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://dashboard.test') as client:
+        root = '/api/plugins/chathermes/api/sessions/s/messages?transcript=1&profile=alpha'
+        response = await client.get(root + '&limit=120&offset=120&revision=before')
+        assert response.status_code == 200
+        assert KEY not in response.text and '[redacted]' in response.text
+        assert seen == [('alpha', 's', 120, 120, 'before')]
+        for query in ('limit=0', 'limit=121', 'offset=-1', 'offset=bad'):
+            assert (await client.get(root + '&' + query)).status_code == 422

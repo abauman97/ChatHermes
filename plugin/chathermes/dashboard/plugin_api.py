@@ -287,6 +287,26 @@ async def session(request: Request, session_id: str):
 @router.get("/sessions/{session_id}/messages")
 @router.get("/api/sessions/{session_id}/messages", include_in_schema=False)
 async def messages(request: Request, session_id: str):
+    if request.query_params.get('transcript') == '1':
+        read_profile_page = _load_sibling('transcript').read_profile_page
+        from starlette.concurrency import run_in_threadpool
+        try:
+            limit = int(request.query_params.get('limit', '120'))
+            offset = int(request.query_params.get('offset', '0'))
+            if not 1 <= limit <= 120 or offset < 0:
+                raise ValueError()
+        except ValueError:
+            raise HTTPException(422, 'Invalid transcript page') from None
+        try:
+            result = await run_in_threadpool(read_profile_page, _request_profile(request),
+                session_id, limit, offset, request.query_params.get('revision'))
+            import json
+            # Same credential reflection protection as the gateway proxy.
+            _, key, _ = _target(request, '/api/sessions')
+            return Response(_safe_body(json.dumps(result).encode(), key), media_type='application/json')
+        except (ImportError, AttributeError, NotImplementedError):
+            # Older Hermes stores retain the gateway's compatibility behavior.
+            pass
     return await _proxy(request, "/api/sessions/" + quote(session_id, safe="") + "/messages")
 
 
@@ -812,9 +832,14 @@ async def artifact_image(request: Request, session_id: str, message_id: str, par
     if not re.fullmatch(r'[A-Za-z0-9_-]+', session_id) or not 0 <= part_index <= 1000:
         raise HTTPException(422, 'Invalid image reference')
     try:
-        messages = await _artifact_indexer.Source(sys.modules[__name__]).messages(profile, session_id, inline=True)
-        row = next(row for row in messages if str(row.get('id')) == message_id and row.get('role') in ('user', 'assistant'))
-        url = row['content'][part_index]['image_url']['url']
+        from starlette.concurrency import run_in_threadpool
+        try:
+            url = await run_in_threadpool(_load_sibling('transcript').read_inline_image,
+                                         profile, session_id, message_id, part_index)
+        except (ImportError, AttributeError):
+            messages = await _artifact_indexer.Source(sys.modules[__name__]).messages(profile, session_id, inline=True)
+            row = next(row for row in messages if str(row.get('id')) == message_id and row.get('role') in ('user', 'assistant'))
+            url = row['content'][part_index]['image_url']['url']
         if not isinstance(url, str) or not re.match(r'^data:image/(?:png|jpeg|gif|webp);base64,', url) or len(url) > 28 * 1024 * 1024:
             raise ValueError()
         content = base64.b64decode(url.split(',', 1)[1], validate=True)

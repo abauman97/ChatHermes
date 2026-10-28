@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useNativeSession } from "./native-session";
 import { api } from "../../../services/hermes-api";
 import { nativeOutcome } from "./native-admission";
@@ -44,6 +44,13 @@ vi.mock("./native-chat", async (importOriginal) => {
       close() {}
     },
   };
+});
+beforeEach(() => {
+  vi.spyOn(api, "latestMessages").mockImplementation(async (p, s, signal) => ({
+    messages: await api.messages(p, s, signal),
+    nextOffset: 0,
+    hasMore: false,
+  }));
 });
 afterEach(() => {
   localStorage.clear();
@@ -933,4 +940,171 @@ describe("session context accounting", () => {
     expect(session.contextBreakdown.value).toBeNull();
     session.close();
   });
+});
+
+it("rejects obsolete backfill after refresh and replaces rewound persisted rows", async () => {
+  let finishOlder!: (value: any) => void;
+  const tail = {
+    messages: [
+      { id: "2", role: "user", content: "Retained" },
+      { id: "3", role: "assistant", content: "Rewound" },
+    ],
+    nextOffset: 120,
+    hasMore: true,
+    revision: "before",
+    projected: true,
+  };
+  const latest = vi.spyOn(api, "latestMessages").mockResolvedValue(tail);
+  fake.rpc.mockResolvedValue({ settled: true });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  await session.hydrate();
+  latest.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishOlder = resolve;
+      }),
+  );
+  const older = session.loadEarlier();
+  latest.mockResolvedValue({
+    messages: [{ id: "2", role: "user", content: "Retained" }],
+    nextOffset: 1,
+    hasMore: false,
+    revision: "after",
+    projected: true,
+  });
+  await session.hydrate();
+  finishOlder({
+    messages: [{ id: "1", role: "user", content: "Obsolete" }],
+    nextOffset: 240,
+    hasMore: false,
+    revision: "before",
+    projected: true,
+  });
+  await older;
+  expect(session.messages.value.map((row) => row.content)).toEqual(["Retained"]);
+  expect(session.hasEarlier.value).toBe(false);
+  session.close();
+});
+
+it("refreshes a changed pagination revision without resurrecting removed rows", async () => {
+  const latest = vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: [{ id: "2", role: "user", content: "Old tail" }],
+    nextOffset: 120,
+    hasMore: true,
+    revision: "before",
+    projected: true,
+  });
+  fake.rpc.mockResolvedValue({ settled: true });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  await session.hydrate();
+  const { ApiError } = await import("../../../services/hermes-api");
+  latest.mockRejectedValueOnce(new ApiError(409, "Changed"));
+  latest.mockResolvedValue({
+    messages: [{ id: "3", role: "user", content: "New tail" }],
+    nextOffset: 1,
+    hasMore: false,
+    revision: "after",
+    projected: true,
+  });
+  await session.loadEarlier();
+  expect(session.messages.value.map((row) => row.content)).toEqual(["New tail"]);
+  expect(session.loadingEarlier.value).toBe(false);
+  expect(session.earlierError.value).toBe("");
+  session.close();
+});
+
+it("restores persisted tools after an omitted in-flight snapshot settles", async () => {
+  const rows = [
+    { id: "1", role: "user", content: "Earlier" },
+    { id: "2", role: "assistant", content: "Earlier answer" },
+    { id: "3", role: "user", content: "Question", display_kind: null },
+    {
+      id: "4",
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "call", function: { name: "terminal", arguments: "{}" } }],
+    },
+    {
+      id: "5",
+      role: "tool",
+      content: "saved-tool-output",
+      tool_call_id: "call",
+      tool_name: "terminal",
+    },
+    { id: "6", role: "assistant", content: "Final answer" },
+  ];
+  vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: rows,
+    nextOffset: rows.length,
+    hasMore: false,
+    revision: "r1",
+    projected: true,
+  });
+  fake.rpc.mockResolvedValue({ settled: true });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  fake.hooks!.snapshot({
+    messages: [],
+    messages_omitted: true,
+    running: true,
+    inflight: { user: "Question", assistant: "Final answer", streaming: true },
+    recovery: { complete: false, base_row_ids: null },
+  } as any);
+  fake.hooks!.recovered();
+  fake.hooks!.event({ type: "message.complete", payload: { status: "complete" } } as any);
+  await session.hydrate();
+  expect(session.messages.value.map((row) => row.id)).toEqual(["1", "2", "3", "4", "5", "6"]);
+  expect(session.messages.value[2]?.blocks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: "tool", output: "saved-tool-output", complete: true }),
+    ]),
+  );
+  expect(session.error.value).toBe("");
+  session.close();
+});
+
+it("hydrates the persisted prefix while an omitted resumed turn is still running", async () => {
+  const rows = [
+    { id: "1", role: "user", content: "Before compaction" },
+    { id: "2", role: "assistant", content: "Saved before compaction" },
+    { id: "3", role: "user", content: "Current question", display_kind: null },
+    { id: "4", role: "assistant", content: "Partial reply" },
+  ];
+  vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: rows,
+    nextOffset: 120,
+    hasMore: true,
+    revision: "r1",
+    projected: true,
+  });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  fake.hooks!.snapshot({
+    messages: [],
+    messages_omitted: true,
+    running: true,
+    inflight: { user: "Current question", assistant: "Partial reply", streaming: true },
+    recovery: { complete: false, base_row_ids: null },
+  } as any);
+  fake.hooks!.recovered();
+  // Keep this test's tail complete; production backfills only when requested.
+  vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: rows,
+    nextOffset: 120,
+    hasMore: true,
+    revision: "r1",
+    projected: true,
+  });
+  await session.hydrate();
+  expect(session.messages.value.slice(0, 2).map((row) => row.id)).toEqual(["1", "2"]);
+  expect(session.messages.value.filter((row) => row.content === "Current question")).toHaveLength(
+    1,
+  );
+  expect(session.messages.value.find((row) => row.content === "Current question")?.blocks).toEqual(
+    expect.arrayContaining([expect.objectContaining({ kind: "text", content: "Partial reply" })]),
+  );
+  expect(session.busy.value).toBe(true);
+  session.close();
 });

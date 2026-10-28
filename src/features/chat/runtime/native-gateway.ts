@@ -237,6 +237,7 @@ export class NativeGatewayViewer {
     let snapshot = await this.call<NativeSnapshot>("session.resume", {
       session_id: this.stored,
       source: "desktop",
+      omit_messages: true,
     });
     this.assertLive();
     if (!snapshot || typeof snapshot.session_id !== "string" || !Array.isArray(snapshot.messages))
@@ -251,6 +252,7 @@ export class NativeGatewayViewer {
       this.requests.clear();
       const confirmed = await this.call<NativeSnapshot>("session.activate", {
         session_id: this.runtime,
+        omit_messages: true,
       });
       this.assertLive();
       if (confirmed.session_id !== this.runtime || !Array.isArray(confirmed.messages))
