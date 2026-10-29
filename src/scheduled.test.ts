@@ -17,6 +17,9 @@ const mount: typeof vueMount = (component, options = {}) =>
 import App from "./App.vue";
 import * as nativeSession from "./features/chat/runtime/native-session";
 import { api } from "./services/hermes-api";
+beforeEach(() => {
+  vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+});
 beforeEach(() => history.replaceState({}, "", "/chathermes"));
 afterEach(() => {
   vi.restoreAllMocks();

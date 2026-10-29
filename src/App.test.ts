@@ -14,12 +14,16 @@ const mount: typeof vueMount = (component, options = {}) =>
     },
   });
 import { computed, ref } from "vue";
+import { api } from "./services/hermes-api";
 import App from "./App.vue";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
 import type { Session } from "./types/hermes";
 import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
+beforeEach(() => {
+  vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+});
 beforeEach(() => {
   history.replaceState({}, "", "/chathermes?profile=alpha#/?profile=alpha");
 });
@@ -1844,5 +1848,150 @@ describe("local mobile drawer swipes", () => {
     expect(opened()).toBe(false);
     expect(wrapper.find(".scrim").exists()).toBe(false);
     expect(wrapper.get(".sidebar").attributes("style") || "").not.toContain("translate:");
+  });
+});
+
+describe("manual session tracking", () => {
+  const rows = [
+    { id: "recent", title: "Recent untracked", last_active: 30 },
+    { id: "open", title: "Listed open", last_active: 20 },
+  ];
+  const old = { id: "old", title: "Older open", last_active: 1 };
+  const tracked = [
+    { session_id: "old", status: "open" as const, updated_at: "2026-10-29T12:00:00Z" },
+    { session_id: "open", status: "open" as const, updated_at: "2026-10-28T12:00:00Z" },
+  ];
+  function setup() {
+    vi.mocked(api.tracking).mockResolvedValue({ tracking: tracked, sessions: [old, rows[1]!] });
+    mockFetch(async (input) =>
+      json(
+        input.includes("/capabilities")
+          ? {}
+          : {
+              sessions: input.includes("offset=30") ? [old] : rows,
+              offset: input.includes("offset=30") ? 30 : 0,
+              limit: 30,
+              has_more: !input.includes("offset=30"),
+            },
+      ),
+    );
+  }
+  it("resolves older Open summaries, sorts by activation and deduplicates across pages and reload", async () => {
+    setup();
+    let wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Active"]').text()).toMatch(/Older open.*Listed open/s);
+    expect(wrapper.find('[aria-label="Recents"]').text()).toContain("Recent untracked");
+    expect(wrapper.find('[aria-label="Recents"]').text()).not.toContain("Listed open");
+    await wrapper.find(".load-more").trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".session-row")).toHaveLength(3);
+    expect(vi.mocked(api.tracking)).toHaveBeenCalledWith("alpha", expect.any(AbortSignal));
+    wrapper.unmount();
+    wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Active"]').text()).toContain("Older open");
+    wrapper.unmount();
+  });
+  it("settles immediately, rolls back failure, and leaves the native owner untouched", async () => {
+    setup();
+    const request = deferred<never>();
+    const track = vi.spyOn(api, "track").mockReturnValue(request.promise);
+    const factory = nativeSession.useNativeSession;
+    const close = vi.fn(),
+      stop = vi.fn();
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((...args) => {
+      const owner = factory(...args);
+      owner.close = close;
+      owner.stop = stop;
+      return owner;
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+    close.mockClear();
+    stop.mockClear();
+    const select = wrapper.findComponent(SessionSidebar).emitted("select");
+    await wrapper.get('button[aria-label="Mark Older open settled"]').trigger("click");
+    expect(wrapper.find('[aria-label="Active"]').text()).not.toContain("Older open");
+    expect(wrapper.find('[aria-label="Recents"]').text()).toContain("Older open");
+    expect(track).toHaveBeenCalledWith("alpha", "old", "settled");
+    request.reject(new Error("Tracking save failed"));
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Active"]').text()).toContain("Older open");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Tracking save failed");
+    expect(wrapper.findComponent(SessionSidebar).emitted("select")).toEqual(select);
+    expect(close).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+  it("reloads metadata by profile and ignores a late write from the previous profile", async () => {
+    setup();
+    vi.mocked(api.tracking).mockImplementation(async (profile) =>
+      profile === "alpha" ? { tracking: tracked, sessions: [old] } : { tracking: [], sessions: [] },
+    );
+    const request = deferred<never>();
+    vi.spyOn(api, "track").mockReturnValue(request.promise);
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get('button[aria-label="Mark Older open settled"]').trigger("click");
+    await wrapper.get("#profile-field").setValue("beta");
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Active"]').exists()).toBe(false);
+    request.reject(new Error("obsolete failure"));
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("obsolete failure");
+    expect(wrapper.text()).not.toContain("Older open");
+    expect(vi.mocked(api.tracking)).toHaveBeenCalledWith("beta", expect.any(AbortSignal));
+    wrapper.unmount();
+  });
+  it("replaces cached ancestor IDs when compaction happens between history pages", async () => {
+    setup();
+    const wrapper = mount(App);
+    await flushPromises();
+    vi.mocked(api.tracking).mockResolvedValue({
+      tracking: [{ session_id: "tip", status: "open", updated_at: tracked[1]!.updated_at }],
+      sessions: [{ ...rows[1]!, id: "tip" }],
+      aliases: { open: "tip" },
+    });
+    await wrapper.get(".load-more").trigger("click");
+    await flushPromises();
+    const sidebar = wrapper.findComponent(SessionSidebar);
+    const summaries = sidebar.props("sessions") as Session[];
+    expect(summaries.filter((row) => row.id === "tip")).toHaveLength(1);
+    expect(summaries.some((row) => row.id === "open")).toBe(false);
+    expect(wrapper.find('[aria-label="Active"]').text()).toContain("Listed open");
+    expect(wrapper.find('[aria-label="Recents"]').text()).not.toContain("Listed open");
+    wrapper.unmount();
+  });
+  it("refreshes newly created ChatHermes tracking without manufacturing an unpersisted history row", async () => {
+    const factory = nativeSession.useNativeSession;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((...args) => {
+      const owner = factory(...args);
+      owner.attach = vi.fn(async () => {});
+      return owner;
+    });
+    mockFetch(async (input) =>
+      json(input.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    vi.spyOn(api, "create").mockResolvedValue({ id: "new-chat" });
+    vi.mocked(api.tracking).mockResolvedValue({
+      tracking: [{ session_id: "new-chat", status: "open", updated_at: "2026-10-29" }],
+      sessions: [{ id: "new-chat", title: "Created in ChatHermes" }],
+    });
+    wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Active"]').text()).toContain("Created in ChatHermes");
+    wrapper.unmount();
+  });
+  it("keeps chronological history usable when tracking is temporarily unavailable", async () => {
+    setup();
+    vi.mocked(api.tracking).mockRejectedValue(new Error("offline tracking"));
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Recents"]').text()).toContain("Recent untracked");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Could not load session tracking");
+    wrapper.unmount();
   });
 });

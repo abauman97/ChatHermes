@@ -9,6 +9,17 @@ export interface Session {
   workspace_rpc?: boolean;
   profile?: string | null;
   last_active?: number;
+  started_at?: number;
+}
+export interface SessionTracking {
+  session_id: string;
+  status: "open" | "settled";
+  updated_at: string;
+}
+export interface SessionTrackingPage {
+  tracking: SessionTracking[];
+  sessions: Session[];
+  aliases?: Record<string, string>;
 }
 export interface SessionPage {
   sessions: Session[];

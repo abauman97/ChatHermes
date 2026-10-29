@@ -42,7 +42,8 @@ def test_safe_body_redacts_only_nonempty_credentials(body, key, expected):
 
 
 @pytest.fixture
-def app(monkeypatch):
+def app(monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin._push_store_module, "_path", lambda: tmp_path / "push.json")
     monkeypatch.setattr(plugin, "_gateway_settings", lambda: ("http://gateway.test", KEY))
     monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: KEY)
     monkeypatch.setattr(plugin, "_configured_default_model", lambda profile: "")
@@ -2965,3 +2966,116 @@ async def test_transcript_extension_validates_pages_and_redacts_credentials(app,
         assert seen == [("alpha", "s", 120, 120, "before")]
         for query in ("limit=0", "limit=121", "offset=-1", "offset=bad"):
             assert (await client.get(root + "&" + query)).status_code == 422
+
+
+@run_async
+async def test_tracking_auto_opens_only_confirmed_chathermes_creations(app, monkeypatch):
+    statuses = iter([201, 409, 200, 201])
+    monkeypatch.setattr(
+        plugin,
+        "_client",
+        lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(next(statuses), json={"session": {"id": "new"}})
+            )
+        ),
+    )
+    store = plugin._session_tracking
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        root = "/api/plugins/chathermes"
+        assert (await client.post(root + "/api/sessions?profile=alpha", json={})).status_code == 201
+        first = store.entries(plugin._push_store_module, "alpha")
+        assert first[0]["status"] == "open"
+        store.mark(plugin._push_store_module, "alpha", "new", "settled")
+        settled = store.entries(plugin._push_store_module, "alpha")
+        assert (await client.post(root + "/api/sessions?profile=alpha", json={})).status_code == 409
+        await client.get(root + "/api/sessions?profile=alpha")
+        await client.post(root + "/chat/sessions?profile=alpha", json={})
+        assert store.entries(plugin._push_store_module, "alpha") == settled
+        assert store.entries(plugin._push_store_module, "beta") == []
+        await client.post(root + "/chat/sessions?prepare=1&profile=beta", json={})
+        assert store.entries(plugin._push_store_module, "beta") == []
+
+
+@run_async
+async def test_tracking_routes_validate_scope_and_never_dispatch_runtime_operations(
+    app, monkeypatch
+):
+    store = plugin._session_tracking
+    seen = []
+
+    def check(profile, session_id):
+        seen.append((profile, session_id))
+        if profile != "alpha":
+            raise plugin.HTTPException(404, "Session unavailable in this profile")
+
+    monkeypatch.setattr(plugin._native_validation, "check_profile_session", check)
+    monkeypatch.setattr(
+        store,
+        "set_status",
+        lambda storage, profile, sid, status: store.mark(storage, profile, sid, status),
+    )
+    monkeypatch.setattr(
+        store,
+        "listing",
+        lambda storage, profile: {"tracking": store.entries(storage, profile), "sessions": []},
+    )
+    monkeypatch.setattr(
+        plugin, "_new_rpc_transport", lambda *a: pytest.fail("tracking must not touch runtime")
+    )
+    monkeypatch.setattr(
+        plugin, "_client", lambda: pytest.fail("tracking must not proxy lifecycle requests")
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        root = "/api/plugins/chathermes/session-tracking"
+        for status in ("open", "settled", "open"):
+            result = await client.put(root + "/one?profile=alpha", json={"status": status})
+            assert result.status_code == 200 and result.json()["status"] == status
+            assert result.headers["cache-control"] == "private, no-store"
+        denied = await client.put(root + "/one?profile=beta", json={"status": "open"})
+        assert denied.status_code == 404
+        for body in (
+            {},
+            {"status": "closed"},
+            {"status": "open", "cwd": "/private"},
+            [],
+            {"status": {}},
+        ):
+            assert (await client.put(root + "/one?profile=alpha", json=body)).status_code == 422
+        assert (await client.get(root + "?profile=beta")).json()["tracking"] == []
+        assert len((await client.get(root + "?profile=alpha")).json()["tracking"]) == 1
+    assert seen == [("alpha", "one")] * 3 + [("beta", "one")]
+
+
+@run_async
+async def test_archive_keeps_tracking_and_only_confirmed_delete_removes_it(app, monkeypatch):
+    store = plugin._session_tracking
+    store.mark(plugin._push_store_module, "alpha", "one", "open")
+    store.mark(plugin._push_store_module, "beta", "one", "open")
+    responses = iter([(200, {}), (409, {}), (200, {"deleted": False}), (200, {"deleted": True})])
+
+    def gateway(request):
+        status, body = next(responses)
+        return httpx.Response(status, json=body)
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    monkeypatch.setattr(store, "deletion_ids", lambda storage, profile, sid: [sid])
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        path = "/api/plugins/chathermes/api/sessions/one?profile=alpha"
+        await client.patch(path, json={"archived": True})
+        assert len(store.entries(plugin._push_store_module, "alpha")) == 1
+        assert (await client.delete(path)).status_code == 409
+        assert len(store.entries(plugin._push_store_module, "alpha")) == 1
+        await client.delete(path)
+        assert len(store.entries(plugin._push_store_module, "alpha")) == 1
+        await client.delete(path)
+        assert store.entries(plugin._push_store_module, "alpha") == []
+        assert len(store.entries(plugin._push_store_module, "beta")) == 1

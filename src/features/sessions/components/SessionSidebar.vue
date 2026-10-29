@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import { projectSessions } from "../../projects/utils/projects";
-import type { Project, Session } from "../../../types/hermes";
+import type { Project, Session, SessionTracking } from "../../../types/hermes";
 const props = defineProps<{
   sessions: Session[];
+  tracking?: SessionTracking[];
+  trackingPending?: Set<string>;
   selected: string;
   loading: boolean;
   error: string;
@@ -13,6 +15,7 @@ const props = defineProps<{
   projects?: Project[];
 }>();
 const emit = defineEmits<{
+  track: [id: string, status: SessionTracking["status"]];
   select: [id: string];
   create: [];
   more: [];
@@ -22,6 +25,35 @@ const emit = defineEmits<{
   delete: [id: string];
   project: [id: string, projectId: string];
 }>();
+const statuses = computed(
+  () => new Map((props.tracking || []).map((row) => [row.session_id, row])),
+);
+const sections = computed(() => {
+  const unique = [...new Map(props.sessions.map((row) => [row.id, row])).values()];
+  const active = unique
+    .filter((row) => statuses.value.get(row.id)?.status === "open")
+    .sort((a, b) => {
+      const left = statuses.value.get(a.id)!.updated_at;
+      const right = statuses.value.get(b.id)!.updated_at;
+      return right.localeCompare(left) || b.id.localeCompare(a.id);
+    });
+  return [
+    ...(active.length ? [{ label: "Active", sessions: active }] : []),
+    {
+      label: props.heading || "Recents",
+      sessions: unique.filter((row) => statuses.value.get(row.id)?.status !== "open"),
+    },
+  ];
+});
+function menuTrack() {
+  if (chosen.value)
+    emit(
+      "track",
+      chosen.value.id,
+      statuses.value.get(chosen.value.id)?.status === "open" ? "settled" : "open",
+    );
+  closeMenu();
+}
 // Membership comes from Hermes's project tree, never a guessed cwd match.
 const projectNames = computed(() => {
   const names = new Map<string, string>();
@@ -68,7 +100,7 @@ async function openMenu(session: Session, event: MouseEvent) {
   const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
   position.value = {
     left: `${Math.max(12, Math.min(box.right - 208, window.innerWidth - 220))}px`,
-    top: `${Math.max(12, Math.min(box.bottom, window.innerHeight - 240))}px`,
+    top: `${Math.max(12, Math.min(box.bottom, window.innerHeight - 280))}px`,
   };
   await nextTick();
   popup.value?.showModal();
@@ -94,9 +126,6 @@ function remove() {
 }
 </script>
 <template>
-  <h2 class="session-head mt-4 mb-1 shrink-0 px-2.5 text-xs font-semibold text-[#a3a3a3]">
-    {{ heading || "Recents" }}
-  </h2>
   <p
     v-if="error"
     class="notice error rounded-lg bg-[#402b2b] p-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]"
@@ -121,53 +150,78 @@ function remove() {
     aria-label="Sessions"
     class="session-list grid min-h-0 flex-1 auto-rows-max gap-0.5 overflow-y-auto"
   >
-    <div
-      v-for="session in sessions"
-      :key="session.id"
-      class="session-row flex items-center rounded-lg hover:bg-[#303030] dark:hover:bg-[#303030]"
-      :class="selected === session.id ? 'active bg-[#303030] dark:bg-[#303030]' : ''"
-    >
-      <template v-if="editing === session.id">
-        <input
-          v-model="title"
-          aria-label="Session title"
-          maxlength="160"
-          class="min-w-0 flex-1 rounded-md border border-[#424242] bg-[#303030] p-2 text-base text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4] dark:bg-[#303030] dark:text-white"
-          @keydown.enter="save"
-          @keydown.esc="editing = ''"
-        />
-        <button
-          aria-label="Save title"
-          class="rounded-md px-2 py-2 text-sm text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
-          @click="save"
-        >
-          Save
-        </button>
-      </template>
-      <template v-else>
-        <button
-          class="session-select grid min-h-[44px] min-w-0 flex-1 gap-0 px-2.5 py-1.5 text-left text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
-          :aria-current="selected === session.id ? 'page' : undefined"
-          @click="emit('select', session.id)"
-        >
-          <span class="truncate">{{ session.title || "Untitled session" }}</span
-          ><span
-            class="truncate text-xs leading-4 text-[#a3a3a3] dark:text-[#a3a3a3]"
-            :title="sessionSource(session)"
-            >{{ sessionSource(session) }}</span
+    <section v-for="section in sections" :key="section.label" :aria-label="section.label">
+      <h2 class="session-head mt-4 mb-1 px-2.5 text-xs font-semibold text-[#a3a3a3]">
+        {{ section.label }}
+      </h2>
+      <div
+        v-for="session in section.sessions"
+        :key="session.id"
+        class="session-row flex items-center rounded-lg hover:bg-[#303030] dark:hover:bg-[#303030]"
+        :class="selected === session.id ? 'active bg-[#303030] dark:bg-[#303030]' : ''"
+      >
+        <template v-if="editing === session.id">
+          <input
+            v-model="title"
+            aria-label="Session title"
+            maxlength="160"
+            class="min-w-0 flex-1 rounded-md border border-[#424242] bg-[#303030] p-2 text-base text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4] dark:bg-[#303030] dark:text-white"
+            @keydown.enter="save"
+            @keydown.esc="editing = ''"
+          />
+          <button
+            aria-label="Save title"
+            class="rounded-md px-2 py-2 text-sm text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+            @click="save"
           >
-        </button>
-        <button
-          class="icon-button rounded-md px-2 py-1 text-xl text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
-          :aria-label="`Options for ${session.title || 'Untitled session'}`"
-          aria-haspopup="dialog"
-          :disabled="busy"
-          @click="openMenu(session, $event)"
-        >
-          ⋮
-        </button>
-      </template>
-    </div>
+            Save
+          </button>
+        </template>
+        <template v-else>
+          <button
+            v-if="statuses.get(session.id)?.status === 'open'"
+            class="settle-session flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[#a3a3a3] hover:bg-[#424242] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+            :aria-label="`Mark ${session.title || 'Untitled session'} settled`"
+            title="Mark settled"
+            :disabled="busy || trackingPending?.has(session.id)"
+            @click="emit('track', session.id, 'settled')"
+          >
+            <svg
+              class="size-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="m8 12 3 3 5-6" />
+            </svg>
+          </button>
+          <button
+            class="session-select grid min-h-[44px] min-w-0 flex-1 gap-0 px-2.5 py-1.5 text-left text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+            :aria-current="selected === session.id ? 'page' : undefined"
+            @click="emit('select', session.id)"
+          >
+            <span class="truncate">{{ session.title || "Untitled session" }}</span
+            ><span
+              class="truncate text-xs leading-4 text-[#a3a3a3] dark:text-[#a3a3a3]"
+              :title="sessionSource(session)"
+              >{{ sessionSource(session) }}</span
+            >
+          </button>
+          <button
+            class="icon-button rounded-md px-2 py-1 text-xl text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+            :aria-label="`Options for ${session.title || 'Untitled session'}`"
+            aria-haspopup="dialog"
+            :disabled="busy"
+            @click="openMenu(session, $event)"
+          >
+            ⋮
+          </button>
+        </template>
+      </div>
+    </section>
   </nav>
   <button
     v-if="hasMore"
@@ -191,6 +245,13 @@ function remove() {
     @click="$event.target === $event.currentTarget && closeMenu()"
   >
     <div v-if="mode === 'menu'" class="grid gap-1">
+      <button
+        class="rounded-lg px-3 py-2 text-left hover:bg-[#303030]"
+        :disabled="busy || (chosen && trackingPending?.has(chosen.id))"
+        @click="menuTrack"
+      >
+        {{ chosen && statuses.get(chosen.id)?.status === "open" ? "Mark settled" : "Make active" }}
+      </button>
       <button class="rounded-lg px-3 py-2 text-left hover:bg-[#303030]" @click="menuRename">
         Rename
       </button>

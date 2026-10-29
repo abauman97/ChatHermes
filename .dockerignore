@@ -6,6 +6,7 @@
 tests/visual-output
 tests/integration-output
 .venv
+.hermes-source
 __pycache__
 .pytest_cache
 node_modules

@@ -12,6 +12,21 @@ Saved chats open at their latest messages. Scroll toward the top to load older h
 
 Thinking and tool disclosures show the activity Hermes provides. Open a completed disclosure to inspect it. Approvals and clarification requests appear in the conversation; respond there to continue.
 
+## Active and recent chats
+
+New chats created in ChatHermes start **Open** and appear in **Active**, newest
+activation first. Active includes older chats beyond the current history page.
+Existing Hermes chats remain untracked until you choose **Make active** in their
+ellipsis menu. Click or tap the check-circle beside an Active chat, or choose
+**Mark settled** in its menu, to move it to chronological **Recents**. Settled
+and untracked chats can be made active again.
+
+Tracking is saved per Hermes profile across reloads and devices. It is manual:
+sending messages, completing work, or reconnecting does not change it. Settling
+keeps the conversation available and allows running work to continue. Archiving
+hides a chat while retaining its tracking; deleting removes the metadata.
+Compaction carries the status to the continuation chat.
+
 ## Projects and instructions
 
 Open **Projects** and select a Project to view its recent chats and repository hierarchy. Hermes supplies Projects, including automatic repository Projects and Home.

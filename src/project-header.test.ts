@@ -10,6 +10,7 @@ const mount: typeof vueMount = (component, options = {}) =>
       plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
     },
   });
+import { api } from "./services/hermes-api";
 import App from "./App.vue";
 
 const json = (value: unknown) =>
@@ -18,6 +19,9 @@ const json = (value: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
+beforeEach(() => {
+  vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+});
 beforeEach(() => {
   history.replaceState({}, "", "/chathermes?profile=alpha#/?profile=alpha");
 });

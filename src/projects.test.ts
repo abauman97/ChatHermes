@@ -31,6 +31,9 @@ import type { Project, ProjectTree } from "./types/hermes";
 const nativeFactory = nativeSession.useNativeSession;
 let nativeOwner: ReturnType<typeof nativeFactory>;
 beforeEach(() => {
+  vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+});
+beforeEach(() => {
   vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
     const owner = (nativeOwner = nativeFactory(callback));
     owner.attach = vi.fn(async (profile, id) => {
