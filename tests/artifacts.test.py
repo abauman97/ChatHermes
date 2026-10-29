@@ -36,7 +36,7 @@ def test_shared_database_transactions_upgrade_cleanup_and_permissions(state):
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert db.execute("PRAGMA busy_timeout").fetchone()[0] == 10000
         assert db.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == len(shared.MIGRATIONS)
         db.execute("INSERT INTO completions VALUES ('p','s','1','turn.complete')")
     with pytest.raises(sqlite3.ProgrammingError):
         db.execute("SELECT 1")

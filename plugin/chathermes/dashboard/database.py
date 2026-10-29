@@ -31,6 +31,12 @@ MIGRATIONS = (
         """CREATE TABLE artifact_deletions (profile TEXT, session TEXT, path TEXT,
             PRIMARY KEY(profile, session, path))""",
     ),
+    (
+        """CREATE TABLE session_tracking (
+            profile TEXT NOT NULL, session_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('open', 'settled')),
+            updated_at TEXT NOT NULL, PRIMARY KEY(profile, session_id))""",
+    ),
 )
 
 

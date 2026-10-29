@@ -6,6 +6,8 @@ import type {
   MessageWindow,
   Session,
   SessionPage,
+  SessionTracking,
+  SessionTrackingPage,
   Attachment,
   ModelOption,
   ModelInventory,
@@ -31,7 +33,7 @@ function endpoint(profile: string, path: string): string {
   if (profile && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(profile))
     throw new Error("Invalid profile name");
   if (
-    !/^\/(?:artifacts\?[^#]*|project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(
+    !/^\/(?:session-tracking(?:\/[A-Za-z0-9_-]+)?|artifacts\?[^#]*|project-instructions\?project_id=[^&]*(?:&[^#]*)?|chat\/sessions(?:\?prepare=1)?|scheduled(?:\/(?:runs|output)\?[^#]*)?|projects(?:\/(?:manage|detail\?project_id=[^&]*(?:&[^#]*)?|session\?project_id=[^&]*(?:&[^#]*)?|[A-Za-z0-9_-]+(?:\/sessions)?))?|workspace\/sessions\/[A-Za-z0-9_-]+\/messages|api\/model\/options|api\/sessions(?:\?.*)?|api\/sessions\/[A-Za-z0-9_-]+(?:\/messages\?.*|\/project|\/branch)?|v1\/(?:capabilities|models))$/.test(
       path,
     )
   )
@@ -243,6 +245,13 @@ export const api = {
     else nativeProfiles.delete(profile);
     return result;
   },
+  tracking: (profile: string, signal?: AbortSignal) =>
+    request<SessionTrackingPage>(profile, "/session-tracking", { signal }),
+  track: (profile: string, id: string, status: SessionTracking["status"]) =>
+    request<SessionTracking>(profile, `/session-tracking/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    }),
   sessions: async (profile: string, offset = 0, signal?: AbortSignal) =>
     sessionsPage(
       await request<unknown>(profile, `/api/sessions?limit=30&offset=${offset}`, { signal }),

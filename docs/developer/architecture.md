@@ -211,6 +211,18 @@ Transactions commit on success and roll back on failure. Completion addresses
 and per-device delivery receipts share this database with artifact metadata;
 there is no migration from the former development outbox database.
 
+`session_tracking.py` owns the profile/session Open and Settled metadata table.
+A missing row is untracked. Confirmed ChatHermes creation inserts Open once;
+manual status updates are idempotent and preserve activation time unless status
+changes. Native continuation resolution migrates metadata transactionally and
+keeps the newest explicit status when IDs converge. Archive only hides the
+summary; confirmed deletion removes metadata. Tracking never owns execution.
+App loads tracking with each history page and merges older Open picker summaries
+without advancing the history offset. The sidebar splits Active (activation
+order) from Recents (Hermes order), deduplicates IDs, and supports optimistic
+manual transitions with profile guards and rollback. Pending writes protect their
+local projection from metadata refreshes. No sidebar operation loads transcripts.
+
 `artifact_store.py` keeps feature SQL separate from infrastructure. Each indexed
 session is replaced transactionally, alongside its successful checkpoint. The
 unique `(profile, session, path)` identity preserves first-reference deduplication.

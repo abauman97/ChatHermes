@@ -120,11 +120,10 @@ def test_direct_delivery_awaits_push_and_reuses_output(runtime, monkeypatch):
 @pytest.mark.parametrize("has_session", [False, True])
 def test_native_queue_identity_and_duplicate_ownership(runtime, monkeypatch, has_session):
     home, _, delivery = runtime
+    from cron import delivery_queue
     from cron.execution_identity import exit_cron_execution
     from cron.executions import finish_execution
     from cron.jobs import save_job_output
-
-    from cron import delivery_queue
 
     job = {"id": "audit", "name": "Audit", "deliver": "chathermes"}
     execution, token = _execution(home, job)
@@ -233,13 +232,12 @@ def test_scheduler_routes_wrapped_queue_payload_without_live_adapter(runtime, mo
     monkeypatch.setenv("CHATHERMES_HOME_CHANNEL", "scheduled")
     from types import SimpleNamespace
 
+    from cron import delivery_queue
     from cron.execution_identity import exit_cron_execution
     from cron.executions import finish_execution
     from cron.jobs import save_job_output
     from cron.scheduler_delivery import _deliver_result
     from gateway.platform_registry import PlatformEntry, platform_registry
-
-    from cron import delivery_queue
 
     plugin.register(
         SimpleNamespace(
@@ -557,9 +555,8 @@ def test_deep_link_matches_execution_window_and_exact_job(runtime, monkeypatch, 
     from datetime import datetime
 
     from chathermes.dashboard import plugin_api
-    from cron.execution_identity import exit_cron_execution
-
     from cron import executions
+    from cron.execution_identity import exit_cron_execution
 
     execution, token = _execution(home, {"id": "audit"})
     exit_cron_execution(token)

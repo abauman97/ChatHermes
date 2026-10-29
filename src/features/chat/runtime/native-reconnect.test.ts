@@ -61,6 +61,9 @@ function ready(viewer: any, text: string) {
 }
 const latest = () => fake.viewers.at(-1)!;
 beforeEach(() => {
+  vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+});
+beforeEach(() => {
   fake.viewers = [];
   vi.spyOn(api, "latestMessages").mockImplementation(async (p, s, signal) => ({
     messages: await api.messages(p, s, signal),

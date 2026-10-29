@@ -320,7 +320,7 @@ async def sessions(request: Request):
             raise HTTPException(422, "Invalid session request")
         if any(field in body for field in ("project_id", "project", "cwd")):
             raise HTTPException(422, "Use the Project session route for workspace chats")
-    return await _proxy(request, "/api/sessions")
+    return await _created_session(request, await _proxy(request, "/api/sessions"))
 
 
 @router.post("/chat/sessions")
@@ -331,7 +331,71 @@ async def native_session_create(request: Request):
         )
     # Persist an empty draft through the existing profile gateway. Runtime
     # creation belongs to the dashboard native gateway, including secondary hosts.
-    return await _proxy(request, "/api/sessions")
+    return await _created_session(request, await _proxy(request, "/api/sessions"))
+
+
+async def _created_session(request, response):
+    # Only a confirmed creation through ChatHermes opens tracking. Reads,
+    # duplicate-ID conflicts, messages and reconnects never change it.
+    if request.method == "POST" and response.status_code == 201:
+        import json
+
+        from starlette.concurrency import run_in_threadpool
+
+        body = json.loads(response.body)
+        row = body.get("session", body)
+        if isinstance(row, dict) and isinstance(row.get("id"), str):
+            await run_in_threadpool(
+                _session_tracking.mark,
+                _push_store_module,
+                _rpc_profile(request),
+                row["id"],
+                "open",
+                new=True,
+            )
+    return response
+
+
+@router.get("/session-tracking")
+async def session_tracking_list(request: Request):
+    from starlette.concurrency import run_in_threadpool
+
+    try:
+        result = await run_in_threadpool(
+            _session_tracking.listing, _push_store_module, _rpc_profile(request)
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, "Session tracking unavailable") from None
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
+@router.put("/session-tracking/{session_id}")
+async def session_tracking_mark(request: Request, session_id: str):
+    from starlette.concurrency import run_in_threadpool
+
+    profile = _rpc_profile(request)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session_id):
+        raise HTTPException(422, "Invalid stored session")
+    try:
+        body = await request.json()
+        if (
+            not isinstance(body, dict)
+            or set(body) != {"status"}
+            or body["status"] not in ("open", "settled")
+        ):
+            raise ValueError()
+    except ValueError, TypeError:
+        raise HTTPException(422, "Invalid tracking status") from None
+    await run_in_threadpool(_native_validation.check_profile_session, profile, session_id)
+    try:
+        result = await run_in_threadpool(
+            _session_tracking.set_status, _push_store_module, profile, session_id, body["status"]
+        )
+    except Exception:
+        raise HTTPException(503, "Could not update session tracking") from None
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/sessions/{session_id}")
@@ -341,7 +405,25 @@ async def native_session_create(request: Request):
 @router.patch("/api/sessions/{session_id}", include_in_schema=False)
 @router.delete("/api/sessions/{session_id}", include_in_schema=False)
 async def session(request: Request, session_id: str):
-    return await _proxy(request, "/api/sessions/" + quote(session_id, safe=""))
+    import json
+
+    from starlette.concurrency import run_in_threadpool
+
+    targets = []
+    if request.method == "DELETE":
+        targets = await run_in_threadpool(
+            _session_tracking.deletion_ids, _push_store_module, _rpc_profile(request), session_id
+        )
+    response = await _proxy(request, "/api/sessions/" + quote(session_id, safe=""))
+    if (
+        request.method == "DELETE"
+        and response.status_code == 200
+        and json.loads(response.body).get("deleted") is True
+    ):
+        await run_in_threadpool(
+            _session_tracking.remove_deleted, _push_store_module, _rpc_profile(request), targets
+        )
+    return response
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -623,6 +705,7 @@ _native_validation = _load_sibling("native_validation")
 _execution_viewer = _load_sibling("execution_viewer")
 _completion_outbox = _load_sibling("completion_outbox")
 _artifact_store = _load_sibling("artifact_store")
+_session_tracking = _load_sibling("session_tracking")
 _artifact_indexer = _load_sibling("artifact_indexer")
 _artifact_service = None
 _execution_service = None
@@ -813,6 +896,9 @@ async def branch_response(request: Request, session_id: str):
         stored = made.get("stored_session_id")
         if not isinstance(stored, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", stored):
             raise HTTPException(502, "Invalid branch receipt")
+        await run_in_threadpool(
+            _session_tracking.mark, _push_store_module, profile, stored, "open", new=True
+        )
         return {"id": stored}
     except HTTPException:
         raise
@@ -1301,6 +1387,8 @@ async def manage_project(request: Request):
 @router.post("/projects/{project_id}/sessions", status_code=201)
 @router.post("/projects/session", status_code=201)
 async def project_session(request: Request, project_id: str):
+    from starlette.concurrency import run_in_threadpool
+
     # Read the authoritative node again; no client supplied cwd or membership.
     profile = _rpc_profile(request)
     transport = _new_rpc_transport(request)
@@ -1341,6 +1429,14 @@ async def project_session(request: Request, project_id: str):
                 headers={"Cache-Control": "no-store"},
             )
         made = await transport.call("session.create", params)
+        await run_in_threadpool(
+            _session_tracking.mark,
+            _push_store_module,
+            profile,
+            made["stored_session_id"],
+            "open",
+            new=True,
+        )
         return {
             "session": {
                 "id": made["stored_session_id"],

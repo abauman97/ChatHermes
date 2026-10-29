@@ -8,6 +8,7 @@ import type {
   ModelOption,
   ProviderOption,
   Session,
+  SessionTracking,
   Project,
   ProjectAction,
 } from "./types/hermes";
@@ -201,6 +202,47 @@ const pushBusy = ref(false),
 let pushGeneration = 0;
 const settingsButton = ref<HTMLButtonElement | null>(null);
 const removedSessions = new Set<string>();
+const tracking = ref<SessionTracking[]>([]);
+const trackingPending = ref(new Set<string>());
+let trackingRevision = 0;
+async function trackSession(id: string, status: SessionTracking["status"]) {
+  if (offline.value || trackingPending.value.has(id) || sessionBusy.value) return;
+  const p = profile.value,
+    owner = profileGeneration;
+  const previous = tracking.value.find((row) => row.session_id === id);
+  invalidateSessionList();
+  trackingRevision++;
+  trackingPending.value.add(id);
+  tracking.value = [
+    ...tracking.value.filter((row) => row.session_id !== id),
+    { session_id: id, status, updated_at: new Date().toISOString() },
+  ];
+  try {
+    const result = await api.track(p, id, status);
+    if (owner !== profileGeneration) return;
+    if (result.session_id !== id) {
+      sessions.value = sessions.value.map((row) =>
+        row.id === id ? { ...row, id: result.session_id } : row,
+      );
+    }
+    tracking.value = [
+      ...tracking.value.filter(
+        (row) => row.session_id !== id && row.session_id !== result.session_id,
+      ),
+      result,
+    ];
+  } catch (cause) {
+    if (owner !== profileGeneration) return;
+    tracking.value = tracking.value.filter((row) => row.session_id !== id);
+    if (previous) tracking.value.push(previous);
+    error.value = cause instanceof Error ? cause.message : "Could not update tracking";
+  } finally {
+    if (owner === profileGeneration) {
+      invalidateSessionList();
+      trackingPending.value.delete(id);
+    }
+  }
+}
 function refreshNativeSessions(p: string) {
   if (p === profile.value) void loadSessions();
 }
@@ -421,6 +463,7 @@ function invalidateSessionList() {
   loading.value = false;
 }
 async function loadSessions(more = false) {
+  trackingRevision++;
   listAbort?.abort();
   const controller = new AbortController();
   listAbort = controller;
@@ -429,8 +472,22 @@ async function loadSessions(more = false) {
   loading.value = true;
   error.value = "";
   try {
-    const result = await api.sessions(id, more ? offset.value : 0, controller.signal);
+    const [result, trackingResult] = await Promise.all([
+      api.sessions(id, more ? offset.value : 0, controller.signal),
+      api.tracking(id, controller.signal).then(
+        (value) => ({ value, error: "" }),
+        () => ({ value: undefined, error: "Could not load session tracking" }),
+      ),
+    ]);
+    const tracked = trackingResult.value;
     if (controller !== listAbort || controller.signal.aborted || id !== profile.value) return;
+    const pending = tracking.value.filter((row) => trackingPending.value.has(row.session_id));
+    if (tracked)
+      tracking.value = [
+        ...tracked.tracking.filter((row) => !trackingPending.value.has(row.session_id)),
+        ...pending,
+      ];
+    if (trackingResult.error) error.value = trackingResult.error;
     const page = result.sessions
       .filter((row) => !removedSessions.has(row.id))
       .map((row) => {
@@ -445,6 +502,30 @@ async function loadSessions(more = false) {
           ...page.filter((item) => !sessions.value.some((existing) => existing.id === item.id)),
         ]
       : page;
+    sessions.value = [
+      ...new Map(
+        sessions.value.map((row) => {
+          const canonical = tracked?.aliases?.[row.id] || row.id;
+          return [canonical, canonical === row.id ? row : { ...row, id: canonical }];
+        }),
+      ).values(),
+    ];
+    const summaries = new Map(sessions.value.map((row) => [row.id, row]));
+    for (const row of tracked?.sessions || []) {
+      if (!summaries.has(row.id) && !removedSessions.has(row.id)) summaries.set(row.id, row);
+    }
+    // Keep Hermes's existing order (including pins). Insert extra Open summaries
+    // by recency so settling an older row also places it correctly in history.
+    const merged = [...sessions.value];
+    for (const row of summaries.values()) {
+      if (merged.some((item) => item.id === row.id)) continue;
+      const at = merged.findIndex(
+        (item) =>
+          (item.last_active ?? item.started_at ?? 0) < (row.last_active ?? row.started_at ?? 0),
+      );
+      merged.splice(at < 0 ? merged.length : at, 0, row);
+    }
+    sessions.value = merged;
     offset.value =
       typeof result.offset === "number" && typeof result.limit === "number"
         ? result.offset + result.limit
@@ -524,6 +605,8 @@ async function applyProfile(id: string) {
   profile.value = id;
   session.value = "";
   sessions.value = [];
+  tracking.value = [];
+  trackingPending.value = new Set();
   removedSessions.clear();
   messages.value = [];
   capabilities.value = {};
@@ -624,6 +707,20 @@ async function createSession(unscoped = false) {
     // can still hydrate them by stored ID. Keep the same chat components.
     await chooseSession(made.id, scope);
     refreshProjects();
+    const trackingRead = ++trackingRevision;
+    void api
+      .tracking(id)
+      .then((result) => {
+        if (owner !== profileGeneration || trackingRead !== trackingRevision) return;
+        tracking.value = result.tracking;
+        const summaries = new Map(sessions.value.map((row) => [row.id, row]));
+        for (const row of result.sessions)
+          if (!removedSessions.has(row.id)) summaries.set(row.id, row);
+        sessions.value = [...summaries.values()];
+      })
+      .catch(() => {
+        if (owner === profileGeneration) error.value = "Could not load session tracking";
+      });
     if (profile.value !== id || session.value !== made.id) return;
     return made.id;
   } catch (cause) {
@@ -1150,6 +1247,9 @@ onUnmounted(() => {
       <SessionSidebar
         heading="Recents"
         :sessions="sessions"
+        :tracking="tracking"
+        :tracking-pending="trackingPending"
+        @track="trackSession"
         :selected="session"
         :loading="loading"
         :error="error"

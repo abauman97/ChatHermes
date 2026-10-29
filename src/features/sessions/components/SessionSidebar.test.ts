@@ -55,3 +55,66 @@ it("uses authoritative project membership and updates labels when the profile tr
   expect(rows()[0]!.text()).not.toContain("·");
   wrapper.unmount();
 });
+
+it("offers status-aware menu actions and a separate touch-sized settlement button", async () => {
+  const { vi } = await import("vite-plus/test");
+  const originalShow = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+  const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
+    this.open = true;
+  });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
+    this.open = false;
+  });
+  const wrapper = mount(SessionSidebar, {
+    props: {
+      sessions: [
+        { id: "one", title: "One" },
+        { id: "two", title: "Two" },
+      ],
+      selected: "one",
+      loading: false,
+      error: "",
+      hasMore: false,
+      busy: false,
+      tracking: [{ session_id: "one", status: "open", updated_at: "2026-10-29" }],
+    },
+  });
+  const control = wrapper.get('button[aria-label="Mark One settled"]');
+  expect(control.classes()).toContain("min-h-[44px]");
+  expect(control.classes()).toContain("min-w-[44px]");
+  expect(control.find("svg").attributes("aria-hidden")).toBe("true");
+  await control.trigger("click");
+  expect(wrapper.emitted("track")).toEqual([["one", "settled"]]);
+  expect(wrapper.emitted("select")).toBeUndefined();
+  await wrapper.get('button[aria-label="Options for One"]').trigger("click");
+  const action = () =>
+    wrapper
+      .findAll("dialog button")
+      .find((button) => /Mark settled|Make active/.test(button.text()))!;
+  expect(action().text()).toBe("Mark settled");
+  await action().trigger("click");
+  await wrapper.setProps({
+    tracking: [{ session_id: "one", status: "settled", updated_at: "2026-10-29" }],
+  });
+  await wrapper.get('button[aria-label="Options for One"]').trigger("click");
+  expect(action().text()).toBe("Make active");
+  await action().trigger("click");
+  await wrapper.get('button[aria-label="Options for Two"]').trigger("click");
+  expect(action().text()).toBe("Make active");
+  await action().trigger("click");
+  expect(wrapper.emitted("track")?.at(-1)).toEqual(["two", "open"]);
+  expect(wrapper.emitted("track")).toEqual([
+    ["one", "settled"],
+    ["one", "settled"],
+    ["one", "open"],
+    ["two", "open"],
+  ]);
+  for (const label of ["Rename", "Add to project", "Archive", "Delete"])
+    expect(wrapper.find("dialog").text()).toContain(label);
+  wrapper.unmount();
+  if (originalShow) Object.defineProperty(HTMLDialogElement.prototype, "showModal", originalShow);
+  else Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
+  else Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+});

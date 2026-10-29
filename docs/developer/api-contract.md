@@ -300,3 +300,27 @@ text. Unsupported formats retain an explicit download link. Preview resources
 are revoked and requests aborted on close or unmount. File type icons are
 vendored from the MIT-licensed dmhendricks/file-icon-vectors vivid collection,
 with its license and attribution in `src/assets/file-icons/`.
+
+## Manual session tracking
+
+`GET /session-tracking?profile=…` returns `{tracking, sessions, aliases?}`. `aliases` maps compression ancestor IDs
+to their current tracked continuation, so cached history pages deduplicate after
+rotation too. Tracking rows
+contain `session_id`, `status` (`open` or `settled`) and UTC `updated_at`;
+missing rows mean untracked. `sessions` contains visible Open session summaries,
+including sessions beyond history pagination. It reads profile-local picker
+metadata, never transcripts or runtime viewers. Responses are private/no-store.
+
+`PUT /session-tracking/{id}?profile=…` accepts exactly `{status}` and returns the
+saved tracking row. It validates profile membership and resolves continuation
+IDs. Repeating a status preserves its activation timestamp. Only confirmed
+ChatHermes session creation automatically inserts Open metadata; prepare calls,
+conflicts, resume, messages and turn completion never reopen a chat. Explicit
+ChatHermes branches start Open independently of their parent's status.
+
+Archive retains metadata and removes the session from visible summaries.
+Confirmed successful deletion removes its metadata, including tracked ancestors
+and native deletion targets captured before lineage edges disappear. Compaction reconciliation transfers status and timestamp to
+the native resume target, excluding branch/delegate/reset/tool children. If both
+IDs already have metadata, the most recent explicit update wins. These routes
+never interrupt, close, archive, delete, or move a native session.
