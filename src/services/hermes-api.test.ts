@@ -5,6 +5,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("dashboard plugin Hermes client", () => {
+  it("deletes an Inbox item through its authenticated owning-profile route", async () => {
+    const fake = vi.fn(
+      async (_input: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ deleted: true })),
+    );
+    vi.stubGlobal("fetch", fake);
+    await expect(api.deleteInboxItem("alpha", 42)).resolves.toEqual({ deleted: true });
+    expect(fake).toHaveBeenCalledExactlyOnceWith(
+      "/api/plugins/chathermes/inbox/42?profile=alpha",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin", redirect: "manual" }),
+    );
+    for (const id of [NaN, Infinity, -1, 1.5])
+      await expect(api.deleteInboxItem("alpha", id)).rejects.toThrow("Invalid Hermes API path");
+    expect(fake).toHaveBeenCalledTimes(1);
+  });
   it("uses same-origin plugin URLs and browser session cookies without Bearer credentials", async () => {
     const fake = vi.fn(
       async (_input: string, _init?: RequestInit) =>

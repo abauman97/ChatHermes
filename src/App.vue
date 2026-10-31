@@ -893,6 +893,11 @@ async function applyScope(revision: number) {
       suggestedPrompt.value = "";
     }
   }
+  if (revision !== navigationRevision || p !== profile.value) return;
+  // Notification cleanup depends on the opened chat, not Project discovery.
+  if (nextSession && routeName.value === "chat" && nextSession === session.value) {
+    await deleteCurrentSessionInbox(p, nextSession);
+  }
   // Session links need no caller-supplied project hint: membership remains gateway-owned.
   if (nextSession && !explicitProject && routeName.value === "chat" && !projectsLoaded.value) {
     await projectsWork;
@@ -905,8 +910,6 @@ async function applyScope(revision: number) {
       void loadProject();
     }
   }
-  if (revision === navigationRevision && nextSession && routeName.value === "chat")
-    void deleteCurrentSessionInbox(p, nextSession);
 }
 watch(
   () => route.fullPath,
@@ -1082,7 +1085,10 @@ async function deleteCurrentSessionInbox(p: string, id: string) {
     id === session.value &&
     routeName.value === "chat" &&
     !chatError.value &&
-    (!nativeMode.value || native.connection.value === "ready");
+    (!nativeMode.value ||
+      native.connection.value === "ready" ||
+      !!native.approval.value ||
+      native.requests.value.length > 0);
   if (!current()) return;
   // A completion or reconnect must publish even when the route has not changed.
   // The worker independently verifies the current visible client before closing.

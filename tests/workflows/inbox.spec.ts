@@ -129,14 +129,17 @@ print(json.dumps(result))
     await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("inbox-reconciled.png") });
   // Opening a direct history link clears inbox state without an Inbox-item click.
-  await authenticate(page, `${origin}/chathermes?profile=alpha#/chat/${sessions.alpha}?profile=alpha`);
+  await authenticate(
+    page,
+    `${origin}/chathermes?profile=alpha#/chat/${sessions.alpha}?profile=alpha`,
+  );
   await expect(page.locator(".message.assistant")).toContainText(
     "Unobserved completed response in alpha",
   );
   await expect
     .poll(async () => {
       const data = (await (
-        await page.request.get("/api/plugins/chathermes/inbox?profile=default&limit=100")
+        await page.request.get("/api/plugins/chathermes/inbox?profile=alpha&limit=100")
       ).json()) as InboxPage;
       return data.items.some((item) => item.profile === "alpha" && item.session === sessions.alpha);
     })
@@ -150,57 +153,97 @@ for (const [kind, marker, requestText, answer] of [
   ["clarify", "workflow-clarify", "Choose a workflow direction", /^Proceed with workflow/],
   ["approval", "workflow-approval", "", "Allow once"],
 ] as const) {
-  test(`opening a native ${kind} inbox notification deletes it and leaves the request pending`, async ({
-    page,
-  }, info) => {
-    test.setTimeout(180000);
-    const origin = new URL(page.url()).origin;
-    const profile = kind === "approval" ? "alpha" : "beta";
-    await authenticate(page, `${origin}/chathermes?profile=${profile}#/?profile=${profile}`);
-    await page.getByRole("textbox", { name: "Message Hermes" }).fill(`[${marker}] ${randomUUID()}`);
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
-    const request = () =>
-      requestText
-        ? page.getByText(requestText, { exact: true })
-        : page.getByRole("button", { name: answer, exact: true });
-    await expect(request()).toBeVisible();
-    const session = sessionFromUrl(page.url())!;
-    // Leave the session before the shell's visible refresh deletes its notices.
-    await page.goto(origin + "/");
-    const query = "/api/plugins/chathermes/inbox?profile=default&limit=100";
-    await expect
-      .poll(async () => {
-        const data = (await (await page.request.get(query)).json()) as InboxPage;
-        return data.items.some(
-          (item) => item.profile === profile && item.session === session && item.kind === kind,
+  for (const opening of ["direct", "inbox"] as const) {
+    test(`opening a native ${kind} session via ${opening} deletes its inbox notification and leaves the request pending`, async ({
+      page,
+    }, info) => {
+      test.setTimeout(180000);
+      const origin = new URL(page.url()).origin;
+      const profile = kind === "approval" ? "alpha" : "beta";
+      await authenticate(page, `${origin}/chathermes?profile=${profile}#/?profile=${profile}`);
+      await page
+        .getByRole("textbox", { name: "Message Hermes" })
+        .fill(`[${marker}] ${randomUUID()}`);
+      await page.getByRole("button", { name: "Send message", exact: true }).click();
+      const request = () =>
+        requestText
+          ? page.getByText(requestText, { exact: true })
+          : page.getByRole("button", { name: answer, exact: true });
+      await expect(request()).toBeVisible({ timeout: 90000 });
+      const session = sessionFromUrl(page.url())!;
+      // Leave the session before the shell's visible refresh deletes its notices.
+      await page.goto(origin + "/");
+      const query = "/api/plugins/chathermes/inbox?profile=default&limit=100";
+      let notificationId = 0;
+      await expect
+        .poll(async () => {
+          const data = (await (await page.request.get(query)).json()) as InboxPage;
+          const item = data.items.find(
+            (item) => item.profile === profile && item.session === session && item.kind === kind,
+          );
+          if (item) notificationId = item.id;
+          return !!item;
+        })
+        .toBe(true);
+      // Observe the shell's real profile-scoped lookup and DELETE, rather than
+      // allowing a hidden row or a different profile's mutation to satisfy this.
+      const lookup = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname === "/api/plugins/chathermes/inbox" &&
+          url.searchParams.get("profile") === profile &&
+          url.searchParams.get("scope") === "profile" &&
+          url.searchParams.get("limit") === "100"
         );
-      })
-      .toBe(true);
-    await authenticate(page, `${origin}/chathermes?profile=${profile}#/chat/${session}?profile=${profile}`);
-    await expect(request()).toBeVisible({ timeout: 90000 });
-    await expect
-      .poll(async () => {
-        const data = (await (await page.request.get(query)).json()) as InboxPage;
-        return data.items.some((item) => item.profile === profile && item.session === session);
-      })
-      .toBe(false);
-    await authenticate(page, `${origin}/chathermes?profile=default#/inbox?profile=default`);
-    const row = page
-      .getByRole("region", { name: "Inbox", exact: true })
-      .locator(`li[data-session="${session}"]`);
-    await expect(row).toHaveCount(1);
-    await row.getByRole("button").click();
-    await expect(request()).toBeVisible({ timeout: 90000 });
-    await expect
-      .poll(async () => {
-        const data = (await (await page.request.get(query)).json()) as InboxPage;
-        return data.items.some((item) => item.profile === profile && item.session === session);
-      })
-      .toBe(false);
-    await page.screenshot({ path: info.outputPath(`inbox-${kind}-read-still-pending.png`) });
-    await page.getByRole("button", { name: answer, exact: typeof answer === "string" }).click();
-    await expect(page.locator(".message.assistant").last()).toContainText(
-      kind === "clarify" ? "Clarification accepted." : "Approved once.",
-    );
-  });
+      });
+      const deletion = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/plugins/chathermes/inbox/${notificationId}` &&
+          new URL(response.url()).searchParams.get("profile") === profile &&
+          response.request().method() === "DELETE",
+      );
+      if (opening === "direct") {
+        await authenticate(
+          page,
+          `${origin}/chathermes?profile=${profile}#/chat/${session}?profile=${profile}`,
+        );
+      } else {
+        await authenticate(page, `${origin}/chathermes?profile=default#/inbox?profile=default`);
+        const row = page
+          .getByRole("region", { name: "Inbox", exact: true })
+          .locator(`li[data-session="${session}"]`);
+        await expect(row).toHaveCount(1);
+        await row.getByRole("button").click();
+      }
+      await expect(request()).toBeVisible({ timeout: 90000 });
+      const [lookupResponse, deleteResponse] = await Promise.all([lookup, deletion]);
+      expect(lookupResponse.status()).toBe(200);
+      expect(((await lookupResponse.json()) as InboxPage).items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: notificationId, profile, session, kind }),
+        ]),
+      );
+      expect(deleteResponse.status()).toBe(200);
+      expect(await deleteResponse.json()).toEqual({ deleted: true });
+      await expect
+        .poll(async () => {
+          const data = (await (await page.request.get(query)).json()) as InboxPage;
+          return data.items.some((item) => item.profile === profile && item.session === session);
+        })
+        .toBe(false);
+      await page.screenshot({ path: info.outputPath(`inbox-${kind}-read-still-pending.png`) });
+      await page.reload();
+      await expect(request()).toBeVisible({ timeout: 90000 });
+      await expect
+        .poll(async () => {
+          const data = (await (await page.request.get(query)).json()) as InboxPage;
+          return data.items.some((item) => item.profile === profile && item.session === session);
+        })
+        .toBe(false);
+      await page.getByRole("button", { name: answer, exact: typeof answer === "string" }).click();
+      await expect(page.locator(".message.assistant").last()).toContainText(
+        kind === "clarify" ? "Clarification accepted." : "Approved once.",
+      );
+    });
+  }
 }

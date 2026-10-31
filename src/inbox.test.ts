@@ -260,6 +260,7 @@ it("keeps notifications when direct native attachment fails", async () => {
   const removed = vi.spyOn(api, "deleteInboxItem").mockResolvedValue({});
   history.replaceState({}, "", "/chathermes#/chat/same?profile=alpha");
   const wrapper = await open();
+  await flushPromises();
   expect(removed).not.toHaveBeenCalled();
   wrapper.unmount();
 });
