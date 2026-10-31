@@ -1,5 +1,30 @@
 # Notifications and Home Screen use
 
+## Inbox
+
+Open **Inbox** in the drawer to see completed responses and requests for attention
+across accessible Hermes profiles. Inbox works without browser notification
+permission or push subscriptions. Choose **All profiles** or the currently selected
+**Profile**, and use **Unread only** to filter the list. Items show their profile,
+chat title, event type, time and a short preview, newest first.
+
+Opening an item loads its owning profile and chat. Whenever a chat opens
+successfully, its Inbox notifications are deleted, including read items, regardless
+of how you navigated there. Deletion is checked again when a final response arrives,
+the chat reconnects, and the visible Inbox count refreshes. Matching system push
+notifications close while that exact profile/chat is visible and connected.
+Deletion is shared across devices. Opening an approval or clarification does not answer or resolve the request;
+use the request form in its chat. **Delete read** removes read notifications from
+the selected view; replay and reconciliation do not restore them.
+
+Collection runs while the Hermes dashboard server is running, including when
+ChatHermes is closed. It recovers missed persisted responses after a disconnect
+or server restart. Existing history is baselined when a profile is first discovered,
+so installation does not fill Inbox with old responses. Pending requests are
+collected while they remain available in the native runtime; requests that were
+resolved while the server was stopped cannot be reconstructed from chat history.
+The mounted plugin refreshes on foregrounding, gateway changes and periodic polling.
+
 ## Enable notifications on a device
 
 1. Access the Hermes dashboard through trusted HTTPS (localhost is exempt for local development).

@@ -391,6 +391,18 @@ describe("visible session notifications", () => {
     await h.update();
     expect(h.notifications.map((n) => n.close.mock.calls.length)).toEqual([1, 1, 0, 0, 0]);
   });
+  it("closes only exact session notifications after navigating from Inbox to chat", async () => {
+    const h = harness();
+    h.patch({ connected: false, session: "", url: origin + "/chathermes#/inbox" });
+    await h.push();
+    await h.push({ profile: "beta" });
+    await h.push({ session_id: "two" });
+    await h.update();
+    expect(h.notifications.every((n) => n.close.mock.calls.length === 0)).toBe(true);
+    h.patch({ connected: true, session: "one", url: route });
+    await h.update();
+    expect(h.notifications.map((n) => n.close.mock.calls.length)).toEqual([1, 0, 0]);
+  });
   it("rechecks after display to close a notification racing visibility", async () => {
     const h = harness();
     h.patch({ visible: false });

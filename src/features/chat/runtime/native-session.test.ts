@@ -61,6 +61,29 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it("reports current-session activity on attachment, final messages and reconnect, excluding obsolete viewers", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    const activity = vi.fn();
+    const session = useNativeSession(vi.fn(), undefined, undefined, activity);
+    await session.attach("alpha", "one");
+    expect(activity).toHaveBeenLastCalledWith("alpha", "one");
+    activity.mockClear();
+    const old = fake.hooks!;
+    old.event({ type: "message.complete", payload: { status: "complete", text: "Done" } } as any);
+    expect(activity).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+    activity.mockClear();
+    await session.availability(false, true);
+    await session.availability(true, true);
+    expect(activity).toHaveBeenCalledExactlyOnceWith("alpha", "one");
+    await session.attach("beta", "two");
+    activity.mockClear();
+    old.event({ type: "message.complete", payload: { status: "complete" } } as any);
+    old.recovered();
+    expect(activity).not.toHaveBeenCalled();
+    session.close();
+    fake.hooks!.recovered();
+    expect(activity).not.toHaveBeenCalled();
+  });
   it.each([
     ["alpha", "two"],
     ["beta", "one"],

@@ -324,3 +324,31 @@ and native deletion targets captured before lineage edges disappear. Compaction 
 the native resume target, excluding branch/delegate/reset/tool children. If both
 IDs already have metadata, the most recent explicit update wins. These routes
 never interrupt, close, archive, delete, or move a native session.
+
+## Managed Inbox
+
+All routes inherit dashboard authentication and return private/no-store responses.
+All-profile queries are bounded by the server's accessible profile set; a hosted
+plugin process only sees its owning profile. No push subscription is required.
+
+- `GET /inbox?scope=all&profile=…&limit=50&cursor=…&unread=false` returns
+  `{items, unread, byProfile, nextCursor, revision}`. `revision` changes when collection, read state or deletion changes in this scope. `scope=profile` selects the request
+  profile; `all` is the default. Counts cover all unread items in that scope,
+  independently of pagination. Limits are 1–100; invalid limits/cursors/scopes
+  return 422. Items carry `id, profile, session, event_id, kind, occurred, title,
+  preview, read`; time is Unix seconds. Pages order by time and ID descending.
+- `PUT /inbox/{id}/read?profile=…` idempotently marks one accessible item read,
+  returning `{read: true}`; missing, deleted or inaccessible IDs return 404.
+- `DELETE /inbox/read?scope=all&profile=…` deletes read notifications in the
+  selected scope, returning `{deleted: true}`. Durable identity tombstones
+  prevent replay from recreating them. Unread notifications are preserved.
+- `DELETE /inbox/{id}?profile=…` deletes one accessible notification, read or
+  unread, returning `{deleted: true}`; missing or inaccessible IDs return 404.
+  The shell uses this after successful chat opening through any navigation path,
+  on final assistant messages, on native recovery and during visible count refreshes.
+  It pages through the owning profile and matches the exact session.
+
+Kinds are `turn.complete`, `approval`, `clarify` and `attention`.
+Notification mutations do not answer, cancel or resolve native requests and do
+not change Web Push receipts. See [architecture](architecture.md#managed-inbox)
+for collection, initialization and recovery bounds.

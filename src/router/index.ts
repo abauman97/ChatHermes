@@ -14,6 +14,7 @@ import ProjectsPage from "../features/projects/components/ProjectsPage.vue";
 import ProjectRoute from "../features/projects/components/ProjectRoute.vue";
 import SettingsPage from "../features/settings/components/SettingsPage.vue";
 import ScheduledPage from "../features/scheduled/components/ScheduledPage.vue";
+import InboxPage from "../features/inbox/components/InboxPage.vue";
 const ChatRoute = defineComponent({ render: () => null });
 export function createChatHermesRouter(
   history: RouterHistory = createPluginHistory(),
@@ -24,6 +25,7 @@ export function createChatHermesRouter(
     routes: [
       { path: "/", name: "home", component: ChatRoute },
       { path: "/chat/:sessionId", name: "chat", component: ChatRoute },
+      { path: "/inbox", name: "inbox", component: InboxPage },
       { path: "/artifacts", name: "artifacts", component: ArtifactsPage },
       { path: "/projects", name: "projects", component: ProjectsPage },
       { path: "/projects/:projectId", name: "project", component: ProjectRoute },

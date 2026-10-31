@@ -8,7 +8,7 @@ Choose a task below. User and developer guides describe the current plugin; inte
 - [Install](user/installation.md): install manually or with your agent, including additional profiles.
 - [Configure](user/configuration.md): API server, profiles, and model choices.
 - [Use features](user/features.md): chats, attachments, Projects, instructions, artifacts, and scheduled results.
-- [Enable notifications](user/notifications.md): Home Screen use, Web Push, and per-profile Cron delivery.
+- [Inbox and notifications](user/notifications.md): shared profile notifications, Home Screen use, Web Push, and Cron delivery.
 - [Troubleshoot](user/troubleshooting.md): recover from setup, connection, file, or notification problems.
 
 ## Develop and contribute

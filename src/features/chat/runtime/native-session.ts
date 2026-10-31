@@ -35,6 +35,7 @@ export function useNativeSession(
   onSettled: () => void,
   onCreated?: (profile: string, stored: string) => void,
   onTitle?: (profile: string, stored: string, title: string) => void,
+  onSessionActivity?: (profile: string, session: string) => void,
 ) {
   const settings = ref<{
     profile: string;
@@ -680,6 +681,7 @@ export function useNativeSession(
           }
           if (target) reduceNativeTurn(target, event.type, { ...data, persisted: recovering });
           if (event.type === "message.complete") {
+            if (!recovering) onSessionActivity?.(p, s);
             invalidateBreakdown();
             applyUsage((event.payload as MessageCompletePayload).usage, false);
             if (!recovering) {
@@ -742,6 +744,7 @@ export function useNativeSession(
         recovering = false;
         loading.value = false;
         connection.value = "ready";
+        onSessionActivity?.(p, s);
         void refreshContext();
         if (contextOpen) void refreshBreakdown();
         void hydrate();

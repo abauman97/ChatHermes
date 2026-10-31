@@ -208,6 +208,10 @@ def test_native_retention_uses_one_peer_per_profile_without_browser_lifetime(del
     from contextlib import asynccontextmanager
     from types import ModuleType
 
+    # Preload the real type-only submodule before replacing the parent package.
+    # Otherwise a focused run cannot import it through the fake (non-package).
+    import websockets.typing  # noqa: F401
+
     async def run():
         store, outbox, sender, calls = delivery
         module = load("execution_viewer")
@@ -456,5 +460,70 @@ def test_two_equal_finals_after_storage_lag_keep_distinct_row_receipts(delivery,
         outbox.drain(store, sender, lambda *_: "Same final", now=100)
         assert len(calls) == 4
         assert {args[3] for args, _ in calls} == {"2", "4"}
+
+    asyncio.run(run())
+
+
+def test_inbox_capture_is_independent_of_push_storage(delivery, monkeypatch):
+    async def run():
+        store, outbox, sender, calls = delivery
+        module = load("execution_viewer")
+        recorded = []
+        monkeypatch.setattr(module, "committed_completion", lambda *_: 2)
+        api = SimpleNamespace(
+            _push_store_module=store, _record_inbox=lambda *args: recorded.append(args)
+        )
+        peer = module.Viewer(SimpleNamespace(api=api, outbox=outbox), "alpha", "stored")
+        peer.runtime, peer.started = "runtime", True
+        enqueue = outbox.enqueue
+        monkeypatch.setattr(outbox, "enqueue", lambda *a, **kw: (_ for _ in ()).throw(OSError()))
+        await peer.capture(
+            {
+                "type": "message.complete",
+                "session_id": "runtime",
+                "payload": {"status": "complete", "text": "Final"},
+            }
+        )
+        assert recorded == [("alpha", "stored", 2, "turn.complete")]
+        assert peer.notifications
+        monkeypatch.setattr(outbox, "enqueue", enqueue)
+        await peer.flush_notifications()
+        assert not peer.notifications
+        assert len(recorded) == 2  # storage owns dedupe, not browser/viewer lifetime
+
+    asyncio.run(run())
+
+
+def test_connection_attention_does_not_add_push_deliveries(delivery):
+    async def run():
+        store, outbox, sender, calls = delivery
+        module = load("execution_viewer")
+        recorded = []
+        api = SimpleNamespace(
+            _push_store_module=store, _record_inbox=lambda *args: recorded.append(args)
+        )
+        peer = module.Viewer(SimpleNamespace(api=api, outbox=outbox), "alpha", "stored")
+        peer.runtime = "runtime"
+        event = {
+            "type": "connection.request",
+            "session_id": "runtime",
+            "payload": {"op_id": "connect-1", "targets": [{"secret": "private"}]},
+        }
+        await peer.capture(event)
+        assert recorded == [("alpha", "stored", "connect-1", "attention")]
+        peer.started = True
+        failure = {
+            "type": "message.complete",
+            "session_id": "runtime",
+            "seq": 9,
+            "payload": {"status": "error", "text": "private-error"},
+        }
+        await peer.capture(failure)
+        await peer.capture(failure)
+        assert recorded[-1] == ("alpha", "stored", "failure:runtime:9", "attention")
+        assert len(recorded) == 2
+        outbox.drain(store, sender, lambda *_: None, now=100)
+        assert calls == []
+        assert not peer.inbox_only
 
     asyncio.run(run())

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import type { InboxItem } from "./features/inbox/inbox";
 import { api, ApiError } from "./services/hermes-api";
 import { useNativeSession } from "./features/chat/runtime/native-session";
 import type {
@@ -32,6 +33,7 @@ import {
 const router = useRouter(),
   route = useRoute();
 const routeName = computed(() => String(route.name || "home"));
+const inboxPage = computed(() => routeName.value === "inbox");
 const artifactsPage = computed(() => routeName.value === "artifacts");
 const projectArtifacts = computed(() => routeName.value === "project-artifacts");
 const scheduledPage = computed(() => routeName.value.startsWith("scheduled"));
@@ -129,6 +131,7 @@ const activeProjectContext = computed(
     (projectView.value || !!session.value) &&
     !projectsPage.value &&
     !scheduledPage.value &&
+    !inboxPage.value &&
     !!projectId.value &&
     !!selectedProject.value &&
     !selectedProject.value.isNoProject,
@@ -146,7 +149,10 @@ function subscribeProjectEvents() {
   closeProjectEvents?.();
   closeProjectEvents = undefined;
   if (typeof EventSource === "undefined") return;
-  closeProjectEvents = api.projectEvents(profile.value, refreshProjects);
+  closeProjectEvents = api.projectEvents(profile.value, () => {
+    refreshProjects();
+    void refreshInbox();
+  });
 }
 function refreshProjects() {
   clearTimeout(refreshTimer);
@@ -254,9 +260,11 @@ const native = useNativeSession(
   () => {
     refreshProjects();
     void loadSessions();
+    void refreshInbox();
   },
   refreshNativeSessions,
   updateNativeTitle,
+  deleteCurrentSessionInbox,
 );
 const chat = useChatController(native, {
   profile,
@@ -266,6 +274,7 @@ const chat = useChatController(native, {
   chatError,
   canStream,
   scheduledPage,
+  inboxPage,
   projectView,
   projectsPage,
   projectPage,
@@ -800,7 +809,10 @@ async function manageSession(action: "archive" | "delete" | "project", id: strin
 }
 async function visibilityChange() {
   await native.availability(document.visibilityState === "visible", navigator.onLine);
-  if (document.visibilityState === "visible") refreshProjects();
+  if (document.visibilityState === "visible") {
+    refreshProjects();
+    void refreshInbox();
+  }
 }
 function exitPlugin() {
   location.href = "/";
@@ -880,6 +892,11 @@ async function applyScope(revision: number) {
       messages.value = [];
       suggestedPrompt.value = "";
     }
+  }
+  if (revision !== navigationRevision || p !== profile.value) return;
+  // Notification cleanup depends on the opened chat, not Project discovery.
+  if (nextSession && routeName.value === "chat" && nextSession === session.value) {
+    await deleteCurrentSessionInbox(p, nextSession);
   }
   // Session links need no caller-supplied project hint: membership remains gateway-owned.
   if (nextSession && !explicitProject && routeName.value === "chat" && !projectsLoaded.value) {
@@ -1019,6 +1036,7 @@ const notificationSession = computed(() => ({
   chat:
     !settingsPage.value &&
     !scheduledPage.value &&
+    !inboxPage.value &&
     !artifactsPage.value &&
     !projectsPage.value &&
     !projectView.value &&
@@ -1035,7 +1053,99 @@ function serviceWorkerMessage(event: MessageEvent) {
   const target = resolvePluginUrl(event.data.url);
   if (target) void navigate(target);
 }
+const inboxUnread = ref(0),
+  inboxRevision = ref(0);
+let inboxTimer: ReturnType<typeof setInterval> | undefined;
+let inboxAbort: AbortController | undefined;
+let inboxFingerprint = "";
+async function refreshInbox(checkSession = true) {
+  if (document.visibilityState === "hidden") return;
+  inboxAbort?.abort();
+  const current = (inboxAbort = new AbortController());
+  try {
+    const result = await api.inbox(profile.value, { limit: 1 }, current.signal);
+    if (current.signal.aborted) return;
+    inboxUnread.value = result.unread;
+    if (checkSession) void deleteCurrentSessionInbox(profile.value, session.value);
+    const fingerprint = JSON.stringify([result.revision, result.unread, result.items[0]?.id]);
+    if (fingerprint !== inboxFingerprint) {
+      inboxFingerprint = fingerprint;
+      inboxRevision.value++;
+    }
+  } catch {
+    /* Keep the last known count during a disconnect. */
+  }
+}
+const inboxCleanup = new Map<string, Promise<void>>();
+async function deleteCurrentSessionInbox(p: string, id: string) {
+  const current = () =>
+    scopeReady &&
+    !!id &&
+    p === profile.value &&
+    id === session.value &&
+    routeName.value === "chat" &&
+    !chatError.value &&
+    (!nativeMode.value ||
+      native.connection.value === "ready" ||
+      !!native.approval.value ||
+      native.requests.value.length > 0);
+  if (!current()) return;
+  // A completion or reconnect must publish even when the route has not changed.
+  // The worker independently verifies the current visible client before closing.
+  pushClient?.publish();
+  const key = JSON.stringify([p, id]);
+  const work = (inboxCleanup.get(key) || Promise.resolve()).then(async () => {
+    let cursor: string | undefined;
+    let deleted = false;
+    try {
+      do {
+        if (!current()) return;
+        const result = await api.inbox(p, { scope: "profile", limit: 100, cursor });
+        if (!current()) return;
+        const matches = result.items.filter(
+          (item) => item.profile === (p || "default") && item.session === id,
+        );
+        await Promise.all(matches.map((item) => api.deleteInboxItem(p, item.id)));
+        deleted ||= matches.length > 0;
+        cursor = result.nextCursor || undefined;
+      } while (cursor);
+    } catch {
+      // A later open, completion, refresh or reconnect retries failed deletions.
+    } finally {
+      if (deleted && p === profile.value) void refreshInbox(false);
+    }
+  });
+  inboxCleanup.set(key, work);
+  await work;
+  if (inboxCleanup.get(key) === work) inboxCleanup.delete(key);
+}
+async function openInboxItem(item: InboxItem) {
+  // Verify the owning history exists before leaving Inbox or changing read state.
+  const revision = navigationRevision;
+  await api.session(item.profile, item.session);
+  if (revision !== navigationRevision) throw new Error("Navigation changed");
+  await navigate({
+    name: "chat",
+    params: { sessionId: item.session },
+    query: { profile: item.profile },
+  });
+  if (
+    profile.value !== item.profile ||
+    session.value !== item.session ||
+    chatError.value ||
+    (nativeMode.value && native.connection.value !== "ready")
+  )
+    throw new Error("Chat unavailable");
+  await deleteCurrentSessionInbox(item.profile, item.session);
+}
 const pageProps = computed(() => {
+  if (inboxPage.value)
+    return {
+      profile: profile.value,
+      revision: inboxRevision.value,
+      openItem: openInboxItem,
+      onRefresh: refreshInbox,
+    };
   if (settingsPage.value)
     return {
       profile: profile.value,
@@ -1099,6 +1209,8 @@ const pageProps = computed(() => {
   return {};
 });
 onMounted(async () => {
+  void refreshInbox();
+  inboxTimer = setInterval(() => void refreshInbox(), 15000);
   if ("serviceWorker" in navigator)
     pushClient = connectPushClient(
       navigator.serviceWorker,
@@ -1128,6 +1240,8 @@ onMounted(async () => {
   await routeWork;
 });
 onUnmounted(() => {
+  clearInterval(inboxTimer);
+  inboxAbort?.abort();
   scopeReady = false;
   navigationRevision++;
   router.options.history.destroy();
@@ -1192,6 +1306,30 @@ onUnmounted(() => {
           ×
         </button>
       </div>
+      <RouterLink
+        class="inbox-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        :aria-current="inboxPage ? 'page' : undefined"
+        :to="screenLink('inbox')"
+        @click="drawer = false"
+      >
+        <svg
+          class="size-6"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="M4 4h16v16H4zM4 13h4l2 3h4l2-3h4" />
+        </svg>
+        Inbox
+        <span
+          v-if="inboxUnread"
+          class="ml-auto rounded-full bg-[#424242] px-2 text-sm leading-[1.5]"
+          :aria-label="`${inboxUnread} unread notifications`"
+          >{{ inboxUnread }}</span
+        >
+      </RouterLink>
       <RouterLink
         class="projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="projectsPage || projectView ? 'page' : undefined"
@@ -1370,16 +1508,18 @@ onUnmounted(() => {
         <div class="min-w-0 flex-1">
           <h1 class="header-title truncate text-base font-medium">
             {{
-              settingsPage
-                ? "Settings"
-                : artifactsPage
-                  ? "Artifacts"
-                  : scheduledPage
-                    ? "Scheduled"
-                    : projectsPage
-                      ? "Projects"
-                      : sessions.find((s) => s.id === session)?.title ||
-                        (session ? "Conversation" : selectedProject?.label || "ChatHermes")
+              inboxPage
+                ? "Inbox"
+                : settingsPage
+                  ? "Settings"
+                  : artifactsPage
+                    ? "Artifacts"
+                    : scheduledPage
+                      ? "Scheduled"
+                      : projectsPage
+                        ? "Projects"
+                        : sessions.find((s) => s.id === session)?.title ||
+                          (session ? "Conversation" : selectedProject?.label || "ChatHermes")
             }}
           </h1>
           <p
@@ -1418,6 +1558,19 @@ onUnmounted(() => {
             <span class="truncate px-3 py-2 text-xs text-[#a3a3a3]" role="presentation">{{
               profile || "Current profile"
             }}</span>
+            <button
+              v-if="inboxPage"
+              role="menuitem"
+              class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]"
+              data-test="refresh-inbox"
+              aria-label="Refresh inbox"
+              @click="
+                refreshInbox();
+                inboxRevision++;
+              "
+            >
+              Refresh inbox
+            </button>
             <button
               class="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]"
               role="menuitem"
@@ -1489,7 +1642,11 @@ onUnmounted(() => {
                 Archived projects
               </button>
             </template>
-            <template v-else-if="!scheduledPage && selectedProject && !selectedProject.isNoProject">
+            <template
+              v-else-if="
+                !inboxPage && !scheduledPage && selectedProject && !selectedProject.isNoProject
+              "
+            >
               <button role="menuitem" @click="openProjectPage('edit')">Edit project</button>
               <button
                 role="menuitem"
@@ -1570,6 +1727,7 @@ onUnmounted(() => {
         @touchcancel="drawerSwipe.cancel"
         @click.capture="drawerSwipe.click"
         :show-page="
+          inboxPage ||
           settingsPage ||
           scheduledPage ||
           artifactsPage ||

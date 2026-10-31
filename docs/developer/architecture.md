@@ -58,6 +58,7 @@ footer geometry, composer growth, dismissal while focused, reopening, and rotati
 | `src/features/sessions/`             | Session navigation presentation; scope transitions remain in App                                                                                 |
 | `src/features/projects/`             | Project pages, editors, instructions and project helpers                                                                                         |
 | `src/features/scheduled/`            | Saved run output and discussion entry; no live viewer ownership                                                                                  |
+| `src/features/inbox/`                | Global inbox presentation and notification types; collection and persistence stay server-side                                                    |
 | `src/features/notifications/`        | Existing authenticated push subscription and mounted-session publication                                                                         |
 | `src/features/settings/`             | Settings presentation                                                                                                                            |
 | `src/components/`                    | Explicit-prop transcript and disclosure components, also used for saved output                                                                   |
@@ -246,3 +247,44 @@ profile/Project changes, and aborts obsolete requests. SQL filters scope and use
 newest-first keyset pagination with session/path tie breakers. Refresh reads the
 current index while background indexing continues. A responsive CSS Grid fills
 available width; the bounded page scrolls vertically.
+
+## Managed Inbox
+
+`dashboard/inbox.py` owns notification records and reconciliation in the shared
+SQLite database. The dashboard router starts and stops one worker independently
+of browser mounts and push subscriptions. It discovers the same accessible profile
+set as artifact indexing (one profile in a hosted plugin process), reads native
+profile histories through short-lived read-only connections, and inspects native
+open request snapshots without attaching or activating sessions. No session
+execution or request resolution is owned by Inbox.
+
+Retained native viewers call the inbox recorder separately from push enqueueing.
+Committed responses use Hermes message UIDs (row identity on older histories),
+including deduplication across compaction copies; requests use their original
+request/operation identity within the owning profile/session. Read and deletion
+state survive duplicate frames, reconciliation and restart. Deletion retains an
+identity tombstone. Push receipts and visible-chat suppression remain independent.
+
+Each profile has a durable first-discovery time. Older responses are skipped;
+existing unresolved requests may still appear. The worker checks profiles every
+30 seconds, skips running native sessions, scans changed history after durable row
+checkpoints, and audits unchanged sessions every five minutes to recover late
+persistence. History includes archived conversations and continuation segments.
+Only final persisted assistant prose per turn becomes a completion item; tool
+calls, tool output and compression summaries are excluded. Request previews use
+fixed labels for secret/sudo/connection requests and retained terminal failures;
+request prompts, commands and raw errors are not stored. Response/title previews redact configured provider and gateway
+credentials before storage. Previews are bounded to 400 characters.
+
+The Vue Inbox is a shell page with All/Profile and unread filters. The shell polls
+a small page every 15 seconds while visible, refreshes on foregrounding and native
+completion/project events, and updates the badge from server counts. Opening an
+item verifies the owning session and waits for navigation/attachment. Every
+successful chat navigation deletes that profile/session's notifications, paging
+through both read and unread items. Final assistant messages, native recovery and
+visible count refreshes repeat the check; failures remain retryable. The shell
+also republishes its current session to the push worker, which independently
+verifies a visible, connected client before closing exact profile/session matches.
+Other devices observe shared changes on their next refresh.
+Resolved requests are not inferred from notification read state. Requests that
+vanish from the runtime before collection have no durable native history to replay.
