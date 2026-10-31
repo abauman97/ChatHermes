@@ -27,6 +27,7 @@ export function useChatController(
     chatError: Readonly<Ref<string>>;
     canStream: Readonly<Ref<boolean>>;
     scheduledPage: Readonly<Ref<boolean>>;
+    inboxPage?: Readonly<Ref<boolean>>;
     projectView: Readonly<Ref<boolean>>;
     projectsPage: Readonly<Ref<boolean>>;
     projectPage: Readonly<Ref<string>>;
@@ -150,6 +151,7 @@ export function useChatController(
   const viewActive = computed(() => native.busy.value);
   async function sendNative(text: string, attachments: Attachment[]) {
     if (
+      scope.inboxPage?.value ||
       scheduledPage.value ||
       branching.value ||
       viewBusy.value ||
@@ -278,6 +280,7 @@ export function useChatController(
         ? selectedProject.value?.label
         : undefined,
     disabled: Boolean(
+      scope.inboxPage?.value ||
       branching.value ||
       !!projectPage.value ||
       scheduledPage.value ||
@@ -295,24 +298,26 @@ export function useChatController(
       viewReconnect.value ||
       !canStream.value,
     ),
-    reason: scheduledPage.value
-      ? "Open a chat to discuss a run."
-      : projectsPage.value
-        ? "Select a project or start a new chat."
-        : projectView.value && selectedProject.value?.archived
-          ? "Restore this project to start a new chat."
-          : projectView.value &&
-              selectedProject.value &&
-              !selectedProject.value.isNoProject &&
-              !projectRoot(selectedProject.value)
-            ? "This Project has no workspace."
-            : offline.value
-              ? "Offline · sending is unavailable."
-              : viewApprovalPending.value
-                ? "Approval is pending in Hermes."
-                : !canStream.value
-                  ? "Streaming turns are unavailable for this profile."
-                  : undefined,
+    reason: scope.inboxPage?.value
+      ? "Open a chat."
+      : scheduledPage.value
+        ? "Open a chat to discuss a run."
+        : projectsPage.value
+          ? "Select a project or start a new chat."
+          : projectView.value && selectedProject.value?.archived
+            ? "Restore this project to start a new chat."
+            : projectView.value &&
+                selectedProject.value &&
+                !selectedProject.value.isNoProject &&
+                !projectRoot(selectedProject.value)
+              ? "This Project has no workspace."
+              : offline.value
+                ? "Offline · sending is unavailable."
+                : viewApprovalPending.value
+                  ? "Approval is pending in Hermes."
+                  : !canStream.value
+                    ? "Streaming turns are unavailable for this profile."
+                    : undefined,
   }));
   const actions = {
     loadEarlier: () => native.loadEarlier(),

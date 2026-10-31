@@ -96,6 +96,7 @@ class Viewer:
         self.sequence = 0
         self.children = set()
         self.notifications = set()
+        self.inbox_only = set()
         self.notification_lock = asyncio.Lock()
         self.completions = []
         self.watermark = 0
@@ -158,11 +159,16 @@ class Viewer:
                     params = frame.get("params") or {}
                     if self.runtime and params.get("session_id") == self.runtime:
                         kind = frame["method"] if frame["method"] != "secret" else "attention"
-                        await self.record_notice(str(frame.get("id")), kind)
+                        await self.record_notice(
+                            str(params.get("request_id") or frame.get("id")), kind
+                        )
 
                 elif (
                     "id" in frame and (frame.get("params") or {}).get("session_id") == self.runtime
                 ):
+                    if frame.get("method") == "sudo":
+                        self.inbox_only.add((str(frame["id"]), "attention"))
+                        await self.flush_notifications()
                     # Abstain from window-owned bridges without settling another
                     # viewer's request. 4404 is the pinned native decline code.
                     await self.ws.send(
@@ -212,9 +218,15 @@ class Viewer:
             if payload.get("status") == "complete" and isinstance(text, str) and text:
                 self.completions.append(text)
                 await self.flush_notifications()
+            elif payload.get("status") == "error" and type(event.get("seq")) is int:
+                self.inbox_only.add((f"failure:{self.runtime}:{event['seq']}", "attention"))
+                await self.flush_notifications()
 
         if kind in ("approval.request", "clarify.request"):
             self.terminal = False
+        if kind == "connection.request" and payload.get("op_id"):
+            self.inbox_only.add((str(payload["op_id"]), "attention"))
+            await self.flush_notifications()
 
     async def record_notice(self, identity, kind):
         self.notifications.add((identity, kind))
@@ -225,6 +237,14 @@ class Viewer:
             await self._flush_notifications()
 
     async def _flush_notifications(self):
+        record = getattr(self.service.api, "_record_inbox", None)
+        for identity, kind in list(self.inbox_only):
+            try:
+                if record is not None:
+                    await asyncio.to_thread(record, self.profile, self.stored, identity, kind)
+            except Exception:
+                continue
+            self.inbox_only.discard((identity, kind))
         for text in list(self.completions):
             try:
                 row = await asyncio.to_thread(
@@ -240,6 +260,17 @@ class Viewer:
                 self.watermark = row
                 self.completions.remove(text)
         for identity, kind in list(self.notifications):
+            record = getattr(self.service.api, "_record_inbox", None)
+            if record is not None:
+                try:
+                    await asyncio.to_thread(record, self.profile, self.stored, identity, kind)
+                except Exception:
+                    # Retry inbox storage independently; push still gets its address.
+                    inbox_pending = True
+                else:
+                    inbox_pending = False
+            else:
+                inbox_pending = False
             try:
                 await asyncio.to_thread(
                     self.service.outbox.enqueue,
@@ -253,7 +284,8 @@ class Viewer:
                 # Push storage is optional to execution. Preserve the native peer
                 # and retry the address; never tear down an active tool for this.
                 continue
-            self.notifications.discard((identity, kind))
+            if not inbox_pending:
+                self.notifications.discard((identity, kind))
 
     async def run(self, ticket):
         reader = None
@@ -305,6 +337,7 @@ class Viewer:
                     if (
                         self.completions
                         or self.notifications
+                        or self.inbox_only
                         or self.children
                         or not self.terminal
                         and (self.started or asyncio.get_running_loop().time() < self.armed_until)
@@ -318,6 +351,7 @@ class Viewer:
                         generation != self.generation
                         or self.children
                         or self.notifications
+                        or self.inbox_only
                         or self.completions
                     ):
                         continue

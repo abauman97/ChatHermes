@@ -37,6 +37,23 @@ MIGRATIONS = (
             status TEXT NOT NULL CHECK (status IN ('open', 'settled')),
             updated_at TEXT NOT NULL, PRIMARY KEY(profile, session_id))""",
     ),
+    (
+        """CREATE TABLE inbox (
+            id INTEGER PRIMARY KEY, profile TEXT NOT NULL, session TEXT NOT NULL,
+            event_id TEXT NOT NULL, kind TEXT NOT NULL, occurred REAL NOT NULL,
+            title TEXT NOT NULL, preview TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0,
+            deleted INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(profile, session, event_id, kind))""",
+        "CREATE INDEX inbox_page ON inbox(occurred DESC, id DESC)",
+        "CREATE INDEX inbox_unread ON inbox(profile, read, deleted)",
+        "CREATE TABLE inbox_profiles (profile TEXT PRIMARY KEY, since REAL NOT NULL)",
+        """CREATE TABLE inbox_checkpoints (profile TEXT, session TEXT, row_id INTEGER NOT NULL,
+            modification TEXT NOT NULL, PRIMARY KEY(profile, session))""",
+    ),
+    ("ALTER TABLE inbox_checkpoints ADD COLUMN scanned REAL NOT NULL DEFAULT 0",),
+    (
+        "CREATE UNIQUE INDEX inbox_completion_origin ON inbox(profile,event_id,kind) WHERE kind='turn.complete'",
+    ),
 )
 
 

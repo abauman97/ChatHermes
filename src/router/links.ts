@@ -2,6 +2,7 @@ import type { LocationQuery, RouteLocationRaw } from "vue-router";
 export type RouteName =
   | "home"
   | "chat"
+  | "inbox"
   | "artifacts"
   | "projects"
   | "project"
@@ -37,7 +38,7 @@ export function safeReturn(value: unknown): string {
   const url = new URL(value, "https://plugin.invalid");
   if (
     url.pathname === "/settings" ||
-    !/^\/(?:chat\/[^/]+|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
+    !/^\/(?:chat\/[^/]+|inbox|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
       url.pathname,
     )
   )

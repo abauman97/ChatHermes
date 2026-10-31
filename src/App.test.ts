@@ -323,7 +323,8 @@ describe("settings page", () => {
     const settingsUrl = location.href;
     expect(wrapper.get(".settings-page").text()).toContain("Settings");
     expect(wrapper.find('[role="dialog"][aria-label="Settings"]').exists()).toBe(false);
-    const requests = fake.mock.calls.length;
+    const chatRequests = () => fake.mock.calls.filter(([url]) => !url.includes("/inbox?"));
+    const requests = chatRequests().length;
     document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     expect(wrapper.find(".settings-page").exists()).toBe(true);
     for (const url of [chatUrl, settingsUrl, chatUrl]) {
@@ -336,7 +337,8 @@ describe("settings page", () => {
     expect(close).not.toHaveBeenCalled();
     expect(owner.attach).toHaveBeenCalledTimes(1);
     expect(owner.busy.value).toBe(true);
-    expect(fake.mock.calls).toHaveLength(requests);
+    // Reopening the chat checks Inbox again without reloading its runtime/history.
+    expect(chatRequests()).toHaveLength(requests);
     expect(wrapper.get(".composer").element).toBe(composer);
     expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
     for (const selector of [".projects-nav", ".artifacts-nav"]) {

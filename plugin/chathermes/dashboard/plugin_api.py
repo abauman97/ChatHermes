@@ -707,6 +707,8 @@ _completion_outbox = _load_sibling("completion_outbox")
 _artifact_store = _load_sibling("artifact_store")
 _session_tracking = _load_sibling("session_tracking")
 _artifact_indexer = _load_sibling("artifact_indexer")
+_inbox = _load_sibling("inbox")
+_inbox_service = None
 _artifact_service = None
 _execution_service = None
 
@@ -756,6 +758,111 @@ router.add_event_handler("startup", _start_artifact_indexing)
 router.add_event_handler("shutdown", _stop_artifact_indexing)
 router.add_event_handler("startup", _resume_push_delivery)
 router.add_event_handler("shutdown", _stop_execution_viewers)
+
+
+async def _start_inbox():
+    global _inbox_service
+    _inbox_service = _inbox.Service(_inbox.Source(sys.modules[__name__]), _push_store_module)
+    _inbox_service.start()
+
+
+async def _stop_inbox():
+    global _inbox_service
+    if _inbox_service is not None:
+        await _inbox_service.close()
+        _inbox_service = None
+
+
+def _record_inbox(profile, session, identity, kind):
+    from hermes_cli.web_server_sessions import _open_session_db_for_profile
+
+    clean = _inbox.Source(sys.modules[__name__]).redact(profile)
+    db = _open_session_db_for_profile(profile, read_only=True)
+    try:
+        row = db.get_session(session)
+        title = clean((row or {}).get("title") or "Untitled chat")
+        if kind == "turn.complete":
+            message = next((m for m in db.get_messages(session) if m["id"] == identity), None)
+            origin = (message or {}).get("message_uid") or str(identity)
+        else:
+            origin = str(identity)
+    finally:
+        db.close()
+    preview = (
+        _execution_viewer.read_body(sys.modules[__name__], profile, session, identity)
+        if kind == "turn.complete"
+        else ""
+    )
+    if kind == "turn.complete" and preview is None:
+        raise ValueError("Completion not committed")
+    _inbox.record(
+        _push_store_module, profile, session, origin, kind, title=title, preview=preview or ""
+    )
+    if _inbox_service is not None:
+        _inbox_service.trigger()
+
+
+router.add_event_handler("startup", _start_inbox)
+router.add_event_handler("shutdown", _stop_inbox)
+
+
+async def _inbox_profiles(request, scope):
+    profile = _rpc_profile(request)
+    accessible = await _inbox.Source(sys.modules[__name__]).profiles()
+    if scope == "all":
+        return accessible
+    if scope != "profile" or profile not in accessible:
+        raise HTTPException(422, "Invalid inbox scope")
+    return [profile]
+
+
+@router.get("/inbox")
+async def inbox_page(
+    request: Request,
+    scope: str = "all",
+    limit: int = 50,
+    cursor: str | None = None,
+    unread: bool = False,
+):
+    from starlette.concurrency import run_in_threadpool
+
+    profiles = await _inbox_profiles(request, scope)
+    try:
+        result = await run_in_threadpool(
+            _inbox.page, _push_store_module, profiles, limit=limit, cursor=cursor, unread=unread
+        )
+    except ValueError:
+        raise HTTPException(422, "Invalid inbox pagination") from None
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
+@router.put("/inbox/{identity}/read")
+async def inbox_read(request: Request, identity: int):
+    from starlette.concurrency import run_in_threadpool
+
+    profiles = await _inbox_profiles(request, "all")
+    if not await run_in_threadpool(_inbox.mark_read, _push_store_module, profiles, identity):
+        raise HTTPException(404, "Inbox item unavailable")
+    return JSONResponse({"read": True}, headers={"Cache-Control": "private, no-store"})
+
+
+@router.delete("/inbox/read")
+async def inbox_delete_read(request: Request, scope: str = "all"):
+    from starlette.concurrency import run_in_threadpool
+
+    profiles = await _inbox_profiles(request, scope)
+    await run_in_threadpool(_inbox.delete_read, _push_store_module, profiles)
+    return JSONResponse({"deleted": True}, headers={"Cache-Control": "private, no-store"})
+
+
+@router.delete("/inbox/{identity}")
+async def inbox_delete(request: Request, identity: int):
+    from starlette.concurrency import run_in_threadpool
+
+    profiles = await _inbox_profiles(request, "all")
+    if not await run_in_threadpool(_inbox.delete_item, _push_store_module, profiles, identity):
+        raise HTTPException(404, "Inbox item unavailable")
+    return JSONResponse({"deleted": True}, headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/chat/retain")

@@ -3079,3 +3079,42 @@ async def test_archive_keeps_tracking_and_only_confirmed_delete_removes_it(app, 
         await client.delete(path)
         assert store.entries(plugin._push_store_module, "alpha") == []
         assert len(store.entries(plugin._push_store_module, "beta")) == 1
+
+
+@run_async
+async def test_inbox_api_global_profile_pages_read_delete_and_host_boundary(app, monkeypatch):
+    async def accessible(_self):
+        return ["alpha", "beta"]
+
+    monkeypatch.setattr(plugin._inbox.Source, "profiles", accessible)
+    for profile in ("alpha", "beta", "private"):
+        plugin._inbox.record(plugin._push_store_module, profile, "same", "request", "clarify")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        root = "/api/plugins/chathermes/inbox"
+        result = await client.get(root + "?profile=alpha&limit=1")
+        assert result.headers["cache-control"] == "private, no-store"
+        body = result.json()
+        assert body["unread"] == 2 and len(body["items"]) == 1
+        assert body["nextCursor"]
+        filtered = (await client.get(root + "?profile=alpha&scope=profile")).json()
+        item = filtered["items"][0]
+        assert item["profile"] == "alpha"
+        assert (await client.put(root + f"/{item['id']}/read?profile=alpha")).status_code == 200
+        assert (await client.get(root + "?profile=alpha&unread=true")).json()["unread"] == 1
+        assert (await client.delete(root + f"/{item['id']}?profile=alpha")).status_code == 200
+        assert all(row["id"] != item["id"] for row in (await client.get(root + "?profile=alpha")).json()["items"])
+        assert (await client.delete(root + "/read?profile=alpha")).status_code == 200
+        assert len((await client.get(root + "?profile=alpha")).json()["items"]) == 1
+        for query in ("limit=0", "limit=101", "cursor=nan:1", "scope=private", "profile=../secret"):
+            assert (await client.get(root + "?" + query)).status_code == 422
+
+        # A hosted profile's accessible set must bound every read and mutation.
+        async def hosted(_self):
+            return ["beta"]
+
+        monkeypatch.setattr(plugin._inbox.Source, "profiles", hosted)
+        assert (await client.put(root + f"/{item['id']}/read?profile=beta")).status_code == 404
+        assert (await client.delete(root + f"/{item['id']}?profile=beta")).status_code == 404
+        assert set((await client.get(root + "?profile=beta")).json()["byProfile"]) == {"beta"}
