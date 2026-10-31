@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, ApiError, messageText } from "../../../services/hermes-api";
 import type { ScheduledJob, ScheduledRun, ScheduledOutput } from "../../../types/hermes";
@@ -124,51 +124,85 @@ async function selectRun(row: ScheduledRun, fromHistory = false) {
   });
 }
 function retry() {
-  if (run.value) void selectRun(run.value, true);
-  else if (job.value) void loadRuns();
-  else void loadJobs();
+  const destination = destinationKey();
+  loadedDestination = "";
+  selectionWork = (async () => {
+    if (run.value) await selectRun(run.value, true);
+    else if (job.value) await loadRuns();
+    else await loadJobs();
+    if (
+      !disposed &&
+      !error.value &&
+      destinationKey() === destination &&
+      (!route.params.jobId || job.value?.id === route.params.jobId) &&
+      (!route.params.runId || (run.value?.id === route.params.runId && output.value))
+    )
+      loadedDestination = destination;
+  })();
 }
 const sessionId = computed(() => output.value?.session_id);
-defineExpose({ retry, loading, sessionId });
+let selectionWork: Promise<void> = Promise.resolve();
+let loadedDestination = "";
+const destinationKey = () =>
+  JSON.stringify([props.profile, route.params.jobId, route.params.runId]);
+async function whenLoaded() {
+  await router.isReady();
+  await nextTick();
+  const destination = destinationKey();
+  let work: Promise<void>;
+  do {
+    work = selectionWork;
+    await work;
+  } while (work !== selectionWork);
+  return !disposed && !error.value && loadedDestination === destination;
+}
+defineExpose({ retry, loading, sessionId, whenLoaded });
 let stopSelection: (() => void) | undefined;
 onMounted(async () => {
   await router.isReady();
   if (disposed) return;
   stopSelection = watch(
     () => [props.profile, route.params.jobId, route.params.runId],
-    async () => {
-      const current = ++revision;
-      const id = String(route.params.jobId || ""),
-        runId = String(route.params.runId || "");
-      job.value = undefined;
-      run.value = undefined;
-      output.value = undefined;
-      await loadJobs();
-      if (current !== revision || controller?.signal.aborted) return;
-      const selected = jobs.value.find((row) => row.id === id);
-      if (id && !selected) {
-        error.value = "This scheduled job is no longer available.";
-        return;
-      }
-      if (selected) {
-        status.value = state(selected);
-        await selectJob(selected, true);
-        if (current !== revision || controller?.signal.aborted) return;
-        // Deep links can address older runs outside the first history page.
-        if (runId)
-          await selectRun(
-            runs.value.find((row) => row.id === runId) || {
-              id: runId,
-              started_at: 0,
-              source: "cron",
-            },
-            true,
-          );
-      }
+    () => {
+      selectionWork = loadSelection();
     },
     { immediate: true },
   );
 });
+async function loadSelection() {
+  loadedDestination = "";
+  const destination = destinationKey();
+  const current = ++revision;
+  const id = String(route.params.jobId || ""),
+    runId = String(route.params.runId || "");
+  job.value = undefined;
+  run.value = undefined;
+  output.value = undefined;
+  await loadJobs();
+  if (current !== revision || controller?.signal.aborted || error.value) return;
+  const selected = jobs.value.find((row) => row.id === id);
+  if (id && !selected) {
+    error.value = "This scheduled job is no longer available.";
+    return;
+  }
+  if (selected) {
+    status.value = state(selected);
+    await selectJob(selected, true);
+    if (current !== revision || controller?.signal.aborted || error.value) return;
+    // Deep links can address older runs outside the first history page.
+    if (runId)
+      await selectRun(
+        runs.value.find((row) => row.id === runId) || {
+          id: runId,
+          started_at: 0,
+          source: "cron",
+        },
+        true,
+      );
+  }
+  if (current === revision && !controller?.signal.aborted && !error.value)
+    loadedDestination = destination;
+}
 let disposed = false;
 onUnmounted(() => {
   disposed = true;

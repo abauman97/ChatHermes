@@ -78,6 +78,7 @@ type ScheduledPageActions = {
   retry: () => void;
   loading: boolean;
   sessionId?: string;
+  whenLoaded: () => Promise<boolean>;
 };
 const scheduledComponent = ref<ScheduledPageActions | null>(null);
 const scheduledDiscussionError = ref("");
@@ -1048,10 +1049,43 @@ const notificationSession = computed(() => ({
   connected: nativeMode.value && native.connection.value === "ready" && !offline.value,
 }));
 watch(notificationSession, () => pushClient?.publish(), { flush: "post" });
-function serviceWorkerMessage(event: MessageEvent) {
+async function serviceWorkerMessage(event: MessageEvent) {
   if (event.data?.type !== "chathermes.navigate" || typeof event.data.url !== "string") return;
-  const target = resolvePluginUrl(event.data.url);
-  if (target) void navigate(target);
+  const url = event.data.url,
+    target = resolvePluginUrl(url),
+    port = event.ports?.[0];
+  let loaded = false;
+  try {
+    if (!target) return;
+    await navigate(target);
+    const revision = navigationRevision;
+    const destination = router.resolve(target).fullPath;
+    const current = () =>
+      scopeReady && revision === navigationRevision && route.fullPath === destination;
+    if (!port || !current()) return;
+    if (routeName.value === "chat") {
+      // Native attachment reconstructs the viewer before saved history finishes.
+      // Attest the loaded history, not just the URL or ready connection.
+      if (nativeMode.value)
+        loaded = native.connection.value === "ready" && (await native.hydrate()) === true;
+      else loaded = !chatLoading.value && !chatError.value;
+    } else if (scheduledPage.value) {
+      await nextTick();
+      loaded = (await scheduledComponent.value?.whenLoaded()) === true;
+    } else loaded = true;
+    await nextTick();
+    loaded = loaded && current();
+  } catch {
+    loaded = false;
+  } finally {
+    if (port) {
+      port.postMessage({
+        type: loaded ? "chathermes.navigated" : "chathermes.navigation.failed",
+        url,
+      });
+      port.close();
+    }
+  }
 }
 const inboxUnread = ref(0),
   inboxRevision = ref(0);
