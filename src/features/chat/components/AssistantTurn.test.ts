@@ -98,7 +98,7 @@ it.each(["delegate_task", "edit_file", "write_file"])(
 );
 
 it.each(["edit_file", "write_file"])(
-  "folds streaming %s on native and normalized event paths without remounting rows",
+  "expands streaming %s and folds completed rows on native and normalized event paths without remounting rows",
   async (name) => {
     for (const native of [true, false]) {
       const turn = reactive(createTurn());
@@ -149,10 +149,8 @@ it.each(["edit_file", "write_file"])(
       const child = wrapper.get(".assistant-turn > .activity");
       expect(wrapper.findAll(".turn-work")).toHaveLength(1);
       expect(call.isVisible()).toBe(true);
-      expect(call.attributes("open")).toBeUndefined();
-      expect(child.attributes("open")).toBe("");
-      await call.get("summary").trigger("click");
       expect(call.attributes("open")).toBe("");
+      expect(child.attributes("open")).toBe("");
       await call.get("summary").trigger("click");
       expect(call.attributes("open")).toBeUndefined();
       await call.get("summary").trigger("click");

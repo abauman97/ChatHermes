@@ -9,3 +9,7 @@ export function useChat() {
   if (!context) throw new Error("Live chat context is missing");
   return context;
 }
+
+import type { Ref } from "vue";
+export const conversationFocus: InjectionKey<Ref<{ focusLatestMessage: () => void } | undefined>> =
+  Symbol("conversation focus");

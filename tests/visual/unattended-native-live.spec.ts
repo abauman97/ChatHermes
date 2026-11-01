@@ -45,6 +45,10 @@ test("native execution completes after the browser leaves during a quiet tool", 
   const id = sessionFromUrl(page.url())!;
   const url = page.url();
   try {
+    const approval = plugin.getByRole("button", { name: "Allow once", exact: true });
+    await expect(approval).toBeVisible({ timeout: 60_000 });
+    await approval.click();
+    await expect(approval).toHaveCount(0);
     await expect(
       plugin
         .locator(".activity[open]")

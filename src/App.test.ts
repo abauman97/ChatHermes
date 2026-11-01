@@ -17,7 +17,6 @@ import { computed, ref } from "vue";
 import { api } from "./services/hermes-api";
 import App from "./App.vue";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
-import ScheduledPage from "./features/scheduled/components/ScheduledPage.vue";
 import type { Session } from "./types/hermes";
 import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
@@ -410,7 +409,7 @@ describe("settings page", () => {
     await menu.trigger("keydown", { key: "Escape" });
     await flushPromises();
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("false");
     wrapper.unmount();
   });
@@ -437,20 +436,20 @@ describe("settings page", () => {
     await flushPromises();
     await button.trigger("click");
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     await button.trigger("click");
     await flushPromises();
     const textarea = wrapper.get("textarea");
     (textarea.element as HTMLTextAreaElement).focus();
     await textarea.trigger("click");
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     expect(document.activeElement).toBe(textarea.element);
     await button.trigger("click");
     await flushPromises();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     expect(document.activeElement).toBe(button.element);
     await textarea.setValue("Draft");
     await button.trigger("click");
@@ -458,7 +457,7 @@ describe("settings page", () => {
     await wrapper.get('[role="menuitem"]').trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     expect(fake.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
     expect(document.activeElement).toBe(button.element);
     const removeListener = vi.spyOn(document, "removeEventListener");
@@ -521,66 +520,6 @@ describe("settings page", () => {
   });
 });
 describe("profile navigation", () => {
-  it.each(["stay", "navigate", "profile"])(
-    "refreshes only server-listed scheduled discussion sessions and preserves %s isolation",
-    async (action) => {
-      history.replaceState({}, "", "/chathermes?profile=alpha#/scheduled?profile=alpha");
-      const create = deferred<Response>();
-      let rows: Session[] = [];
-      const read = vi.fn(async (input: string) =>
-        json({ sessions: input.includes("profile=alpha") ? rows : [], total: rows.length }),
-      );
-      const factory = nativeSession.useNativeSession;
-      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((...args) => {
-        const owner = factory(...args);
-        owner.attach = vi.fn(async () => {});
-        return owner;
-      });
-      mockFetch(async (input, init) => {
-        if (input.includes("/capabilities")) return json(streaming);
-        if (init?.method === "POST") return create.promise;
-        if (input.includes("/api/sessions?")) return read(input);
-        if (input.includes("/scheduled")) return json({ jobs: [] });
-        return json({});
-      });
-      const wrapper = mount(App);
-      await flushPromises();
-      wrapper.findComponent(ScheduledPage).vm.$emit("discuss", "Discuss this output");
-      await flushPromises();
-      if (action === "navigate") {
-        wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
-        await flushPromises();
-      } else if (action === "profile") {
-        await wrapper.get(".profile-field").setValue("beta");
-        await flushPromises();
-      }
-      const previousRoute = location.hash;
-      const reads = read.mock.calls.length;
-      // The create response alone must never manufacture a sidebar row.
-      create.resolve(json({ id: "discussion" }));
-      await flushPromises();
-      expect(read).toHaveBeenCalledTimes(reads + (action === "profile" ? 0 : 1));
-      const sidebar = wrapper.findComponent(SessionSidebar);
-      expect(sidebar.props("sessions")).toEqual([]);
-      if (action === "stay") {
-        expect(location.hash).toBe("#/chat/discussion?profile=alpha");
-        expect((wrapper.get(".composer textarea").element as HTMLTextAreaElement).value).toBe(
-          "Discuss this output",
-        );
-      } else expect(location.hash).toBe(previousRoute);
-      rows = [{ id: "discussion", title: "Persisted discussion" }];
-      const [, onCreated] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
-      onCreated?.("alpha", "discussion");
-      await flushPromises();
-      expect(sidebar.props("sessions")).toEqual(action === "profile" ? [] : rows);
-      if (action === "profile") {
-        await wrapper.get(".profile-field").setValue("alpha");
-        await flushPromises();
-        expect(wrapper.findComponent(SessionSidebar).props("sessions")).toEqual(rows);
-      }
-      wrapper.unmount();
-    },
-  );
   it("keeps global navigation in the drawer and exposes screen actions from the top-right menu", async () => {
     mockFetch(
       vi.fn(async (input: string) =>
@@ -602,7 +541,7 @@ describe("profile navigation", () => {
     expect(wrapper.get('[aria-label="Screen options"]').attributes("aria-expanded")).toBe("true");
     await wrapper.get('[role="menuitem"]').trigger("click");
     await flushPromises();
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     wrapper.unmount();
   });
   it("rejects invalid profile names without requesting or storing credentials", async () => {
@@ -2169,4 +2108,21 @@ describe("notification navigation acknowledgements", () => {
       if (failure !== "unmounted") wrapper.unmount();
     },
   );
+});
+
+it("leaves Escape to a native dialog before closing the mobile drawer", async () => {
+  mockFetch(async () => json({ sessions: [], total: 0 }));
+  const wrapper = mount(App, { attachTo: document.body });
+  await flushPromises();
+  const opener = wrapper.get('[aria-label="Open navigation"]');
+  await opener.trigger("click");
+  const dialog = wrapper.get("dialog.session-popup");
+  dialog.element.setAttribute("open", "");
+  await dialog.get("button").trigger("keydown", { key: "Escape" });
+  expect(opener.attributes("aria-expanded")).toBe("true");
+  dialog.element.removeAttribute("open");
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  await flushPromises();
+  expect(opener.attributes("aria-expanded")).toBe("false");
+  wrapper.unmount();
 });

@@ -29,19 +29,20 @@ test("streaming renders progressively and persists once after reload", async ({ 
   await expect(assistant).toHaveText(complete);
 });
 
-test("Enter adds a newline and Shift+Enter sends one message while keeping the composer usable", async ({
+test("desktop and mobile newline controls send one message while keeping the composer usable", async ({
   page,
 }, info) => {
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
   const prompt = `[workflow-stream] ${randomUUID()}`;
   await composer.fill(prompt);
-  await composer.press("Enter");
+  await composer.press(info.project.name === "desktop" ? "Shift+Enter" : "Enter");
   await composer.press("x");
   await expect(composer).toHaveValue(`${prompt}\nx`);
   await expect(page.locator(".message.user")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
   await page.screenshot({ path: info.outputPath("composer-newline.png") });
-  await composer.press("Shift+Enter");
+  if (info.project.name === "desktop") await composer.press("Enter");
+  else await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".message.user")).toHaveText(`${prompt}\nx`);
   await expect(composer).toHaveValue("");
   await composer.fill("Next draft");
@@ -96,7 +97,7 @@ test("interrupted inference settles and the conversation remains usable", async 
   await expect(page.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0, {
     timeout: 60000,
   });
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".chathermes-embedded").getByRole("alert")).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Response failed" })).toBeVisible();
   await composer.fill(`[workflow-continue] ${randomUUID()}`);
   await page.getByRole("button", { name: "Send message", exact: true }).click();

@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/hermes-api";
 import type { InboxItem } from "../inbox";
 const props = defineProps<{
   profile: string;
   revision: number;
+  scope: "all" | "profile";
   openItem: (item: InboxItem) => Promise<void>;
 }>();
-const scope = ref<"all" | "profile">("all");
+const emit = defineEmits<{ "update:scope": [value: "all" | "profile"] }>();
+const scope = computed({
+  get: () => props.scope,
+  set: (value: "all" | "profile") => emit("update:scope", value),
+});
 const items = ref<InboxItem[]>([]),
   cursor = ref<string | null>(null);
 const loading = ref(false),

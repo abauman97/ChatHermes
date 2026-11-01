@@ -1,5 +1,19 @@
+import InboxActions from "../features/inbox/components/InboxActions.vue";
+import ProjectConfirmation from "../features/projects/components/ProjectConfirmation.vue";
+import HomePage from "../features/chat/pages/HomePage.vue";
+import ChatPage from "../features/chat/pages/ChatPage.vue";
+import InboxPage from "../features/inbox/pages/InboxPage.vue";
+import ArtifactsPage from "../features/artifacts/pages/ArtifactsPage.vue";
+import ProjectsPage from "../features/projects/pages/ProjectsPage.vue";
+import ProjectHomePage from "../features/projects/pages/ProjectHomePage.vue";
+import ProjectArtifactsPage from "../features/projects/pages/ProjectArtifactsPage.vue";
+import ProjectSettingsPage from "../features/projects/pages/ProjectSettingsPage.vue";
+import ProjectInstructionsPage from "../features/projects/pages/ProjectInstructionsPage.vue";
+import ScheduledListPage from "../features/scheduled/pages/ScheduledListPage.vue";
+import ScheduledJobPage from "../features/scheduled/pages/ScheduledJobPage.vue";
+import ScheduledRunPage from "../features/scheduled/pages/ScheduledRunPage.vue";
+import SettingsPage from "../features/settings/pages/SettingsPage.vue";
 import { createRouter, type RouterHistory } from "vue-router";
-import { defineComponent } from "vue";
 import { createPluginHistory } from "./history";
 import {
   identifier,
@@ -9,13 +23,9 @@ import {
   safeReturn,
   validProjectId,
 } from "./links";
-import ArtifactsPage from "../features/artifacts/components/ArtifactsPage.vue";
-import ProjectsPage from "../features/projects/components/ProjectsPage.vue";
-import ProjectRoute from "../features/projects/components/ProjectRoute.vue";
-import SettingsPage from "../features/settings/components/SettingsPage.vue";
-import ScheduledPage from "../features/scheduled/components/ScheduledPage.vue";
-import InboxPage from "../features/inbox/components/InboxPage.vue";
-const ChatRoute = defineComponent({ render: () => null });
+import ProjectActions from "../features/projects/components/ProjectActions.vue";
+import ProjectsActions from "../features/projects/components/ProjectsActions.vue";
+import ScheduledActions from "../features/scheduled/components/ScheduledActions.vue";
 export function createChatHermesRouter(
   history: RouterHistory = createPluginHistory(),
   initialUrl?: string,
@@ -23,27 +33,95 @@ export function createChatHermesRouter(
   const router = createRouter({
     history,
     routes: [
-      { path: "/", name: "home", component: ChatRoute },
-      { path: "/chat/:sessionId", name: "chat", component: ChatRoute },
-      { path: "/inbox", name: "inbox", component: InboxPage },
-      { path: "/artifacts", name: "artifacts", component: ArtifactsPage },
-      { path: "/projects", name: "projects", component: ProjectsPage },
-      { path: "/projects/:projectId", name: "project", component: ProjectRoute },
+      { path: "/", name: "home", components: { default: HomePage }, meta: { chat: true } },
+      {
+        path: "/chat/:sessionId",
+        name: "chat",
+        components: { default: ChatPage, actions: ProjectActions, dialogs: ProjectConfirmation },
+        meta: { chat: true },
+      },
+      {
+        path: "/inbox",
+        name: "inbox",
+        components: { default: InboxPage, actions: InboxActions },
+        meta: { title: "Inbox" },
+      },
+      {
+        path: "/artifacts",
+        name: "artifacts",
+        components: { default: ArtifactsPage },
+        meta: { title: "Artifacts", hideComposer: true },
+      },
+      {
+        path: "/projects",
+        name: "projects",
+        components: { default: ProjectsPage, actions: ProjectsActions },
+        meta: { title: "Projects", section: "projects" },
+      },
+      {
+        path: "/projects/:projectId",
+        name: "project",
+        components: {
+          default: ProjectHomePage,
+          actions: ProjectActions,
+          dialogs: ProjectConfirmation,
+        },
+        meta: { section: "projects", composer: "project" },
+      },
       {
         path: "/projects/:projectId/artifacts",
         name: "project-artifacts",
-        component: ProjectRoute,
+        components: {
+          default: ProjectArtifactsPage,
+          actions: ProjectActions,
+          dialogs: ProjectConfirmation,
+        },
+        meta: { section: "projects", hideComposer: true },
       },
-      { path: "/projects/:projectId/settings", name: "project-settings", component: ProjectRoute },
+      {
+        path: "/projects/:projectId/settings",
+        name: "project-settings",
+        components: {
+          default: ProjectSettingsPage,
+          actions: ProjectActions,
+          dialogs: ProjectConfirmation,
+        },
+        meta: { section: "projects" },
+      },
       {
         path: "/projects/:projectId/instructions",
         name: "project-instructions",
-        component: ProjectRoute,
+        components: {
+          default: ProjectInstructionsPage,
+          actions: ProjectActions,
+          dialogs: ProjectConfirmation,
+        },
+        meta: { section: "projects" },
       },
-      { path: "/scheduled", name: "scheduled", component: ScheduledPage },
-      { path: "/scheduled/:jobId", name: "scheduled-job", component: ScheduledPage },
-      { path: "/scheduled/:jobId/:runId", name: "scheduled-run", component: ScheduledPage },
-      { path: "/settings", name: "settings", component: SettingsPage },
+      {
+        path: "/scheduled",
+        name: "scheduled",
+        components: { default: ScheduledListPage, actions: ScheduledActions },
+        meta: { title: "Scheduled", section: "scheduled" },
+      },
+      {
+        path: "/scheduled/:jobId",
+        name: "scheduled-job",
+        components: { default: ScheduledJobPage, actions: ScheduledActions },
+        meta: { title: "Scheduled", section: "scheduled" },
+      },
+      {
+        path: "/scheduled/:jobId/:runId",
+        name: "scheduled-run",
+        components: { default: ScheduledRunPage, actions: ScheduledActions },
+        meta: { title: "Scheduled", section: "scheduled" },
+      },
+      {
+        path: "/settings",
+        name: "settings",
+        components: { default: SettingsPage },
+        meta: { title: "Settings", hideComposer: true },
+      },
       { path: "/:pathMatch(.*)*", redirect: "/" },
     ],
   });

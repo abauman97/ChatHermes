@@ -26,12 +26,8 @@ export function useChatController(
     chatLoading: Readonly<Ref<boolean>>;
     chatError: Readonly<Ref<string>>;
     canStream: Readonly<Ref<boolean>>;
-    scheduledPage: Readonly<Ref<boolean>>;
-    inboxPage?: Readonly<Ref<boolean>>;
+    composerBlocked: Readonly<Ref<boolean>>;
     projectView: Readonly<Ref<boolean>>;
-    projectsPage: Readonly<Ref<boolean>>;
-    projectPage: Readonly<Ref<string>>;
-    settingsPage: Readonly<Ref<boolean>>;
     selectedProject: Readonly<Ref<Project | undefined>>;
     creating: Readonly<Ref<boolean>>;
     offline: Readonly<Ref<boolean>>;
@@ -43,7 +39,7 @@ export function useChatController(
     defaultModel: Readonly<Ref<string>>;
     suggestedPrompt: Ref<string>;
     generation: () => number;
-    navigation: () => number;
+    navigation: () => unknown;
     createSession: () => Promise<string | undefined>;
     suggest: (text: string) => Promise<void>;
     retryHistory: () => Promise<unknown>;
@@ -57,11 +53,8 @@ export function useChatController(
     chatLoading,
     chatError,
     canStream,
-    scheduledPage,
     projectView,
-    projectsPage,
-    projectPage,
-    settingsPage,
+    composerBlocked,
     selectedProject,
     creating,
     offline,
@@ -151,8 +144,7 @@ export function useChatController(
   const viewActive = computed(() => native.busy.value);
   async function sendNative(text: string, attachments: Attachment[]) {
     if (
-      scope.inboxPage?.value ||
-      scheduledPage.value ||
+      composerBlocked.value ||
       branching.value ||
       viewBusy.value ||
       creating.value ||
@@ -276,15 +268,12 @@ export function useChatController(
   }
   const composer = computed(() => ({
     projectName:
-      !scheduledPage.value && !projectsPage.value && !selectedProject.value?.isNoProject
+      !composerBlocked.value && !selectedProject.value?.isNoProject
         ? selectedProject.value?.label
         : undefined,
     disabled: Boolean(
-      scope.inboxPage?.value ||
+      composerBlocked.value ||
       branching.value ||
-      !!projectPage.value ||
-      scheduledPage.value ||
-      projectsPage.value ||
       (projectView.value && selectedProject.value?.archived) ||
       (projectView.value &&
         (!selectedProject.value ||
@@ -298,26 +287,22 @@ export function useChatController(
       viewReconnect.value ||
       !canStream.value,
     ),
-    reason: scope.inboxPage?.value
+    reason: composerBlocked.value
       ? "Open a chat."
-      : scheduledPage.value
-        ? "Open a chat to discuss a run."
-        : projectsPage.value
-          ? "Select a project or start a new chat."
-          : projectView.value && selectedProject.value?.archived
-            ? "Restore this project to start a new chat."
-            : projectView.value &&
-                selectedProject.value &&
-                !selectedProject.value.isNoProject &&
-                !projectRoot(selectedProject.value)
-              ? "This Project has no workspace."
-              : offline.value
-                ? "Offline · sending is unavailable."
-                : viewApprovalPending.value
-                  ? "Approval is pending in Hermes."
-                  : !canStream.value
-                    ? "Streaming turns are unavailable for this profile."
-                    : undefined,
+      : projectView.value && selectedProject.value?.archived
+        ? "Restore this project to start a new chat."
+        : projectView.value &&
+            selectedProject.value &&
+            !selectedProject.value.isNoProject &&
+            !projectRoot(selectedProject.value)
+          ? "This Project has no workspace."
+          : offline.value
+            ? "Offline · sending is unavailable."
+            : viewApprovalPending.value
+              ? "Approval is pending in Hermes."
+              : !canStream.value
+                ? "Streaming turns are unavailable for this profile."
+                : undefined,
   }));
   const actions = {
     loadEarlier: () => native.loadEarlier(),
@@ -370,8 +355,6 @@ export function useChatController(
     scope: {
       profile,
       session,
-      settingsPage,
-      scheduledPage,
       offline,
       canStream,
       models,

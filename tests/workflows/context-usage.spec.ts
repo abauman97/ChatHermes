@@ -46,7 +46,9 @@ test("session context meter, focus visibility and on-demand details in the insta
   await expect(plugin.locator(".turn-work").last()).toBeVisible();
   await area.fill("Preserve the context draft");
   await expect(area).toBeFocused();
-  await expect(meter).toBeHidden();
+  const compact = info.project.name !== "desktop";
+  if (compact) await expect(meter).toBeHidden();
+  else await expect(meter).toBeVisible();
   // Target the class independently of percentage/accessible-name updates. Capture
   // the actual DOM/CSS state at the same point as the focused screenshot.
   const focusState = await meter.evaluate((el) => ({
@@ -61,10 +63,16 @@ test("session context meter, focus visibility and on-demand details in the insta
   expect(focusState).toMatchObject({
     count: 1,
     textareaFocused: true,
-    hiddenAncestor: true,
-    width: 0,
-    height: 0,
+    hiddenAncestor: compact,
+    ...(compact ? { width: 0, height: 0 } : {}),
   });
+  if (!compact) {
+    expect(focusState.width).toBeGreaterThan(0);
+    expect(focusState.height).toBeGreaterThan(0);
+    await meter.dispatchEvent("pointerenter", { pointerType: "mouse" });
+    await expect(plugin.getByRole("dialog", { name: "Context usage", exact: true })).toHaveCount(0);
+    expect(detailRequests).toBe(0);
+  }
   await info.attach("focused-meter-dom.json", {
     body: JSON.stringify(focusState, null, 2),
     contentType: "application/json",
@@ -115,7 +123,8 @@ test("session context meter, focus visibility and on-demand details in the insta
   await meter.click();
   await area.focus();
   await expect(panel).toHaveCount(0);
-  await expect(meter).toBeHidden();
+  if (compact) await expect(meter).toBeHidden();
+  else await expect(meter).toBeVisible();
   await expect(area).toBeFocused();
   await expect(area).toHaveValue("Preserve the context draft");
   if (info.project.name === "mobile") {

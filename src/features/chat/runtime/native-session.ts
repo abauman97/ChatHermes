@@ -439,7 +439,11 @@ export function useNativeSession(
           Object.keys(savedResponseTargets([user], history.slice(lastUser))).length
         ) {
           mergeHistoryBlocks(turn, historyBlocks(history.slice(lastUser + 1)), false);
-          history[lastUser] = { ...savedUser, blocks: turn.blocks };
+          history[lastUser] = {
+            ...savedUser,
+            display_id: user.display_id || user.id,
+            blocks: turn.blocks,
+          };
           user = undefined;
           turn = undefined;
           completed = [];
@@ -533,7 +537,13 @@ export function useNativeSession(
           repaint();
           return true;
         }
-        history[index] = { ...history[index]!, blocks: projection.blocks };
+        history[index] = {
+          ...history[index]!,
+          // A persistence receipt changes storage identity, not the rendered
+          // occurrence. Preserve disclosure intent and focused transcript DOM.
+          display_id: entry.user.display_id || entry.user.id,
+          blocks: projection.blocks,
+        };
       }
       messages.value = history;
       const result = await currentViewer.rpc<{ settled: boolean }>("reconciled", {

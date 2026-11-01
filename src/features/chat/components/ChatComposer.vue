@@ -125,7 +125,16 @@ const imageGated = computed(
     attachments.value.some((file) => file.type.startsWith("image/")),
 );
 const pickerDisabled = computed(() => props.sending || props.modelsLoading);
-const compactEditing = computed(() => editing.value && window.innerWidth <= 700);
+const compactViewport = ref(false);
+function updateCompactViewport() {
+  compactViewport.value =
+    window.innerWidth <= 700 ||
+    !!window.matchMedia?.("(hover: none) and (max-height: 500px)").matches;
+}
+updateCompactViewport();
+onMounted(() => window.addEventListener("resize", updateCompactViewport));
+onBeforeUnmount(() => window.removeEventListener("resize", updateCompactViewport));
+const compactEditing = computed(() => editing.value && compactViewport.value);
 const selectedProvider = computed(() =>
   props.providers?.find((item) => item.slug === pickerProvider.value),
 );

@@ -13,7 +13,22 @@ const mount: typeof vueMount = (component, options = {}) =>
       plugins: [...(options.global?.plugins || []), createChatHermesRouter()],
     },
   });
-import ScheduledPage from "./ScheduledPage.vue";
+import { defineComponent, h, ref, toRef } from "vue";
+import { RouterView } from "vue-router";
+import { provideScheduled } from "../composables/useScheduledHistory";
+const recentSession = vi.fn();
+const ScheduledPage = defineComponent({
+  props: { profile: { type: String, default: "" } },
+  setup(props) {
+    provideScheduled({
+      profile: toRef(props, "profile"),
+      offline: ref(false),
+      creating: ref(false),
+      recentSession,
+    });
+    return () => h("div", [h(RouterView), h(RouterView, { name: "actions" })]);
+  },
+});
 import { api } from "../../../services/hermes-api";
 beforeEach(() => history.replaceState({}, "", "/chathermes#/scheduled"));
 const job = {
@@ -53,17 +68,21 @@ it("filters jobs, pages history, renders real output without return or discussio
     `Security AuditScheduled jobLast run: ${new Date(job.last_run_at).toLocaleString()}›`,
   );
   await wrapper.get("select").setValue("paused");
+  await flushPromises();
   expect(wrapper.text()).toContain("Paused audit");
   expect(wrapper.get(".scheduled-job-row").text()).toContain("Never run");
   await wrapper.get("select").setValue("completed");
+  await flushPromises();
   expect(wrapper.text()).toContain("Completed audit");
   expect(wrapper.get(".scheduled-job-row").text()).toContain("Last run date unavailable");
   await wrapper.get("select").setValue("active");
+  await flushPromises();
+  expect(api.scheduled).toHaveBeenCalledTimes(1);
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
   await flushPromises();
   expect(wrapper.find(".project-back").exists()).toBe(false);
-  expect(wrapper.text()).not.toContain("Refresh");
+  expect(wrapper.find(".scheduled-heading button").exists()).toBe(false);
   expect(api.scheduledRuns).toHaveBeenCalledWith("beta", "audit", 0, expect.any(AbortSignal));
   vi.mocked(api.scheduledRuns).mockResolvedValue({
     runs: [{ ...recent, id: "old", started_at: 100 }],
@@ -86,7 +105,7 @@ it("filters jobs, pages history, renders real output without return or discussio
   expect(routeUrl().pathname).toContain("/scheduled/audit/cron_audit_");
   expect(wrapper.find(".project-back").exists()).toBe(false);
   expect(wrapper.text()).not.toContain("Open a chat about this run");
-  expect(wrapper.text()).not.toContain("Refresh");
+  expect(wrapper.find(".scheduled-heading button").exists()).toBe(false);
   wrapper.unmount();
 });
 it("ignores late output after going back and aborts on unmount", async () => {
@@ -170,7 +189,8 @@ it("shows only the final assistant result from a saved session", async () => {
   expect(wrapper.text()).toContain("Final result");
   expect(wrapper.text()).not.toContain("Original prompt");
   expect(wrapper.text()).not.toContain("Intermediate response");
-  expect(wrapper.vm.$.exposed?.sessionId?.value).toBe("cron_audit_20260102_000000");
+  await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
+  expect(recentSession).toHaveBeenCalledWith("cron_audit_20260102_000000");
   wrapper.unmount();
 });
 
@@ -210,5 +230,42 @@ it("keeps scheduled job rows compact without expanding prompts", async () => {
   expect(row.text()).toContain("Security Audit");
   expect(row.text()).not.toContain("very long private task prompt");
   expect(row.classes()).toContain("scheduled-job-row");
+  wrapper.unmount();
+});
+
+it("aborts superseded resource and profile reads without letting late output replace the page", async () => {
+  setup();
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/first");
+  const pending: Array<{
+    signal: AbortSignal;
+    finish: (value: { messages: []; output: string }) => void;
+  }> = [];
+  vi.mocked(api.scheduledOutput).mockImplementation(
+    (_profile, _job, _run, signal) =>
+      new Promise((finish) => {
+        pending.push({ signal: signal!, finish });
+      }),
+  );
+  const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  await wrapper.vm.$router.push({
+    name: "scheduled-run",
+    params: { jobId: "audit", runId: "second" },
+  });
+  await flushPromises();
+  expect(pending[0]!.signal.aborted).toBe(true);
+  await wrapper.setProps({ profile: "alpha" });
+  await flushPromises();
+  expect(pending[1]!.signal.aborted).toBe(true);
+  pending[0]!.finish({ messages: [], output: "Obsolete first output" });
+  pending[1]!.finish({ messages: [], output: "Obsolete beta output" });
+  pending[2]!.finish({ messages: [], output: "Current alpha output" });
+  await flushPromises();
+  expect(wrapper.text()).toContain("Current alpha output");
+  expect(wrapper.text()).not.toContain("Obsolete");
+  await wrapper.vm.$router.push({ name: "scheduled" });
+  await flushPromises();
+  expect(pending[2]!.signal.aborted).toBe(true);
+  expect(wrapper.get('[aria-label="Scheduled jobs"]').text()).toContain("Security Audit");
   wrapper.unmount();
 });

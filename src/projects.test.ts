@@ -158,7 +158,7 @@ describe("authoritative gateway Projects", () => {
       await wrapper.findAll(".session-select")[1]!.trigger("click");
       await flushPromises();
       await flushPromises();
-      expect(routeUrl().search).toContain("project=p_a");
+      expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
       expect(location.hash).toContain("/chat/project_s1");
       expect(routeUrl().search).toContain("profile=alpha");
       expect(routeUrl().search).not.toContain("view=project");
@@ -184,7 +184,7 @@ describe("authoritative gateway Projects", () => {
       wrapper.unmount();
     },
   );
-  it("waits for initial Project membership before resuming from the drawer", async () => {
+  it("discovers Project membership after opening a drawer session", async () => {
     setup();
     let finish!: (value: ProjectTree) => void;
     vi.spyOn(api, "projects").mockImplementation(
@@ -200,7 +200,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     finish({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
-    expect(routeUrl().search).toContain("project=p_a");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
     expect(location.hash).toContain("/chat/project_s1");
     wrapper.unmount();
   });
@@ -246,7 +246,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     reads.at(-1)!({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
-    reads.at(-2)!({ projects: [a], scoped_session_ids: ["project_s1"] });
+    for (const finish of reads) finish({ projects: [a], scoped_session_ids: ["project_s1"] });
     await flushPromises();
     expect(location.hash).toBe("#/chat/s1");
     wrapper.unmount();
@@ -389,7 +389,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await flushPromises();
     expect(wrapper.text()).toContain("Native chat history");
-    expect(routeUrl().search).toContain("project=p_a");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
     expect(location.hash).toContain("/chat/project_s1");
     expect(api.isWorkspace("", "project_s1")).toBe(true);
     expect(
@@ -533,7 +533,7 @@ describe("authoritative gateway Projects", () => {
     expect(routeSession()).toBe("project_created");
     expect(routeSession()).not.toBe("project_s1");
     expect(new URLSearchParams(routeUrl().search).has("view")).toBe(false);
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+    expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
     expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
     wrapper.unmount();
   });
@@ -739,7 +739,7 @@ describe("authoritative gateway Projects", () => {
     wrapper.unmount();
     wrapper = mount(App);
     await flushPromises();
-    expect(routeUrl().search).toContain("project=p_a");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
     history.pushState({}, "", "/chathermes?profile=default#/projects/p_b?project=p_b");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();

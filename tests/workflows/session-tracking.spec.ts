@@ -48,6 +48,17 @@ test("manual settlement preserves an executing chat and survives reload and prof
         }
     });
   });
+  async function expectHistory() {
+    try {
+      await expect(page.locator(".message.user")).toHaveCount(2, { timeout: 80_000 });
+    } catch (cause) {
+      await info.attach("native-history-admission-methods", {
+        body: JSON.stringify(admission),
+        contentType: "application/json",
+      });
+      throw cause;
+    }
+  }
   const origin = new URL(page.url()).origin;
   await authenticate(page, `${origin}/chathermes?profile=alpha#/?profile=alpha`);
   await expect(page.locator(".chathermes-embedded #profile-field")).toHaveValue("alpha");
@@ -106,8 +117,9 @@ test("manual settlement preserves an executing chat and survives reload and prof
   expect(
     (await metadata()).tracking.find((row: { session_id: string }) => row.session_id === id).status,
   ).toBe("settled");
+  await expect(page.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0);
   await page.reload();
-  await expect(page.locator(".message.user")).toHaveCount(2);
+  await expectHistory();
   await expect(page.locator(".message.assistant").last()).toContainText("Stream complete.");
   await expect(page.getByRole("button", { name: "Choose model", exact: true })).toBeEnabled();
   await navigation(page, info.project.name !== "desktop");
@@ -135,7 +147,7 @@ test("manual settlement preserves an executing chat and survives reload and prof
   await page.getByLabel("Profile", { exact: true }).selectOption("alpha");
   await expect(active.locator(".session-row")).not.toHaveCount(0);
   await page.goto(conversation);
-  await expect(page.locator(".message.user")).toHaveCount(2);
+  await expectHistory();
 });
 
 test("older Open sessions stay visible outside Recents pagination with no sidebar transcript reads", async ({

@@ -160,6 +160,29 @@ for (const [kind, marker, requestText, answer] of [
       test.setTimeout(180000);
       const origin = new URL(page.url()).origin;
       const profile = kind === "approval" ? "alpha" : "beta";
+      let accept!: () => void;
+      const accepted = new Promise<void>((resolve) => {
+        accept = resolve;
+      });
+      page.on("websocket", (socket) => {
+        const submissions = new Set<string | number>();
+        socket.on("framesent", ({ payload }) => {
+          try {
+            const frame = JSON.parse(String(payload));
+            if (frame.method === "prompt.submit") submissions.add(frame.id);
+          } catch {
+            /* Do not retain raw native frames. */
+          }
+        });
+        socket.on("framereceived", ({ payload }) => {
+          try {
+            const frame = JSON.parse(String(payload));
+            if (submissions.has(frame.id) && frame.result?.status === "streaming") accept();
+          } catch {
+            /* Do not retain raw native frames. */
+          }
+        });
+      });
       await authenticate(page, `${origin}/chathermes?profile=${profile}#/?profile=${profile}`);
       await page
         .getByRole("textbox", { name: "Message Hermes" })
@@ -169,9 +192,9 @@ for (const [kind, marker, requestText, answer] of [
         requestText
           ? page.getByText(requestText, { exact: true })
           : page.getByRole("button", { name: answer, exact: true });
-      await expect(request()).toBeVisible({ timeout: 90000 });
+      await accepted;
       const session = sessionFromUrl(page.url())!;
-      // Leave the session before the shell's visible refresh deletes its notices.
+      // Leave after real admission, before viewing the request marks its notice read.
       await page.goto(origin + "/");
       const query = "/api/plugins/chathermes/inbox?profile=default&limit=100";
       let notificationId = 0;

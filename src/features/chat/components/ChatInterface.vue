@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import type { Attachment } from "../../../types/hermes";
-import { useChat } from "../context";
-import ChatTranscript from "../../../components/ChatTranscript.vue";
+import { useChat, conversationFocus } from "../context";
 import ChatComposer from "./ChatComposer.vue";
-import LiveRequest from "./LiveRequest.vue";
-const props = defineProps<{ showPage: boolean; hideComposer?: boolean }>();
+const props = defineProps<{ showChat: boolean; hideComposer?: boolean }>();
 const picker = ref<InstanceType<typeof ChatComposer>>();
-const transcript = ref<InstanceType<typeof ChatTranscript>>();
+const transcript = ref<{ focusLatestMessage: () => void }>();
+provide(conversationFocus, transcript);
 let pendingFocus = false;
 function focusConversation() {
+  // Home and session routes mount distinct transcripts; transfer Send focus when
+  // that replacement arrives, unless the reader has already focused a new draft.
+  pendingFocus = true;
   if (transcript.value) transcript.value.focusLatestMessage();
   else {
     // Project home creates the conversation asynchronously.
     picker.value?.blurInput();
-    pendingFocus = true;
   }
 }
 watch(
@@ -36,12 +37,16 @@ async function sendMessage(text: string, attachments: Attachment[]) {
 }
 async function steerMessage(text: string) {
   focusConversation();
-  await actions.steer(text);
+  try {
+    await actions.steer(text);
+  } finally {
+    pendingFocus = false;
+  }
 }
 const dragging = ref(0);
 function acceptsFiles(event: DragEvent) {
   return (
-    !props.showPage &&
+    props.showChat &&
     !!event.dataTransfer?.types.includes("Files") &&
     event
       .composedPath()
@@ -82,8 +87,6 @@ const { view, scope, composer, actions } = useChat();
 const {
   profile,
   session,
-  settingsPage,
-  scheduledPage,
   offline,
   canStream: nativeMode,
   reasoningEffort,
@@ -96,22 +99,18 @@ const {
   suggestedPrompt,
 } = scope;
 const {
-  messages: viewMessages,
-  loading: viewLoading,
   busy: viewBusy,
-  approvalPending: viewApprovalPending,
   active: viewActive,
   reconnect: viewReconnect,
   error: viewError,
   unavailable: viewUnavailable,
   connection,
-  status,
 } = view;
 </script>
 <template>
   <div class="chat-interface relative flex min-h-0 flex-1 flex-col overflow-hidden">
     <div
-      v-if="dragging && !showPage"
+      v-if="dragging && showChat"
       class="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-3xl border-2 border-dashed border-[#a3a3a3] bg-[#212121]/95 text-lg"
       role="status"
     >
@@ -126,7 +125,7 @@ const {
         You are offline. Messages cannot be loaded or sent.
       </div>
       <div
-        v-if="!settingsPage && !scheduledPage && viewReconnect"
+        v-if="showChat && viewReconnect"
         class="notice px-5 py-3 text-sm text-[#b4b4b4]"
         role="status"
       >
@@ -144,7 +143,7 @@ const {
         </button>
       </div>
       <div
-        v-if="!settingsPage && !scheduledPage && viewError"
+        v-if="showChat && viewError"
         class="notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]"
         role="alert"
       >
@@ -156,31 +155,7 @@ const {
           Resolve uncertain submission
         </button>
       </div>
-      <slot v-if="showPage" name="page" />
-      <ChatTranscript
-        v-else
-        ref="transcript"
-        :profile="profile"
-        :session-id="session"
-        :has-earlier="view.hasEarlier.value"
-        :loading-earlier="view.loadingEarlier.value"
-        :earlier-error="view.earlierError.value"
-        @earlier="actions.loadEarlier"
-        :messages="viewMessages"
-        :draft="''"
-        :loading="viewLoading"
-        :progress="[]"
-        :thinking="viewBusy"
-        :working="viewBusy || viewApprovalPending"
-        :approval-pending="viewApprovalPending"
-        :home="!session"
-        :status-label="status"
-        :branch-disabled="view.branchDisabled.value"
-        :response-targets="view.responseTargets.value"
-        @branch="actions.branch"
-      >
-        <template #request><LiveRequest /></template>
-      </ChatTranscript>
+      <slot />
     </div>
     <div class="composer-dock shrink-0">
       <ChatComposer
@@ -191,7 +166,7 @@ const {
         :context-breakdown="view.contextBreakdown.value"
         :context-loading="view.contextLoading.value"
         @context-open="actions.setContextOpen"
-        v-show="!settingsPage && !hideComposer"
+        v-show="!hideComposer"
         :project-name="composer.projectName"
         :key="JSON.stringify([profile, session])"
         :disabled="composer.disabled"

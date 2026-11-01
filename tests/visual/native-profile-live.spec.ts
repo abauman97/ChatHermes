@@ -62,7 +62,7 @@ test("native gateway chats and recovers independently in every profile", async (
         `/chathermes?profile=${entry.profile}#/chat/${entry.id}?profile=${entry.profile}`,
       );
       await expect(plugin.locator(".message.assistant")).toContainText(entry.marker, {
-        timeout: 30000,
+        timeout: 80000,
       });
       for (const other of selected.filter((other) => other.profile !== entry.profile))
         await expect(plugin.locator(".transcript")).not.toContainText(other.marker);

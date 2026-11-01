@@ -658,6 +658,30 @@ describe("context composer follow-ups", () => {
       attachTo: document.body,
       props: { disabled: false, sending: false, sessionId: "active-session", ...props },
     });
+  it("compacts a focused touch composer when the viewport becomes short landscape", async () => {
+    vi.stubGlobal("innerWidth", 844);
+    let short = false;
+    vi.stubGlobal("matchMedia", () => ({ matches: short }));
+    const wrapper = create();
+    try {
+      const area = wrapper.get("textarea").element;
+      area.focus();
+      await wrapper.vm.$nextTick();
+      expect(wrapper.get(".attach-button").isVisible()).toBe(true);
+      short = true;
+      window.dispatchEvent(new Event("resize"));
+      await wrapper.vm.$nextTick();
+      for (const selector of [".context-meter", ".model-pill", ".attach-button"])
+        expect(wrapper.get(selector).isVisible()).toBe(false);
+      expect(document.activeElement).toBe(area);
+      short = false;
+      window.dispatchEvent(new Event("resize"));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.get(".attach-button").isVisible()).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it.each([false, true])(
     "keeps context, model and attachment controls visible on focus while sending=%s",
     async (sending) => {

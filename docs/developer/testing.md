@@ -42,6 +42,8 @@ For UI changes, inspect screenshots of the actual dashboard plugin at desktop an
 
 Real-provider testing is explicit opt-in through `npm run live:real` with root `.env` settings in a separate Compose project. `npm run live` uses deterministic inference. Never expose fixture ports publicly or share raw authentication traces.
 
+The route-page workflow (`tests/workflows/route-pages.spec.ts`) opens each destination directly in the authenticated plugin, reloads nested pages, and checks back/forward traversal and composer/session continuity during streaming. Scheduled page tests also cover late responses after resource/profile changes and abort on navigation. Run these within the same isolated deterministic Docker project as the other workflows.
+
 The transcript workflow (`tests/workflows/transcript.spec.ts`) seeds real Hermes
 compaction/rotation/rewind history, then checks bounded HTTP/native reads, scroll
 and fallback pagination, anchors, reconnect, live backfill and restored tool output
