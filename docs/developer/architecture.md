@@ -234,3 +234,16 @@ profile/Project changes, and aborts obsolete requests. SQL filters scope and use
 newest-first keyset pagination with session/path tie breakers. Refresh reads the
 current index while background indexing continues. A responsive CSS Grid fills
 available width; the bounded page scrolls vertically.
+
+## Assistant activity display
+
+Each assistant turn has one inline activity summary, collapsed by default, at
+its first activity. Thinking/reasoning, tool calls and delegated tasks share
+that history, including activity separated by assistant response text. Response
+text keeps its order. Active activity stays visible below the summary; delegated
+work remains live until it settles even if the parent turn has finished. Settled
+activity folds into the summary, including failed, interrupted and unavailable
+results, whose status remains in the summary. Expanding the history exposes each
+row and its inspectable input/output; live updates preserve disclosure choices.
+Delivered artifact cards and interactive approval/clarification controls remain
+accessible outside collapsed details.

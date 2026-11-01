@@ -178,3 +178,43 @@ test("a real clarification resumes the same conversation after answering", async
   await expect(page.locator(".message.assistant").last()).toContainText("Clarification accepted.");
   await expect(page.locator(".message.user")).toHaveCount(1);
 });
+
+test("reasoning and tools share one collapsed history with the active stream below", async ({
+  page,
+}, info) => {
+  const composer = page.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill(`[workflow-activity] ${randomUUID()}`);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  const work = page.locator(".turn-work");
+  await expect(work).toHaveCount(1);
+  const summary = work.locator(".work-summary");
+  await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await expect(work.locator(".current-activity")).toBeVisible();
+  await composer.fill("Draft while activity arrives");
+  await expect(composer).toBeFocused();
+  await page.screenshot({ path: info.outputPath("activity-streaming.png") });
+  await expect(page.locator(".message.assistant").last()).toHaveText(
+    "Tool completed: workflow-tool-ok.",
+  );
+  await expect(work).toHaveCount(1);
+  await expect(work.locator(".current-activity")).toHaveCount(0);
+  await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await expect(work.locator(".activity:visible")).toHaveCount(0);
+  await expect(summary).toContainText("Thought");
+  await page.screenshot({ path: info.outputPath("activity-collapsed.png") });
+  await summary.click();
+  await expect(work.locator(".activity:visible")).toHaveCount(2);
+  for (const row of await work.locator(".activity").all()) await row.locator("summary").click();
+  await expect(work.locator("pre").first()).toContainText(
+    "Inspect the workspace before answering.",
+  );
+  await expect(work.locator("pre").last()).toContainText("workflow-tool-ok");
+  await page.screenshot({ path: info.outputPath("activity-expanded.png") });
+  await summary.click();
+  await expect(composer).toHaveValue("Draft while activity arrives");
+  await page.reload();
+  await expect(work).toHaveCount(1);
+  await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await summary.click();
+  await expect(work.locator(".activity:visible")).toHaveCount(2);
+});

@@ -10,29 +10,39 @@ const props = defineProps<{
 }>();
 const userOpen = ref<boolean | null>(null);
 const timelineId = useId();
-const active = (activity: Activity) => props.working && !activity.complete;
+const active = (activity: Activity) =>
+  !activity.complete && (props.working || !!activity.delegated);
 // Summarize settled calls even while the next call is streaming. Keep the
 // keyed timeline intact so live updates never remount a row or lose its intent.
 const settled = computed(() => props.activities.filter((activity) => !active(activity)));
-const grouped = computed(() => props.activities.length > 1 && settled.value.length > 0);
 const expanded = computed(() => userOpen.value ?? false);
-// Completed failures fold like successes; stopped or unavailable calls remain
-// visible so a missing result is not mistaken for completed work.
-const needsAttention = (activity: Activity) =>
-  ["interrupted", "unknown"].includes(activity.state || "") ||
-  (!props.working && !activity.complete);
 const label = computed(() =>
   props.approvalPending
     ? "Waiting for approval"
     : !props.activities.length
       ? "Working…"
-      : toolGroupLabel(settled.value, false),
+      : [
+          settled.value.some((activity) => activity.kind === "thinking") ? "Thought" : "",
+          toolGroupLabel(
+            settled.value.filter((activity) => activity.kind === "tool"),
+            false,
+          ),
+          ...["interrupted", "unknown"].flatMap((state) => {
+            const count = settled.value.filter((activity) =>
+              state === "unknown"
+                ? activity.state === state || !activity.complete
+                : activity.state === state && activity.complete,
+            ).length;
+            return count ? [`${count} ${state === "unknown" ? "results unavailable" : state}`] : [];
+          }),
+        ]
+          .filter(Boolean)
+          .join(", ") || "Working…",
 );
 </script>
 <template>
-  <section class="turn-work" aria-label="Tool activity">
+  <section class="turn-work" aria-label="Assistant activity">
     <button
-      v-if="grouped || !activities.length"
       type="button"
       class="work-summary"
       :aria-expanded="expanded"
@@ -53,10 +63,10 @@ const label = computed(() =>
       <span class="work-chevron" :class="{ expanded }" aria-hidden="true">›</span>
       <span v-if="approvalPending" class="sr-only" role="status">Waiting for approval</span>
     </button>
-    <div :id="timelineId" class="work-timeline" :class="{ 'work-timeline-single': !grouped }">
+    <div :id="timelineId" class="work-timeline">
       <template v-for="activity in activities" :key="activity.id">
         <div
-          v-show="!grouped || expanded || active(activity) || needsAttention(activity)"
+          v-show="expanded || active(activity)"
           :class="{ 'current-activity': active(activity) }"
         >
           <ActivityRow :activity="activity" :turn-complete="!working" />
