@@ -761,7 +761,7 @@ describe("scheduled results", () => {
       expect(h.openWindow).not.toHaveBeenCalled();
     },
   );
-  it.each(["timeout", "wrong destination", "failure", "postMessage throws"])(
+  it.each(["timeout", "wrong destination", "postMessage throws"])(
     "falls back to the exact URL without a duplicate window on %s",
     async (failure) => {
       vi.useFakeTimers();
@@ -771,8 +771,6 @@ describe("scheduled results", () => {
         const url = origin + "/chathermes?profile=beta#/chat/two?profile=beta";
         h.client.postMessage.mockImplementation((_message, ports) => {
           if (failure === "postMessage throws") throw new Error("unavailable");
-          if (failure === "failure")
-            ports[0].postMessage({ type: "chathermes.navigation.failed", url });
           if (failure === "wrong destination")
             ports[0].postMessage({ type: "chathermes.navigated", url: h.client.url });
         });
@@ -791,20 +789,25 @@ describe("scheduled results", () => {
     },
   );
   it.each([false, true])(
-    "reuses a client when focus fails and fallback is unavailable/rejected: %s",
+    "reuses a client after timeout when focus fails and fallback is unavailable/rejected: %s",
     async (rejects) => {
-      const h = harness();
-      h.client.url = origin + "/chathermes#/settings?profile=alpha";
-      h.client.focus.mockRejectedValue(new Error("focus denied"));
-      h.client.postMessage.mockImplementation((message, ports) => {
-        ports[0].postMessage({ type: "chathermes.navigation.failed", url: message.url });
-      });
-      if (rejects) h.client.navigate.mockRejectedValue(new Error("navigation denied"));
-      else delete (h.client as any).navigate;
-      await h.push(result);
-      await h.dispatch("notificationclick", { notification: h.notifications[0] });
-      expect(h.client.focus).toHaveBeenCalledOnce();
-      expect(h.openWindow).not.toHaveBeenCalled();
+      vi.useFakeTimers();
+      try {
+        const h = harness();
+        await h.push(result);
+        h.client.url = origin + "/chathermes#/settings?profile=alpha";
+        h.client.focus.mockRejectedValue(new Error("focus denied"));
+        h.client.postMessage.mockImplementation(() => {});
+        if (rejects) h.client.navigate.mockRejectedValue(new Error("navigation denied"));
+        else delete (h.client as any).navigate;
+        const click = h.dispatch("notificationclick", { notification: h.notifications[0] });
+        await vi.advanceTimersByTimeAsync(10000);
+        await click;
+        expect(h.client.focus).toHaveBeenCalledOnce();
+        expect(h.openWindow).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     },
   );
   it("prefers ChatHermes over another dashboard window, then reuses that dashboard if alone", async () => {

@@ -246,7 +246,6 @@ function navigateInApp(client, target) {
     channel.port1.onmessage = ({ data }) => {
       if (data?.url !== target.href) return;
       if (data.type === "chathermes.navigated") finish(true);
-      else if (data.type === "chathermes.navigation.failed") finish(false);
     };
     try {
       client.postMessage({ type: "chathermes.navigate", url: target.href }, [channel.port2]);

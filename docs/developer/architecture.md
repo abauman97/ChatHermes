@@ -144,8 +144,8 @@ and send the canonical URL as `chathermes.navigate` over a MessageChannel. The
 mounted app replies with `chathermes.navigated` and the requested URL only after
 router scope application and session history or scheduled output loading, followed
 by Vue rendering. Failed, superseded, or unmounted destinations cannot acknowledge
-success. A failed handoff or a ten-second timeout falls back to
-`WindowClient.navigate(target.href)` in that same window. Another same-origin
+success and send no reply. Without a success acknowledgement, a ten-second timeout
+falls back to `WindowClient.navigate(target.href)` in that same window. Another same-origin
 dashboard window can be reused when ChatHermes is not open; a new window opens
 only when no same-origin window exists. Hash queries retain destination profile
 scope; host-owned outer query and history metadata retain their existing ownership.

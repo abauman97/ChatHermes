@@ -1079,10 +1079,7 @@ async function serviceWorkerMessage(event: MessageEvent) {
     loaded = false;
   } finally {
     if (port) {
-      port.postMessage({
-        type: loaded ? "chathermes.navigated" : "chathermes.navigation.failed",
-        url,
-      });
+      if (loaded) port.postMessage({ type: "chathermes.navigated", url });
       port.close();
     }
   }

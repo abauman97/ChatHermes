@@ -2089,10 +2089,7 @@ describe("notification navigation acknowledgements", () => {
     await flushPromises();
     const reply = send("/chat/notified?profile=beta");
     await flushPromises();
-    expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
-      type: "chathermes.navigation.failed",
-      url: reply.url,
-    });
+    expect(reply.postMessage).not.toHaveBeenCalled();
     wrapper.unmount();
   });
   it.each([true, false])(
@@ -2123,10 +2120,12 @@ describe("notification navigation acknowledgements", () => {
       if (success) expect(wrapper.text()).toContain("Loaded exact scheduled execution");
       else
         expect(wrapper.get('[role="alert"]').text()).toContain("Could not load scheduled history");
-      expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
-        type: success ? "chathermes.navigated" : "chathermes.navigation.failed",
-        url: reply.url,
-      });
+      if (success)
+        expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
+          type: "chathermes.navigated",
+          url: reply.url,
+        });
+      else expect(reply.postMessage).not.toHaveBeenCalled();
       const retried = deferred<Response>();
       outputWork = retried.promise;
       await wrapper.get('[aria-label="Screen options"]').trigger("click");
@@ -2166,10 +2165,7 @@ describe("notification navigation acknowledgements", () => {
       else
         history.resolve(json({ messages: [{ role: "assistant", content: "obsolete history" }] }));
       await flushPromises();
-      expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
-        type: "chathermes.navigation.failed",
-        url: reply.url,
-      });
+      expect(reply.postMessage).not.toHaveBeenCalled();
       if (failure !== "unmounted") wrapper.unmount();
     },
   );
