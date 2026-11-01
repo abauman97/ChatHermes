@@ -38,7 +38,7 @@ it("collapses consecutive completed calls to a count with inspectable rows below
 });
 it("keeps a lone row mounted and its disclosure choice when a second call arrives", async () => {
   const wrapper = mount(TurnWork, { props: { activities: [tool], working: true } });
-  expect(wrapper.find(".work-summary").exists()).toBe(false);
+  expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   const row = wrapper.get(".activity").element;
   await wrapper.get("summary").trigger("click");
   await wrapper.setProps({
@@ -108,7 +108,7 @@ it("keeps concurrent active calls visible and ordered when results arrive out of
   }));
   const wrapper = mount(TurnWork, { props: { activities, working: true } });
   const elements = wrapper.findAll(".activity").map((row) => row.element);
-  expect(wrapper.find(".work-summary").exists()).toBe(false);
+  expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(3);
   await wrapper.setProps({
     activities: activities.map((row) =>
@@ -131,7 +131,7 @@ it("keeps concurrent active calls visible and ordered when results arrive out of
 });
 
 it.each(["interrupted", "unknown"] as const)(
-  "retains %s indicators beside a collapsed streaming summary",
+  "summarizes %s results and keeps their details inside the collapsed history",
   (state) => {
     const wrapper = mount(TurnWork, {
       props: {
@@ -146,8 +146,11 @@ it.each(["interrupted", "unknown"] as const)(
     });
     expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
     expect(rowShown(wrapper.get(".activity"))).toBe(false);
-    expect(wrapper.get(".activity-failed").isVisible()).toBe(true);
+    expect(rowShown(wrapper.get(".activity-failed"))).toBe(false);
     expect(wrapper.get(".activity-failed").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".work-summary").text()).toContain(
+      state === "unknown" ? "results unavailable" : "interrupted",
+    );
     expect(wrapper.get(".current-activity").isVisible()).toBe(true);
     expect(wrapper.findAll(".result").every((row) => row.isVisible())).toBe(true);
     wrapper.unmount();
@@ -191,7 +194,7 @@ it.each(["terminal", "custom_tool"])(
     expect(rowShown(live)).toBe(true);
     await wrapper.setProps({ working: false });
     expect(rowShown(failed)).toBe(false);
-    expect(rowShown(live)).toBe(true);
+    expect(rowShown(live)).toBe(false);
     await summary.trigger("click");
     expect(failed.attributes("open")).toBeDefined();
     wrapper.unmount();
@@ -210,11 +213,80 @@ it.each(["running", "failed"] as const)(
     expect(rowShown(wrapper.findAll(".activity")[1]!)).toBe(true);
     await wrapper.setProps({ working: false });
     expect(wrapper.findAll(".current-activity")).toHaveLength(0);
-    expect(wrapper.get(".activity-failed").isVisible()).toBe(true);
+    expect(rowShown(wrapper.get(".activity-failed"))).toBe(false);
     expect(wrapper.get(".activity-failed summary").text()).toContain(
       state === "failed" ? "Failed" : "Result unavailable",
     );
     expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
+    await wrapper.get(".work-summary").trigger("click");
+    expect(rowShown(wrapper.get(".activity-failed"))).toBe(true);
+    wrapper.unmount();
+  },
+);
+
+it("streams mixed activity below one collapsed history and folds delegation only when it settles", async () => {
+  const activities = reactive<Activity[]>([
+    { id: "thought", kind: "thinking", title: "Thinking", content: "Plan", complete: false },
+    {
+      ...tool,
+      id: "child",
+      delegated: true,
+      complete: false,
+      state: "running",
+      output: "Child started",
+    },
+  ]);
+  const wrapper = mount(TurnWork, { props: { activities, working: true } });
+  const summary = wrapper.get(".work-summary");
+  const rows = wrapper.findAll(".activity");
+  const elements = rows.map((row) => row.element);
+  expect(summary.attributes("aria-expanded")).toBe("false");
+  expect(wrapper.findAll(".current-activity")).toHaveLength(2);
+  expect(rows.every(rowShown)).toBe(true);
+  expect(rows.every((row) => row.attributes("open") !== undefined)).toBe(true);
+  activities[0]!.content += " with arriving reasoning";
+  activities[1]!.output += " and progress";
+  await nextTick();
+  expect(rows[0]!.get("pre").text()).toContain("arriving reasoning");
+  expect(rows[1]!.get("pre").text()).toContain("and progress");
+  activities[0]!.complete = true;
+  await wrapper.setProps({ working: false });
+  expect(rowShown(rows[0]!)).toBe(false);
+  expect(rowShown(rows[1]!)).toBe(true);
+  expect(summary.text()).toContain("Thought");
+  await summary.trigger("click");
+  expect(rows.every(rowShown)).toBe(true);
+  await rows[0]!.get("summary").trigger("click");
+  await summary.trigger("click");
+  activities[1]!.complete = true;
+  activities[1]!.state = "completed";
+  activities[1]!.output = "Child result";
+  await nextTick();
+  expect(rows.every((row) => !rowShown(row))).toBe(true);
+  expect(wrapper.findAll(".current-activity")).toHaveLength(0);
+  await summary.trigger("click");
+  expect(rows[0]!.attributes("open")).toBeDefined();
+  await rows[1]!.get("summary").trigger("click");
+  expect(rows[1]!.get("pre").text()).toContain("Child result");
+  expect(wrapper.findAll(".activity").map((row) => row.element)).toEqual(elements);
+  wrapper.unmount();
+});
+
+it.each(["thinking", "tool"] as const)(
+  "collapses a single completed %s with all detail inspectable",
+  async (kind) => {
+    const wrapper = mount(TurnWork, {
+      props: {
+        activities: [{ ...tool, kind, content: "Full input", output: "Full output" }],
+        working: false,
+      },
+    });
+    expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
+    expect(rowShown(wrapper.get(".activity"))).toBe(false);
+    await wrapper.get(".work-summary").trigger("click");
+    await wrapper.get(".activity summary").trigger("click");
+    expect(wrapper.get(".activity pre").text()).toContain("Full input");
+    expect(wrapper.get(".activity pre").text()).toContain("Full output");
     wrapper.unmount();
   },
 );

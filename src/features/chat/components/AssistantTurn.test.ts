@@ -20,7 +20,7 @@ it("folds the delegation call into its tool run while keeping the child independ
   const entry = () => ({ kind: "turn" as const, key: "turn", working: true, blocks: turn.blocks });
   const wrapper = mount(AssistantTurn, { props: { entry: entry() } });
   const call = wrapper.findAll(".turn-work .activity")[1]!;
-  const child = wrapper.get(".assistant-turn > .activity");
+  const child = wrapper.findAll(".turn-work .activity")[2]!;
   expect((call.element.parentElement as HTMLElement).style.display).not.toBe("none");
   expect(child.classes()).toContain("activity-active");
 
@@ -33,9 +33,9 @@ it("folds the delegation call into its tool run while keeping the child independ
   expect(wrapper.findAll(".turn-work")).toHaveLength(1);
   expect(wrapper.get(".work-summary").text()).toContain("Explored 1 file, used 1 tool");
   expect((call.element.parentElement as HTMLElement).style.display).toBe("none");
-  expect(wrapper.findAll(".assistant-turn > .activity")).toHaveLength(1);
+  expect(wrapper.findAll(".turn-work .activity")).toHaveLength(3);
   expect(child.isVisible()).toBe(true);
-  expect(child.element).toBe(wrapper.get(".assistant-turn > .activity").element);
+  expect(child.element).toBe(wrapper.findAll(".turn-work .activity")[2]!.element);
   await wrapper.get(".work-summary").trigger("click");
   expect((call.element.parentElement as HTMLElement).style.display).not.toBe("none");
   await call.get("summary").trigger("click");
@@ -55,11 +55,13 @@ it("folds the delegation call into its tool run while keeping the child independ
   await wrapper.setProps({ entry: { ...entry(), working: false } });
   expect(child.classes()).not.toContain("activity-active");
   expect(child.attributes("open")).toBeUndefined();
+  expect((child.element.parentElement as HTMLElement).style.display).toBe("none");
+  await wrapper.get(".work-summary").trigger("click");
   await child.get("summary").trigger("click");
   expect(child.get("pre").text()).toContain("Child result");
   expect(
     wrapper.findAll(".assistant-turn > :not(.response-actions)").map((row) => row.classes()[0]),
-  ).toEqual(["message", "turn-work", "activity", "message"]);
+  ).toEqual(["message", "turn-work", "message"]);
   wrapper.unmount();
 });
 
@@ -146,7 +148,7 @@ it.each(["edit_file", "write_file"])(
       });
       const wrapper = mount(AssistantTurn, { props: { entry: entry() } });
       const call = wrapper.findAll(".turn-work .activity")[1]!;
-      const child = wrapper.get(".assistant-turn > .activity");
+      const child = wrapper.findAll(".turn-work .activity")[2]!;
       expect(wrapper.findAll(".turn-work")).toHaveLength(1);
       expect(call.isVisible()).toBe(true);
       expect(call.attributes("open")).toBe("");
@@ -198,7 +200,7 @@ it("keeps delivered artifacts at their tool position and outside collapsed detai
     },
     global: { stubs: { ArtifactCard: { template: '<div class="artifact-stub">Artifact</div>' } } },
   });
-  expect(wrapper.find(".work-summary").exists()).toBe(false);
+  expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
   expect(wrapper.get(".artifact-stub").isVisible()).toBe(true);
   expect(
