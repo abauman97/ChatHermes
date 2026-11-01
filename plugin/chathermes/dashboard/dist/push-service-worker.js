@@ -233,6 +233,27 @@ self.addEventListener("push", (event) => {
     }),
   );
 });
+function navigateInApp(client, target) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const finish = (loaded) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      channel.port2.close();
+      resolve(loaded);
+    };
+    const timer = setTimeout(() => finish(false), 10000);
+    channel.port1.onmessage = ({ data }) => {
+      if (data?.url !== target.href) return;
+      if (data.type === "chathermes.navigated") finish(true);
+    };
+    try {
+      client.postMessage({ type: "chathermes.navigate", url: target.href }, [channel.port2]);
+    } catch {
+      finish(false);
+    }
+  });
+}
 self.addEventListener("notificationclick", (event) => {
   // Keep the notification until the destination session is visible.
   let target;
@@ -250,29 +271,29 @@ self.addEventListener("notificationclick", (event) => {
   if (target.hash.startsWith("#/scheduled/") && !routeSession(target.href)) return;
   event.waitUntil(
     (async () => {
-      const clients = await windowClients();
-      for (const client of clients) {
-        if (
-          new URL(client.url).origin === target.origin &&
-          new URL(client.url).pathname === APP_URL
-        ) {
-          try {
-            await client.focus();
-          } catch {
-            // Activation restrictions can deny focus. Routing the existing
-            // client must still run; it does not require focus permission.
-          }
-          if (typeof client.navigate === "function") {
-            try {
-              await client.navigate(target.href);
-              return;
-            } catch {
-              // Keep the existing PWA open rather than creating a duplicate.
-            }
-          }
-          client.postMessage({ type: "chathermes.navigate", url: target.href });
-          return;
+      const clients = (await windowClients()).filter(
+        (client) => new URL(client.url).origin === target.origin,
+      );
+      const client =
+        clients.find((client) => new URL(client.url).pathname === APP_URL) || clients[0];
+      if (client) {
+        try {
+          await client.focus();
+        } catch {
+          // Activation restrictions can deny focus. Routing the existing
+          // client must still run; it does not require focus permission.
         }
+        if (new URL(client.url).pathname === APP_URL && (await navigateInApp(client, target)))
+          return;
+        if (typeof client.navigate === "function") {
+          try {
+            await client.navigate(target.href);
+            return;
+          } catch {
+            // Keep the existing PWA open rather than creating a duplicate.
+          }
+        }
+        return;
       }
       await self.clients.openWindow(target.href);
     })(),

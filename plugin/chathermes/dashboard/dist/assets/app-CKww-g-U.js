@@ -12200,10 +12200,23 @@ var Vv = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sa
 			connected: nt.value && et.connection.value === "ready" && !z.value
 		}));
 		Nn(Yt, () => Jt?.publish(), { flush: "post" });
-		function Xt(e) {
+		async function Xt(e) {
 			if (e.data?.type !== "chathermes.navigate" || typeof e.data.url != "string") return;
-			let t = Bv(e.data.url);
-			t && y(t);
+			let i = e.data.url, a = Bv(i), o = e.ports?.[0], c = !1;
+			try {
+				if (!a) return;
+				await y(a);
+				let e = p, i = t.resolve(a).fullPath, l = () => m && e === p && n.fullPath === i;
+				if (!o || !l()) return;
+				r.value === "chat" ? c = nt.value ? et.connection.value === "ready" && await et.hydrate() === !0 : !ve.value && !be.value : s.value ? (await mn(), c = await x.value?.whenLoaded() === !0) : c = !0, await mn(), c &&= l();
+			} catch {
+				c = !1;
+			} finally {
+				o && (c && o.postMessage({
+					type: "chathermes.navigated",
+					url: i
+				}), o.close());
+			}
 		}
 		let Zt = /* @__PURE__ */ H(0), Qt = /* @__PURE__ */ H(0), $t, en, tn = "";
 		async function nn(e = !0) {
@@ -13641,40 +13654,62 @@ var wy = {
 			});
 		}
 		function E() {
-			l.value ? te(l.value, !0) : s.value ? ee() : w();
+			let e = A();
+			k = "", O = (async () => {
+				l.value ? await te(l.value, !0) : s.value ? await ee() : await w(), !ne && !p.value && A() === e && (!r.params.jobId || s.value?.id === r.params.jobId) && (!r.params.runId || l.value?.id === r.params.runId && u.value) && (k = e);
+			})();
+		}
+		let D = X(() => u.value?.session_id), O = Promise.resolve(), k = "", A = () => JSON.stringify([
+			n.profile,
+			r.params.jobId,
+			r.params.runId
+		]);
+		async function j() {
+			await i.isReady(), await mn();
+			let e = A(), t;
+			do
+				t = O, await t;
+			while (t !== O);
+			return !ne && !p.value && k === e;
 		}
 		t({
 			retry: E,
 			loading: f,
-			sessionId: X(() => u.value?.session_id)
+			sessionId: D,
+			whenLoaded: j
 		});
-		let D;
+		let M;
 		ar(async () => {
-			await i.isReady(), !O && (D = Nn(() => [
+			await i.isReady(), !ne && (M = Nn(() => [
 				n.profile,
 				r.params.jobId,
 				r.params.runId
-			], async () => {
-				let e = ++a, t = String(r.params.jobId || ""), n = String(r.params.runId || "");
-				if (s.value = void 0, l.value = void 0, u.value = void 0, await w(), e !== a || g?.signal.aborted) return;
-				let i = o.value.find((e) => e.id === t);
-				if (t && !i) {
-					p.value = "This scheduled job is no longer available.";
-					return;
-				}
-				if (i) {
-					if (d.value = y(i), await T(i, !0), e !== a || g?.signal.aborted) return;
-					n && await te(c.value.find((e) => e.id === n) || {
-						id: n,
-						started_at: 0,
-						source: "cron"
-					}, !0);
-				}
+			], () => {
+				O = N();
 			}, { immediate: !0 }));
 		});
-		let O = !1;
+		async function N() {
+			k = "";
+			let e = A(), t = ++a, n = String(r.params.jobId || ""), i = String(r.params.runId || "");
+			if (s.value = void 0, l.value = void 0, u.value = void 0, await w(), t !== a || g?.signal.aborted || p.value) return;
+			let f = o.value.find((e) => e.id === n);
+			if (n && !f) {
+				p.value = "This scheduled job is no longer available.";
+				return;
+			}
+			if (f) {
+				if (d.value = y(f), await T(f, !0), t !== a || g?.signal.aborted || p.value) return;
+				i && await te(c.value.find((e) => e.id === i) || {
+					id: i,
+					started_at: 0,
+					source: "cron"
+				}, !0);
+			}
+			t === a && !g?.signal.aborted && !p.value && (k = e);
+		}
+		let ne = !1;
 		return lr(() => {
-			O = !0, D?.(), a++, g?.abort();
+			ne = !0, M?.(), a++, g?.abort();
 		}), (e, t) => (G(), K("section", Ex, [q("div", Dx, [q("div", Ox, [
 			q("div", kx, [q("h2", null, R(s.value?.name || s.value?.id || "Scheduled"), 1)]),
 			s.value ? (G(), K("p", jx, R(l.value ? b(l.value.started_at) : "Run history · newest first"), 1)) : (G(), K("label", Ax, [t[3] ||= J("Show ", -1), Dn(q("select", {
