@@ -1997,3 +1997,176 @@ describe("manual session tracking", () => {
     wrapper.unmount();
   });
 });
+
+describe("notification navigation acknowledgements", () => {
+  function workerMessages() {
+    const listeners: ((event: MessageEvent) => void)[] = [];
+    vi.stubGlobal("navigator", {
+      onLine: true,
+      serviceWorker: {
+        ready: Promise.resolve({ active: { postMessage: vi.fn() } }),
+        addEventListener: (name: string, listener: (event: MessageEvent) => void) => {
+          if (name === "message") listeners.push(listener);
+        },
+        removeEventListener: vi.fn(),
+      },
+    });
+    return (path: string) => {
+      const postMessage = vi.fn(),
+        close = vi.fn();
+      const url = location.origin + "/chathermes?profile=beta#" + path;
+      for (const listener of listeners)
+        listener({
+          data: { type: "chathermes.navigate", url },
+          ports: [{ postMessage, close }],
+        } as unknown as MessageEvent);
+      return { postMessage, close, url };
+    };
+  }
+  it.each(["alpha", "beta"])(
+    "acknowledges the displayed session only after %s profile attachment and history load",
+    async (profile) => {
+      const send = workerMessages();
+      const attached = deferred<void>(),
+        hydrated = deferred<boolean>();
+      const factory = nativeSession.useNativeSession;
+      let owner!: ReturnType<typeof factory>;
+      vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
+        owner = factory(callback);
+        owner.attach = vi.fn(async () => {
+          await attached.promise;
+          owner.connection.value = "ready";
+        });
+        owner.hydrate = vi.fn(async () => {
+          const loaded = await hydrated.promise;
+          if (loaded)
+            owner.messages.value = [
+              { role: "assistant", content: "Loaded notification destination" },
+            ];
+          return loaded;
+        });
+        return owner;
+      });
+      mockFetch(async (input) =>
+        json(input.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+      );
+      const wrapper = mount(App);
+      await flushPromises();
+      const reply = send("/chat/notified?profile=" + profile);
+      await flushPromises();
+      expect(owner.attach).toHaveBeenCalledWith(profile, "notified");
+      expect(reply.postMessage).not.toHaveBeenCalled();
+      attached.resolve();
+      await flushPromises();
+      expect(reply.postMessage).not.toHaveBeenCalled();
+      hydrated.resolve(true);
+      await flushPromises();
+      expect(wrapper.text()).toContain("Loaded notification destination");
+      expect(wrapper.get(".topbar-profile").text()).toBe(profile);
+      expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
+        type: "chathermes.navigated",
+        url: reply.url,
+      });
+      expect(reply.close).toHaveBeenCalledOnce();
+      wrapper.unmount();
+    },
+  );
+  it("rejects an attached native session when saved history fails", async () => {
+    const send = workerMessages();
+    const factory = nativeSession.useNativeSession;
+    vi.spyOn(nativeSession, "useNativeSession").mockImplementation((...args) => {
+      const owner = factory(...args);
+      owner.attach = vi.fn(async () => {
+        owner.connection.value = "ready";
+      });
+      owner.hydrate = vi.fn(async () => false);
+      return owner;
+    });
+    mockFetch(async (input) =>
+      json(input.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+    );
+    const wrapper = mount(App);
+    await flushPromises();
+    const reply = send("/chat/notified?profile=beta");
+    await flushPromises();
+    expect(reply.postMessage).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+  it.each([true, false])(
+    "acknowledges scheduled execution only after output loading succeeds: %s",
+    async (success) => {
+      const send = workerMessages();
+      const output = deferred<Response>();
+      let outputWork = output.promise;
+      mockFetch(async (input) => {
+        if (input.includes("/scheduled/output")) return outputWork;
+        if (input.includes("/scheduled/runs"))
+          return json({ runs: [], offset: 0, has_more: false });
+        if (/\/scheduled\?/.test(input))
+          return json({ jobs: [{ id: "audit", name: "Audit", state: "completed" }] });
+        return json({ sessions: [], total: 0 });
+      });
+      const wrapper = mount(App);
+      await flushPromises();
+      const reply = send("/scheduled/audit/execution%3A" + "a".repeat(32) + "?profile=beta");
+      await flushPromises();
+      expect(wrapper.find(".scheduled-page").exists()).toBe(true);
+      expect(reply.postMessage).not.toHaveBeenCalled();
+      if (success)
+        output.resolve(json({ messages: [], output: "Loaded exact scheduled execution" }));
+      else output.reject(new Error("output unavailable"));
+      await flushPromises();
+      await flushPromises();
+      if (success) expect(wrapper.text()).toContain("Loaded exact scheduled execution");
+      else
+        expect(wrapper.get('[role="alert"]').text()).toContain("Could not load scheduled history");
+      if (success)
+        expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
+          type: "chathermes.navigated",
+          url: reply.url,
+        });
+      else expect(reply.postMessage).not.toHaveBeenCalled();
+      const retried = deferred<Response>();
+      outputWork = retried.promise;
+      await wrapper.get('[aria-label="Screen options"]').trigger("click");
+      await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
+      const retryReply = send("/scheduled/audit/execution%3A" + "a".repeat(32) + "?profile=beta");
+      await flushPromises();
+      expect(retryReply.postMessage).not.toHaveBeenCalled();
+      retried.resolve(json({ messages: [], output: "Reloaded scheduled destination" }));
+      await flushPromises();
+      expect(wrapper.text()).toContain("Reloaded scheduled destination");
+      expect(retryReply.postMessage).toHaveBeenCalledExactlyOnceWith({
+        type: "chathermes.navigated",
+        url: retryReply.url,
+      });
+      wrapper.unmount();
+    },
+  );
+  it.each(["failure", "superseded", "unmounted"])(
+    "never acknowledges a session that did not load: %s",
+    async (failure) => {
+      const send = workerMessages();
+      const history = deferred<Response>();
+      mockFetch(async (input) =>
+        input.includes("/messages") ? history.promise : json({ sessions: [], total: 0 }),
+      );
+      const wrapper = mount(App);
+      await flushPromises();
+      const reply = send("/chat/notified?profile=beta");
+      await flushPromises();
+      expect(reply.postMessage).not.toHaveBeenCalled();
+      if (failure === "superseded") {
+        await wrapper.get(".scheduled-nav").trigger("click");
+        await flushPromises();
+      }
+      if (failure === "unmounted") wrapper.unmount();
+      if (failure === "failure") history.reject(new Error("history unavailable"));
+      else
+        history.resolve(json({ messages: [{ role: "assistant", content: "obsolete history" }] }));
+      await flushPromises();
+      expect(reply.postMessage).not.toHaveBeenCalled();
+      if (failure !== "unmounted") wrapper.unmount();
+    },
+  );
+});

@@ -25,7 +25,11 @@ function harness() {
       client.url = url;
     }),
     focused: false,
-    postMessage: vi.fn((_message: any, ports: any[]) => {
+    postMessage: vi.fn((message: any, ports: any[]) => {
+      if (message.type === "chathermes.navigate") {
+        ports?.[0].postMessage({ type: "chathermes.navigated", url: message.url });
+        return;
+      }
       if (state && ports) ports[0].postMessage(state);
     }),
   };
@@ -148,9 +152,18 @@ describe("visible session notifications", () => {
       const session = type === "test" ? "" : "one";
       await h.push({ type, session_id: session });
       await h.dispatch("notificationclick", { notification: h.notifications[0] });
-      expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(
-        origin + "/chathermes?profile=alpha#" + (session ? "/chat/one" : "/") + "?profile=alpha",
+      expect(h.client.postMessage).toHaveBeenCalledWith(
+        {
+          type: "chathermes.navigate",
+          url:
+            origin +
+            "/chathermes?profile=alpha#" +
+            (session ? "/chat/one" : "/") +
+            "?profile=alpha",
+        },
+        expect.anything(),
       );
+      expect(h.client.navigate).not.toHaveBeenCalled();
       expect(h.openWindow).not.toHaveBeenCalled();
     },
   );
@@ -369,7 +382,10 @@ describe("visible session notifications", () => {
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
     expect(h.notifications[0].close).not.toHaveBeenCalled();
     expect(h.client.focus).toHaveBeenCalledOnce();
-    expect(h.client.navigate).toHaveBeenCalledWith(route);
+    expect(h.client.postMessage).toHaveBeenCalledWith(
+      { type: "chathermes.navigate", url: route },
+      expect.anything(),
+    );
   });
   it("accepts default profile and ignores stale WindowClient URL and focus", async () => {
     const h = harness();
@@ -661,7 +677,8 @@ describe("scheduled results", () => {
       "?profile=alpha";
     expect(h.notifications[0].data.url).toBe(url);
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
-    expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(url);
+    expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(url);
+    expect(h.openWindow).not.toHaveBeenCalled();
     h.patch({
       url,
       session: "",
@@ -711,61 +728,123 @@ describe("scheduled results", () => {
     await h.push(result);
     expect(h.show.mock.calls[1]![1].tag).toBe(options.tag);
   });
-  it("focuses an existing client and sends the exact canonical result URL", async () => {
-    const h = harness();
-    h.client.url = origin + "/chathermes?profile=beta#/settings?profile=beta";
-    h.client.navigate = vi.fn(async (url: string) => {
-      h.client.url = url;
-    });
-    await h.push(result);
-    await h.dispatch("notificationclick", { notification: h.notifications[0] });
-    expect(h.client.focus).toHaveBeenCalledOnce();
-    expect(h.client.navigate).toHaveBeenCalledWith(h.notifications[0].data.url);
-    expect(h.client.url).toBe(h.notifications[0].data.url);
-    expect(h.openWindow).not.toHaveBeenCalled();
-  });
-  it.each([false, true])(
-    "still routes an existing client when focus is denied (navigate rejects: %s)",
-    async (navigationDenied) => {
+  it.each([
+    "/chat/two?profile=alpha",
+    "/chat/two?profile=beta",
+    "/scheduled/audit/output%3A2026-01-01_00-00-00?profile=beta",
+    "/scheduled/audit/execution%3A" + "a".repeat(32) + "?profile=beta",
+  ])(
+    "messages an existing ChatHermes window and waits for loaded acknowledgement: %s",
+    async (route) => {
       const h = harness();
-      h.client.url = origin + "/chathermes#/settings?profile=alpha";
-      h.client.focus.mockRejectedValue(new DOMException("Focus denied", "InvalidAccessError"));
-      if (navigationDenied) h.client.navigate.mockRejectedValue(new Error("Navigation denied"));
-      await h.push(result);
-      await h.dispatch("notificationclick", { notification: h.notifications[0] });
-      expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(h.notifications[0].data.url);
-      if (navigationDenied)
-        expect(h.client.postMessage).toHaveBeenCalledWith({
-          type: "chathermes.navigate",
-          url: h.notifications[0].data.url,
+      h.client.focus.mockRejectedValue(new Error("focus denied"));
+      h.client.url = origin + "/chathermes?profile=alpha#/settings?profile=alpha";
+      const url = origin + "/chathermes?profile=beta#" + route;
+      let reply: any;
+      h.client.postMessage.mockImplementation((message, ports) => {
+        expect(message).toEqual({ type: "chathermes.navigate", url });
+        reply = ports[0];
+      });
+      let finished = false;
+      const click = h
+        .dispatch("notificationclick", { notification: { data: { url } } })
+        .then(() => {
+          finished = true;
         });
-      else expect(h.client.url).toBe(h.notifications[0].data.url);
+      await vi.waitFor(() => expect(reply).toBeDefined());
+      expect(finished).toBe(false);
+      expect(h.client.navigate).not.toHaveBeenCalled();
+      reply.postMessage({ type: "chathermes.navigated", url });
+      await click;
+      expect(h.client.navigate).not.toHaveBeenCalled();
+      expect(h.client.focus).toHaveBeenCalledOnce();
       expect(h.openWindow).not.toHaveBeenCalled();
     },
   );
-  it("does not open a second window when an existing client cannot navigate", async () => {
+  it.each(["timeout", "wrong destination", "postMessage throws"])(
+    "falls back to the exact URL without a duplicate window on %s",
+    async (failure) => {
+      vi.useFakeTimers();
+      try {
+        const h = harness();
+        h.client.url = origin + "/chathermes#/settings?profile=alpha";
+        const url = origin + "/chathermes?profile=beta#/chat/two?profile=beta";
+        h.client.postMessage.mockImplementation((_message, ports) => {
+          if (failure === "postMessage throws") throw new Error("unavailable");
+          if (failure === "wrong destination")
+            ports[0].postMessage({ type: "chathermes.navigated", url: h.client.url });
+        });
+        const click = h.dispatch("notificationclick", { notification: { data: { url } } });
+        if (failure === "timeout" || failure === "wrong destination") {
+          await vi.advanceTimersByTimeAsync(9999);
+          expect(h.client.navigate).not.toHaveBeenCalled();
+          await vi.advanceTimersByTimeAsync(1);
+        }
+        await click;
+        expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(url);
+        expect(h.openWindow).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each([false, true])(
+    "reuses a client after timeout when focus fails and fallback is unavailable/rejected: %s",
+    async (rejects) => {
+      vi.useFakeTimers();
+      try {
+        const h = harness();
+        await h.push(result);
+        h.client.url = origin + "/chathermes#/settings?profile=alpha";
+        h.client.focus.mockRejectedValue(new Error("focus denied"));
+        h.client.postMessage.mockImplementation(() => {});
+        if (rejects) h.client.navigate.mockRejectedValue(new Error("navigation denied"));
+        else delete (h.client as any).navigate;
+        const click = h.dispatch("notificationclick", { notification: h.notifications[0] });
+        await vi.advanceTimersByTimeAsync(10000);
+        await click;
+        expect(h.client.focus).toHaveBeenCalledOnce();
+        expect(h.openWindow).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("prefers ChatHermes over another dashboard window, then reuses that dashboard if alone", async () => {
     const h = harness();
-    h.client.navigate = vi.fn(async () => {
-      throw new Error("navigation rejected");
-    });
-    h.client.url = origin + "/chathermes#/settings?profile=alpha";
-    await h.push(result);
-    await h.dispatch("notificationclick", { notification: h.notifications[0] });
-    expect(h.client.focus).toHaveBeenCalledOnce();
-    expect(h.client.postMessage).toHaveBeenCalledWith({
-      type: "chathermes.navigate",
-      url: h.notifications[0].data.url,
-    });
+    const other = {
+      ...h.client,
+      id: "other",
+      url: origin + "/sessions",
+      focus: vi.fn(),
+      navigate: vi.fn(),
+      postMessage: vi.fn(),
+    };
+    h.client.url = origin + "/chathermes#/settings";
+    h.setClients([other, h.client]);
+    const url = origin + "/chathermes?profile=beta#/chat/two?profile=beta";
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(h.client.postMessage).toHaveBeenCalledWith(
+      { type: "chathermes.navigate", url },
+      expect.anything(),
+    );
+    expect(other.navigate).not.toHaveBeenCalled();
+    h.setClients([other]);
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(other.navigate).toHaveBeenCalledExactlyOnceWith(url);
     expect(h.openWindow).not.toHaveBeenCalled();
+    h.setClients([]);
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(url);
   });
-  it("does not open a second window when navigate is unavailable", async () => {
+  it("opens a window when only a foreign-origin client exists", async () => {
     const h = harness();
-    delete (h.client as any).navigate;
-    h.client.url = origin + "/chathermes#/settings?profile=alpha";
-    await h.push(result);
-    await h.dispatch("notificationclick", { notification: h.notifications[0] });
-    expect(h.client.focus).toHaveBeenCalledOnce();
-    expect(h.openWindow).not.toHaveBeenCalled();
+    h.client.url = "https://other.test/chathermes";
+    const url = origin + "/chathermes?profile=beta#/chat/two?profile=beta";
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(h.client.focus).not.toHaveBeenCalled();
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(url);
   });
   it.each([
     "https://other.test/chathermes#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=alpha",

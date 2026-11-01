@@ -138,6 +138,17 @@ never rewrite membership. Navigation revisions reject obsolete project-membershi
 and creation results. RouterView renders feature pages inside the chat page slot;
 thin ProjectRoute owns the project home/editor markup. Scheduled selection watches
 route parameters and aborts obsolete reads, including saved runs outside page one.
+
+Notification clicks prefer an existing ChatHermes window, focus it when allowed,
+and send the canonical URL as `chathermes.navigate` over a MessageChannel. The
+mounted app replies with `chathermes.navigated` and the requested URL only after
+router scope application and session history or scheduled output loading, followed
+by Vue rendering. Failed, superseded, or unmounted destinations cannot acknowledge
+success and send no reply. Without a success acknowledgement, a ten-second timeout
+falls back to `WindowClient.navigate(target.href)` in that same window. Another same-origin
+dashboard window can be reused when ChatHermes is not open; a new window opens
+only when no same-origin window exists. Hash queries retain destination profile
+scope; host-owned outer query and history metadata retain their existing ownership.
 Settings stores a validated plugin-relative return_to destination. Notifications
 use the same link resolver, and the worker produces and recognizes canonical
 chat hashes with the existing visible-connected-viewer handshake.
