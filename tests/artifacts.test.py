@@ -462,3 +462,13 @@ def test_media_markdown_images_are_indexed_as_explicit_delivery(source, path):
     assert len(files) == 1
     assert files[0]["path"] == path
     assert files[0]["type"] == "image/png"
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads((Path(__file__).parent / "fixtures/artifact-deliveries.json").read_text())[
+        "labeledDeliveries"
+    ],
+)
+def test_exact_labeled_deliveries(case):
+    assert [file["path"] for file in extraction.text_artifacts(case["text"])] == case["paths"]

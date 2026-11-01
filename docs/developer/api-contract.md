@@ -254,6 +254,12 @@ preview/download cards, preserving surrounding prose. These destinations must
 be local paths; remote URLs, executable schemes, control characters, code,
 quoted blocks, lists and untrusted tool content cannot assert this delivery.
 Ordinary HTTPS Markdown images remain inline images.
+Plain paragraph labels followed exclusively by local directives (for example
+`Desktop board: MEDIA:/opt/data/board.png`) also assert delivery. Labels remain
+visible; multiple directives are validated together and deduplicated. Labels
+use 1–80 ASCII letters, digits, spaces, parentheses, slashes, underscores or
+hyphens, begin with a letter and end with a colon. Trailing prose, quoted
+examples, lists and untrusted wrappers remain outside this channel.
 MEDIA parsing retains quoted paths, spaced media
 filenames, unknown formats, and extensionless files; no extension eligibility
 filter is used. Bare paths, ordinary markdown links (including `file:`, `sandbox:`, and

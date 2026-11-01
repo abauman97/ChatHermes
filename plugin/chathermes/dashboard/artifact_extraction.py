@@ -128,7 +128,7 @@ def artifact(path, name=None):
     }
 
 
-def _media(line):
+def _media(line, *, local_only=False):
     paths, end = [], 0
     for match in _MEDIA.finditer(line):
         if line[end : match.start()].strip():
@@ -145,12 +145,24 @@ def _media(line):
             r"^(?:file:|/|[~.][\\/]|\.\.[\\/]|[a-z]:[\\/]|\\\\|https?://|data:image/)", path, re.I
         ):
             return []
+        if local_only and (
+            not re.match(r"^(?:/(?!/)|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)", path)
+            or re.search(r"[\x00-\x1f\x7f]", path)
+        ):
+            return []
         file = artifact(path)
         if not file:
             return []
         paths.append(file)
         end = match.end()
     return paths if not line[end:].strip() else []
+
+
+def _labeled_media(line):
+    label = re.match(r"^[A-Za-z][A-Za-z0-9 ()/_-]{0,79}:[ \t]+(?=MEDIA:)", line)
+    if not label:
+        return []
+    return _media(line[label.end() :], local_only=True)
 
 
 def text_artifacts(text):
@@ -205,7 +217,7 @@ def text_artifacts(text):
             elif line.startswith("MEDIA:"):
                 found = _media(line)
             else:
-                found = _media_references(line)
+                found = _labeled_media(line) or _media_references(line)
             for file in found:
                 files.setdefault(file["path"], file)
     return list(files.values())
