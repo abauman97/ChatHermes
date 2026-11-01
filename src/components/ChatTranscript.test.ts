@@ -222,7 +222,7 @@ describe("ordered activity presentation", () => {
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
   });
 
-  it("renders text, reasoning and separate tool runs in chronological order", async () => {
+  it("keeps response text ordered with one shared reasoning and tool history", async () => {
     const blocks = [
       { id: "intro", kind: "text" as const, content: "Intro" },
       { id: "r", kind: "thinking" as const, title: "Thinking…", content: "Plan", complete: false },
@@ -252,12 +252,12 @@ describe("ordered activity presentation", () => {
     });
     expect(
       wrapper.findAll(".assistant-turn > :not(.response-actions)").map((row) => row.classes()[0]),
-    ).toEqual(["message", "activity", "turn-work", "message", "turn-work", "message"]);
-    expect(wrapper.findAll(".turn-work")).toHaveLength(2);
-    expect(wrapper.findAll(".current-activity")).toHaveLength(3);
+    ).toEqual(["message", "turn-work", "message", "message"]);
+    expect(wrapper.findAll(".turn-work")).toHaveLength(1);
+    expect(wrapper.findAll(".current-activity")).toHaveLength(4);
     expect(wrapper.get(".activity pre").text()).toBe("Plan");
     const firstRun = wrapper.findAll(".turn-work")[0]!;
-    expect(firstRun.find(".work-summary").exists()).toBe(false);
+    expect(firstRun.get(".work-summary").attributes("aria-expanded")).toBe("false");
     expect(firstRun.get(".activity").isVisible()).toBe(true);
     await wrapper.setProps({
       blocks: blocks.map((block) =>
@@ -265,7 +265,9 @@ describe("ordered activity presentation", () => {
       ),
     });
     expect(firstRun.get(".work-summary").attributes("aria-expanded")).toBe("false");
-    expect(firstRun.get(".work-timeline > div").attributes("style")).toContain("display: none");
+    expect(firstRun.findAll(".work-timeline > div")[1]!.attributes("style")).toContain(
+      "display: none",
+    );
     expect(firstRun.get(".current-activity").isVisible()).toBe(true);
     await firstRun.get(".work-summary").trigger("click"); // explicit expansion
     const row = firstRun.get("details").element;
@@ -277,10 +279,10 @@ describe("ordered activity presentation", () => {
     });
     expect(firstRun.get(".work-summary").attributes("aria-expanded")).toBe("true");
     expect(firstRun.get("details").element).toBe(row);
-    expect(wrapper.findAll(".turn-work")[1]!.find(".work-summary").exists()).toBe(false);
-    expect(wrapper.findAll(".turn-work")[1]!.get("details").attributes("open")).toBeUndefined();
+    expect(firstRun.findAll("details")).toHaveLength(4);
+    expect(firstRun.get("details").attributes("open")).toBeUndefined();
   });
-  it("keeps failed tools and interactive requests visible when a run is collapsed", async () => {
+  it("keeps interactive requests visible and failed tool details accessible from the shared history", async () => {
     const wrapper = mount(ChatTranscript, {
       props: {
         messages: [{ role: "user", content: "Question" }],
@@ -303,15 +305,19 @@ describe("ordered activity presentation", () => {
       },
       slots: { request: "<button class='approve'>Approve</button>" },
     });
-    expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect(wrapper.get(".activity").isVisible()).toBe(false);
     expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
     expect(wrapper.findAll(".approve")).toHaveLength(1);
     expect(wrapper.text()).toContain("Waiting for approval");
+    expect(wrapper.findAll(".turn-work")).toHaveLength(1);
+    await wrapper.get(".work-summary").trigger("click");
     await wrapper.get(".activity summary").trigger("click");
     expect(wrapper.get(".activity").attributes("open")).toBeDefined();
     await wrapper.get(".activity summary").trigger("click");
-    expect(wrapper.get(".activity").isVisible()).toBe(true);
+    expect((wrapper.get(".activity").element.parentElement as HTMLElement).style.display).not.toBe(
+      "none",
+    );
     expect(wrapper.get(".activity").attributes("open")).toBeUndefined();
     expect(wrapper.get(".approve").isVisible()).toBe(true);
   });
@@ -828,14 +834,14 @@ it("collapses completed native calls during streaming across empty generation bo
   ).toBe(true);
   await event("reasoning.delta", { text: "A separate phase." });
   await event("tool.start", { tool_id: "c", name: "read_file", args: { path: "file.txt" } });
-  expect(current.findAll(".turn-work")).toHaveLength(2);
+  expect(current.findAll(".turn-work")).toHaveLength(1);
   expect(current.findAll(".current-activity")).toHaveLength(1);
   await event("message.complete", { text: "Finished.", status: "cancelled" });
   await wrapper.setProps({ working: false });
   expect(current.get(".activity-failed summary").text()).toContain("Interrupted");
   expect(
     current.findAll(":scope > :not(.response-actions)").map((row) => row.classes()[0]),
-  ).toEqual(["message", "turn-work", "activity", "turn-work", "message"]);
+  ).toEqual(["message", "turn-work", "message"]);
   expect(wrapper.findAll(".transcript > div > *")[2]!.classes()).toContain("message");
   await summary.trigger("click");
   expect(current.findAll(".activity")[1]!.attributes("open")).toBeUndefined();

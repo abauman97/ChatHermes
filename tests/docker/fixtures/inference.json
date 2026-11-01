@@ -1168,5 +1168,31 @@
         }
       }
     }
+  },
+  {
+    "id": "chathermes-mixed-activity",
+    "priority": 10,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*\\[workflow-activity\\].*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"Inspect the workspace before answering.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_workflow_terminal\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\": \\\"printf workflow-tool-start; sleep 2; printf workflow-tool-ok\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-workflow\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
   }
 ]

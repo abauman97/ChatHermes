@@ -4,7 +4,6 @@ import ArtifactCard from "../../artifacts/components/ArtifactCard.vue";
 import { textArtifacts, toolArtifacts } from "../../artifacts/artifacts";
 import type { Activity } from "../../../types/hermes";
 import { activityRuns } from "../utils/activity-runs";
-import ActivityRow from "../../../components/ActivityRow.vue";
 import type { TranscriptEntry } from "../types/chat-ui";
 import TurnWork from "../../../components/TurnWork.vue";
 import AssistantTextBlock from "./AssistantTextBlock.vue";
@@ -61,6 +60,7 @@ async function copyResponse() {
         v-if="part.kind === 'tools'"
         :activities="part.activities"
         :working="!!entry.working"
+        :approval-pending="entry.approvalPending"
       >
         <template #result="{ activity }">
           <ArtifactCard
@@ -72,32 +72,16 @@ async function copyResponse() {
           />
         </template>
       </TurnWork>
-      <template v-else>
-        <AssistantTextBlock
-          v-if="part.block.kind === 'text'"
-          :block="part.block"
-          :profile="profile"
-          :session-id="sessionId"
-          @image-load="emit('imageLoad')"
-        />
-        <template v-else>
-          <ActivityRow
-            v-if="part.block.kind !== 'thinking' || part.block.content.trim()"
-            :activity="part.block"
-            :turn-complete="!entry.working"
-          />
-          <ArtifactCard
-            v-for="file in toolFiles(part.block)"
-            :key="file.path"
-            :file="{ ...file, sessionId }"
-            :profile="profile"
-            @image-load="emit('imageLoad')"
-          />
-        </template>
-      </template>
+      <AssistantTextBlock
+        v-else
+        :block="part.block"
+        :profile="profile"
+        :session-id="sessionId"
+        @image-load="emit('imageLoad')"
+      />
     </template>
     <TurnWork
-      v-if="entry.working && (!entry.blocks.length || entry.approvalPending)"
+      v-if="entry.working && !parts.some((part) => part.kind === 'tools')"
       :activities="[]"
       :working="true"
       :approval-pending="entry.approvalPending"
