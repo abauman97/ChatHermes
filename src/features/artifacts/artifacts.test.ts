@@ -29,7 +29,6 @@ describe("native artifact references", () => {
   });
   it.each([
     "![alt](/opt/data/chart.png)",
-    "[alt](MEDIA:/opt/data/chart.png)",
     "![alt](MEDIA:javascript:alert(1))",
     "![alt](MEDIA:data:text/html,unsafe)",
     "![alt](MEDIA:https://example.test/chart.png)",
@@ -554,4 +553,10 @@ it("extracts only explicit MEDIA images and preserves surrounding Markdown", () 
   expect(
     textArtifacts("![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png").files,
   ).toHaveLength(1);
+});
+
+it("routes explicit MEDIA links to cards while retaining surrounding prose", () => {
+  const result = textArtifacts("Download [report](MEDIA:/tmp/report.pdf) for review.");
+  expect(result.text).toBe("Download  for review.");
+  expect(result.files.map((file) => file.path)).toEqual(["/tmp/report.pdf"]);
 });
