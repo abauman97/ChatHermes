@@ -1,3 +1,4 @@
+import deliveryFixtures from "../../../tests/fixtures/artifact-deliveries.json";
 import {
   positiveTextDeliveries,
   positiveToolDeliveries,
@@ -560,3 +561,11 @@ it("routes explicit MEDIA links to cards while retaining surrounding prose", () 
   expect(result.text).toBe("Download  for review.");
   expect(result.files.map((file) => file.path)).toEqual(["/tmp/report.pdf"]);
 });
+
+it.each(deliveryFixtures.labeledDeliveries)(
+  "preserves labels and exact delivered paths: $text",
+  ({ text, paths, remaining }) => {
+    expect(textArtifacts(text).files.map((file) => file.path)).toEqual(paths);
+    expect(textArtifacts(text).text).toBe(remaining);
+  },
+);

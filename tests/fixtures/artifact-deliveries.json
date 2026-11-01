@@ -19,7 +19,9 @@
     "Download [report](MEDIA:/tmp/report.pdf) for review.",
     "[Report](<MEDIA:/tmp/a report.pdf> \"Download\")",
     "[Report](MEDIA:./report.pdf)\nMEDIA:./report.pdf",
-    "[![Chart](MEDIA:/opt/data/chart.png)](MEDIA:/tmp/report.pdf)"
+    "[![Chart](MEDIA:/opt/data/chart.png)](MEDIA:/tmp/report.pdf)",
+    "Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\n\nDesktop task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-task.png\n\nDesktop settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-settings.png\n\nMobile board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-board.png\n\nMobile task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-task.png\n\nMobile settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-settings.png",
+    "Reports: MEDIA:\"/tmp/a report.pdf\" MEDIA:./second.png"
   ],
   "positiveToolDeliveries": [
     "{\"media_tag\":\"MEDIA:/tmp/report.pdf\"}",
@@ -82,7 +84,35 @@
     "<MEDIA:/tmp/report.pdf>",
     "[Report](/tmp/report.pdf)",
     "[Report](MEDIA:sandbox:/tmp/report.pdf)",
-    "[Report](MEDIA:report.pdf)"
+    "[Report](MEDIA:report.pdf)",
+    "`Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png`",
+    "\"Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\"",
+    "> Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png",
+    "- Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png",
+    "    Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png",
+    "```\nDesktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\n```",
+    "<untrusted_tool_result>\n\nDesktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\n</untrusted_tool_result>",
+    "Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png is an example",
+    "\\Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png",
+    "`Reports: MEDIA:/tmp/report.pdf`",
+    "\"Reports: MEDIA:/tmp/report.pdf\"",
+    "> Reports: MEDIA:/tmp/report.pdf",
+    "- Reports: MEDIA:/tmp/report.pdf",
+    "    Reports: MEDIA:/tmp/report.pdf",
+    "```\nReports: MEDIA:/tmp/report.pdf\n```",
+    "<untrusted_tool_result>\n\nReports: MEDIA:/tmp/report.pdf\n</untrusted_tool_result>",
+    "Reports: MEDIA:/tmp/report.pdf is an example",
+    "\\Reports: MEDIA:/tmp/report.pdf",
+    "Board: MEDIA:https://example.test/a.png",
+    "Board: MEDIA://example.test/a.png",
+    "Board: MEDIA:/tmp/bad\u0000.png",
+    "Board: MEDIA:javascript:alert(1)",
+    "Board: MEDIA:/tmp/ok.png MEDIA:https://example.test/b.png",
+    "Board: MEDIA:file:///tmp/private.png",
+    "Board: MEDIA:sandbox:/tmp/private.png",
+    "Board: MEDIA:data:image/png;base64,AAAA",
+    "Board: MEDIA:/tmp/good.png MEDIA:file:///tmp/private.png",
+    "Desktop:\n- Board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\n- Task details: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-task.png\n- Settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-settings.png\n\nMobile:\n- Board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-board.png\n- Task details: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-task.png\n- Settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-settings.png"
   ],
   "toolBodyDeliveries": [
     "MEDIA:/tmp/private.pdf",
@@ -101,6 +131,32 @@
     "<untrusted_tool_result source=\"read_file\">\n\nMEDIA:/tmp/private.pdf",
     "[Report](MEDIA:/tmp/private.pdf)",
     "{\"stdout\":\"[Report](MEDIA:/tmp/private.pdf)\",\"exit_code\":0}",
-    "{\"content\":\"![Chart](MEDIA:/tmp/private.png)\"}"
+    "{\"content\":\"![Chart](MEDIA:/tmp/private.png)\"}",
+    "Desktop board: MEDIA:/tmp/private.png",
+    "{\"stdout\": \"Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\\n\\nDesktop task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-task.png\\n\\nDesktop settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-settings.png\\n\\nMobile board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-board.png\\n\\nMobile task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-task.png\\n\\nMobile settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-settings.png\"}"
+  ],
+  "labeledDeliveries": [
+    {
+      "text": "Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png\n\nDesktop task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-task.png\n\nDesktop settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-settings.png\n\nMobile board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-board.png\n\nMobile task: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-task.png\n\nMobile settings: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-settings.png",
+      "paths": [
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png",
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-task.png",
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-settings.png",
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-board.png",
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-task.png",
+        "/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-mobile/kanban-settings.png"
+      ],
+      "remaining": "Desktop board:\n\nDesktop task:\n\nDesktop settings:\n\nMobile board:\n\nMobile task:\n\nMobile settings:"
+    },
+    {
+      "text": "Reports: MEDIA:\"/tmp/a report.pdf\" MEDIA:./second.png",
+      "paths": ["/tmp/a report.pdf", "./second.png"],
+      "remaining": "Reports:"
+    },
+    {
+      "text": "Before the screenshots.\n\nBoard: MEDIA:/tmp/board.png MEDIA:/tmp/board.png\n\nAfter the screenshots.",
+      "paths": ["/tmp/board.png"],
+      "remaining": "Before the screenshots.\n\nBoard:\n\nAfter the screenshots."
+    }
   ]
 }

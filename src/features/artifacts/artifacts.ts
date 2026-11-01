@@ -133,6 +133,25 @@ function collectMedia(text: string, add: (path: string) => boolean) {
   if (!paths.length || text.slice(end).trim()) return text;
   return paths.every((path) => !!artifact(path)) && paths.every(add) ? "" : text;
 }
+// A plain label followed exclusively by directives asserts delivery. Do not
+// scan arbitrary prose for markers or weaken Markdown quotation boundaries.
+function collectLabeledMedia(line: string, add: (path: string) => boolean) {
+  const label = line.match(/^([A-Za-z][A-Za-z0-9 ()/_-]{0,79}:)[ \t]+(?=MEDIA:)/);
+  if (!label) return line;
+  const files: string[] = [];
+  const remainder = collectMedia(line.slice(label[0].length), (path) => {
+    if (
+      !/^(?:\/(?!\/)|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)/.test(path) ||
+      path.split("").some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+    )
+      return false;
+    files.push(path);
+    return true;
+  });
+  if (remainder || !files.length) return line;
+  files.forEach(add);
+  return label[1]!;
+}
 export function extension(name: string) {
   return name.split(".").at(-1)?.toLowerCase() || "";
 }
@@ -270,7 +289,7 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
       } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
         references.push(index);
       } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
-      else lines[index] = collectMediaReferences(line, add);
+      else lines[index] = collectMediaReferences(collectLabeledMedia(line, add), add);
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";
