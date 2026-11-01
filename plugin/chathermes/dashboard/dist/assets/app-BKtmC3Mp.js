@@ -11947,56 +11947,42 @@ var hv = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 //#endregion
 //#region src/features/chat/utils/activity-runs.ts
 function vv(e) {
-	return !!e.delegated || [
-		"clarify",
-		"setup_choose",
-		"image_generate",
-		"manage_catalog",
-		"manage_connections",
-		"start_chat"
-	].includes(e.toolName || "");
-}
-function yv(e) {
-	let t = [];
-	for (let n of e) {
-		if ((n.kind === "text" || n.kind === "thinking") && !n.content.trim()) continue;
-		let e = t.at(-1);
-		n.kind === "tool" && !vv(n) ? e?.kind === "tools" ? e.activities.push(n) : t.push({
-			id: n.id,
-			kind: "tools",
-			activities: [n]
-		}) : t.push({
-			id: n.id,
-			kind: "block",
-			block: n
-		});
-	}
+	let t = [], n;
+	for (let r of e) (r.kind !== "text" && r.kind !== "thinking" || r.content.trim()) && (r.kind === "text" ? t.push({
+		id: r.id,
+		kind: "block",
+		block: r
+	}) : (n || (n = {
+		id: r.id,
+		kind: "tools",
+		activities: []
+	}, t.push(n)), n.activities.push(r)));
 	return t;
 }
 //#endregion
 //#region src/features/chat/utils/activity-labels.ts
-var bv = (e) => [
+var yv = (e) => [
 	"terminal",
 	"execute_code",
 	"python"
 ].includes(e.toolName || "");
-function xv(e) {
+function bv(e) {
 	try {
 		return JSON.parse(e.content) || {};
 	} catch {
 		return {};
 	}
 }
-function Sv(e) {
-	let t = xv(e), n = t.command ?? t.code;
+function xv(e) {
+	let t = bv(e), n = t.command ?? t.code;
 	return typeof n == "string" && n.trim().split("\n")[0] || "";
 }
-function Cv(e, t) {
-	if (bv(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${Sv(e) || "command"}`;
+function Sv(e, t) {
+	if (yv(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${xv(e) || "command"}`;
 	let n = (e.toolName || "tool").replace(/_/g, " ");
 	return /^(used|using) tool$/i.test(e.title) ? `${t ? "Using" : e.state === "completed" ? "Used" : "Tool:"} ${n}` : e.title || n;
 }
-var wv = {
+var Cv = {
 	explore: {
 		past: "Explored",
 		present: "Exploring",
@@ -12038,9 +12024,9 @@ var wv = {
 		nouns: ["tool", "tools"]
 	}
 };
-function Tv(e) {
+function wv(e) {
 	let t = e.toolName || "";
-	return bv(e) ? "run" : [
+	return yv(e) ? "run" : [
 		"read_file",
 		"list_files",
 		"search_files",
@@ -12048,9 +12034,9 @@ function Tv(e) {
 		"search"
 	].includes(t) ? "explore" : ["web_search", "session_search_recall"].includes(t) ? "search" : t === "web_extract" ? "read" : t === "browser_navigate" ? "browse" : t.startsWith("browser_") ? "interact" : t === "vision_analyze" ? "analyze" : "other";
 }
-function Ev(e, t) {
-	let n = xv(e);
-	if (t === "run") return Sv(e);
+function Tv(e, t) {
+	let n = bv(e);
+	if (t === "run") return xv(e);
 	if (t === "other" || t === "interact") return "";
 	if (t === "search") {
 		let e = n.query ?? n.search_term;
@@ -12067,15 +12053,15 @@ function Ev(e, t) {
 	let r = n.path ?? n.file ?? n.filepath;
 	return typeof r == "string" && r.split(/[\\/]/).at(-1) || "";
 }
-function Dv(e, t) {
-	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? Tv(n) : void 0, i = [];
-	for (let t of Object.keys(wv)) {
-		let n = e.filter((e) => Tv(e) === t);
+function Ev(e, t) {
+	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? wv(n) : void 0, i = [];
+	for (let t of Object.keys(Cv)) {
+		let n = e.filter((e) => wv(e) === t);
 		if (!n.length) continue;
-		let a = wv[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
-			let r = xv(n).urls;
+		let a = Cv[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
+			let r = bv(n).urls;
 			return e + (t === "read" && Array.isArray(r) && r.length ? r.length : 1);
-		}, 0), l = c === 1 && (o || t !== "run") ? Ev(n[0], t) : "", u = o ? a.present : s ? a.past : "";
+		}, 0), l = c === 1 && (o || t !== "run") ? Tv(n[0], t) : "", u = o ? a.present : s ? a.past : "";
 		i.push([u, l || `${c} ${a.nouns[c === 1 ? 0 : 1]}`].filter(Boolean).join(" "));
 	}
 	let a = e.filter((e) => e.state === "failed").length;
@@ -12083,33 +12069,33 @@ function Dv(e, t) {
 }
 //#endregion
 //#region src/components/ActivityRow.vue?vue&type=script&setup=true&lang.ts
-var Ov = ["open"], kv = {
+var Dv = ["open"], Ov = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, Av = {
+}, kv = {
 	key: 1,
 	"aria-hidden": "true"
-}, jv = ["title"], Mv = {
+}, Av = ["title"], jv = {
 	key: 2,
 	class: "activity-meta"
-}, Nv = {
+}, Mv = {
 	key: 3,
 	class: "activity-meta"
-}, Pv = {
+}, Nv = {
 	key: 4,
 	class: "activity-meta"
-}, Fv = {
+}, Pv = {
 	key: 5,
 	class: "activity-meta"
-}, Iv = {
+}, Fv = {
 	key: 6,
 	class: "activity-meta"
-}, Lv = {
+}, Iv = {
 	key: 1,
 	class: "ml-6 py-1 text-sm",
 	role: "status"
-}, Rv = /* @__PURE__ */ H({
+}, Lv = /* @__PURE__ */ H({
 	__name: "ActivityRow",
 	props: {
 		activity: {},
@@ -12141,7 +12127,7 @@ var Ov = ["open"], kv = {
 		}, { immediate: !0 }), ur(() => {
 			d && clearInterval(d);
 		});
-		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : Cv(t.activity, n.value));
+		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : Sv(t.activity, n.value));
 		function m(e) {
 			let t = e.target.open;
 			t !== o.value && (a.value = t);
@@ -12155,14 +12141,14 @@ var Ov = ["open"], kv = {
 			open: o.value,
 			onToggle: m
 		}, [q("summary", { onClick: c[0] ||= Oo((e) => a.value = !o.value, ["prevent"]) }, [
-			V(bv)(e.activity) ? (W(), G("span", kv, "›_")) : Y("v-if", !0),
-			i.value ? (W(), G("span", Av, "!")) : Y("v-if", !0),
+			V(yv)(e.activity) ? (W(), G("span", Ov, "›_")) : Y("v-if", !0),
+			i.value ? (W(), G("span", kv, "!")) : Y("v-if", !0),
 			q("span", {
 				class: F(["activity-label", { "working-shimmer": n.value }]),
 				title: p.value
-			}, z(p.value), 11, jv),
-			r.value === "failed" ? (W(), G("span", Mv, " · Failed")) : r.value === "interrupted" ? (W(), G("span", Nv, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", Pv, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", Fv, " · " + z(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
-			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", Iv, " · " + z(f.value.toFixed(1)) + "s", 1)),
+			}, z(p.value), 11, Av),
+			r.value === "failed" ? (W(), G("span", jv, " · Failed")) : r.value === "interrupted" ? (W(), G("span", Mv, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", Nv, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", Pv, " · " + z(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
+			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", Fv, " · " + z(f.value.toFixed(1)) + "s", 1)),
 			q("span", {
 				class: F(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
@@ -12176,20 +12162,20 @@ var Ov = ["open"], kv = {
 			e.activity.toolName,
 			e.activity.content,
 			e.activity.output
-		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", Lv, "Working…")) : Y("v-if", !0)], 42, Ov));
+		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", Iv, "Working…")) : Y("v-if", !0)], 42, Dv));
 	}
-}), zv = {
+}), Rv = {
 	class: "turn-work",
-	"aria-label": "Tool activity"
-}, Bv = ["aria-expanded", "aria-controls"], Vv = {
+	"aria-label": "Assistant activity"
+}, zv = ["aria-expanded", "aria-controls"], Bv = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, Hv = ["title"], Uv = {
+}, Vv = ["title"], Hv = {
 	key: 1,
 	class: "sr-only",
 	role: "status"
-}, Wv = ["id"], Gv = /* @__PURE__ */ H({
+}, Uv = ["id"], Wv = /* @__PURE__ */ H({
 	__name: "TurnWork",
 	props: {
 		activities: {},
@@ -12197,34 +12183,40 @@ var Ov = ["open"], kv = {
 		approvalPending: { type: Boolean }
 	},
 	setup(e) {
-		let t = e, n = /* @__PURE__ */ B(null), r = Kn(), i = (e) => t.working && !e.complete, a = X(() => t.activities.filter((e) => !i(e))), o = X(() => t.activities.length > 1 && a.value.length > 0), s = X(() => n.value ?? !1), c = (e) => ["interrupted", "unknown"].includes(e.state || "") || !t.working && !e.complete, l = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length ? Dv(a.value, !1) : "Working…");
-		return (t, a) => (W(), G("section", zv, [o.value || !e.activities.length ? (W(), G("button", {
-			key: 0,
+		let t = e, n = /* @__PURE__ */ B(null), r = Kn(), i = (e) => !e.complete && (t.working || !!e.delegated), a = X(() => t.activities.filter((e) => !i(e))), o = X(() => n.value ?? !1), s = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length && [
+			a.value.some((e) => e.kind === "thinking") ? "Thought" : "",
+			Ev(a.value.filter((e) => e.kind === "tool"), !1),
+			...["interrupted", "unknown"].flatMap((e) => {
+				let t = a.value.filter((t) => e === "unknown" ? t.state === e || !t.complete : t.state === e && t.complete).length;
+				return t ? [`${t} ${e === "unknown" ? "results unavailable" : e}`] : [];
+			})
+		].filter(Boolean).join(", ") || "Working…");
+		return (t, a) => (W(), G("section", Rv, [q("button", {
 			type: "button",
 			class: "work-summary",
-			"aria-expanded": s.value,
+			"aria-expanded": o.value,
 			"aria-controls": V(r),
-			onClick: a[0] ||= (e) => n.value = !s.value
+			onClick: a[0] ||= (e) => n.value = !o.value
 		}, [
-			e.activities.some(V(bv)) ? (W(), G("span", Vv, "›_")) : Y("v-if", !0),
+			e.activities.some(V(yv)) ? (W(), G("span", Bv, "›_")) : Y("v-if", !0),
 			q("span", {
 				class: F(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
-				title: l.value
-			}, z(l.value), 11, Hv),
+				title: s.value
+			}, z(s.value), 11, Vv),
 			q("span", {
-				class: F(["work-chevron", { expanded: s.value }]),
+				class: F(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
 			}, "›", 2),
-			e.approvalPending ? (W(), G("span", Uv, "Waiting for approval")) : Y("v-if", !0)
-		], 8, Bv)) : Y("v-if", !0), q("div", {
+			e.approvalPending ? (W(), G("span", Hv, "Waiting for approval")) : Y("v-if", !0)
+		], 8, zv), q("div", {
 			id: V(r),
-			class: F(["work-timeline", { "work-timeline-single": !o.value }])
-		}, [(W(!0), G(U, null, _r(e.activities, (n) => (W(), G(U, { key: n.id }, [An(q("div", { class: F({ "current-activity": i(n) }) }, [qi(Rv, {
+			class: "work-timeline"
+		}, [(W(!0), G(U, null, _r(e.activities, (n) => (W(), G(U, { key: n.id }, [An(q("div", { class: F({ "current-activity": i(n) }) }, [qi(Lv, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, !o.value || s.value || i(n) || c(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 10, Wv)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, o.value || i(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 8, Uv)]));
 	}
-}), Kv = { class: "message assistant w-full self-start" }, qv = ["innerHTML"], Jv = /* @__PURE__ */ H({
+}), Gv = { class: "message assistant w-full self-start" }, Kv = ["innerHTML"], qv = /* @__PURE__ */ H({
 	__name: "AssistantTextBlock",
 	props: {
 		block: {},
@@ -12235,11 +12227,11 @@ var Ov = ["open"], kv = {
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = e, r = X(() => Gp(n.block.content)), i = t;
-		return (t, n) => (W(), G("article", Kv, [
+		return (t, n) => (W(), G("article", Gv, [
 			q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
 				innerHTML: V(mv)(r.value.text)
-			}, null, 8, qv),
+			}, null, 8, Kv),
 			(W(!0), G(U, null, _r(r.value.files.filter((t) => !e.excludedPaths?.includes(t.path)), (t) => (W(), K(fv, {
 				key: t.path,
 				file: {
@@ -12262,13 +12254,13 @@ var Ov = ["open"], kv = {
 			}, null, 8, ["file", "profile"]))), 128))
 		]));
 	}
-}), Yv = { class: "assistant-turn grid min-w-0 gap-1" }, Xv = {
+}), Jv = { class: "assistant-turn grid min-w-0 gap-1" }, Yv = {
 	key: 1,
 	class: "response-actions flex items-center gap-1 text-[#a3a3a3]"
-}, Zv = ["disabled"], Qv = {
+}, Xv = ["disabled"], Zv = {
 	role: "status",
 	class: "text-xs"
-}, $v = /* @__PURE__ */ H({
+}, Qv = /* @__PURE__ */ H({
 	__name: "AssistantTurn",
 	props: {
 		entry: {},
@@ -12278,7 +12270,7 @@ var Ov = ["open"], kv = {
 	},
 	emits: ["imageLoad", "branch"],
 	setup(e, { emit: t }) {
-		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? Gp(e.content).files.map((e) => e.path) : [])), i = X(() => yv(n.entry.blocks)), a = X(() => {
+		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? Gp(e.content).files.map((e) => e.path) : [])), i = X(() => vv(n.entry.blocks)), a = X(() => {
 			let e = new Set(r.value), t = /* @__PURE__ */ new Map();
 			for (let r of n.entry.blocks) r.kind === "tool" && t.set(r.id, Kp(r).filter((t) => !e.has(t.path) && (e.add(t.path), !0)));
 			return t;
@@ -12290,11 +12282,12 @@ var Ov = ["open"], kv = {
 				c.value = "Could not copy. Select the response text to copy it.";
 			}
 		}
-		return (t, n) => (W(), G("div", Yv, [
-			(W(!0), G(U, null, _r(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(Gv, {
+		return (t, n) => (W(), G("div", Jv, [
+			(W(!0), G(U, null, _r(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(Wv, {
 				key: 0,
 				activities: t.activities,
-				working: !!e.entry.working
+				working: !!e.entry.working,
+				"approval-pending": e.entry.approvalPending
 			}, {
 				result: kn(({ activity: t }) => [(W(!0), G(U, null, _r(o(t), (t) => (W(), K(fv, {
 					key: t.path,
@@ -12306,8 +12299,12 @@ var Ov = ["open"], kv = {
 					onImageLoad: n[0] ||= (e) => s("imageLoad")
 				}, null, 8, ["file", "profile"]))), 128))]),
 				_: 1
-			}, 8, ["activities", "working"])) : (W(), G(U, { key: 1 }, [t.block.kind === "text" ? (W(), K(Jv, {
-				key: 0,
+			}, 8, [
+				"activities",
+				"working",
+				"approval-pending"
+			])) : (W(), K(qv, {
+				key: 1,
 				block: t.block,
 				profile: e.profile,
 				"session-id": e.sessionId,
@@ -12316,35 +12313,23 @@ var Ov = ["open"], kv = {
 				"block",
 				"profile",
 				"session-id"
-			])) : (W(), G(U, { key: 1 }, [t.block.kind !== "thinking" || t.block.content.trim() ? (W(), K(Rv, {
-				key: 0,
-				activity: t.block,
-				"turn-complete": !e.entry.working
-			}, null, 8, ["activity", "turn-complete"])) : Y("v-if", !0), (W(!0), G(U, null, _r(o(t.block), (t) => (W(), K(fv, {
-				key: t.path,
-				file: {
-					...t,
-					sessionId: e.sessionId
-				},
-				profile: e.profile,
-				onImageLoad: n[2] ||= (e) => s("imageLoad")
-			}, null, 8, ["file", "profile"]))), 128))], 64))], 64))], 64))), 128)),
-			e.entry.working && (!e.entry.blocks.length || e.entry.approvalPending) ? (W(), K(Gv, {
+			]))], 64))), 128)),
+			e.entry.working && !i.value.some((e) => e.kind === "tools") ? (W(), K(Wv, {
 				key: 0,
 				activities: [],
 				working: !0,
 				"approval-pending": e.entry.approvalPending
 			}, null, 8, ["approval-pending"])) : Y("v-if", !0),
 			yr(t.$slots, "request"),
-			!e.entry.working && l.value.trim() ? (W(), G("div", Xv, [
+			!e.entry.working && l.value.trim() ? (W(), G("div", Yv, [
 				q("button", {
 					type: "button",
 					"aria-label": "Copy response",
 					title: "Copy response",
 					class: "flex size-9 items-center justify-center rounded-lg hover:bg-[#303030] focus-visible:outline-2 focus-visible:outline-white",
-					onPointerdown: n[3] ||= Oo(() => {}, ["prevent"]),
+					onPointerdown: n[2] ||= Oo(() => {}, ["prevent"]),
 					onClick: u
-				}, [...n[6] ||= [q("svg", {
+				}, [...n[5] ||= [q("svg", {
 					"aria-hidden": "true",
 					viewBox: "0 0 24 24",
 					class: "size-4",
@@ -12365,50 +12350,50 @@ var Ov = ["open"], kv = {
 					title: "Branch in new chat",
 					disabled: e.branchDisabled,
 					class: "flex size-9 items-center justify-center rounded-lg hover:bg-[#303030] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white",
-					onPointerdown: n[4] ||= Oo(() => {}, ["prevent"]),
-					onClick: n[5] ||= (t) => s("branch", e.entry.responseId)
-				}, [...n[7] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Zv)) : Y("v-if", !0),
-				q("span", Qv, z(c.value), 1)
+					onPointerdown: n[3] ||= Oo(() => {}, ["prevent"]),
+					onClick: n[4] ||= (t) => s("branch", e.entry.responseId)
+				}, [...n[6] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Xv)) : Y("v-if", !0),
+				q("span", Zv, z(c.value), 1)
 			])) : Y("v-if", !0)
 		]));
 	}
-}), ey = { class: "relative flex min-h-0 w-full flex-1" }, ty = {
+}), $v = { class: "relative flex min-h-0 w-full flex-1" }, ey = {
 	key: 0,
 	class: "text-center text-sm text-[#a3a3a3]"
-}, ny = ["disabled"], ry = {
+}, ty = ["disabled"], ny = {
 	key: 0,
 	role: "status"
-}, iy = {
+}, ry = {
 	key: 1,
 	class: "muted text-sm text-[#a3a3a3]"
-}, ay = {
+}, iy = {
 	key: 2,
 	class: "empty-state mx-auto flex w-full max-w-[760px] flex-1 flex-col"
-}, oy = {
+}, ay = {
 	key: 0,
 	"data-compaction": "",
 	class: "flex items-center gap-3 text-xs text-[#a3a3a3]",
 	role: "separator",
 	"aria-label": "Context compacted"
-}, sy = {
+}, oy = {
 	key: 2,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, cy = { class: "system-notices" }, ly = { class: "cursor-pointer select-none" }, uy = { class: "mt-2 whitespace-pre-wrap break-words" }, dy = {
+}, sy = { class: "system-notices" }, cy = { class: "cursor-pointer select-none" }, ly = { class: "mt-2 whitespace-pre-wrap break-words" }, uy = {
 	key: 3,
 	class: "assistant-turn",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, fy = {
+}, dy = {
 	key: 4,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, py = {
+}, fy = {
 	key: 6,
 	class: "message assistant w-full self-start",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, my = ["innerHTML"], hy = /* @__PURE__ */ H({
+}, py = ["innerHTML"], my = /* @__PURE__ */ H({
 	__name: "ChatTranscript",
 	props: {
 		hasEarlier: { type: Boolean },
@@ -12513,7 +12498,7 @@ var Ov = ["open"], kv = {
 		}, {
 			deep: !0,
 			flush: "post"
-		}), (t, n) => (W(), G("div", ey, [q("div", {
+		}), (t, n) => (W(), G("div", $v, [q("div", {
 			ref_key: "transcript",
 			ref: s,
 			style: { "overflow-anchor": "none" },
@@ -12529,14 +12514,14 @@ var Ov = ["open"], kv = {
 			ref: c,
 			class: "flex min-h-full shrink-0 flex-col gap-7"
 		}, [
-			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", ty, [q("button", {
+			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", ey, [q("button", {
 				type: "button",
 				disabled: e.loadingEarlier,
 				class: "rounded-full px-4 py-2 hover:bg-[#303030] disabled:opacity-60",
 				onClick: y
-			}, z(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, ny), e.earlierError ? (W(), G("p", ry, z(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
-			e.loading ? (W(), G("div", iy, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", ay, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
-			(W(!0), G(U, null, _r(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", oy, [...n[2] ||= [
+			}, z(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, ty), e.earlierError ? (W(), G("p", ny, z(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
+			e.loading ? (W(), G("div", ry, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", iy, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
+			(W(!0), G(U, null, _r(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", ay, [...n[2] ||= [
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1),
 				q("span", null, "Context compacted", -1),
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1)
@@ -12552,7 +12537,7 @@ var Ov = ["open"], kv = {
 				"message",
 				"profile",
 				"session-id"
-			])) : r.kind === "status" ? (W(), G("div", sy, [q("details", cy, [q("summary", ly, z(r.text), 1), q("p", uy, z(r.content), 1)])])) : (W(), K($v, {
+			])) : r.kind === "status" ? (W(), G("div", oy, [q("details", sy, [q("summary", cy, z(r.text), 1), q("p", ly, z(r.content), 1)])])) : (W(), K(Qv, {
 				key: 3,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -12575,17 +12560,17 @@ var Ov = ["open"], kv = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", dy, [qi(Gv, {
+			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", uy, [qi(Wv, {
 				activities: e.progress,
 				working: !0,
 				"approval-pending": e.approvalPending
 			}, null, 8, ["activities", "approval-pending"])])) : Y("v-if", !0),
-			e.statusLabel && !e.working ? (W(), G("div", fy, z(e.statusLabel), 1)) : Y("v-if", !0),
+			e.statusLabel && !e.working ? (W(), G("div", dy, z(e.statusLabel), 1)) : Y("v-if", !0),
 			o.value.some((e) => e.kind === "turn" && e.working) ? Y("v-if", !0) : yr(t.$slots, "request", {}, void 0, void 0, 5),
-			e.draft && !e.blocks?.length ? (W(), G("article", py, [q("div", {
+			e.draft && !e.blocks?.length ? (W(), G("article", fy, [q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
 				innerHTML: V(mv)(e.draft)
-			}, null, 8, my)])) : Y("v-if", !0)
+			}, null, 8, py)])) : Y("v-if", !0)
 		], 512)], 544), !u.value && !e.home && !e.loading ? (W(), G("button", {
 			key: 0,
 			type: "button",
@@ -12602,10 +12587,10 @@ var Ov = ["open"], kv = {
 			"stroke-width": "2"
 		}, [q("path", { d: "M12 5v14m-7-7 7 7 7-7" })], -1)]])) : Y("v-if", !0)]));
 	}
-}), gy = {
+}), hy = {
 	key: 0,
 	class: "approval-choices grid grid-cols-1 gap-2 my-3"
-}, _y = ["disabled", "onClick"], vy = /* @__PURE__ */ H({
+}, gy = ["disabled", "onClick"], _y = /* @__PURE__ */ H({
 	__name: "ApprovalRequest",
 	props: {
 		request: {},
@@ -12625,18 +12610,18 @@ var Ov = ["open"], kv = {
 				}
 			}
 		}
-		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + z(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", gy, [(W(!0), G(U, null, _r(e.request.params.choices, (t) => (W(), G("button", {
+		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + z(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", hy, [(W(!0), G(U, null, _r(e.request.params.choices, (t) => (W(), G("button", {
 			key: t,
 			class: F(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
 			disabled: e.disabled || n.value,
 			onMousedown: i[0] ||= Oo(() => {}, ["prevent"]),
 			onClick: (e) => r(t)
-		}, z(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, _y))), 128))])) : Y("v-if", !0)], 64));
+		}, z(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, gy))), 128))])) : Y("v-if", !0)], 64));
 	}
-}), yy = { class: "clarification-card" }, by = ["disabled"], xy = {
+}), vy = { class: "clarification-card" }, yy = ["disabled"], by = {
 	key: 0,
 	class: "clarification-choices"
-}, Sy = ["aria-pressed", "onClick"], Cy = { class: "clarification-other" }, wy = ["onUpdate:modelValue", "aria-label"], Ty = ["disabled"], Ey = /*#__PURE__*/ ((e, t) => {
+}, xy = ["aria-pressed", "onClick"], Sy = { class: "clarification-other" }, Cy = ["onUpdate:modelValue", "aria-label"], wy = ["disabled"], Ty = /*#__PURE__*/ ((e, t) => {
 	let n = e.__vccOpts || e;
 	for (let [e, r] of t) n[e] = r;
 	return n;
@@ -12668,28 +12653,28 @@ var Ov = ["open"], kv = {
 		function c() {
 			!n.disabled && Object.keys(o()).length && r("answer", o());
 		}
-		return (t, n) => (W(), G("div", yy, [(W(!0), G(U, null, _r(e.questions, (t) => (W(), G("form", {
+		return (t, n) => (W(), G("div", vy, [(W(!0), G(U, null, _r(e.questions, (t) => (W(), G("form", {
 			key: t.qid,
 			onSubmit: Oo(c, ["prevent"])
 		}, [q("fieldset", { disabled: e.disabled }, [
 			q("legend", null, z(t.question), 1),
-			t.choices?.length ? (W(), G("div", xy, [(W(!0), G(U, null, _r(t.choices, (e) => (W(), G("button", {
+			t.choices?.length ? (W(), G("div", by, [(W(!0), G(U, null, _r(t.choices, (e) => (W(), G("button", {
 				key: e,
 				type: "button",
 				"aria-pressed": t.multi_select ? i.value[t.qid]?.includes(e) ?? !1 : void 0,
 				onClick: (n) => s(t, e)
-			}, z(e), 9, Sy))), 128))])) : Y("v-if", !0),
-			q("div", Cy, [An(q("input", {
+			}, z(e), 9, xy))), 128))])) : Y("v-if", !0),
+			q("div", Sy, [An(q("input", {
 				"onUpdate:modelValue": (e) => a.value[t.qid] = e,
 				placeholder: "Other response",
 				"aria-label": t.question + " — Other response"
-			}, null, 8, wy), [[vo, a.value[t.qid]]]), q("button", {
+			}, null, 8, Cy), [[vo, a.value[t.qid]]]), q("button", {
 				type: "submit",
 				disabled: e.disabled || !Object.keys(o()).length
-			}, "Send", 8, Ty)])
-		], 8, by)], 32))), 128))]));
+			}, "Send", 8, wy)])
+		], 8, yy)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-4672d460"]]), Dy = /* @__PURE__ */ H({
+}), [["__scopeId", "data-v-4672d460"]]), Ey = /* @__PURE__ */ H({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},
@@ -12708,13 +12693,13 @@ var Ov = ["open"], kv = {
 				}
 			}
 		}
-		return (t, i) => (W(), K(Ey, {
+		return (t, i) => (W(), K(Ty, {
 			questions: e.request.params.questions,
 			disabled: e.disabled || n.value,
 			onAnswer: r
 		}, null, 8, ["questions", "disabled"]));
 	}
-}), Oy = { class: "block my-3" }, ky = ["aria-label", "disabled"], Ay = ["disabled"], jy = /* @__PURE__ */ H({
+}), Dy = { class: "block my-3" }, Oy = ["aria-label", "disabled"], ky = ["disabled"], Ay = /* @__PURE__ */ H({
 	__name: "SecretRequest",
 	props: {
 		request: {},
@@ -12733,20 +12718,20 @@ var Ov = ["open"], kv = {
 				r.value = !1;
 			}
 		}
-		return (t, a) => (W(), G(U, null, [q("p", null, z(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", Oy, [J(z(e.request.params.env_var) + " ", 1), An(q("input", {
+		return (t, a) => (W(), G(U, null, [q("p", null, z(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", Dy, [J(z(e.request.params.env_var) + " ", 1), An(q("input", {
 			"onUpdate:modelValue": a[0] ||= (e) => n.value = e,
 			type: "password",
 			autocomplete: "off",
 			"aria-label": e.request.params.prompt || "Secret",
 			disabled: e.disabled || r.value,
 			class: "block w-full rounded-lg bg-[#303030] p-2 text-base"
-		}, null, 8, ky), [[vo, n.value]])]), q("button", {
+		}, null, 8, Oy), [[vo, n.value]])]), q("button", {
 			type: "submit",
 			disabled: e.disabled || r.value || !n.value,
 			class: "rounded-lg bg-[#303030] p-2 text-base"
-		}, " Submit secret ", 8, Ay)], 32)], 64));
+		}, " Submit secret ", 8, ky)], 32)], 64));
 	}
-}), My = { key: 3 }, Ny = /* @__PURE__ */ H({
+}), jy = { key: 3 }, My = /* @__PURE__ */ H({
 	__name: "LiveRequest",
 	setup(e) {
 		let { view: t, scope: n, actions: r } = Lm(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
@@ -12758,7 +12743,7 @@ var Ov = ["open"], kv = {
 			]),
 			class: "notice px-5 py-3 text-sm",
 			role: "status"
-		}, [V(i).kind === "approval" ? (W(), K(vy, {
+		}, [V(i).kind === "approval" ? (W(), K(_y, {
 			key: 0,
 			request: V(i),
 			disabled: V(a),
@@ -12769,7 +12754,7 @@ var Ov = ["open"], kv = {
 			"disabled",
 			"active",
 			"answer"
-		])) : V(i).kind === "clarify" ? (W(), K(Dy, {
+		])) : V(i).kind === "clarify" ? (W(), K(Ey, {
 			key: 1,
 			request: V(i),
 			disabled: V(a),
@@ -12778,7 +12763,7 @@ var Ov = ["open"], kv = {
 			"request",
 			"disabled",
 			"answer"
-		])) : V(i).kind === "secret" ? (W(), K(jy, {
+		])) : V(i).kind === "secret" ? (W(), K(Ay, {
 			key: 2,
 			request: V(i),
 			disabled: V(a),
@@ -12787,9 +12772,9 @@ var Ov = ["open"], kv = {
 			"request",
 			"disabled",
 			"answer"
-		])) : (W(), G("p", My, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
+		])) : (W(), G("p", jy, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
 	}
-}), Py = /* @__PURE__ */ H({
+}), Ny = /* @__PURE__ */ H({
 	__name: "ChatConversation",
 	setup(e) {
 		let { view: t, scope: n, actions: r } = Lm(), { profile: i, session: a } = n, { messages: o, loading: s, busy: c, approvalPending: l, status: u } = t, d = /* @__PURE__ */ B(), f = Nn(Rm);
@@ -12797,7 +12782,7 @@ var Ov = ["open"], kv = {
 			f && (f.value = d.value);
 		}), ur(() => {
 			f && f.value === d.value && (f.value = void 0);
-		}), (e, n) => (W(), K(hy, {
+		}), (e, n) => (W(), K(my, {
 			ref_key: "transcript",
 			ref: d,
 			profile: V(i),
@@ -12819,7 +12804,7 @@ var Ov = ["open"], kv = {
 			"response-targets": V(t).responseTargets.value,
 			onBranch: V(r).branch
 		}, {
-			request: kn(() => [qi(Ny)]),
+			request: kn(() => [qi(My)]),
 			_: 1
 		}, 8, [
 			"profile",
@@ -12840,31 +12825,31 @@ var Ov = ["open"], kv = {
 			"onBranch"
 		]));
 	}
-}), Fy = /* @__PURE__ */ H({
+}), Py = /* @__PURE__ */ H({
 	__name: "HomePage",
 	setup(e) {
-		return (e, t) => (W(), K(Py));
+		return (e, t) => (W(), K(Ny));
 	}
-}), Iy = /* @__PURE__ */ H({
+}), Fy = /* @__PURE__ */ H({
 	__name: "ChatPage",
 	setup(e) {
-		return (e, t) => (W(), K(Py));
+		return (e, t) => (W(), K(Ny));
 	}
-}), Ly = {
+}), Iy = {
 	"aria-label": "Inbox",
 	class: "min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
-}, Ry = { class: "mx-auto max-w-3xl" }, zy = { class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm" }, By = { class: "flex items-center gap-2" }, Vy = { value: "profile" }, Hy = {
+}, Ly = { class: "mx-auto max-w-3xl" }, Ry = { class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm" }, zy = { class: "flex items-center gap-2" }, By = { value: "profile" }, Vy = {
 	key: 0,
 	role: "alert",
 	class: "mb-4 text-red-200"
-}, Uy = {
+}, Hy = {
 	key: 1,
 	role: "status",
 	class: "text-[#b4b4b4]"
-}, Wy = {
+}, Uy = {
 	key: 2,
 	class: "text-[#b4b4b4]"
-}, Gy = { class: "divide-y divide-[#363636]" }, Ky = ["data-session"], qy = ["disabled", "onClick"], Jy = { class: "min-w-0 truncate font-medium" }, Yy = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Xy = { class: "flex items-center gap-2 text-xs text-[#777]" }, Zy = ["datetime"], Qy = ["disabled"], $y = /* @__PURE__ */ H({
+}, Wy = { class: "divide-y divide-[#363636]" }, Gy = ["data-session"], Ky = ["disabled", "onClick"], qy = { class: "min-w-0 truncate font-medium" }, Jy = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Yy = { class: "flex items-center gap-2 text-xs text-[#777]" }, Xy = ["datetime"], Zy = ["disabled"], Qy = /* @__PURE__ */ H({
 	__name: "InboxList",
 	props: {
 		profile: {},
@@ -12913,15 +12898,15 @@ var Ov = ["open"], kv = {
 			n.profile,
 			n.revision,
 			i.value
-		], () => void d(), { immediate: !0 }), ur(() => u?.abort()), (t, n) => (W(), G("section", Ly, [q("div", Ry, [
-			q("div", zy, [q("label", By, [n[3] ||= J("View ", -1), An(q("select", {
+		], () => void d(), { immediate: !0 }), ur(() => u?.abort()), (t, n) => (W(), G("section", Iy, [q("div", Ly, [
+			q("div", Ry, [q("label", zy, [n[3] ||= J("View ", -1), An(q("select", {
 				"onUpdate:modelValue": n[0] ||= (e) => i.value = e,
 				"aria-label": "Inbox view",
 				class: "rounded-lg bg-[#303030] px-2 py-1 text-sm"
-			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", Vy, "Profile: " + z(e.profile || "default"), 1)], 512), [[xo, i.value]])])]),
-			l.value ? (W(), G("p", Hy, z(l.value), 1)) : Y("v-if", !0),
-			s.value && !a.value.length ? (W(), G("p", Uy, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", Wy, "No unread notifications.")),
-			q("ol", Gy, [(W(!0), G(U, null, _r(a.value, (e) => (W(), G("li", {
+			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", By, "Profile: " + z(e.profile || "default"), 1)], 512), [[xo, i.value]])])]),
+			l.value ? (W(), G("p", Vy, z(l.value), 1)) : Y("v-if", !0),
+			s.value && !a.value.length ? (W(), G("p", Hy, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", Uy, "No unread notifications.")),
+			q("ol", Wy, [(W(!0), G(U, null, _r(a.value, (e) => (W(), G("li", {
 				key: e.id,
 				"data-session": e.session
 			}, [q("button", {
@@ -12929,19 +12914,19 @@ var Ov = ["open"], kv = {
 				disabled: !!c.value,
 				onClick: (t) => f(e)
 			}, [
-				q("p", Jy, z(e.title || "Untitled chat"), 1),
-				q("p", Yy, z(e.preview), 1),
-				q("div", Xy, [q("span", null, z(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, z((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Zy)])
-			], 8, qy)], 8, Ky))), 128))]),
+				q("p", qy, z(e.title || "Untitled chat"), 1),
+				q("p", Jy, z(e.preview), 1),
+				q("div", Yy, [q("span", null, z(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, z((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Xy)])
+			], 8, Ky)], 8, Gy))), 128))]),
 			o.value ? (W(), G("button", {
 				key: 3,
 				class: "my-5 min-h-11 rounded-full border border-[#555] px-5",
 				disabled: s.value,
 				onClick: n[1] ||= (e) => d(!0)
-			}, " Load More ", 8, Qy)) : Y("v-if", !0)
+			}, " Load More ", 8, Zy)) : Y("v-if", !0)
 		])]));
 	}
-}), eb = /* @__PURE__ */ H({
+}), $y = /* @__PURE__ */ H({
 	__name: "InboxPage",
 	setup(e) {
 		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = ag(), a = kc(), o = Oc(), s = X({
@@ -12953,7 +12938,7 @@ var Ov = ["open"], kv = {
 				} });
 			}
 		});
-		return (e, a) => (W(), K($y, {
+		return (e, a) => (W(), K(Qy, {
 			scope: s.value,
 			"onUpdate:scope": a[0] ||= (e) => s.value = e,
 			profile: V(t),
@@ -12968,24 +12953,24 @@ var Ov = ["open"], kv = {
 			"onRefresh"
 		]));
 	}
-}), tb = {
+}), eb = {
 	class: "min-h-0 flex-1 overflow-y-auto px-5 py-6",
 	"aria-label": "Artifacts"
-}, nb = { class: "mx-auto max-w-[1100px]" }, rb = { class: "mb-5 flex items-center justify-between" }, ib = ["disabled"], ab = {
+}, tb = { class: "mx-auto max-w-[1100px]" }, nb = { class: "mb-5 flex items-center justify-between" }, rb = ["disabled"], ib = {
 	key: 0,
 	role: "status",
 	class: "text-sm text-[#b4b4b4]"
-}, ob = {
+}, ab = {
 	key: 1,
 	role: "alert",
 	class: "mb-4 text-sm text-red-200"
-}, sb = {
+}, ob = {
 	key: 2,
 	class: "text-sm text-[#b4b4b4]"
-}, cb = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, lb = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, ub = {
+}, sb = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, cb = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, lb = {
 	key: 0,
 	class: "mb-1 block truncate"
-}, db = { class: "flex min-w-0 items-center gap-3" }, fb = { class: "shrink-0" }, pb = ["title", "onClick"], mb = ["aria-label", "onClick"], hb = ["disabled"], gb = { key: 0 }, _b = { class: "mb-3 break-words" }, vb = { class: "flex justify-end gap-4" }, yb = ["disabled"], bb = ["disabled"], xb = /* @__PURE__ */ H({
+}, ub = { class: "flex min-w-0 items-center gap-3" }, db = { class: "shrink-0" }, fb = ["title", "onClick"], pb = ["aria-label", "onClick"], mb = ["disabled"], hb = { key: 0 }, gb = { class: "mb-3 break-words" }, _b = { class: "flex justify-end gap-4" }, vb = ["disabled"], yb = ["disabled"], bb = /* @__PURE__ */ H({
 	__name: "ArtifactBrowser",
 	props: {
 		profile: {},
@@ -13039,35 +13024,35 @@ var Ov = ["open"], kv = {
 				c.value = !1;
 			}
 		}
-		return In([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), ur(() => d?.abort()), (t, n) => (W(), G("section", tb, [q("div", nb, [
-			q("div", rb, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
+		return In([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), ur(() => d?.abort()), (t, n) => (W(), G("section", eb, [q("div", tb, [
+			q("div", nb, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
 				class: "text-sm underline",
 				disabled: a.value,
 				onClick: n[0] ||= (e) => f()
-			}, "Refresh", 8, ib)]),
-			a.value ? (W(), G("p", ab, "Loading artifacts…")) : Y("v-if", !0),
-			o.value ? (W(), G("p", ob, z(o.value), 1)) : Y("v-if", !0),
-			!a.value && !i.value.length ? (W(), G("p", sb, "No artifacts found.")) : Y("v-if", !0),
-			q("div", cb, [(W(!0), G(U, null, _r(i.value, (t) => (W(), K(fv, {
+			}, "Refresh", 8, rb)]),
+			a.value ? (W(), G("p", ib, "Loading artifacts…")) : Y("v-if", !0),
+			o.value ? (W(), G("p", ab, z(o.value), 1)) : Y("v-if", !0),
+			!a.value && !i.value.length ? (W(), G("p", ob, "No artifacts found.")) : Y("v-if", !0),
+			q("div", sb, [(W(!0), G(U, null, _r(i.value, (t) => (W(), K(fv, {
 				key: `${t.sessionId}:${t.path}`,
 				file: t,
 				profile: e.profile
 			}, {
-				footer: kn(() => [q("div", lb, [t.projectTitle ? (W(), G("span", ub, z(t.projectTitle), 1)) : Y("v-if", !0), q("div", db, [
-					q("span", fb, z(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
+				footer: kn(() => [q("div", cb, [t.projectTitle ? (W(), G("span", lb, z(t.projectTitle), 1)) : Y("v-if", !0), q("div", ub, [
+					q("span", db, z(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
 					q("button", {
 						type: "button",
 						class: "min-w-0 flex-1 truncate py-2 text-left underline",
 						title: t.sessionTitle,
 						onClick: (e) => r("openSession", t.sessionId)
-					}, z(t.sessionTitle), 9, pb),
+					}, z(t.sessionTitle), 9, fb),
 					/^(https?:|data:)|^\/api\/plugins\/chathermes\/artifact-images\//.test(t.path) ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
 						class: "shrink-0 py-2 hover:text-white",
 						"aria-label": `Delete ${t.name}`,
 						onClick: (e) => s.value = t
-					}, " Delete ", 8, mb))
+					}, " Delete ", 8, pb))
 				])])]),
 				_: 2
 			}, 1032, ["file", "profile"]))), 128))]),
@@ -13077,7 +13062,7 @@ var Ov = ["open"], kv = {
 				class: "my-6 rounded-full border border-[#555] px-5 py-2 text-sm",
 				disabled: a.value,
 				onClick: n[1] ||= (e) => f(!0)
-			}, z(a.value ? "Loading…" : "Load More"), 9, hb)) : Y("v-if", !0),
+			}, z(a.value ? "Loading…" : "Load More"), 9, mb)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "confirmation",
 				ref: l,
@@ -13085,25 +13070,25 @@ var Ov = ["open"], kv = {
 				"aria-label": "Delete artifact",
 				onCancel: n[3] ||= (e) => c.value && e.preventDefault(),
 				onClose: n[4] ||= (e) => s.value = void 0
-			}, [s.value ? (W(), G("div", gb, [
-				q("h3", _b, "Delete " + z(s.value.name) + " from Hermes?", 1),
+			}, [s.value ? (W(), G("div", hb, [
+				q("h3", gb, "Delete " + z(s.value.name) + " from Hermes?", 1),
 				n[6] ||= q("p", { class: "mb-5 text-sm text-[#b4b4b4]" }, " This removes the server file. References in conversation history remain. ", -1),
-				q("div", vb, [q("button", {
+				q("div", _b, [q("button", {
 					autofocus: "",
 					disabled: c.value,
 					onClick: n[2] ||= (e) => s.value = void 0
-				}, "Cancel", 8, yb), q("button", {
+				}, "Cancel", 8, vb), q("button", {
 					disabled: c.value,
 					onClick: p
-				}, z(c.value ? "Deleting…" : "Delete file"), 9, bb)])
+				}, z(c.value ? "Deleting…" : "Delete file"), 9, yb)])
 			])) : Y("v-if", !0)], 544)
 		])]));
 	}
-}), Sb = /* @__PURE__ */ H({
+}), xb = /* @__PURE__ */ H({
 	__name: "ArtifactsPage",
 	setup(e) {
 		let { profile: t, projects: n, recentSession: r } = cg();
-		return (e, i) => (W(), K(xb, {
+		return (e, i) => (W(), K(bb, {
 			profile: V(t),
 			projects: V(n),
 			onOpenSession: V(r)
@@ -13113,27 +13098,27 @@ var Ov = ["open"], kv = {
 			"onOpenSession"
 		]));
 	}
-}), Cb = {
+}), Sb = {
 	class: "projects-page page-content",
 	"aria-label": "Projects"
-}, wb = { class: "page-heading" }, Tb = ["disabled"], Eb = {
+}, Cb = { class: "page-heading" }, wb = ["disabled"], Tb = {
 	key: 0,
 	class: "project-muted"
-}, Db = { class: "project-actions" }, Ob = ["disabled"], kb = ["disabled"], Ab = {
+}, Eb = { class: "project-actions" }, Db = ["disabled"], Ob = ["disabled"], kb = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, jb = {
+}, Ab = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, Mb = {
+}, jb = {
 	key: 4,
 	class: "project-muted"
-}, Nb = {
+}, Mb = {
 	class: "project-list",
 	"aria-label": "Project list"
-}, Pb = ["aria-label", "onClick"], Fb = /* @__PURE__ */ H({
+}, Nb = ["aria-label", "onClick"], Pb = /* @__PURE__ */ H({
 	__name: "ProjectList",
 	props: {
 		projects: {},
@@ -13156,14 +13141,14 @@ var Ov = ["open"], kv = {
 				...s.value.trim() ? { primary_path: s.value.trim() } : {}
 			});
 		}
-		return (t, n) => (W(), G("section", Cb, [
-			q("div", wb, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
+		return (t, n) => (W(), G("section", Sb, [
+			q("div", Cb, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: n[0] ||= (e) => a.value = !a.value
-			}, " New project ", 8, Tb))]),
-			e.archived ? (W(), G("p", Eb, "Archived projects")) : Y("v-if", !0),
+			}, " New project ", 8, wb))]),
+			e.archived ? (W(), G("p", Tb, "Archived projects")) : Y("v-if", !0),
 			a.value && !e.archived ? (W(), G("form", {
 				key: 1,
 				class: "project-form",
@@ -13179,22 +13164,22 @@ var Ov = ["open"], kv = {
 					"onUpdate:modelValue": n[2] ||= (e) => s.value = e,
 					placeholder: "/path/on/hermes/server"
 				}, null, 512), [[vo, s.value]])]),
-				q("div", Db, [q("button", {
+				q("div", Eb, [q("button", {
 					class: "project-button",
 					disabled: e.busy || e.offline || !o.value.trim()
-				}, " Create project", 8, Ob), q("button", {
+				}, " Create project", 8, Db), q("button", {
 					type: "button",
 					class: "project-button",
 					disabled: e.busy,
 					onClick: n[3] ||= (e) => a.value = !1
-				}, " Cancel ", 8, kb)])
+				}, " Cancel ", 8, Ob)])
 			], 32)) : Y("v-if", !0),
-			e.error ? (W(), G("p", Ab, [J(z(e.error) + " ", 1), q("button", {
+			e.error ? (W(), G("p", kb, [J(z(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[4] ||= (e) => r("retry")
 			}, "Retry Projects")])) : Y("v-if", !0),
-			e.loading ? (W(), G("p", jb, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", Mb, z(e.archived ? "No archived projects." : "No projects yet."), 1)),
-			q("nav", Nb, [(W(!0), G(U, null, _r(i.value, (e) => (W(), G("button", {
+			e.loading ? (W(), G("p", Ab, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", jb, z(e.archived ? "No archived projects." : "No projects yet."), 1)),
+			q("nav", Mb, [(W(!0), G(U, null, _r(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				"aria-label": e.label,
 				onClick: (t) => r("select", e.id)
@@ -13210,14 +13195,14 @@ var Ov = ["open"], kv = {
 				}, [q("path", { d: "M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" })], -1),
 				q("span", null, [q("strong", null, z(e.label), 1), q("small", null, z(e.archived ? "Archived" : e.isAuto ? "Discovered workspace" : `${e.sessionCount} ${e.sessionCount === 1 ? "chat" : "chats"}`), 1)]),
 				n[9] ||= q("span", { "aria-hidden": "true" }, "›", -1)
-			], 8, Pb))), 128))])
+			], 8, Nb))), 128))])
 		]));
 	}
-}), Ib = /* @__PURE__ */ H({
+}), Fb = /* @__PURE__ */ H({
 	__name: "ProjectsPage",
 	setup(e) {
 		let { projects: t, projectsLoading: n, projectsError: r, manageError: i, projectBusy: a, offline: o, chooseProject: s, loadProjects: c, manageProject: l } = mg(), u = kc(), d = X(() => u.query.archived === "1");
-		return (e, u) => (W(), K(Fb, {
+		return (e, u) => (W(), K(Pb, {
 			projects: V(t),
 			archived: d.value,
 			loading: V(n),
@@ -13239,77 +13224,77 @@ var Ov = ["open"], kv = {
 			"onManage"
 		]));
 	}
-}), Lb = {
+}), Ib = {
 	class: "project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10",
 	"aria-label": "Selected Project"
-}, Rb = { class: "project-home-content" }, zb = {
+}, Lb = { class: "project-home-content" }, Rb = {
 	key: 0,
 	role: "status"
-}, Bb = {
+}, zb = {
 	key: 1,
 	class: "mb-4 text-[#fecaca]",
 	role: "alert"
-}, Vb = {
+}, Bb = {
 	class: "mb-5 flex gap-5 text-sm",
 	"aria-label": "Project view"
-}, Hb = ["aria-pressed"], Ub = ["aria-pressed"], Wb = /* @__PURE__ */ H({
+}, Vb = ["aria-pressed"], Hb = ["aria-pressed"], Ub = /* @__PURE__ */ H({
 	__name: "ProjectLayout",
 	setup(e) {
 		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i, showProjects: a } = mg(), o = kc(), s = Oc();
-		return (e, c) => (W(), G("section", Lb, [q("div", Rb, [
+		return (e, c) => (W(), G("section", Ib, [q("div", Lb, [
 			q("button", {
 				class: "project-back",
 				onClick: c[0] ||= (e) => V(a)(!!V(t)?.archived)
 			}, " ← Projects "),
-			V(n) ? (W(), G("p", zb, "Loading Project…")) : Y("v-if", !0),
-			V(r) ? (W(), G("p", Bb, [J(z(V(r)) + " ", 1), q("button", {
+			V(n) ? (W(), G("p", Rb, "Loading Project…")) : Y("v-if", !0),
+			V(r) ? (W(), G("p", zb, [J(z(V(r)) + " ", 1), q("button", {
 				class: "underline",
 				onClick: c[1] ||= (...e) => V(i) && V(i)(...e)
 			}, "Retry Project")])) : Y("v-if", !0),
-			V(t) ? (W(), G(U, { key: 2 }, [q("nav", Vb, [q("button", {
+			V(t) ? (W(), G(U, { key: 2 }, [q("nav", Bb, [q("button", {
 				"aria-pressed": V(o).name === "project",
 				onClick: c[2] ||= (e) => V(s).push({
 					name: "project",
 					params: V(o).params,
 					query: V(o).query
 				})
-			}, " Sessions / Chat ", 8, Hb), q("button", {
+			}, " Sessions / Chat ", 8, Vb), q("button", {
 				"aria-pressed": V(o).name === "project-artifacts",
 				onClick: c[3] ||= (e) => V(s).push({
 					name: "project-artifacts",
 					params: V(o).params,
 					query: V(o).query
 				})
-			}, " Artifacts ", 8, Ub)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
+			}, " Artifacts ", 8, Hb)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
 		])]));
 	}
-}), Gb = {
+}), Wb = {
 	key: 0,
 	class: "project-muted"
-}, Kb = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, qb = {
+}, Gb = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, Kb = {
 	key: 1,
 	class: "text-sm text-[#b4b4b4]"
-}, Jb = {
+}, qb = {
 	class: "project-chat-list",
 	"aria-label": "Project chats"
-}, Yb = ["aria-label", "onClick"], Xb = { class: "project-chat-title" }, Zb = {
+}, Jb = ["aria-label", "onClick"], Yb = { class: "project-chat-title" }, Xb = {
 	key: 0,
 	class: "project-chat-preview"
-}, Qb = /* @__PURE__ */ H({
+}, Zb = /* @__PURE__ */ H({
 	__name: "ProjectHomePage",
 	setup(e) {
 		let { selectedProject: t, visibleSessions: n, chooseSession: r, chooseProject: i } = mg();
-		return (e, a) => (W(), K(Wb, null, {
+		return (e, a) => (W(), K(Ub, null, {
 			default: kn(() => [V(t) ? (W(), G(U, { key: 0 }, [
-				V(t).archived ? (W(), G("p", Gb, "Archived project")) : Y("v-if", !0),
-				q("p", Kb, z(V(ol)(V(t)) ? "Workspace: " + V(ol)(V(t)) : V(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
-				V(n).length ? Y("v-if", !0) : (W(), G("p", qb, "No conversations yet.")),
-				q("nav", Jb, [(W(!0), G(U, null, _r(V(n), (e) => (W(), G("button", {
+				V(t).archived ? (W(), G("p", Wb, "Archived project")) : Y("v-if", !0),
+				q("p", Gb, z(V(ol)(V(t)) ? "Workspace: " + V(ol)(V(t)) : V(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
+				V(n).length ? Y("v-if", !0) : (W(), G("p", Kb, "No conversations yet.")),
+				q("nav", qb, [(W(!0), G(U, null, _r(V(n), (e) => (W(), G("button", {
 					key: e.id,
 					class: "project-chat-row",
 					"aria-label": e.title || "Untitled session",
 					onClick: (t) => V(r)(e.id)
-				}, [q("span", Xb, z(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", Zb, z(e.preview), 1)) : Y("v-if", !0)], 8, Yb))), 128))]),
+				}, [q("span", Yb, z(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", Xb, z(e.preview), 1)) : Y("v-if", !0)], 8, Jb))), 128))]),
 				q("button", {
 					class: "project-back mt-5",
 					onClick: a[0] ||= (e) => V(i)("")
@@ -13318,12 +13303,12 @@ var Ov = ["open"], kv = {
 			_: 1
 		}));
 	}
-}), $b = /* @__PURE__ */ H({
+}), Qb = /* @__PURE__ */ H({
 	__name: "ProjectArtifactsPage",
 	setup(e) {
 		let { selectedProject: t, profile: n, visibleSessions: r, recentSession: i } = mg();
-		return (e, a) => (W(), K(Wb, null, {
-			default: kn(() => [V(t) ? (W(), K(xb, {
+		return (e, a) => (W(), K(Ub, null, {
+			default: kn(() => [V(t) ? (W(), K(bb, {
 				key: 0,
 				project: V(t),
 				profile: V(n),
@@ -13338,25 +13323,25 @@ var Ov = ["open"], kv = {
 			_: 1
 		}));
 	}
-}), ex = {
+}), $b = {
 	key: 0,
 	class: "project-settings"
-}, tx = ["disabled"], nx = {
+}, ex = ["disabled"], tx = {
 	key: 0,
 	class: "project-error",
 	role: "alert"
-}, rx = {
+}, nx = {
 	key: 1,
 	class: "project-muted",
 	role: "status"
-}, ix = ["disabled"], ax = { class: "project-field-row" }, ox = ["disabled"], sx = {
+}, rx = ["disabled"], ix = { class: "project-field-row" }, ax = ["disabled"], ox = {
 	key: 2,
 	class: "project-muted"
-}, cx = { class: "project-folders" }, lx = { class: "folder-path" }, ux = { key: 0 }, dx = { key: 1 }, fx = { class: "project-actions" }, px = ["disabled", "onClick"], mx = [
+}, sx = { class: "project-folders" }, cx = { class: "folder-path" }, lx = { key: 0 }, ux = { key: 1 }, dx = { class: "project-actions" }, fx = ["disabled", "onClick"], px = [
 	"disabled",
 	"aria-label",
 	"onClick"
-], hx = ["disabled"], gx = { class: "project-checkbox" }, _x = ["disabled"], vx = { id: "project-confirm-text" }, yx = { class: "project-actions" }, bx = ["disabled"], xx = ["disabled"], Sx = /* @__PURE__ */ H({
+], mx = ["disabled"], hx = { class: "project-checkbox" }, gx = ["disabled"], _x = { id: "project-confirm-text" }, vx = { class: "project-actions" }, yx = ["disabled"], bx = ["disabled"], xx = /* @__PURE__ */ H({
 	__name: "ProjectSettings",
 	props: {
 		project: {},
@@ -13392,22 +13377,22 @@ var Ov = ["open"], kv = {
 			let e = f.value;
 			e && h(e.action, e.fields);
 		}
-		return (t, n) => e.project.isAuto ? (W(), G("div", ex, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
+		return (t, n) => e.project.isAuto ? (W(), G("div", $b, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
 			class: "project-button",
 			disabled: e.busy || e.offline,
 			onClick: n[0] ||= (t) => r("manage", "create", {
 				name: e.project.label,
 				primary_path: e.project.path || e.project.repos.find((e) => e.path)?.path || ""
 			})
-		}, " Save project ", 8, tx)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
+		}, " Save project ", 8, ex)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
 			key: 1,
 			ref_key: "settings",
 			ref: m,
 			tabindex: "-1",
 			class: "project-settings"
 		}, [
-			e.error ? (W(), G("p", nx, z(e.error), 1)) : Y("v-if", !0),
-			e.busy ? (W(), G("p", rx, "Saving project…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", tx, z(e.error), 1)) : Y("v-if", !0),
+			e.busy ? (W(), G("p", nx, "Saving project…")) : Y("v-if", !0),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[6] ||= Oo((e) => h("update", {
@@ -13428,7 +13413,7 @@ var Ov = ["open"], kv = {
 					maxlength: "4096",
 					rows: "2"
 				}, null, 512), [[vo, a.value]])]),
-				q("div", ax, [q("label", null, [n[15] ||= J("Icon", -1), An(q("input", {
+				q("div", ix, [q("label", null, [n[15] ||= J("Icon", -1), An(q("input", {
 					"onUpdate:modelValue": n[3] ||= (e) => o.value = e,
 					maxlength: "64"
 				}, null, 512), [[vo, o.value]])]), q("label", null, [n[16] ||= J("Color", -1), An(q("input", {
@@ -13443,26 +13428,26 @@ var Ov = ["open"], kv = {
 				q("button", {
 					class: "project-button",
 					disabled: !i.value.trim()
-				}, "Save changes", 8, ox)
-			], 8, ix)], 32),
+				}, "Save changes", 8, ax)
+			], 8, rx)], 32),
 			n[21] ||= q("h3", null, "Folders", -1),
 			n[22] ||= q("p", { class: "project-muted" }, " The primary folder is used for new chats. Existing chats keep their workspace. ", -1),
-			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", sx, "No folders configured.")),
-			q("ul", cx, [(W(!0), G(U, null, _r(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", lx, [
+			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", ox, "No folders configured.")),
+			q("ul", sx, [(W(!0), G(U, null, _r(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", cx, [
 				J(z(t.label || t.path), 1),
-				t.label ? (W(), G("small", ux, z(t.path), 1)) : Y("v-if", !0),
-				t.is_primary ? (W(), G("small", dx, "Primary folder")) : Y("v-if", !0)
-			]), q("div", fx, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
+				t.label ? (W(), G("small", lx, z(t.path), 1)) : Y("v-if", !0),
+				t.is_primary ? (W(), G("small", ux, "Primary folder")) : Y("v-if", !0)
+			]), q("div", dx, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: (e) => h("set_primary", { path: t.path })
-			}, " Make primary", 8, px)), q("button", {
+			}, " Make primary", 8, fx)), q("button", {
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				"aria-label": `Remove folder ${t.path}`,
 				onClick: (e) => g("remove_folder", { path: t.path }, `Remove ${t.path} from this project? The folder and existing chats will be kept.`)
-			}, " Remove ", 8, mx)])]))), 128))]),
+			}, " Remove ", 8, px)])]))), 128))]),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[10] ||= Oo((e) => h("add_folder", {
@@ -13481,15 +13466,15 @@ var Ov = ["open"], kv = {
 					"onUpdate:modelValue": n[8] ||= (e) => u.value = e,
 					maxlength: "160"
 				}, null, 512), [[vo, u.value]])]),
-				q("label", gx, [An(q("input", {
+				q("label", hx, [An(q("input", {
 					"onUpdate:modelValue": n[9] ||= (e) => d.value = e,
 					type: "checkbox"
 				}, null, 512), [[yo, d.value]]), n[20] ||= J(" Use as primary folder", -1)]),
 				q("button", {
 					class: "project-button",
 					disabled: !l.value.trim()
-				}, "Add folder", 8, _x)
-			], 8, hx)], 32),
+				}, "Add folder", 8, gx)
+			], 8, mx)], 32),
 			f.value ? (W(), G("div", {
 				key: 3,
 				class: "project-confirmation",
@@ -13497,41 +13482,41 @@ var Ov = ["open"], kv = {
 				"aria-modal": "false",
 				"aria-labelledby": "project-confirm-text",
 				onKeydown: n[11] ||= Ao(Oo((t) => !e.busy && _(), ["prevent"]), ["esc"])
-			}, [q("p", vx, z(f.value.text), 1), q("div", yx, [q("button", {
+			}, [q("p", _x, z(f.value.text), 1), q("div", vx, [q("button", {
 				ref_key: "cancelButton",
 				ref: p,
 				class: "project-button",
 				disabled: e.busy,
 				onClick: _
-			}, " Cancel", 8, bx), q("button", {
+			}, " Cancel", 8, yx), q("button", {
 				class: "project-button project-danger",
 				disabled: e.busy || e.offline,
 				onClick: v
-			}, " Confirm removal ", 8, xx)])], 32)) : Y("v-if", !0)
+			}, " Confirm removal ", 8, bx)])], 32)) : Y("v-if", !0)
 		], 512));
 	}
-}), Cx = {
+}), Sx = {
 	class: "page-content project-editor",
 	"aria-label": "Edit project"
-}, wx = {
+}, Cx = {
 	key: 0,
 	role: "status"
-}, Tx = {
+}, wx = {
 	key: 1,
 	role: "alert"
-}, Ex = /* @__PURE__ */ H({
+}, Tx = /* @__PURE__ */ H({
 	__name: "ProjectSettingsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, projectBusy: i, offline: a, manageError: o, manageProject: s, chooseProject: c, projectLoading: l, projectError: u, loadProject: d } = mg();
-		return (e, f) => (W(), G("section", Cx, [
+		return (e, f) => (W(), G("section", Sx, [
 			q("button", {
 				class: "project-back",
 				onClick: f[0] ||= (e) => V(c)(V(n))
 			}, " ← " + z(V(r)?.label || "Project"), 1),
 			f[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit project", -1),
-			V(l) ? (W(), G("p", wx, "Loading Project…")) : Y("v-if", !0),
-			V(u) ? (W(), G("p", Tx, [J(z(V(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => V(d) && V(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			V(r) ? (W(), K(Sx, {
+			V(l) ? (W(), G("p", Cx, "Loading Project…")) : Y("v-if", !0),
+			V(u) ? (W(), G("p", wx, [J(z(V(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => V(d) && V(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			V(r) ? (W(), K(xx, {
 				key: JSON.stringify([V(t), V(r).id]),
 				project: V(r),
 				busy: V(i),
@@ -13547,18 +13532,18 @@ var Ov = ["open"], kv = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), Dx = {
+}), Ex = {
 	key: 0,
 	role: "status"
-}, Ox = {
+}, Dx = {
 	key: 1,
 	role: "alert",
 	class: "project-error"
-}, kx = ["disabled"], Ax = { key: 2 }, jx = { class: "project-muted" }, Mx = ["disabled"], Nx = {
+}, Ox = ["disabled"], kx = { key: 2 }, Ax = { class: "project-muted" }, jx = ["disabled"], Mx = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, Px = ["disabled"], Fx = /* @__PURE__ */ H({
+}, Nx = ["disabled"], Px = /* @__PURE__ */ H({
 	__name: "ProjectInstructions",
 	props: {
 		profile: {},
@@ -13603,52 +13588,52 @@ var Ov = ["open"], kv = {
 			onSubmit: Oo(p, ["prevent"])
 		}, [
 			i[3] ||= q("p", { class: "project-muted" }, "Custom instructions guide Hermes when it works in this project.", -1),
-			a.value ? (W(), G("p", Dx, "Loading instructions…")) : Y("v-if", !0),
-			s.value ? (W(), G("p", Ox, [J(z(s.value) + " ", 1), q("button", {
+			a.value ? (W(), G("p", Ex, "Loading instructions…")) : Y("v-if", !0),
+			s.value ? (W(), G("p", Dx, [J(z(s.value) + " ", 1), q("button", {
 				type: "button",
 				class: "underline",
 				disabled: a.value || o.value || e.offline,
 				onClick: f
-			}, " Reload instructions ", 8, kx)])) : Y("v-if", !0),
-			l.value ? (W(), G("label", Ax, [
+			}, " Reload instructions ", 8, Ox)])) : Y("v-if", !0),
+			l.value ? (W(), G("label", kx, [
 				i[2] ||= J("Instructions ", -1),
-				q("span", jx, z(r.value), 1),
+				q("span", Ax, z(r.value), 1),
 				An(q("textarea", {
 					"onUpdate:modelValue": i[0] ||= (e) => n.value = e,
 					rows: "14",
 					disabled: a.value || o.value,
 					onInput: i[1] ||= (e) => c.value = !1
-				}, null, 40, Mx), [[vo, n.value]])
+				}, null, 40, jx), [[vo, n.value]])
 			])) : Y("v-if", !0),
-			c.value ? (W(), G("p", Nx, "Instructions saved.")) : Y("v-if", !0),
+			c.value ? (W(), G("p", Mx, "Instructions saved.")) : Y("v-if", !0),
 			q("button", {
 				class: "project-button justify-self-start",
 				disabled: !l.value || a.value || o.value || e.offline
-			}, z(o.value ? "Saving…" : "Save instructions"), 9, Px)
+			}, z(o.value ? "Saving…" : "Save instructions"), 9, Nx)
 		], 32));
 	}
-}), Ix = {
+}), Fx = {
 	class: "page-content project-editor",
 	"aria-label": "Edit Instructions"
-}, Lx = {
+}, Ix = {
 	key: 0,
 	role: "status"
-}, Rx = {
+}, Lx = {
 	key: 1,
 	role: "alert"
-}, zx = /* @__PURE__ */ H({
+}, Rx = /* @__PURE__ */ H({
 	__name: "ProjectInstructionsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, offline: i, chooseProject: a, projectLoading: o, projectError: s, loadProject: c } = mg();
-		return (e, l) => (W(), G("section", Ix, [
+		return (e, l) => (W(), G("section", Fx, [
 			q("button", {
 				class: "project-back",
 				onClick: l[0] ||= (e) => V(a)(V(n))
 			}, " ← " + z(V(r)?.label || "Project"), 1),
 			l[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit Instructions", -1),
-			V(o) ? (W(), G("p", Lx, "Loading Project…")) : Y("v-if", !0),
-			V(s) ? (W(), G("p", Rx, [J(z(V(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => V(c) && V(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			V(r) ? (W(), K(Fx, {
+			V(o) ? (W(), G("p", Ix, "Loading Project…")) : Y("v-if", !0),
+			V(s) ? (W(), G("p", Lx, [J(z(V(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => V(c) && V(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			V(r) ? (W(), K(Px, {
 				key: JSON.stringify([V(t), V(r).id]),
 				profile: V(t),
 				"project-id": V(r).id,
@@ -13660,18 +13645,18 @@ var Ov = ["open"], kv = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), Bx = { class: "scheduled-heading" }, Vx = { class: "scheduled-heading-content" }, Hx = { class: "page-heading" }, Ux = {
+}), zx = { class: "scheduled-heading" }, Bx = { class: "scheduled-heading-content" }, Vx = { class: "page-heading" }, Hx = {
 	key: 0,
 	class: "project-muted"
-}, Wx = {
+}, Ux = {
 	key: 1,
 	role: "status",
 	class: "project-muted"
-}, Gx = {
+}, Wx = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, Kx = /* @__PURE__ */ H({
+}, Gx = /* @__PURE__ */ H({
 	__name: "ScheduledHeading",
 	props: {
 		title: {},
@@ -13681,27 +13666,27 @@ var Ov = ["open"], kv = {
 	},
 	emits: ["retry"],
 	setup(e) {
-		return (t, n) => (W(), G("div", Bx, [q("div", Vx, [
-			q("div", Hx, [q("h2", null, z(e.title || "Scheduled"), 1)]),
+		return (t, n) => (W(), G("div", zx, [q("div", Bx, [
+			q("div", Vx, [q("h2", null, z(e.title || "Scheduled"), 1)]),
 			yr(t.$slots, "default"),
-			e.subtitle ? (W(), G("p", Ux, z(e.subtitle), 1)) : Y("v-if", !0),
-			e.loading ? (W(), G("p", Wx, "Loading scheduled history…")) : Y("v-if", !0),
-			e.error ? (W(), G("p", Gx, [J(z(e.error) + " ", 1), q("button", {
+			e.subtitle ? (W(), G("p", Hx, z(e.subtitle), 1)) : Y("v-if", !0),
+			e.loading ? (W(), G("p", Ux, "Loading scheduled history…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", Wx, [J(z(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[0] ||= (e) => t.$emit("retry")
 			}, "Retry")])) : Y("v-if", !0)
 		])]));
 	}
-}), qx = {
+}), Kx = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, Jx = { class: "scheduled-filter" }, Yx = { class: "scheduled-content" }, Xx = {
+}, qx = { class: "scheduled-filter" }, Jx = { class: "scheduled-content" }, Yx = {
 	key: 0,
 	class: "project-muted"
-}, Zx = {
+}, Xx = {
 	class: "scheduled-list",
 	"aria-label": "Scheduled jobs"
-}, Qx = ["onClick"], $x = /* @__PURE__ */ H({
+}, Zx = ["onClick"], Qx = /* @__PURE__ */ H({
 	__name: "ScheduledListPage",
 	setup(e) {
 		let t = kc(), n = Oc(), r = /* @__PURE__ */ B([]), i = X({
@@ -13718,12 +13703,12 @@ var Ov = ["open"], kv = {
 			if (!Array.isArray(n.jobs)) throw Error("Invalid jobs");
 			e.aborted || (r.value = n.jobs);
 		});
-		return (e, r) => (W(), G("section", qx, [qi(Kx, {
+		return (e, r) => (W(), G("section", Kx, [qi(Gx, {
 			loading: V(o),
 			error: V(s),
 			onRetry: V(c)
 		}, {
-			default: kn(() => [q("label", Jx, [r[2] ||= J("Show ", -1), An(q("select", {
+			default: kn(() => [q("label", qx, [r[2] ||= J("Show ", -1), An(q("select", {
 				"onUpdate:modelValue": r[0] ||= (e) => i.value = e,
 				"aria-label": "Job status"
 			}, [...r[1] ||= [
@@ -13736,7 +13721,7 @@ var Ov = ["open"], kv = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", Yx, [!V(o) && !V(s) && !a.value.length ? (W(), G("p", Xx, " No " + z(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", Zx, [(W(!0), G(U, null, _r(a.value, (e) => (W(), G("button", {
+		]), q("div", Jx, [!V(o) && !V(s) && !a.value.length ? (W(), G("p", Yx, " No " + z(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", Xx, [(W(!0), G(U, null, _r(a.value, (e) => (W(), G("button", {
 			key: e.id,
 			class: "scheduled-job-row",
 			onClick: (r) => V(n).push({
@@ -13748,18 +13733,18 @@ var Ov = ["open"], kv = {
 			q("strong", null, z(e.name || e.id), 1),
 			q("small", null, z(e.schedule_display || "Scheduled job"), 1),
 			q("small", null, z(V(bg)(e.last_run_at)), 1)
-		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, Qx))), 128))])])]));
+		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, Zx))), 128))])])]));
 	}
-}), eS = {
+}), $x = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, tS = { class: "scheduled-content" }, nS = {
+}, eS = { class: "scheduled-content" }, tS = {
 	key: 0,
 	class: "project-muted"
-}, rS = {
+}, nS = {
 	class: "scheduled-list",
 	"aria-label": "Job runs"
-}, iS = ["onClick"], aS = ["disabled"], oS = /* @__PURE__ */ H({
+}, rS = ["onClick"], iS = ["disabled"], aS = /* @__PURE__ */ H({
 	__name: "ScheduledJobPage",
 	setup(e) {
 		let t = kc(), n = Oc(), r = /* @__PURE__ */ B(), i = /* @__PURE__ */ B([]), a = /* @__PURE__ */ B(!1), o = /* @__PURE__ */ B(0), s = !1, { loading: c, error: l, retry: u } = xg(async (e, t, n) => {
@@ -13776,7 +13761,7 @@ var Ov = ["open"], kv = {
 		function d() {
 			s = !0, u();
 		}
-		return (e, o) => (W(), G("section", eS, [qi(Kx, {
+		return (e, o) => (W(), G("section", $x, [qi(Gx, {
 			title: r.value?.name || r.value?.id,
 			subtitle: "Run history · newest first",
 			loading: V(c),
@@ -13787,9 +13772,9 @@ var Ov = ["open"], kv = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", tS, [
-			!V(c) && !V(l) && !i.value.length ? (W(), G("p", nS, "No runs yet.")) : Y("v-if", !0),
-			q("nav", rS, [(W(!0), G(U, null, _r(i.value, (e) => (W(), G("button", {
+		]), q("div", eS, [
+			!V(c) && !V(l) && !i.value.length ? (W(), G("p", tS, "No runs yet.")) : Y("v-if", !0),
+			q("nav", nS, [(W(!0), G(U, null, _r(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				onClick: (r) => V(n).push({
 					name: "scheduled-run",
@@ -13803,25 +13788,25 @@ var Ov = ["open"], kv = {
 				q("strong", null, z(V(yg)(e.started_at)), 1),
 				q("small", null, z(e.title || "Job run"), 1),
 				q("small", null, z(e.end_reason || (e.source === "cron_output" ? "Saved output" : e.ended_at ? "Finished" : "In progress")), 1)
-			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, iS))), 128))]),
+			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, rS))), 128))]),
 			a.value ? (W(), G("button", {
 				key: 1,
 				class: "project-button",
 				disabled: V(c),
 				onClick: d
-			}, " Load older runs ", 8, aS)) : Y("v-if", !0)
+			}, " Load older runs ", 8, iS)) : Y("v-if", !0)
 		])]));
 	}
-}), sS = {
+}), oS = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, cS = {
+}, sS = {
 	key: 1,
 	class: "scheduled-content"
-}, lS = {
+}, cS = {
 	key: 0,
 	class: "project-muted"
-}, uS = /* @__PURE__ */ H({
+}, lS = /* @__PURE__ */ H({
 	__name: "ScheduledRunPage",
 	setup(e) {
 		let t = kc(), n = /* @__PURE__ */ B(), r = /* @__PURE__ */ B(), i = xg(async (e, t, a, o) => {
@@ -13832,7 +13817,7 @@ var Ov = ["open"], kv = {
 			let c = await Q.scheduledOutput(t, a, o, e);
 			e.aborted || (r.value = c, i.sessionId.value = c.session_id);
 		}), { loading: a, error: o, retry: s } = i, c = X(() => Cg(r.value));
-		return (e, i) => (W(), G("section", sS, [qi(Kx, {
+		return (e, i) => (W(), G("section", oS, [qi(Gx, {
 			title: n.value?.name || n.value?.id,
 			subtitle: r.value ? V(yg)(r.value.started_at || 0) : void 0,
 			loading: V(a),
@@ -13844,57 +13829,57 @@ var Ov = ["open"], kv = {
 			"loading",
 			"error",
 			"onRetry"
-		]), c.value.length ? (W(), K(hy, {
+		]), c.value.length ? (W(), K(my, {
 			key: String(V(t).params.runId),
 			"follow-initially": !1,
 			messages: c.value,
 			draft: "",
 			loading: !1,
 			progress: []
-		}, null, 8, ["messages"])) : (W(), G("div", cS, [r.value ? (W(), G("p", lS, "No output was saved for this run.")) : Y("v-if", !0)]))]));
+		}, null, 8, ["messages"])) : (W(), G("div", sS, [r.value ? (W(), G("p", cS, "No output was saved for this run.")) : Y("v-if", !0)]))]));
 	}
-}), dS = {
+}), uS = {
 	class: "settings-page page-content",
 	"aria-label": "Settings"
-}, fS = { class: "settings-content" }, pS = { class: "settings-heading" }, mS = {
+}, dS = { class: "settings-content" }, fS = { class: "settings-heading" }, pS = {
 	class: "settings-group",
 	"aria-labelledby": "settings-profile-heading"
-}, hS = { class: "settings-row" }, gS = ["value"], _S = ["value"], vS = ["value"], yS = {
+}, mS = { class: "settings-row" }, hS = ["value"], gS = ["value"], _S = ["value"], vS = {
 	class: "settings-group",
 	"aria-labelledby": "settings-app-heading"
-}, bS = { class: "settings-row settings-notifications" }, xS = { class: "wake-lock-setting" }, SS = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, CS = ["checked"], wS = {
+}, yS = { class: "settings-row settings-notifications" }, bS = { class: "wake-lock-setting" }, xS = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, SS = ["checked"], CS = {
 	key: 0,
 	class: "mt-1 text-sm"
-}, TS = {
+}, wS = {
 	class: "settings-group",
 	"aria-labelledby": "settings-notifications-heading"
-}, ES = { class: "settings-row settings-notifications" }, DS = {
+}, TS = { class: "settings-row settings-notifications" }, ES = {
 	class: "push-setting",
 	"aria-labelledby": "notifications-heading"
-}, OS = {
+}, DS = {
 	id: "notifications-heading",
 	class: "text-sm font-medium text-white"
-}, kS = ["disabled"], AS = ["disabled"], jS = {
+}, OS = ["disabled"], kS = ["disabled"], AS = {
 	key: 1,
 	class: "mt-1 text-sm text-[#dcae6e]",
 	role: "status"
-}, MS = {
+}, jS = {
 	key: 2,
 	class: "mt-1 text-sm"
-}, NS = {
+}, MS = {
 	key: 3,
 	class: "mt-1 text-sm",
 	role: "status"
-}, PS = {
+}, NS = {
 	key: 4,
 	class: "mt-1 text-sm"
-}, FS = {
+}, PS = {
 	key: 5,
 	class: "mt-1 text-sm"
-}, IS = {
+}, FS = {
 	key: 6,
 	class: "mt-1 text-sm"
-}, LS = /* @__PURE__ */ H({
+}, IS = /* @__PURE__ */ H({
 	__name: "SettingsPanel",
 	props: {
 		profile: {},
@@ -13915,8 +13900,8 @@ var Ov = ["open"], kv = {
 	],
 	setup(e, { emit: t }) {
 		let n = t, r = /* @__PURE__ */ B();
-		return sr(() => r.value?.focus()), (t, i) => (W(), G("section", dS, [q("div", fS, [
-			q("div", pS, [q("h2", {
+		return sr(() => r.value?.focus()), (t, i) => (W(), G("section", uS, [q("div", dS, [
+			q("div", fS, [q("h2", {
 				ref_key: "heading",
 				ref: r,
 				tabindex: "-1",
@@ -13930,7 +13915,7 @@ var Ov = ["open"], kv = {
 				id: "settings-profile-heading",
 				class: "settings-section-title"
 			}, "Profile", -1),
-			q("div", mS, [q("div", hS, [i[6] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
+			q("div", pS, [q("div", mS, [i[6] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
 				id: "settings-profile",
 				value: e.profile,
 				onChange: i[1] ||= (e) => n("profile", e.target.value)
@@ -13939,17 +13924,17 @@ var Ov = ["open"], kv = {
 				e.profile && !e.profiles.some((t) => t.name === e.profile) ? (W(), G("option", {
 					key: 0,
 					value: e.profile
-				}, z(e.profile), 9, _S)) : Y("v-if", !0),
+				}, z(e.profile), 9, gS)) : Y("v-if", !0),
 				(W(!0), G(U, null, _r(e.profiles, (e) => (W(), G("option", {
 					key: e.name,
 					value: e.name
-				}, z(e.name), 9, vS))), 128))
-			], 40, gS)])]),
+				}, z(e.name), 9, _S))), 128))
+			], 40, hS)])]),
 			i[12] ||= q("h3", {
 				id: "settings-app-heading",
 				class: "settings-section-title"
 			}, "Global settings", -1),
-			q("div", yS, [q("div", bS, [i[9] ||= q("svg", {
+			q("div", vS, [q("div", yS, [i[9] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -13962,52 +13947,52 @@ var Ov = ["open"], kv = {
 				width: "14",
 				height: "18",
 				rx: "2"
-			}), q("path", { d: "M9 17h6" })], -1), q("div", xS, [
+			}), q("path", { d: "M9 17h6" })], -1), q("div", bS, [
 				i[8] ||= q("h3", {
 					id: "wake-lock-heading",
 					class: "text-sm font-medium text-white"
 				}, "Keep Screen Awake", -1),
-				q("label", SS, [q("input", {
+				q("label", xS, [q("input", {
 					type: "checkbox",
 					"aria-labelledby": "wake-lock-heading",
 					checked: e.keepScreenAwake,
 					onChange: i[2] ||= (e) => n("toggleWakeLock", e.target.checked)
-				}, null, 40, CS), i[7] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
-				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", wS, " Screen wake lock is unavailable in this browser. "))
+				}, null, 40, SS), i[7] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
+				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", CS, " Screen wake lock is unavailable in this browser. "))
 			])])]),
 			i[13] ||= q("h3", {
 				id: "settings-notifications-heading",
 				class: "settings-section-title"
 			}, "Notifications", -1),
-			q("div", TS, [q("div", ES, [i[10] ||= q("svg", {
+			q("div", wS, [q("div", TS, [i[10] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
 				stroke: "currentColor",
 				"stroke-width": "1.5",
 				"aria-hidden": "true"
-			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", DS, [
-				q("h3", OS, " Notifications for " + z(e.profile || "default"), 1),
+			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", ES, [
+				q("h3", DS, " Notifications for " + z(e.profile || "default"), 1),
 				q("button", {
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.supported || !e.pushState.subscribed && !e.pushState.available,
 					onClick: i[3] ||= (e) => n("togglePush")
-				}, z(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, kS),
+				}, z(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, OS),
 				e.pushState.subscribed ? (W(), G("button", {
 					key: 0,
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.available,
 					onClick: i[4] ||= (e) => n("testPush")
-				}, " Send test ", 8, AS)) : Y("v-if", !0),
-				e.pushState.error || e.pushMessage ? (W(), G("p", jS, z(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", MS, " Notifications enabled for " + z(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", NS, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", FS, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", IS, " Notifications disabled for " + z(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", PS, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
+				}, " Send test ", 8, kS)) : Y("v-if", !0),
+				e.pushState.error || e.pushMessage ? (W(), G("p", AS, z(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", jS, " Notifications enabled for " + z(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", MS, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", PS, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", FS, " Notifications disabled for " + z(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", NS, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
 			])])])
 		])]));
 	}
-}), RS = /* @__PURE__ */ H({
+}), LS = /* @__PURE__ */ H({
 	__name: "SettingsPage",
 	setup(e) {
 		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, chooseProfile: c, togglePush: l, testPush: u, closeSettings: d } = dg();
-		return (e, f) => (W(), K(LS, {
+		return (e, f) => (W(), K(IS, {
 			profile: V(t),
 			profiles: V(n),
 			"push-state": V(r),
@@ -14037,9 +14022,9 @@ var Ov = ["open"], kv = {
 			"onClose"
 		]));
 	}
-}), zS = "chathermes";
-function BS() {
-	let e = [], t = !1, n = !1, r = () => ml(window.location.href) || "/", i = r(), a = () => window.history.state?.[zS], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), RS = "chathermes";
+function zS() {
+	let e = [], t = !1, n = !1, r = () => ml(window.location.href) || "/", i = r(), a = () => window.history.state?.[RS], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -14048,7 +14033,7 @@ function BS() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[zS] = {
+		}, a[RS] = {
 			current: e,
 			position: o,
 			state: s
@@ -14090,7 +14075,7 @@ function BS() {
 }
 //#endregion
 //#region src/features/projects/components/ProjectActions.vue?vue&type=script&setup=true&lang.ts
-var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], GS = ["disabled"], KS = /* @__PURE__ */ H({
+var BS = ["disabled"], VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], GS = /* @__PURE__ */ H({
 	__name: "ProjectActions",
 	setup(e) {
 		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = mg(), u = kc(), d = Oc();
@@ -14114,7 +14099,7 @@ var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], 
 				role: "menuitem",
 				disabled: V(a) || V(c) || !V(t) || V(t).archived || !V(ol)(V(t)),
 				onClick: n[0] ||= (e) => V(s)()
-			}, " New Project Chat ", 8, VS)) : Y("v-if", !0),
+			}, " New Project Chat ", 8, BS)) : Y("v-if", !0),
 			q("button", {
 				role: "menuitem",
 				onClick: n[1] ||= (e) => f("edit")
@@ -14123,7 +14108,7 @@ var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], 
 				role: "menuitem",
 				disabled: V(a) || !V(ol)(V(t)),
 				onClick: n[2] ||= (e) => f("instructions")
-			}, " Edit Instructions ", 8, HS),
+			}, " Edit Instructions ", 8, VS),
 			V(t).isAuto ? Y("v-if", !0) : (W(), G(U, { key: 1 }, [V(t).archived ? (W(), G("button", {
 				key: 0,
 				role: "menuitem",
@@ -14132,20 +14117,20 @@ var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], 
 					id: V(r),
 					restore: !0
 				})
-			}, " Restore project ", 8, US)) : (W(), G("button", {
+			}, " Restore project ", 8, HS)) : (W(), G("button", {
 				key: 1,
 				role: "menuitem",
 				disabled: V(i) || V(a),
 				onClick: n[4] ||= (e) => p("archive")
-			}, " Archive project ", 8, WS)), q("button", {
+			}, " Archive project ", 8, US)), q("button", {
 				class: "project-danger",
 				role: "menuitem",
 				disabled: V(i) || V(a),
 				onClick: n[5] ||= (e) => p("delete")
-			}, " Delete project ", 8, GS)], 64))
+			}, " Delete project ", 8, WS)], 64))
 		], 64)) : Y("v-if", !0);
 	}
-}), qS = ["aria-checked"], JS = ["aria-checked"], YS = /* @__PURE__ */ H({
+}), KS = ["aria-checked"], qS = ["aria-checked"], JS = /* @__PURE__ */ H({
 	__name: "ProjectsActions",
 	setup(e) {
 		let t = kc(), n = X(() => t.query.archived === "1"), { showProjects: r } = mg();
@@ -14153,13 +14138,13 @@ var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], 
 			role: "menuitemradio",
 			"aria-checked": !n.value,
 			onClick: t[0] ||= (e) => V(r)(!1)
-		}, " Active projects", 8, qS), q("button", {
+		}, " Active projects", 8, KS), q("button", {
 			role: "menuitemradio",
 			"aria-checked": n.value,
 			onClick: t[1] ||= (e) => V(r)(!0)
-		}, " Archived projects ", 8, JS)], 64));
+		}, " Archived projects ", 8, qS)], 64));
 	}
-}), XS = ["disabled"], ZS = ["disabled"], QS = /* @__PURE__ */ H({
+}), YS = ["disabled"], XS = ["disabled"], ZS = /* @__PURE__ */ H({
 	__name: "ScheduledActions",
 	setup(e) {
 		let { current: t, offline: n, creating: r, recentSession: i } = _g();
@@ -14168,33 +14153,33 @@ var VS = ["disabled"], HS = ["disabled"], US = ["disabled"], WS = ["disabled"], 
 			"data-test": "refresh-scheduled",
 			disabled: !V(t) || V(t).loading.value,
 			onClick: a[0] ||= (e) => V(t)?.retry()
-		}, " Refresh", 8, XS), V(t)?.sessionId.value ? (W(), G("button", {
+		}, " Refresh", 8, YS), V(t)?.sessionId.value ? (W(), G("button", {
 			key: 0,
 			role: "menuitem",
 			"data-test": "resume-scheduled-session",
 			disabled: V(n) || V(r) || V(t).loading.value,
 			onClick: a[1] ||= (e) => V(i)(V(t).sessionId.value)
-		}, " Resume Session ", 8, ZS)) : Y("v-if", !0)], 64));
+		}, " Resume Session ", 8, XS)) : Y("v-if", !0)], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function $S(e = BS(), t) {
+function QS(e = zS(), t) {
 	let n = Dc({
 		history: e,
 		routes: [
 			{
 				path: "/",
 				name: "home",
-				components: { default: Fy },
+				components: { default: Py },
 				meta: { chat: !0 }
 			},
 			{
 				path: "/chat/:sessionId",
 				name: "chat",
 				components: {
-					default: Iy,
-					actions: KS,
+					default: Fy,
+					actions: GS,
 					dialogs: y_
 				},
 				meta: { chat: !0 }
@@ -14203,7 +14188,7 @@ function $S(e = BS(), t) {
 				path: "/inbox",
 				name: "inbox",
 				components: {
-					default: eb,
+					default: $y,
 					actions: p_
 				},
 				meta: { title: "Inbox" }
@@ -14211,7 +14196,7 @@ function $S(e = BS(), t) {
 			{
 				path: "/artifacts",
 				name: "artifacts",
-				components: { default: Sb },
+				components: { default: xb },
 				meta: {
 					title: "Artifacts",
 					hideComposer: !0
@@ -14221,8 +14206,8 @@ function $S(e = BS(), t) {
 				path: "/projects",
 				name: "projects",
 				components: {
-					default: Ib,
-					actions: YS
+					default: Fb,
+					actions: JS
 				},
 				meta: {
 					title: "Projects",
@@ -14233,8 +14218,8 @@ function $S(e = BS(), t) {
 				path: "/projects/:projectId",
 				name: "project",
 				components: {
-					default: Qb,
-					actions: KS,
+					default: Zb,
+					actions: GS,
 					dialogs: y_
 				},
 				meta: {
@@ -14246,8 +14231,8 @@ function $S(e = BS(), t) {
 				path: "/projects/:projectId/artifacts",
 				name: "project-artifacts",
 				components: {
-					default: $b,
-					actions: KS,
+					default: Qb,
+					actions: GS,
 					dialogs: y_
 				},
 				meta: {
@@ -14259,8 +14244,8 @@ function $S(e = BS(), t) {
 				path: "/projects/:projectId/settings",
 				name: "project-settings",
 				components: {
-					default: Ex,
-					actions: KS,
+					default: Tx,
+					actions: GS,
 					dialogs: y_
 				},
 				meta: { section: "projects" }
@@ -14269,8 +14254,8 @@ function $S(e = BS(), t) {
 				path: "/projects/:projectId/instructions",
 				name: "project-instructions",
 				components: {
-					default: zx,
-					actions: KS,
+					default: Rx,
+					actions: GS,
 					dialogs: y_
 				},
 				meta: { section: "projects" }
@@ -14279,8 +14264,8 @@ function $S(e = BS(), t) {
 				path: "/scheduled",
 				name: "scheduled",
 				components: {
-					default: $x,
-					actions: QS
+					default: Qx,
+					actions: ZS
 				},
 				meta: {
 					title: "Scheduled",
@@ -14291,8 +14276,8 @@ function $S(e = BS(), t) {
 				path: "/scheduled/:jobId",
 				name: "scheduled-job",
 				components: {
-					default: oS,
-					actions: QS
+					default: aS,
+					actions: ZS
 				},
 				meta: {
 					title: "Scheduled",
@@ -14303,8 +14288,8 @@ function $S(e = BS(), t) {
 				path: "/scheduled/:jobId/:runId",
 				name: "scheduled-run",
 				components: {
-					default: uS,
-					actions: QS
+					default: lS,
+					actions: ZS
 				},
 				meta: {
 					title: "Scheduled",
@@ -14314,7 +14299,7 @@ function $S(e = BS(), t) {
 			{
 				path: "/settings",
 				name: "settings",
-				components: { default: RS },
+				components: { default: LS },
 				meta: {
 					title: "Settings",
 					hideComposer: !0
@@ -14343,8 +14328,8 @@ function $S(e = BS(), t) {
 }
 //#endregion
 //#region src/main.ts
-function eC(e) {
-	return Po(f_).use($S(void 0, e));
+function $S(e) {
+	return Po(f_).use(QS(void 0, e));
 }
 //#endregion
-export { f_ as App, eC as createChatHermesApp };
+export { f_ as App, $S as createChatHermesApp };
