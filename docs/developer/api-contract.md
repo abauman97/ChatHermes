@@ -247,9 +247,13 @@ validated multipart prompt mechanism rather than a session-wide attachment queue
 Timeline cards and the backend index use the same explicit delivery contract
 and share one preview/download component. Generated artifact cards
 require explicit `MEDIA:` delivery directives or existing `Attached file` /
-`Attached image` annotations. Markdown images with explicit `MEDIA:` sources
-(for example `![Chart](MEDIA:/opt/data/chart.png)`) use the same authenticated
-artifact preview flow. Ordinary HTTPS Markdown images remain inline images.
+`Attached image` annotations. Markdown links and images with explicit local
+`MEDIA:` destinations (for example `[Report](MEDIA:/opt/data/report.pdf)` and
+`![Chart](MEDIA:/opt/data/chart.png)`) use the same authenticated artifact
+preview/download cards, preserving surrounding prose. These destinations must
+be local paths; remote URLs, executable schemes, control characters, code,
+quoted blocks, lists and untrusted tool content cannot assert this delivery.
+Ordinary HTTPS Markdown images remain inline images.
 MEDIA parsing retains quoted paths, spaced media
 filenames, unknown formats, and extensionless files; no extension eligibility
 filter is used. Bare paths, ordinary markdown links (including `file:`, `sandbox:`, and

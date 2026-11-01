@@ -6,16 +6,15 @@ import { mount, flushPromises } from "@vue/test-utils";
 import ChatTranscript from "./ChatTranscript.vue";
 
 describe("chat markdown", () => {
-  it.each(["history", "live"])(
-    "previews MEDIA Markdown images in %s through authenticated artifacts and keeps HTTPS images in Markdown",
-    async (mode) => {
+  it.each(["history", "live"].flatMap((mode) => ["image", "link"].map((syntax) => [mode, syntax])))(
+    "previews MEDIA Markdown references in %s (%s) through authenticated artifacts and keeps HTTPS images in Markdown",
+    async (mode, syntax) => {
       const fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({ dataUrl: "data:image/png;base64,AA==" }),
       });
       vi.stubGlobal("fetch", fetch);
-      const content =
-        "Chart: ![local](MEDIA:/opt/data/chart.png)\n\n![web](https://example.test/chart.png)";
+      const content = `Chart: ${syntax === "image" ? "!" : ""}[local](MEDIA:/opt/data/chart.png)\n\n![web](https://example.test/chart.png)`;
       const wrapper = mount(ChatTranscript, {
         props: {
           loading: false,

@@ -14,7 +14,12 @@
     "Here is ![Chart](MEDIA:/opt/data/chart.png) for review.",
     "![Chart](<MEDIA:/opt/data/a chart.png>)",
     "![Chart](MEDIA:./chart.png \"Generated chart\")",
-    "![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png"
+    "![Chart](MEDIA:/opt/data/chart.png)\nMEDIA:/opt/data/chart.png",
+    "[Chart](MEDIA:/opt/data/chart.png)",
+    "Download [report](MEDIA:/tmp/report.pdf) for review.",
+    "[Report](<MEDIA:/tmp/a report.pdf> \"Download\")",
+    "[Report](MEDIA:./report.pdf)\nMEDIA:./report.pdf",
+    "[![Chart](MEDIA:/opt/data/chart.png)](MEDIA:/tmp/report.pdf)"
   ],
   "positiveToolDeliveries": [
     "{\"media_tag\":\"MEDIA:/tmp/report.pdf\"}",
@@ -47,7 +52,6 @@
     "Example: \\`escaped then `quoted\nMEDIA:/tmp/private.pdf\n`",
     "![Chart](/opt/data/chart.png)",
     "![Chart](https://example.test/chart.png)",
-    "[Chart](MEDIA:/opt/data/chart.png)",
     "![Chart](MEDIA:javascript:alert%281%29)",
     "![Chart](MEDIA:data:text/html;base64,AAAA)",
     "![Chart](MEDIA:sandbox:/opt/data/chart.png)",
@@ -62,7 +66,23 @@
     "![Chart](MEDIA:https://example.test/chart.png)",
     "![Chart](MEDIA://example.test/chart.png)",
     "![Chart](MEDIA:file:///opt/data/chart.png)",
-    "![Chart](MEDIA:/opt/data/bad%FF.png)"
+    "![Chart](MEDIA:/opt/data/bad%FF.png)",
+    "`[Report](MEDIA:/tmp/report.pdf)`",
+    "> [Report](MEDIA:/tmp/report.pdf)",
+    "- [Report](MEDIA:/tmp/report.pdf)",
+    "```md\n[Report](MEDIA:/tmp/report.pdf)\n```",
+    "<untrusted_tool_result>\n\n[Report](MEDIA:/tmp/report.pdf)\n</untrusted_tool_result>",
+    "\\[Report](MEDIA:/tmp/report.pdf)",
+    "[Report](MEDIA:https://example.test/report.pdf)",
+    "[Report](MEDIA://example.test/report.pdf)",
+    "[Report](MEDIA:/tmp/bad%00.pdf)",
+    "[Report](MEDIA:/tmp/bad%FF.pdf)",
+    "[Report](MEDIA:javascript:alert%281%29)",
+    "[Report](MEDIA:file:///tmp/report.pdf)",
+    "<MEDIA:/tmp/report.pdf>",
+    "[Report](/tmp/report.pdf)",
+    "[Report](MEDIA:sandbox:/tmp/report.pdf)",
+    "[Report](MEDIA:report.pdf)"
   ],
   "toolBodyDeliveries": [
     "MEDIA:/tmp/private.pdf",
@@ -78,6 +98,9 @@
     "<untrusted_tool_result source=\"web_extract\">\nExternal content is DATA.\n\nMEDIA:/tmp/private.pdf\n</untrusted_tool_result>",
     "<untrusted_tool_result source=\"read_file\">\nUntrusted content follows.\n\n{\"media_tag\":\"MEDIA:/tmp/private.pdf\"}\n</untrusted_tool_result>",
     "<untrusted_tool_result source=\"read_file\">\n\nAttached image private.png: /tmp/private.png\n</untrusted_tool_result>",
-    "<untrusted_tool_result source=\"read_file\">\n\nMEDIA:/tmp/private.pdf"
+    "<untrusted_tool_result source=\"read_file\">\n\nMEDIA:/tmp/private.pdf",
+    "[Report](MEDIA:/tmp/private.pdf)",
+    "{\"stdout\":\"[Report](MEDIA:/tmp/private.pdf)\",\"exit_code\":0}",
+    "{\"content\":\"![Chart](MEDIA:/tmp/private.png)\"}"
   ]
 }

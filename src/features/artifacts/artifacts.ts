@@ -65,39 +65,55 @@ function mediaValue(value: string) {
   }
   return /[/\\]|\.[^.]/.test(value) ? value : "";
 }
-// Parse image syntax rather than searching raw text, so escapes and code spans
-// retain their Markdown meaning. Only explicit MEDIA sources assert delivery.
-const imageMarkdown = new MarkdownIt({ html: true });
-const imageRule = imageMarkdown.inline.ruler.__rules__.find((rule) => rule.name === "image")!.fn;
-imageMarkdown.inline.ruler.at("image", (state, silent) => {
-  const start = state.pos;
-  const count = state.tokens.length;
-  const matched = imageRule(state, silent);
-  const token = state.tokens.at(-1);
-  if (!silent && state.tokens.length > count && token?.type === "image")
-    token.meta = { deliveryRange: [start, state.pos] };
-  return matched;
-});
-function collectMediaImages(line: string, add: (path: string) => boolean) {
-  const images = imageMarkdown.parseInline(line, {})[0]?.children || [];
+// Parse explicit MEDIA destinations with Markdown's quotation and escape rules.
+// Ordinary links/images never assert delivery. Keep source ranges so only the
+// accepted reference is removed, leaving surrounding prose intact.
+const mediaMarkdown = new MarkdownIt({ html: true });
+for (const name of ["image", "link"]) {
+  const rule = mediaMarkdown.inline.ruler.__rules__.find((rule) => rule.name === name)!.fn;
+  mediaMarkdown.inline.ruler.at(name, (state, silent) => {
+    const start = state.pos;
+    const count = state.tokens.length;
+    const matched = rule(state, silent);
+    const token = state.tokens
+      .slice(count)
+      .find((token) => token.type === (name === "image" ? "image" : "link_open"));
+    if (!silent && token && (token.type === "image" || token.type === "link_open"))
+      token.meta = {
+        deliveryRange: [start, state.pos],
+        escapedImage: name === "link" && state.src[start - 1] === "!",
+      };
+    return matched;
+  });
+}
+function collectMediaReferences(line: string, add: (path: string) => boolean) {
+  const tokens = mediaMarkdown.parseInline(line, {})[0]?.children || [];
   let removed = 0;
-  for (const image of images) {
-    const src = image.attrGet("src");
-    if (image.type !== "image" || typeof src !== "string" || !src.startsWith("MEDIA:")) continue;
+  let consumed = 0;
+  for (const token of tokens) {
+    const src =
+      token.type === "image"
+        ? token.attrGet("src")
+        : token.type === "link_open"
+          ? token.attrGet("href")
+          : undefined;
+    if (typeof src !== "string" || !src.startsWith("MEDIA:")) continue;
     let path: string;
     try {
       path = decodeURIComponent(src.slice(6));
     } catch {
       continue;
     }
-    if (/^https?:\/\//i.test(path)) continue;
     if (!/^(?:\/(?!\/)|[~.][\\/]|\.\.[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(path)) continue;
     if (path.split("").some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
       continue;
-    if (!image.meta?.deliveryRange || !add(path)) continue;
-    const [start, end] = image.meta.deliveryRange as [number, number];
+    if (!token.meta?.deliveryRange || token.meta.escapedImage) continue;
+    const [start, end] = token.meta.deliveryRange as [number, number];
+    if (!add(path)) continue;
+    if (start < consumed) continue;
     line = line.slice(0, start - removed) + line.slice(end - removed);
     removed += end - start;
+    consumed = end;
   }
   return line;
 }
@@ -254,7 +270,7 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
       } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
         references.push(index);
       } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
-      else lines[index] = collectMediaImages(line, add);
+      else lines[index] = collectMediaReferences(line, add);
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";

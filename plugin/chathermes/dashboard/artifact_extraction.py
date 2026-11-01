@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 from markdown_it.rules_inline.backticks import backtick
+from markdown_it.rules_inline.link import link
 
 
 def _delivery_code_span(state, silent):
@@ -30,11 +31,32 @@ _MARKDOWN.inline.ruler.at("backticks", _delivery_code_span)
 _IMAGE_MARKDOWN = MarkdownIt("default", {"html": True})
 
 
-def _media_images(line):
+def _delivery_link(state, silent):
+    # An escaped image opener must remain a literal example, as before.
+    start, count = state.pos, len(state.tokens)
+    matched = link(state, silent)
+    if not silent:
+        for token in state.tokens[count:]:
+            if token.type == "link_open":
+                token.meta["delivery_link"] = start == 0 or state.src[start - 1] != "!"
+                break
+    return matched
+
+
+_IMAGE_MARKDOWN.inline.ruler.at("link", _delivery_link)
+
+
+def _media_references(line):
     files = []
     for token in _IMAGE_MARKDOWN.parseInline(line)[0].children or []:
-        src = token.attrGet("src")
-        if token.type != "image" or not isinstance(src, str) or not src.startswith("MEDIA:"):
+        src = token.attrGet("src" if token.type == "image" else "href")
+        if (
+            token.type not in ("image", "link_open")
+            or not isinstance(src, str)
+            or not src.startswith("MEDIA:")
+        ):
+            continue
+        if token.type == "link_open" and not token.meta.get("delivery_link"):
             continue
         try:
             path = unquote(src[6:], errors="strict")
@@ -183,7 +205,7 @@ def text_artifacts(text):
             elif line.startswith("MEDIA:"):
                 found = _media(line)
             else:
-                found = _media_images(line)
+                found = _media_references(line)
             for file in found:
                 files.setdefault(file["path"], file)
     return list(files.values())
