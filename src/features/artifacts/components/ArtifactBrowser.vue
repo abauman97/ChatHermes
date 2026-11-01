@@ -85,11 +85,7 @@ async function remove() {
     deleting.value = false;
   }
 }
-watch(
-  () => [props.profile, props.project?.id],
-  () => load(),
-  { immediate: true },
-);
+watch([() => props.profile, () => props.project?.id], () => load(), { immediate: true });
 onBeforeUnmount(() => controller?.abort());
 </script>
 <template>

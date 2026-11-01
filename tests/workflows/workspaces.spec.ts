@@ -41,6 +41,8 @@ test("Project instructions, workspace chat and generated artifacts survive reloa
   await composer.fill(`[workflow-project] ${randomUUID()}`);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".message.assistant")).toContainText("Workspace verified.");
+  await expect(page.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Branch in new chat", exact: true })).toBeEnabled();
   const session = sessionFromUrl(page.url());
   expect(session).toBeTruthy();
   const conversation = page.url();
@@ -48,9 +50,10 @@ test("Project instructions, workspace chat and generated artifacts survive reloa
     .locator(".message.assistant .artifact-card")
     .filter({ hasText: "workflow-artifact.txt" });
   await expect(card).toBeVisible();
-  await card
-    .getByRole("button", { name: "Preview workflow-artifact.txt", exact: true })
-    .press("Enter");
+  const preview = card.getByRole("button", { name: "Preview workflow-artifact.txt", exact: true });
+  await preview.focus();
+  await expect(preview).toBeFocused();
+  await preview.press("Enter");
   const dialog = page.locator("dialog[open]");
   await expect(dialog.locator("pre")).toContainText("Generated project artifact");
   await page.screenshot({ path: info.outputPath("project-artifact-preview.png") });

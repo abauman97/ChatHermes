@@ -93,7 +93,7 @@ it("puts Scheduled below Projects and keeps run refresh in screen options", asyn
   await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
   await flushPromises();
   expect(refresh).toHaveBeenCalled();
-  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
   await wrapper.get(".scheduled-list button").trigger("click");
   await flushPromises();
   await flushPromises();
@@ -117,11 +117,11 @@ it("puts Scheduled below Projects and keeps run refresh in screen options", asyn
     "cron_audit_20260101_000000",
     expect.any(AbortSignal),
   );
-  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
   const create = vi.spyOn(api, "create");
   expect(wrapper.find(".project-back").exists()).toBe(false);
   expect(wrapper.text()).not.toContain("Open a chat about this run");
-  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
   expect(wrapper.find('[data-test="resume-scheduled-session"]').text()).toBe("Resume Session");
   await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
@@ -158,7 +158,7 @@ it.each([
   expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
   expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   await wrapper.get('[aria-label="Screen options"]').trigger("keydown", { key: "Escape" });
-  expect(wrapper.find('[role="menu"]').exists()).toBe(false);
+  expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
   wrapper.unmount();
 });
 it("offers exactly one action for the output session, preserving its profile without creating a chat", async () => {

@@ -39,6 +39,7 @@ describe("plugin routing", () => {
   it.each([
     ["/", "home"],
     ["/chat/s1", "chat"],
+    ["/inbox", "inbox"],
     ["/artifacts", "artifacts"],
     ["/projects", "projects"],
     ["/projects/p1", "project"],

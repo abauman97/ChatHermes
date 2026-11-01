@@ -15,16 +15,16 @@ const tool: Activity = {
 };
 describe("activity disclosures", () => {
   it.each(["session_search", "terminal", "execute_code", "python"])(
-    "keeps active %s output compact through streaming and completion",
+    "expands active %s output through streaming and collapses it on completion",
     async (toolName) => {
       const activity = { ...tool, toolName, state: "pending" as const };
       const wrapper = mount(ActivityRow, { props: { activity } });
-      expect(wrapper.get("details").element.open).toBe(false);
+      expect(wrapper.get("details").element.open).toBe(true);
       expect(wrapper.get("summary").text()).toContain("Waiting…");
       await wrapper.setProps({
         activity: { ...activity, state: "running", output: "More results" },
       });
-      expect(wrapper.get("details").element.open).toBe(false);
+      expect(wrapper.get("details").element.open).toBe(true);
       expect(wrapper.get("summary").text()).toContain("Running…");
       expect(wrapper.get("pre").text()).toContain("More results");
       await wrapper.setProps({ activity: { ...activity, complete: true, state: "completed" } });
@@ -33,6 +33,8 @@ describe("activity disclosures", () => {
   );
   it("streams output when manually expanded and preserves expansion through completion", async () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } });
+    await wrapper.get("summary").trigger("click");
+    expect(wrapper.get("details").element.open).toBe(false);
     await wrapper.get("summary").trigger("click");
     expect(wrapper.get("details").attributes("open")).toBeDefined();
     await wrapper.setProps({ activity: { ...tool, output: "More results" } });
@@ -43,7 +45,6 @@ describe("activity disclosures", () => {
   });
   it("preserves manual collapse through streaming and a failed result", async () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } });
-    await wrapper.get("summary").trigger("click");
     await wrapper.get("summary").trigger("click");
     await wrapper.setProps({ activity: { ...tool, output: "More results" } });
     expect(wrapper.get("details").element.open).toBe(false);
@@ -56,7 +57,7 @@ describe("activity disclosures", () => {
     "collapses an untouched streaming tool when its result becomes %s",
     async (state) => {
       const wrapper = mount(ActivityRow, { props: { activity: tool } });
-      expect(wrapper.get("details").element.open).toBe(false);
+      expect(wrapper.get("details").element.open).toBe(true);
       await wrapper.get("details").trigger("toggle");
       await wrapper.setProps({ activity: { ...tool, complete: true, state } });
       expect(wrapper.get("details").element.open).toBe(false);
@@ -123,7 +124,7 @@ describe("activity disclosures", () => {
 
 it("follows arriving output only while the reader stays at the preview bottom", async () => {
   const wrapper = mount(ActivityRow, { props: { activity: tool } });
-  await wrapper.get("summary").trigger("click");
+  expect(wrapper.get("details").element.open).toBe(true);
   const element = wrapper.get("pre").element as HTMLElement;
   Object.defineProperties(element, {
     scrollHeight: { value: 500, configurable: true },

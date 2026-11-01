@@ -92,6 +92,11 @@ test("file and camera inputs use authenticated uploads and preserve composer foc
   await page.getByRole("button", { name: "Remove workflow.txt" }).click();
   await expect(page.getByRole("button", { name: "Remove workflow.txt" })).toHaveCount(0);
   await expect(composer).toBeFocused();
+  // The response headers can arrive before the composer has consumed the
+  // upload receipt. Wait for its real selection gate before choosing again.
+  await expect(
+    page.getByRole("button", { name: "Attachment options", includeHidden: true }),
+  ).toBeEnabled();
   await page.locator("input[capture]").setInputFiles({
     name: "camera.png",
     mimeType: "image/png",

@@ -72,6 +72,20 @@ test("indexed artifact pages preserve project scope, file actions and responsive
     "Indexed artifact content",
   );
   await selected.getByRole("button", { name: "Delete artifact-54.txt", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "Delete artifact" });
+  await expect(confirmation).toBeVisible();
+  // Another dashboard operation may refresh the same workspace while a local
+  // action is open. Its metadata must not reset pagination or dismiss the action.
+  const refreshedName = `${marker} refreshed`;
+  const updated = await api(page, "/api/plugins/chathermes/projects/manage?profile=default", {
+    action: "update",
+    id: project,
+    name: refreshedName,
+  });
+  expect(updated.status).toBe(200);
+  await expect(page.locator(".header-title")).toHaveText(refreshedName);
+  await expect(confirmation).toBeVisible();
+  await expect(cards).toHaveCount(55);
   await page
     .getByRole("dialog", { name: "Delete artifact" })
     .getByRole("button", { name: "Delete file", exact: true })

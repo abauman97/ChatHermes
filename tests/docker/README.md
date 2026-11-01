@@ -149,8 +149,15 @@ state, downloaded files, or generated `dashboard/dist/` assets.
 
 See [the migration audit](../test-audit.md) for retained and replacement coverage.
 Existing visual suites remain accessible through `npm run test:visual` and
-`npm run test:visual:legacy`; their older fixture assumptions are not silently
-included in the deterministic workflow suite. CI integration is deferred.
+`npm run test:visual:legacy`; they are separate from the workflow suite. For the
+default visual suite against this deterministic stack, load `npm run test:fixtures`,
+set `CHATHERMES_VISUAL_FIXTURES=1`, and provide `CHATHERMES_TEST_URL`,
+`CHATHERMES_TEST_CONTAINER` and `CHATHERMES_LIVE_CONTAINER` for the current project.
+Fixed visual markers use repository SSE expectations; the artifact test installs
+scoped expectations using its fresh authenticated upload paths. Hermes still owns
+execution, approvals, persistence and file serving. Unknown inference requests
+still fail, and real-provider runs leave the optional visual-fixture flag unset.
+CI integration is deferred.
 
 ## Optional real-provider testing
 

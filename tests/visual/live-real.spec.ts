@@ -1,3 +1,4 @@
+import { installArtifactInference } from "./inference-fixtures";
 import { expect, test } from "@playwright/test";
 import { signIn, sessionFromUrl } from "./login";
 
@@ -15,7 +16,12 @@ test("native Cron form discovers ChatHermes and saves its delivery platform", as
     home_target_set: true,
     home_env_var: "CHATHERMES_HOME_CHANNEL",
   });
-  await page.getByRole("button", { name: "Create", exact: true }).first().click();
+  // The host's fixed header can cover a scrolled action in a long Cron list.
+  // Exercise native keyboard activation rather than a covered pointer target.
+  const create = page.getByRole("button", { name: "Create", exact: true }).first();
+  await create.focus();
+  await expect(create).toBeFocused();
+  await create.press("Enter");
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator("#cron-deliver")).toContainText("Local");
   await dialog.locator("#cron-name").fill(`issue133-${info.project.name}`);
@@ -416,7 +422,7 @@ test("project home send hands focus to the newly mounted conversation", async ({
   await page.screenshot({ path: info.outputPath("project-send-focused-message.png") });
 });
 
-test("composer empty focus is one line inline with Send and grows with text", async ({
+test("composer focus preserves desktop controls, compacts mobile and grows with text", async ({
   page,
 }, info) => {
   await signIn(page);
@@ -448,7 +454,8 @@ test("composer empty focus is one line inline with Send and grows with text", as
   await area.focus();
   await expect(area).toBeFocused();
   await expect(area).toHaveValue("");
-  await expect(attach).toBeHidden();
+  if (info.project.name === "mobile") await expect(attach).toBeHidden();
+  else await expect(attach).toBeVisible();
   const singleLineHeight = await area.evaluate((element) => {
     const style = getComputedStyle(element);
     return (
@@ -623,10 +630,11 @@ test("native artifact cards preview, download and survive history reconstruction
   const send = plugin.getByRole("button", { name: "Send message", exact: true });
   await area.click();
   await expect(area).toBeFocused();
-  const filename = `artifact-${info.project.name}.txt`;
-  const imageName = `artifact-${info.project.name}.png`;
-  const pdfName = `artifact-${info.project.name}.pdf`;
-  const codeName = `artifact-code-filter-${info.project.name}.py`;
+  const suffix = `${info.project.name}-${crypto.randomUUID()}`;
+  const filename = `artifact-${suffix}.txt`;
+  const imageName = `artifact-${suffix}.png`;
+  const pdfName = `artifact-${suffix}.pdf`;
+  const codeName = `artifact-code-filter-${suffix}.py`;
   const stream = "BT /F1 18 Tf 32 80 Td (Hermes PDF artifact) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
@@ -669,7 +677,7 @@ test("native artifact cards preview, download and survive history reconstruction
     return canvas.toDataURL("image/png");
   });
   // Stage through the public authenticated API, then ask the real runtime to
-  // return native server file references. No browser interception or fixtures.
+  // return native server file references through the real file and gateway handlers.
   const staged = await page.request.post("/api/plugins/chathermes/uploads", {
     data: { name: imageName, type: "image/png", data, size: 1 },
   });
@@ -701,9 +709,20 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(plugin.locator(".composer")).toContainText("dragged.txt");
   await expect(plugin.locator(".message.user")).toHaveCount(0);
   await plugin.getByRole("button", { name: "Remove dragged.txt" }).click();
+  await installArtifactInference({
+    device: info.project.name,
+    filename,
+    codeName,
+    imageName,
+    pdfName,
+    imagePath,
+    pdfPath,
+  });
   const prompt = `Use terminal to create /opt/data/${filename} containing exactly 'Generated artifact verification' and /opt/data/${codeName} containing 'print(1)'. Then copy ${imagePath} to /opt/data/${imageName} and ${pdfPath} to /opt/data/${pdfName}. Reply with the plain text 'Modified /opt/data/${codeName}' and then the inline example 'Example: MEDIA:/opt/data/${codeName} is only documentation.' Deliver the three other files using exactly these standalone directives on separate lines: MEDIA:/opt/data/${filename}, MEDIA:/opt/data/${imageName}, MEDIA:/opt/data/${pdfName}. Do not deliver the Python file. Do not wrap the directives in code fences. Do not read the files.`;
   await area.fill(prompt);
   await send.click();
+  // The sent bubble establishes the newly created session before its next draft.
+  await expect(plugin.locator(".message.user").last()).toContainText(prompt);
   await area.fill("Draft remains available");
   await expect(area).toBeFocused();
   await expect(plugin.locator(".message.assistant").last()).toContainText(filename, {
@@ -721,6 +740,9 @@ test("native artifact cards preview, download and survive history reconstruction
     .filter({ hasText: filename })
     .first();
   await expect(card).toBeVisible();
+  await expect(
+    plugin.getByRole("button", { name: "Branch in new chat", exact: true }),
+  ).toBeEnabled();
   // Activate the accessible button directly: thumbnail arrival and composer
   // blur can move mobile tap coordinates while the transcript scrolls.
   await card.getByRole("button", { name: `Preview ${filename}` }).press("Enter");
@@ -773,7 +795,10 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(browser).toContainText("Generated");
   await expect(browser.locator(".artifact-card").filter({ hasText: codeName })).toHaveCount(0);
   const cards = browser.locator(".artifact-card");
-  const generatedCard = cards.filter({ hasText: filename }).last();
+  const generatedCard = cards
+    .filter({ hasText: filename })
+    .filter({ hasText: "Generated" })
+    .first();
   await expect(generatedCard).toContainText("Generated");
   await expect(
     generatedCard.getByRole("button", { name: `Delete ${filename}`, exact: true }),
@@ -781,7 +806,11 @@ test("native artifact cards preview, download and survive history reconstruction
   await expect(generatedCard.locator("button[title]")).toBeVisible();
   const firstBox = (await cards.nth(0).boundingBox())!;
   const secondBox = (await cards.nth(1).boundingBox())!;
-  expect(firstBox.width).toBeLessThanOrEqual(320);
+  const contentWidth = await browser.evaluate((element) => {
+    const css = getComputedStyle(element);
+    return element.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+  });
+  expect(firstBox.width).toBeLessThanOrEqual(contentWidth);
   if (info.project.name === "desktop") {
     expect(secondBox.y).toBe(firstBox.y);
     expect(secondBox.x).toBeGreaterThan(firstBox.x + firstBox.width);
@@ -793,27 +822,18 @@ test("native artifact cards preview, download and survive history reconstruction
     true,
   );
   await page.screenshot({ path: info.outputPath("artifacts-browser.png") });
-  await browser
-    .getByRole("button", { name: `Delete ${filename}`, exact: true })
-    .last()
-    .click();
+  await generatedCard.getByRole("button", { name: `Delete ${filename}`, exact: true }).click();
   await expect(plugin.getByRole("dialog", { name: "Delete artifact" })).toBeVisible();
   await plugin.getByRole("button", { name: "Cancel", exact: true }).click();
-  const deletedUrl = await browser
-    .locator(".artifact-card")
-    .filter({ hasText: filename })
-    .last()
+  const deletedUrl = await generatedCard
     .getByRole("link", { name: `Download ${filename}` })
     .getAttribute("href");
-  await browser
-    .getByRole("button", { name: `Delete ${filename}`, exact: true })
-    .last()
-    .click();
+  await generatedCard.getByRole("button", { name: `Delete ${filename}`, exact: true }).click();
   await plugin.getByRole("button", { name: "Delete file", exact: true }).click();
   await expect(plugin.getByRole("dialog", { name: "Delete artifact" })).not.toBeVisible();
   expect((await page.request.get(deletedUrl!)).status()).toBe(404);
   const project = await page.request.post("/api/plugins/chathermes/projects/manage", {
-    data: { action: "create", name: `Artifact filter ${info.project.name}` },
+    data: { action: "create", name: `Artifact filter ${suffix}` },
   });
   expect(project.ok()).toBeTruthy();
   const projectId = (await project.json()).project.id;
@@ -852,6 +872,10 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(area).toBeFocused();
   const active = plugin.locator(".current-activity .activity:not(.activity-thinking)").first();
   await expect(active).toBeVisible({ timeout: 60_000 });
+  const originalActivity = await active.elementHandle();
+  const originalTurn = await plugin.locator(".assistant-turn").last().elementHandle();
+  await expect(active).toHaveAttribute("open", "");
+  await active.locator("summary").click();
   await expect(active).not.toHaveAttribute("open");
   await page.screenshot({ path: info.outputPath("activity-live-compact.png") });
   await active.locator("summary").click();
@@ -894,6 +918,8 @@ test("chronological activity streams and preserves disclosure choices", async ({
   expect(calls.length).toBeGreaterThanOrEqual(2);
   expect(new Set(calls.map((call: { id: string }) => call.id)).size).toBe(calls.length);
   await expect(tools).toHaveCount(calls.length);
+  expect(await originalActivity!.evaluate((element) => element.isConnected)).toBe(true);
+  expect(await originalTurn!.evaluate((element) => element.isConnected)).toBe(true);
   await expect(tools.first()).toHaveAttribute("open", "");
   await expect(tools.first().locator("pre")).toContainText("activity-done");
   if (await groupSummary.isVisible())
@@ -1351,8 +1377,9 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await expect(rows.nth(1)).toHaveAttribute("open", "");
     await expect(rows.nth(1).locator("pre")).toContainText("Result second");
     await expect(area).toHaveValue("Focusable draft during streaming");
+    await expect(turn.getByRole("button", { name: "Copy response", exact: true })).toBeVisible();
     const order = await turn
-      .locator(":scope > *")
+      .locator(":scope > :not(.response-actions)")
       .evaluateAll((elements) =>
         elements.map((element) =>
           element.classList.contains("turn-work") ? "work" : element.textContent?.trim(),

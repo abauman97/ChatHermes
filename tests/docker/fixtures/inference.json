@@ -544,5 +544,629 @@
         }
       }
     }
+  },
+  {
+    "id": "chathermes-visual-native_default_desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_DEFAULT_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_DEFAULT_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-native_default_mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_DEFAULT_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_DEFAULT_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-native_alpha_desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_ALPHA_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_ALPHA_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-native_alpha_mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_ALPHA_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_ALPHA_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-native_beta_desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_BETA_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_BETA_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-native_beta_mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*NATIVE_BETA_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"NATIVE_BETA_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-unattended-desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*UNATTENDED_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_unattended_desktop\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"python3 -c 'import time; time.sleep(35); print(\\\\\\\"UNATTENDED_DESKTOP\\\\\\\")'\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-unattended-desktop-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*UNATTENDED_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"UNATTENDED_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-unattended-mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*UNATTENDED_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_unattended_mobile\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"python3 -c 'import time; time.sleep(35); print(\\\\\\\"UNATTENDED_MOBILE\\\\\\\")'\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-unattended-mobile-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*UNATTENDED_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"UNATTENDED_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-branch-desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*BRANCH_FIRST_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_branch_desktop\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"printf BRANCH_FIRST_DESKTOP\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-branch-desktop-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*BRANCH_FIRST_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"BRANCH_FIRST_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-parent-later-desktop",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*PARENT_LATER_DESKTOP.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"PARENT_LATER_DESKTOP\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-branch-mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*BRANCH_FIRST_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_branch_mobile\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"printf BRANCH_FIRST_MOBILE\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-branch-mobile-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*BRANCH_FIRST_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"BRANCH_FIRST_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-parent-later-mobile",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*PARENT_LATER_MOBILE.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"PARENT_LATER_MOBILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-project-branch",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*PROJECT_BRANCH_OK.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"PROJECT_BRANCH_OK\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-send-focus",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*Check stable send tap.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"focus-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-project-focus",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*Check project send focus.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"project-focus-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-smoke",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*chathermes-smoke-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_smoke\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"printf chathermes-smoke-ok\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-smoke-final",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*chathermes-smoke-ok.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"chathermes-smoke-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-contract\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-activity-first",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*Starting activity check.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Starting activity check\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_activity_first\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"for i in $(seq 1 60); do echo activity-line-$i; done; sleep 6; echo activity-done\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-activity-second",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*activity-done.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_visual_activity_second\",\"type\":\"function\",\"function\":{\"name\":\"terminal\",\"arguments\":\"{\\\"command\\\":\\\"printf second-tool-done\\\",\\\"timeout\\\":60}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
+  },
+  {
+    "id": "chathermes-visual-activity-finish",
+    "priority": 20,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON_PATH",
+        "jsonPath": "$[?(@.stream == true && @.messages[-1].role == 'tool' && @.messages[-1].content =~ /(?s).*second-tool-done.*/)]"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Activity check finished\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-visual-activity\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-test\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+      "connectionOptions": {
+        "chunkSize": 250,
+        "chunkDelay": {
+          "timeUnit": "MILLISECONDS",
+          "value": 500
+        }
+      }
+    }
   }
 ]

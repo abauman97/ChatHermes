@@ -17,11 +17,8 @@ function setup() {
     chatLoading: ref(false),
     chatError: ref(""),
     canStream: ref(true),
-    scheduledPage: ref(false),
+    composerBlocked: ref(false),
     projectView: ref(false),
-    projectsPage: ref(false),
-    projectPage: ref(""),
-    settingsPage: ref(false),
     selectedProject: ref(undefined),
     creating: ref(false),
     offline: ref(false),
@@ -35,7 +32,7 @@ function setup() {
     generationRef: ref(0),
     settings: ref(),
     generation: () => generation,
-    navigation: vi.fn(() => 0),
+    navigation: vi.fn(() => "/"),
     connection: ref("stale"),
     createSession: vi.fn(async () => "one"),
     suggest: vi.fn(async () => {}),
@@ -124,7 +121,7 @@ describe("live chat controller", () => {
       defineComponent({
         setup() {
           provideChat(controller);
-          return () => h(ChatInterface, { showPage: false });
+          return () => h(ChatInterface, { showChat: true });
         },
       }),
     );
@@ -473,7 +470,7 @@ it("does not open a late branch after navigating to another page", async () => {
       }),
   );
   const pending = controller.actions.branch("42");
-  scope.navigation.mockReturnValue(1);
+  scope.navigation.mockReturnValue("/changed");
   finish({ id: "child" });
   await pending;
   expect(scope.openBranch).not.toHaveBeenCalled();

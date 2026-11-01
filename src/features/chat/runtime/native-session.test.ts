@@ -61,6 +61,47 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it.each([false, true])(
+    "preserves the rendered occurrence when saved history replaces it (omitted resume: %s)",
+    async (omitted) => {
+      const history = vi.spyOn(api, "messages").mockResolvedValue([]);
+      fake.rpc.mockResolvedValue({ settled: true });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      if (omitted) {
+        fake.hooks!.snapshot({
+          session_id: "runtime",
+          messages: [],
+          messages_omitted: true,
+          running: false,
+          recovery: { epoch: "epoch", through: 0, base_row_ids: null, complete: false },
+        } as any);
+        fake.hooks!.recovered();
+      }
+      fake.hooks!.input("Question", false);
+      const identity = session.messages.value[0]!.id;
+      history.mockResolvedValue([
+        { id: "10", role: "user", content: "Question" },
+        { id: "11", role: "assistant", content: "Answer" },
+      ]);
+      fake.hooks!.event({
+        type: "message.complete",
+        payload: {
+          status: "complete",
+          text: "Answer",
+          persisted_turn: {
+            complete: true,
+            user_row_id: 10,
+            final_assistant_row_id: 11,
+            row_ids: [10, 11],
+          },
+        },
+      } as any);
+      await vi.waitFor(() => expect(session.messages.value[0]!.id).toBe("10"));
+      expect(session.messages.value[0]!.display_id).toBe(identity);
+      session.close();
+    },
+  );
   it("reports current-session activity on attachment, final messages and reconnect, excluding obsolete viewers", async () => {
     vi.spyOn(api, "messages").mockResolvedValue([]);
     const activity = vi.fn();

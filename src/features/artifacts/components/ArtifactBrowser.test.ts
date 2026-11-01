@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import { api } from "../../../services/hermes-api";
 import type { Project } from "../../../types/hermes";
 import type { Artifact } from "../artifacts";
-import ArtifactsPage from "./ArtifactsPage.vue";
+import ArtifactsPage from "./ArtifactBrowser.vue";
 
 const file = (name: string): Artifact => ({
   path: `/tmp/${name}.txt`,
@@ -88,6 +88,30 @@ it("aborts and ignores stale profile/project requests and resets pagination", as
   expect(wrapper.text()).not.toContain("Load More");
   await wrapper.find(".artifact-card button").trigger("click");
   expect(wrapper.emitted("openSession")).toEqual([["new"]]);
+});
+
+it("keeps pagination and deletion confirmation when metadata refreshes the same Project", async () => {
+  const pages = vi
+    .spyOn(api, "artifacts")
+    .mockResolvedValueOnce({ files: [file("first")], nextCursor: "next" })
+    .mockResolvedValue({ files: [file("last")], nextCursor: null });
+  const wrapper = render({ project: { id: "workspace", label: "Before" } as Project });
+  await flushPromises();
+  await wrapper
+    .findAll("button")
+    .find((button) => button.text() === "Load More")!
+    .trigger("click");
+  await flushPromises();
+  const dialog = wrapper.get("dialog").element as HTMLDialogElement;
+  dialog.showModal = vi.fn();
+  dialog.close = vi.fn();
+  await wrapper.get('[aria-label="Delete last"]').trigger("click");
+  await flushPromises();
+  await wrapper.setProps({ project: { id: "workspace", label: "After" } as Project });
+  await flushPromises();
+  expect(pages).toHaveBeenCalledTimes(2);
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(2);
+  expect(wrapper.get("dialog").text()).toContain("Delete last from Hermes?");
 });
 
 it("keeps a loaded page available after a failed Load More and allows retry", async () => {
