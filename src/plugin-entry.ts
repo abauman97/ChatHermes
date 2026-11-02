@@ -6,7 +6,10 @@ type HostReact = {
 declare const __CHATHERMES_APP_ASSET__: string;
 declare global {
   interface Window {
-    __HERMES_PLUGIN_SDK__?: { React: HostReact };
+    __HERMES_PLUGIN_SDK__?: {
+      React: HostReact;
+      buildWsUrl?: (path: string, params?: Record<string, string>) => Promise<string>;
+    };
     __HERMES_PLUGINS__?: { register: (name: string, component: () => unknown) => void };
   }
 }

@@ -7,7 +7,7 @@ Choose a task below. User and developer guides describe the current plugin; inte
 - [Get started](user/getting-started.md): open the plugin and send your first message.
 - [Install](user/installation.md): install manually or with your agent, including additional profiles.
 - [Configure](user/configuration.md): API server, profiles, and model choices.
-- [Use features](user/features.md): chats, attachments, Projects, instructions, artifacts, and scheduled results.
+- [Use features](user/features.md): chats, attachments, Projects, instructions, artifacts, scheduled results, and optional Kanban.
 - [Inbox and notifications](user/notifications.md): shared profile notifications, Home Screen use, Web Push, and Cron delivery.
 - [Troubleshoot](user/troubleshooting.md): recover from setup, connection, file, or notification problems.
 

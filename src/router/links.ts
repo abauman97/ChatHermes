@@ -1,5 +1,6 @@
 import type { LocationQuery, RouteLocationRaw } from "vue-router";
 export type RouteName =
+  | "kanban"
   | "home"
   | "chat"
   | "inbox"
@@ -38,7 +39,7 @@ export function safeReturn(value: unknown): string {
   const url = new URL(value, "https://plugin.invalid");
   if (
     url.pathname === "/settings" ||
-    !/^\/(?:chat\/[^/]+|inbox|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
+    !/^\/(?:chat\/[^/]+|inbox|kanban|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
       url.pathname,
     )
   )

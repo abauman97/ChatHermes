@@ -31,6 +31,7 @@ const {
   sidebar,
   chatPlane,
   drawerSwipe,
+  kanban,
   settingsButton,
   inboxUnread,
   settingsPage,
@@ -171,6 +172,14 @@ const {
           <path d="M6 3h8l4 4v14H6ZM14 3v5h4M9 12h6M9 16h6" /></svg
         >Artifacts
       </RouterLink>
+      <RouterLink
+        v-if="kanban.visible.value"
+        class="kanban-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-base hover:bg-[#303030]"
+        :aria-current="route.name === 'kanban' ? 'page' : undefined"
+        :to="screenLink('kanban')"
+        @click="drawer = false"
+        >Kanban</RouterLink
+      >
       <SessionSidebar
         heading="Recents"
         :sessions="sessions"

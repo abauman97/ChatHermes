@@ -1,8 +1,10 @@
+import type { provideKanban } from "../kanban/context";
 import { inject, provide, type InjectionKey } from "vue";
 import type { Ref } from "vue";
 import type { PushState } from "../notifications/services/push";
 import type { useWakeLock } from "./composables/useWakeLock";
 type Context = {
+  kanban: ReturnType<typeof provideKanban>;
   profile: Readonly<Ref<string>>;
   profiles: Readonly<Ref<{ name: string }[]>>;
   pushState: Readonly<Ref<PushState>>;

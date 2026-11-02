@@ -9,6 +9,7 @@ const {
   pushLoading,
   pushMessage,
   wakeLock,
+  kanban,
   chooseProfile,
   togglePush,
   testPush,
@@ -17,6 +18,7 @@ const {
 </script>
 <template>
   <SettingsPanel
+    :kanban="kanban"
     :profile="profile"
     :profiles="profiles"
     :push-state="pushState"
