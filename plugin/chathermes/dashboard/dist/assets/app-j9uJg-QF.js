@@ -11595,12 +11595,25 @@ var Rg = {
 				}, 8, ["aria-current", "to"]),
 				B(D).visible.value ? (G(), q(B(vc), {
 					key: 0,
-					class: "kanban-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-base hover:bg-[#303030]",
+					class: "kanban-nav flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
 					"aria-current": B(t).name === "kanban" ? "page" : void 0,
 					to: B(de)("kanban"),
 					onClick: I[6] ||= (e) => _.value = !1
 				}, {
-					default: An(() => [...I[38] ||= [Y("Kanban", -1)]]),
+					default: An(() => [...I[38] ||= [J("svg", {
+						class: "size-6",
+						viewBox: "0 0 24 24",
+						fill: "none",
+						stroke: "currentColor",
+						"stroke-width": "1.5",
+						"aria-hidden": "true"
+					}, [J("rect", {
+						x: "3",
+						y: "3",
+						width: "18",
+						height: "18",
+						rx: "2"
+					}), J("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), J("span", null, "Kanban", -1)]]),
 					_: 1
 				}, 8, ["aria-current", "to"])) : X("v-if", !0),
 				(G(), q(i_, {
@@ -14832,39 +14845,39 @@ var fb = ["open"], pb = {
 }, lw = {
 	key: 0,
 	class: "settings-row settings-notifications"
-}, uw = { class: "flex min-h-[44px] items-center gap-3 text-base" }, dw = ["checked", "disabled"], fw = {
-	class: "text-sm text-[#a3a3a3]",
+}, uw = { class: "kanban-setting" }, dw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, fw = ["checked", "disabled"], pw = {
+	id: "kanban-description",
 	role: "status"
-}, pw = ["disabled"], mw = {
+}, mw = ["disabled"], hw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-notifications-heading"
-}, hw = { class: "settings-row settings-notifications" }, gw = {
+}, gw = { class: "settings-row settings-notifications" }, _w = {
 	class: "push-setting",
 	"aria-labelledby": "notifications-heading"
-}, _w = {
+}, vw = {
 	id: "notifications-heading",
 	class: "text-sm font-medium text-white"
-}, vw = ["disabled"], yw = ["disabled"], bw = {
+}, yw = ["disabled"], bw = ["disabled"], xw = {
 	key: 1,
 	class: "mt-1 text-sm text-[#dcae6e]",
 	role: "status"
-}, xw = {
+}, Sw = {
 	key: 2,
 	class: "mt-1 text-sm"
-}, Sw = {
+}, Cw = {
 	key: 3,
 	class: "mt-1 text-sm",
 	role: "status"
-}, Cw = {
+}, ww = {
 	key: 4,
 	class: "mt-1 text-sm"
-}, ww = {
+}, Tw = {
 	key: 5,
 	class: "mt-1 text-sm"
-}, Tw = {
+}, Ew = {
 	key: 6,
 	class: "mt-1 text-sm"
-}, Ew = /* @__PURE__ */ H({
+}, Dw = /* @__PURE__ */ H({
 	__name: "SettingsPanel",
 	props: {
 		kanban: {},
@@ -14897,7 +14910,7 @@ var fb = ["open"], pb = {
 				"aria-label": "Close settings",
 				onClick: i[0] ||= (e) => n("close")
 			}, "×")]),
-			i[14] ||= J("h3", {
+			i[15] ||= J("h3", {
 				id: "settings-profile-heading",
 				class: "settings-section-title"
 			}, "Profile", -1),
@@ -14916,7 +14929,7 @@ var fb = ["open"], pb = {
 					value: e.name
 				}, R(e.name), 9, nw))), 128))
 			], 40, ew)])]),
-			i[15] ||= J("h3", {
+			i[16] ||= J("h3", {
 				id: "settings-app-heading",
 				class: "settings-section-title"
 			}, "Global settings", -1),
@@ -14945,54 +14958,71 @@ var fb = ["open"], pb = {
 					onChange: i[2] ||= (e) => n("toggleWakeLock", e.target.checked)
 				}, null, 40, sw), i[9] ||= Y(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
 				e.wakeLockAvailable ? X("v-if", !0) : (G(), K("p", cw, " Screen wake lock is unavailable in this browser. "))
-			])]), e.kanban ? (G(), K("div", lw, [J("div", null, [
-				J("label", uw, [J("input", {
-					type: "checkbox",
-					"aria-label": "Kanban Viewer",
-					checked: e.kanban.enabled.value,
-					disabled: !e.kanban.available.value || e.kanban.checking.value,
-					onChange: i[3] ||= (t) => e.kanban.setEnabled(t.target.checked)
-				}, null, 40, dw), i[12] ||= Y(" Kanban Viewer ", -1)]),
-				J("p", fw, R(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1),
-				J("button", {
-					class: "min-h-[44px] underline",
-					disabled: e.kanban.checking.value,
-					onClick: i[4] ||= (t) => e.kanban.check()
-				}, " Recheck availability ", 8, pw)
-			])])) : X("v-if", !0)]),
-			i[16] ||= J("h3", {
-				id: "settings-notifications-heading",
-				class: "settings-section-title"
-			}, "Notifications", -1),
-			J("div", mw, [J("div", hw, [i[13] ||= J("svg", {
+			])]), e.kanban ? (G(), K("div", lw, [i[13] ||= J("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
 				stroke: "currentColor",
 				"stroke-width": "1.5",
 				"aria-hidden": "true"
-			}, [J("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), J("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), J("div", gw, [
-				J("h3", _w, " Notifications for " + R(e.profile || "default"), 1),
+			}, [J("rect", {
+				x: "3",
+				y: "3",
+				width: "18",
+				height: "18",
+				rx: "2"
+			}), J("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), J("div", uw, [
+				i[12] ||= J("h3", {
+					id: "kanban-heading",
+					class: "text-sm font-semibold text-white"
+				}, "Kanban Viewer", -1),
+				J("label", dw, [J("input", {
+					type: "checkbox",
+					"aria-labelledby": "kanban-heading",
+					"aria-describedby": "kanban-description",
+					checked: e.kanban.enabled.value,
+					disabled: !e.kanban.available.value || e.kanban.checking.value,
+					onChange: i[3] ||= (t) => e.kanban.setEnabled(t.target.checked)
+				}, null, 40, fw), J("span", pw, R(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
+				J("button", {
+					class: "min-h-[44px] underline",
+					disabled: e.kanban.checking.value,
+					onClick: i[4] ||= (t) => e.kanban.check()
+				}, " Recheck availability ", 8, mw)
+			])])) : X("v-if", !0)]),
+			i[17] ||= J("h3", {
+				id: "settings-notifications-heading",
+				class: "settings-section-title"
+			}, "Notifications", -1),
+			J("div", hw, [J("div", gw, [i[14] ||= J("svg", {
+				class: "settings-icon",
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				"stroke-width": "1.5",
+				"aria-hidden": "true"
+			}, [J("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), J("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), J("div", _w, [
+				J("h3", vw, " Notifications for " + R(e.profile || "default"), 1),
 				J("button", {
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.supported || !e.pushState.subscribed && !e.pushState.available,
 					onClick: i[5] ||= (e) => n("togglePush")
-				}, R(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, vw),
+				}, R(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, yw),
 				e.pushState.subscribed ? (G(), K("button", {
 					key: 0,
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.available,
 					onClick: i[6] ||= (e) => n("testPush")
-				}, " Send test ", 8, yw)) : X("v-if", !0),
-				e.pushState.error || e.pushMessage ? (G(), K("p", bw, R(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (G(), K("p", xw, " Notifications enabled for " + R(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (G(), K("p", Sw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (G(), K("p", ww, " Allow notifications in browser settings to enable them. ")) : (G(), K("p", Tw, " Notifications disabled for " + R(e.profile || "default") + " on this device. ", 1)) : (G(), K("p", Cw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
+				}, " Send test ", 8, bw)) : X("v-if", !0),
+				e.pushState.error || e.pushMessage ? (G(), K("p", xw, R(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (G(), K("p", Sw, " Notifications enabled for " + R(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (G(), K("p", Cw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (G(), K("p", Tw, " Allow notifications in browser settings to enable them. ")) : (G(), K("p", Ew, " Notifications disabled for " + R(e.profile || "default") + " on this device. ", 1)) : (G(), K("p", ww, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
 			])])])
 		])]));
 	}
-}), Dw = /* @__PURE__ */ H({
+}), Ow = /* @__PURE__ */ H({
 	__name: "SettingsPage",
 	setup(e) {
 		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, kanban: c, chooseProfile: l, togglePush: u, testPush: d, closeSettings: f } = wg();
-		return (e, p) => (G(), q(Ew, {
+		return (e, p) => (G(), q(Dw, {
 			kanban: B(c),
 			profile: B(t),
 			profiles: B(n),
@@ -15024,9 +15054,9 @@ var fb = ["open"], pb = {
 			"onClose"
 		]));
 	}
-}), Ow = "chathermes";
-function kw() {
-	let e = [], t = !1, n = !1, r = () => El(window.location.href) || "/", i = r(), a = () => window.history.state?.[Ow], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), kw = "chathermes";
+function Aw() {
+	let e = [], t = !1, n = !1, r = () => El(window.location.href) || "/", i = r(), a = () => window.history.state?.[kw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -15035,7 +15065,7 @@ function kw() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[Ow] = {
+		}, a[kw] = {
 			current: e,
 			position: o,
 			state: s
@@ -15077,7 +15107,7 @@ function kw() {
 }
 //#endregion
 //#region src/features/projects/components/ProjectActions.vue?vue&type=script&setup=true&lang.ts
-var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = /* @__PURE__ */ H({
+var jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], Iw = /* @__PURE__ */ H({
 	__name: "ProjectActions",
 	setup(e) {
 		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = Dg(), u = Oc(), d = Dc();
@@ -15101,7 +15131,7 @@ var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], 
 				role: "menuitem",
 				disabled: B(a) || B(c) || !B(t) || B(t).archived || !B(vl)(B(t)),
 				onClick: n[0] ||= (e) => B(s)()
-			}, " New Project Chat ", 8, Aw)) : X("v-if", !0),
+			}, " New Project Chat ", 8, jw)) : X("v-if", !0),
 			J("button", {
 				role: "menuitem",
 				onClick: n[1] ||= (e) => f("edit")
@@ -15110,7 +15140,7 @@ var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], 
 				role: "menuitem",
 				disabled: B(a) || !B(vl)(B(t)),
 				onClick: n[2] ||= (e) => f("instructions")
-			}, " Edit Instructions ", 8, jw),
+			}, " Edit Instructions ", 8, Mw),
 			B(t).isAuto ? X("v-if", !0) : (G(), K(W, { key: 1 }, [B(t).archived ? (G(), K("button", {
 				key: 0,
 				role: "menuitem",
@@ -15119,20 +15149,20 @@ var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], 
 					id: B(r),
 					restore: !0
 				})
-			}, " Restore project ", 8, Mw)) : (G(), K("button", {
+			}, " Restore project ", 8, Nw)) : (G(), K("button", {
 				key: 1,
 				role: "menuitem",
 				disabled: B(i) || B(a),
 				onClick: n[4] ||= (e) => p("archive")
-			}, " Archive project ", 8, Nw)), J("button", {
+			}, " Archive project ", 8, Pw)), J("button", {
 				class: "project-danger",
 				role: "menuitem",
 				disabled: B(i) || B(a),
 				onClick: n[5] ||= (e) => p("delete")
-			}, " Delete project ", 8, Pw)], 64))
+			}, " Delete project ", 8, Fw)], 64))
 		], 64)) : X("v-if", !0);
 	}
-}), Iw = ["aria-checked"], Lw = ["aria-checked"], Rw = /* @__PURE__ */ H({
+}), Lw = ["aria-checked"], Rw = ["aria-checked"], zw = /* @__PURE__ */ H({
 	__name: "ProjectsActions",
 	setup(e) {
 		let t = Oc(), n = Z(() => t.query.archived === "1"), { showProjects: r } = Dg();
@@ -15140,13 +15170,13 @@ var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], 
 			role: "menuitemradio",
 			"aria-checked": !n.value,
 			onClick: t[0] ||= (e) => B(r)(!1)
-		}, " Active projects", 8, Iw), J("button", {
+		}, " Active projects", 8, Lw), J("button", {
 			role: "menuitemradio",
 			"aria-checked": n.value,
 			onClick: t[1] ||= (e) => B(r)(!0)
-		}, " Archived projects ", 8, Lw)], 64));
+		}, " Archived projects ", 8, Rw)], 64));
 	}
-}), zw = ["disabled"], Bw = ["disabled"], Vw = /* @__PURE__ */ H({
+}), Bw = ["disabled"], Vw = ["disabled"], Hw = /* @__PURE__ */ H({
 	__name: "ScheduledActions",
 	setup(e) {
 		let { current: t, offline: n, creating: r, recentSession: i } = Ag();
@@ -15155,18 +15185,18 @@ var Aw = ["disabled"], jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], 
 			"data-test": "refresh-scheduled",
 			disabled: !B(t) || B(t).loading.value,
 			onClick: a[0] ||= (e) => B(t)?.retry()
-		}, " Refresh", 8, zw), B(t)?.sessionId.value ? (G(), K("button", {
+		}, " Refresh", 8, Bw), B(t)?.sessionId.value ? (G(), K("button", {
 			key: 0,
 			role: "menuitem",
 			"data-test": "resume-scheduled-session",
 			disabled: B(n) || B(r) || B(t).loading.value,
 			onClick: a[1] ||= (e) => B(i)(B(t).sessionId.value)
-		}, " Resume Session ", 8, Bw)) : X("v-if", !0)], 64));
+		}, " Resume Session ", 8, Vw)) : X("v-if", !0)], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function Hw(e = kw(), t) {
+function Uw(e = Aw(), t) {
 	let n = Ec({
 		history: e,
 		routes: [
@@ -15181,7 +15211,7 @@ function Hw(e = kw(), t) {
 				name: "chat",
 				components: {
 					default: bx,
-					actions: Fw,
+					actions: Iw,
 					dialogs: iy
 				},
 				meta: { chat: !0 }
@@ -15209,7 +15239,7 @@ function Hw(e = kw(), t) {
 				name: "projects",
 				components: {
 					default: bS,
-					actions: Rw
+					actions: zw
 				},
 				meta: {
 					title: "Projects",
@@ -15221,7 +15251,7 @@ function Hw(e = kw(), t) {
 				name: "project",
 				components: {
 					default: IS,
-					actions: Fw,
+					actions: Iw,
 					dialogs: iy
 				},
 				meta: {
@@ -15234,7 +15264,7 @@ function Hw(e = kw(), t) {
 				name: "project-artifacts",
 				components: {
 					default: LS,
-					actions: Fw,
+					actions: Iw,
 					dialogs: iy
 				},
 				meta: {
@@ -15247,7 +15277,7 @@ function Hw(e = kw(), t) {
 				name: "project-settings",
 				components: {
 					default: uC,
-					actions: Fw,
+					actions: Iw,
 					dialogs: iy
 				},
 				meta: { section: "projects" }
@@ -15257,7 +15287,7 @@ function Hw(e = kw(), t) {
 				name: "project-instructions",
 				components: {
 					default: CC,
-					actions: Fw,
+					actions: Iw,
 					dialogs: iy
 				},
 				meta: { section: "projects" }
@@ -15267,7 +15297,7 @@ function Hw(e = kw(), t) {
 				name: "scheduled",
 				components: {
 					default: LC,
-					actions: Vw
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15279,7 +15309,7 @@ function Hw(e = kw(), t) {
 				name: "scheduled-job",
 				components: {
 					default: WC,
-					actions: Vw
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15291,7 +15321,7 @@ function Hw(e = kw(), t) {
 				name: "scheduled-run",
 				components: {
 					default: JC,
-					actions: Vw
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15301,7 +15331,7 @@ function Hw(e = kw(), t) {
 			{
 				path: "/settings",
 				name: "settings",
-				components: { default: Dw },
+				components: { default: Ow },
 				meta: {
 					title: "Settings",
 					hideComposer: !0
@@ -15342,8 +15372,8 @@ function Hw(e = kw(), t) {
 }
 //#endregion
 //#region src/main.ts
-function Uw(e) {
-	return No(T_).use(Hw(void 0, e));
+function Ww(e) {
+	return No(T_).use(Uw(void 0, e));
 }
 //#endregion
-export { T_ as App, Uw as createChatHermesApp };
+export { T_ as App, Ww as createChatHermesApp };
