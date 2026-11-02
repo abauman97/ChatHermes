@@ -70,10 +70,14 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   expect(wrapper.get(".activity").element).toBe(first);
   expect(rowShown(wrapper.get(".activity"))).toBe(false);
   expect(rowShown(second)).toBe(true);
+  expect(second.attributes("open")).toBeUndefined();
+  expect(second.get("summary").text()).toContain("Running…");
   activities[1]!.output += " arriving output";
   activities.push({ ...tool, id: "c", complete: false, state: "pending" });
   await nextTick();
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
+  expect(second.attributes("open")).toBeUndefined();
+  expect(wrapper.get(".current-activity:last-child summary").text()).toContain("Waiting…");
   expect(second.get("pre").text()).toContain("arriving output");
   activities[1]!.complete = true;
   activities[1]!.state = "completed";
@@ -98,6 +102,56 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   wrapper.unmount();
 });
 
+it("keeps live tool summaries visible while collapsed and streams details on demand", async () => {
+  const activities = reactive<Activity[]>([
+    tool,
+    {
+      ...tool,
+      id: "live",
+      complete: false,
+      state: "pending",
+      content: '{"query":',
+      output: "",
+    },
+  ]);
+  const wrapper = mount(TurnWork, { props: { activities, working: true } });
+  const groupSummary = wrapper.get(".work-summary");
+  const live = wrapper.get(".current-activity .activity");
+  const element = live.element;
+  expect(groupSummary.attributes("aria-expanded")).toBe("false");
+  expect(rowShown(live)).toBe(true);
+  expect(live.attributes("open")).toBeUndefined();
+  expect(live.get("summary").isVisible()).toBe(true);
+  expect(live.get("summary").text()).toContain("Waiting…");
+  activities[1]!.state = "running";
+  activities[1]!.content = '{"query":"arriving input"}';
+  activities[1]!.output = "First output";
+  await nextTick();
+  expect(live.attributes("open")).toBeUndefined();
+  expect(live.get("summary").text()).toContain("Running…");
+  await live.get("summary").trigger("click");
+  expect(live.attributes("open")).toBeDefined();
+  activities[1]!.content = '{"query":"updated input"}';
+  activities[1]!.output += " and streamed output";
+  await nextTick();
+  expect(live.get("pre").isVisible()).toBe(true);
+  expect(live.get("pre").text()).toContain("updated input");
+  expect(live.get("pre").text()).toContain("streamed output");
+  await groupSummary.trigger("click");
+  await groupSummary.trigger("click");
+  expect(rowShown(live)).toBe(true);
+  expect(live.attributes("open")).toBeDefined();
+  activities[1]!.complete = true;
+  activities[1]!.state = "completed";
+  await nextTick();
+  expect(rowShown(live)).toBe(false);
+  await groupSummary.trigger("click");
+  expect(live.element).toBe(element);
+  expect(live.attributes("open")).toBeDefined();
+  expect(live.get("pre").isVisible()).toBe(true);
+  wrapper.unmount();
+});
+
 it("keeps concurrent active calls visible and ordered when results arrive out of order", async () => {
   const activities: Activity[] = ["a", "b", "c"].map((id) => ({
     ...tool,
@@ -110,6 +164,9 @@ it("keeps concurrent active calls visible and ordered when results arrive out of
   const elements = wrapper.findAll(".activity").map((row) => row.element);
   expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(3);
+  expect(wrapper.findAll(".activity").every((row) => row.attributes("open") === undefined)).toBe(
+    true,
+  );
   await wrapper.setProps({
     activities: activities.map((row) =>
       row.id === "b" ? { ...row, complete: true, state: "completed" } : row,
@@ -243,7 +300,10 @@ it("streams mixed activity below one collapsed history and folds delegation only
   expect(summary.attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
   expect(rows.every(rowShown)).toBe(true);
-  expect(rows.every((row) => row.attributes("open") !== undefined)).toBe(true);
+  expect(rows[0]!.attributes("open")).toBeDefined();
+  expect(rows[1]!.attributes("open")).toBeUndefined();
+  expect(rows[1]!.get("summary").text()).toContain("Running…");
+  await rows[1]!.get("summary").trigger("click");
   activities[0]!.content += " with arriving reasoning";
   activities[1]!.output += " and progress";
   await nextTick();
@@ -266,7 +326,7 @@ it("streams mixed activity below one collapsed history and folds delegation only
   expect(wrapper.findAll(".current-activity")).toHaveLength(0);
   await summary.trigger("click");
   expect(rows[0]!.attributes("open")).toBeDefined();
-  await rows[1]!.get("summary").trigger("click");
+  expect(rows[1]!.attributes("open")).toBeDefined();
   expect(rows[1]!.get("pre").text()).toContain("Child result");
   expect(wrapper.findAll(".activity").map((row) => row.element)).toEqual(elements);
   wrapper.unmount();

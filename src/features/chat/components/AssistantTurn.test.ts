@@ -100,7 +100,7 @@ it.each(["delegate_task", "edit_file", "write_file"])(
 );
 
 it.each(["edit_file", "write_file"])(
-  "expands streaming %s and folds completed rows on native and normalized event paths without remounting rows",
+  "keeps streaming %s collapsed until expanded and folds completed rows without remounting on either event path",
   async (name) => {
     for (const native of [true, false]) {
       const turn = reactive(createTurn());
@@ -151,10 +151,10 @@ it.each(["edit_file", "write_file"])(
       const child = wrapper.findAll(".turn-work .activity")[2]!;
       expect(wrapper.findAll(".turn-work")).toHaveLength(1);
       expect(call.isVisible()).toBe(true);
-      expect(call.attributes("open")).toBe("");
-      expect(child.attributes("open")).toBe("");
-      await call.get("summary").trigger("click");
       expect(call.attributes("open")).toBeUndefined();
+      expect(child.attributes("open")).toBeUndefined();
+      expect(call.get("summary").isVisible()).toBe(true);
+      expect(call.get("summary").text()).toContain("Running…");
       await call.get("summary").trigger("click");
       expect(call.attributes("open")).toBe("");
       emit("progress", "change", name, "Arriving file update");
@@ -168,6 +168,7 @@ it.each(["edit_file", "write_file"])(
       expect(child.isVisible()).toBe(true);
       expect(child.classes()).toContain("activity-active");
       await wrapper.get(".work-summary").trigger("click");
+      expect(call.attributes("open")).toBe("");
       expect(call.get("pre").text()).toContain("notes.txt");
       expect(call.get("pre").text()).toContain("Saved notes.txt");
       wrapper.unmount();
