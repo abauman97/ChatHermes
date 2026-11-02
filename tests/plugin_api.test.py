@@ -3104,7 +3104,10 @@ async def test_inbox_api_global_profile_pages_read_delete_and_host_boundary(app,
         assert (await client.put(root + f"/{item['id']}/read?profile=alpha")).status_code == 200
         assert (await client.get(root + "?profile=alpha&unread=true")).json()["unread"] == 1
         assert (await client.delete(root + f"/{item['id']}?profile=alpha")).status_code == 200
-        assert all(row["id"] != item["id"] for row in (await client.get(root + "?profile=alpha")).json()["items"])
+        assert all(
+            row["id"] != item["id"]
+            for row in (await client.get(root + "?profile=alpha")).json()["items"]
+        )
         assert (await client.delete(root + "/read?profile=alpha")).status_code == 200
         assert len((await client.get(root + "?profile=alpha")).json()["items"]) == 1
         for query in ("limit=0", "limit=101", "cursor=nan:1", "scope=private", "profile=../secret"):
@@ -3118,3 +3121,42 @@ async def test_inbox_api_global_profile_pages_read_delete_and_host_boundary(app,
         assert (await client.put(root + f"/{item['id']}/read?profile=beta")).status_code == 404
         assert (await client.delete(root + f"/{item['id']}?profile=beta")).status_code == 404
         assert set((await client.get(root + "?profile=beta")).json()["byProfile"]) == {"beta"}
+
+
+def test_live_inbox_filters_delegated_sessions_and_uses_committed_time(app, monkeypatch, tmp_path):
+    from hermes_cli import web_server_sessions
+    from hermes_state import SessionDB
+
+    path = tmp_path / "native.db"
+    db = SessionDB(db_path=path)
+    messages = {}
+    for sid, source, config in [
+        ("parent", "desktop", {}),
+        ("child", "subagent", {}),
+        ("marked", "desktop", {"_delegate_from": "parent"}),
+    ]:
+        db.create_session(sid, source=source, model_config=config)
+        messages[sid] = db.append_message(sid, "assistant", "Final response", timestamp=100)
+    db.close()
+    monkeypatch.setattr(
+        web_server_sessions,
+        "_open_session_db_for_profile",
+        lambda profile, *, read_only: SessionDB(db_path=path, read_only=read_only),
+    )
+    monkeypatch.setattr(plugin._inbox.Source, "redact", lambda self, profile: lambda text: text)
+    monkeypatch.setattr(plugin._execution_viewer, "read_body", lambda *args: "Final response")
+    for sid, identity in messages.items():
+        plugin._record_inbox("alpha", sid, identity, "turn.complete")
+        if sid != "parent":
+            plugin._record_inbox("alpha", sid, "request", "approval")
+    items = plugin._inbox.page(plugin._push_store_module, ["alpha"])["items"]
+    assert len(items) == 1
+    assert items[0]["session"] == "parent" and items[0]["occurred"] == 100
+    plugin._inbox.record(
+        plugin._push_store_module, "alpha", "parent", "newer", "clarify", occurred=200
+    )
+    plugin._record_inbox("alpha", "parent", messages["parent"], "turn.complete")
+    assert [
+        item["event_id"]
+        for item in plugin._inbox.page(plugin._push_store_module, ["alpha"])["items"]
+    ] == ["newer"]

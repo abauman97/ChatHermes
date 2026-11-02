@@ -54,6 +54,15 @@ MIGRATIONS = (
     (
         "CREATE UNIQUE INDEX inbox_completion_origin ON inbox(profile,event_id,kind) WHERE kind='turn.complete'",
     ),
+    (
+        # Upgrade existing inboxes without losing replay/read/deletion identities.
+        """UPDATE inbox SET deleted=1 WHERE id IN (
+            SELECT id FROM (
+                SELECT id,ROW_NUMBER() OVER (
+                    PARTITION BY profile,session ORDER BY occurred DESC,id DESC
+                ) AS position FROM inbox
+            ) WHERE position > 1)""",
+    ),
 )
 
 

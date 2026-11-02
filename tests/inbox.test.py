@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -109,7 +110,7 @@ def test_offline_multi_profile_recovery_restart_read_and_no_initial_flood(
 def test_keyset_pages_filters_and_read_are_profile_scoped(state):
     for profile in ("alpha", "beta"):
         for n in range(3):
-            inbox.record(state, profile, "same", n, "approval", occurred=100)
+            inbox.record(state, profile, f"session-{n}", n, "approval", occurred=100)
     result = inbox.page(state, ["alpha", "beta"], limit=2)
     ids = [item["id"] for item in result["items"]]
     while result["nextCursor"]:
@@ -212,3 +213,142 @@ def test_history_notices_exclude_interim_tool_and_summary_rows(state):
         lambda s: s,
     )
     assert [row["preview"] for row in inbox.page(state, ["alpha"])["items"]] == ["Final"]
+
+
+@pytest.mark.parametrize("previous_state", ["unread", "read", "deleted"])
+def test_latest_session_notification_replaces_all_kinds_without_replay(state, previous_state):
+    inbox.record(state, "alpha", "same", "request", "approval", occurred=100)
+    old = inbox.page(state, ["alpha"])["items"][0]
+    if previous_state == "read":
+        inbox.mark_read(state, ["alpha"], old["id"])
+    elif previous_state == "deleted":
+        inbox.delete_item(state, ["alpha"], old["id"])
+    inbox.record(state, "beta", "same", "other-profile", "clarify", occurred=101)
+    inbox.record(state, "alpha", "other", "other-session", "clarify", occurred=101)
+    inbox.record(
+        state, "alpha", "same", "completion", "turn.complete", occurred=102, preview="Latest"
+    )
+    inbox.record(state, "alpha", "same", "late-history", "turn.complete", occurred=99)
+    result = inbox.page(state, ["alpha", "beta"])
+    assert result["unread"] == 3
+    assert result["byProfile"] == {"alpha": 2, "beta": 1}
+    latest = result["items"][0]
+    assert latest["preview"] == "Latest" and not latest["read"]
+    assert not inbox.mark_read(state, ["alpha"], old["id"])
+    # Repeated requests acquire no new timestamp; delayed history cannot replace
+    # a newer event. Both identities remain suppressed after the latest is deleted.
+    for _ in range(2):
+        inbox.record(state, "alpha", "same", "request", "approval")
+        inbox.record(state, "alpha", "same", "late-history", "turn.complete", occurred=99)
+        assert inbox.page(state, ["alpha", "beta"]) == result
+    inbox.delete_item(state, ["alpha"], latest["id"])
+    inbox.record(state, "alpha", "same", "completion", "turn.complete", occurred=102)
+    inbox.record(state, "alpha", "same", "request", "approval")
+    assert len(inbox.page(state, ["alpha", "beta"])["items"]) == 2
+    inbox.record(state, "alpha", "same", "new-request", "attention", occurred=103)
+    assert inbox.page(state, ["alpha"])["items"][0]["event_id"] == "new-request"
+
+
+def test_upgrade_collapses_existing_notifications_and_keeps_deleted_latest_hidden(state):
+    shared = sys.modules[inbox.database.__module__]
+    path = shared.database_path(state)
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as db:
+        for migration in shared.MIGRATIONS[:-1]:
+            for statement in migration:
+                db.execute(statement)
+        db.execute(f"PRAGMA user_version={len(shared.MIGRATIONS) - 1}")
+        for profile, session, identity, occurred, deleted in [
+            ("alpha", "same", "old", 10, 0),
+            ("alpha", "same", "latest", 20, 0),
+            ("beta", "same", "other-profile", 10, 0),
+            ("alpha", "deleted", "old-deleted", 10, 0),
+            ("alpha", "deleted", "deleted-latest", 20, 1),
+        ]:
+            db.execute(
+                """INSERT INTO inbox (profile,session,event_id,kind,occurred,title,preview,deleted)
+                VALUES (?,?,?,'approval',?,'','',?)""",
+                (profile, session, identity, occurred, deleted),
+            )
+    result = inbox.page(state, ["alpha", "beta"])
+    assert [item["event_id"] for item in result["items"]] == ["latest", "other-profile"]
+    assert result["unread"] == 2
+    inbox.record(state, "alpha", "same", "old", "approval")
+    inbox.record(state, "alpha", "deleted", "old-deleted", "approval")
+    assert inbox.page(state, ["alpha", "beta"]) == result
+
+
+def test_recovery_filters_subagents_but_keeps_archives_and_continuations(
+    state, tmp_path, monkeypatch
+):
+    from hermes_cli import web_server_sessions
+
+    path = tmp_path / "native.db"
+    since = inbox.initialize(state, "alpha")
+    db = SessionDB(db_path=path)
+    sessions = [
+        ("parent", "desktop", None, {}),
+        ("continuation", "desktop", "parent", {}),
+        ("child", "subagent", "parent", {}),
+        ("marked", "desktop", "parent", {"_delegate_from": "parent"}),
+        ("orphan", "desktop", None, {"_delegate_from": "missing"}),
+    ]
+    for sid, source, parent, config in sessions:
+        db.create_session(sid, source=source, parent_session_id=parent, model_config=config)
+        db.append_message(sid, "user", "Prompt", timestamp=since + 1)
+        db.append_message(sid, "assistant", sid + " final", timestamp=since + 2)
+    db.set_session_archived("parent", True)
+    db.close()
+    monkeypatch.setattr(
+        web_server_sessions,
+        "_open_session_db_for_profile",
+        lambda profile, *, read_only: SessionDB(db_path=path, read_only=read_only),
+    )
+    # Previously collected child messages are removed, in the owning profile only.
+    inbox.record(state, "alpha", "child", "legacy", "approval")
+    inbox.record(state, "beta", "child", "other-profile", "approval")
+
+    class Source(inbox.Source):
+        async def profiles(self):
+            return ["alpha"]
+
+        def redact(self, profile):
+            return lambda text: text
+
+        def attention(self, profile):
+            return [(sid, "request", "clarify") for sid in ("child", "marked", "orphan")]
+
+        def busy(self, profile):
+            return set()
+
+    for _ in range(2):
+        asyncio.run(inbox.Service(Source(None), state).reconcile())
+        result = inbox.page(state, ["alpha", "beta"])
+        assert {(item["profile"], item["session"]) for item in result["items"]} == {
+            ("alpha", "parent"),
+            ("alpha", "continuation"),
+            ("beta", "child"),
+        }
+
+
+def test_multiple_recovered_turns_keep_only_latest_response(state):
+    since = inbox.initialize(state, "alpha")
+    rows = [
+        {"id": 1, "role": "user", "content": "First prompt"},
+        {"id": 2, "role": "assistant", "content": "First response"},
+        {"id": 3, "role": "user", "content": "Second prompt"},
+        {"id": 4, "role": "assistant", "content": "Latest response"},
+    ]
+    for _ in range(2):
+        inbox.reconcile_rows(
+            state,
+            "alpha",
+            {"id": "same"},
+            [{**row, "timestamp": since + row["id"]} for row in rows],
+            since,
+            "changed",
+            lambda text: text,
+        )
+        result = inbox.page(state, ["alpha"])
+        assert result["unread"] == 1
+        assert [item["preview"] for item in result["items"]] == ["Latest response"]
