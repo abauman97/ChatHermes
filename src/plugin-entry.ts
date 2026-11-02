@@ -1,3 +1,7 @@
+import {
+  createNotificationNavigation,
+  type NotificationNavigation,
+} from "./router/notification-navigation";
 type HostReact = {
   createElement: (type: string, props: Record<string, unknown>) => unknown;
   useRef: (initial: HTMLDivElement | null) => { current: HTMLDivElement | null };
@@ -6,6 +10,7 @@ type HostReact = {
 declare const __CHATHERMES_APP_ASSET__: string;
 declare global {
   interface Window {
+    __CHATHERMES_NAVIGATION__?: NotificationNavigation;
     __HERMES_PLUGIN_SDK__?: {
       React: HostReact;
       buildWsUrl?: (path: string, params?: Record<string, string>) => Promise<string>;
@@ -49,10 +54,16 @@ let initialPluginUrl =
   new URL(documentEntry).hash.startsWith("#/")
     ? documentEntry
     : undefined;
+// Reuse the bridge if Hermes reloads this registration for another profile.
+const navigation = window.__CHATHERMES_NAVIGATION__ || createNotificationNavigation();
+if (!window.__CHATHERMES_NAVIGATION__) {
+  window.__CHATHERMES_NAVIGATION__ = navigation;
+  navigator.serviceWorker?.addEventListener("message", navigation.receive);
+}
 function ChatHermesPlugin() {
   const element = React!.useRef(null);
   React!.useEffect(() => {
-    const initialUrl = initialPluginUrl;
+    const initialUrl = navigation.pendingUrl() || initialPluginUrl;
     let disposed = false;
     const ownedHeadTags: HTMLElement[] = [];
     for (const [tagName, attributes] of pwaHeadTags) {
@@ -83,7 +94,7 @@ function ChatHermesPlugin() {
       .then(({ createChatHermesApp }) => {
         if (disposed || !element.current) return;
         initialPluginUrl = undefined;
-        app = createChatHermesApp(initialUrl);
+        app = createChatHermesApp(navigation.pendingUrl() || initialUrl, navigation);
         app!.mount(overlay);
       })
       .catch(() => {

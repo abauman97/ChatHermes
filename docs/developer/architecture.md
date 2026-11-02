@@ -136,10 +136,24 @@ mounted app replies with `chathermes.navigated` and the requested URL only after
 router scope application and session history or page-owned scheduled output loading, followed
 by Vue rendering. Failed, superseded, or unmounted destinations cannot acknowledge
 success and send no reply. Without a success acknowledgement, a ten-second timeout
-falls back to `WindowClient.navigate(target.href)` in that same window. Another same-origin
-dashboard window can be reused when ChatHermes is not open; a new window opens
-only when no same-origin window exists. Hash queries retain destination profile
-scope; host-owned outer query and history metadata retain their existing ownership.
+falls back to `WindowClient.navigate(target.href)` in that same window. A missing,
+rejected, or null navigation result falls through to `clients.openWindow(target.href)`.
+Browser navigation fallback does not attest that content loaded.
+
+The plugin registration keeps a notification bridge alive on host pages such as
+`/sessions`, where Vue is unmounted and the scoped worker cannot navigate the
+client. The worker offers the same message-channel handoff to every selected
+same-origin client. On a host page, the bridge enters `/chathermes` through the
+host's history/popstate contract and queues the original message and port. The
+host profile query is constructed from the destination hash profile; the outer
+profile in the notification URL is not authoritative. The Vue app receives the
+queued destination on mount and uses `router.push`, the same scope and loading
+checks, and the original acknowledgement port. No host history update acknowledges
+success. Queued requests expire at the worker's ten-second fallback deadline;
+newer requests replace pending ones. The bridge is reused across host profile
+registration reloads, while each Vue mount connects and disconnects its own
+handler. Inside the mounted plugin, all destination navigation stays with Vue
+Router and preserves host-owned outer query/history metadata.
 Settings stores a validated plugin-relative return_to destination. Notifications
 use the same link resolver, and the worker produces and recognizes canonical
 chat hashes with the existing visible-connected-viewer handshake.

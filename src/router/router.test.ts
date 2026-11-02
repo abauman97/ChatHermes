@@ -198,3 +198,15 @@ it("accepts path-shaped project IDs and rejects traversal-shaped project hints",
   await router.push("/projects/%2Fauto%2F..%2Frepo");
   expect(router.currentRoute.value.name).toBe("home");
 });
+
+it("keeps a newer canonical hash when an earlier document-entry route finishes importing", async () => {
+  history.replaceState({ idx: 0 }, "", "/chathermes?profile=default#/settings?profile=beta");
+  const router = createChatHermesRouter(
+    undefined,
+    location.origin + "/chathermes?profile=default#/?profile=alpha",
+  );
+  await router.push(router.options.history.location);
+  expect(router.currentRoute.value.name).toBe("settings");
+  expect(router.currentRoute.value.query.profile).toBe("beta");
+  router.options.history.destroy();
+});

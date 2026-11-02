@@ -1,7 +1,11 @@
+import {
+  notificationNavigationKey,
+  type NotificationNavigation,
+} from "../router/notification-navigation";
 import { provideKanban } from "../features/kanban/context";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 import { useProjectWorkspace } from "../features/projects/composables/useProjectWorkspace";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import type { InboxItem } from "../features/inbox/inbox";
 import { api } from "../services/hermes-api";
 import { useNativeSession } from "../features/chat/runtime/native-session";
@@ -35,6 +39,11 @@ import { provideSettings } from "../features/settings/context";
 import { provideProjects } from "../features/projects/context";
 import { provideScheduled } from "../features/scheduled/composables/useScheduledHistory";
 export function useApplication() {
+  const notificationNavigation = inject<NotificationNavigation | undefined>(
+    notificationNavigationKey,
+    undefined,
+  );
+  let disconnectNotificationNavigation: (() => void) | undefined;
   const router = useRouter(),
     route = useRoute();
   const isChat = computed(() => route.meta.chat === true);
@@ -955,7 +964,7 @@ export function useApplication() {
         error.value = "Could not load profiles";
       });
     void reloadPushState();
-    if ("serviceWorker" in navigator)
+    if (!notificationNavigation && "serviceWorker" in navigator)
       navigator.serviceWorker.addEventListener("message", serviceWorkerMessage);
     embedded.value = !!menuButton.value?.closest(".chathermes-embedded");
     document.addEventListener("visibilitychange", visibilityChange);
@@ -966,12 +975,15 @@ export function useApplication() {
     await router.isReady();
     scopeReady = true;
     routeWork = applyScope(router.currentRoute.value);
+    if (notificationNavigation && scopeReady)
+      disconnectNotificationNavigation = notificationNavigation.connect(serviceWorkerMessage);
     await routeWork;
   });
   onUnmounted(() => {
     clearInterval(inboxTimer);
     inboxAbort?.abort();
     scopeReady = false;
+    disconnectNotificationNavigation?.();
     router.options.history.destroy();
     pushClient?.stop();
     pushClient = undefined;

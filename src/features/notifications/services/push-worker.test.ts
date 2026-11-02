@@ -21,8 +21,9 @@ function harness() {
     id: "tab",
     url: origin + "/old-spa-url",
     visibilityState: "visible",
-    navigate: vi.fn(async (url: string) => {
+    navigate: vi.fn(async (url: string): Promise<{ url: string } | null> => {
       client.url = url;
+      return { url };
     }),
     focused: false,
     postMessage: vi.fn((message: any, ports: any[]) => {
@@ -677,7 +678,11 @@ describe("scheduled results", () => {
       "?profile=alpha";
     expect(h.notifications[0].data.url).toBe(url);
     await h.dispatch("notificationclick", { notification: h.notifications[0] });
-    expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(url);
+    expect(h.client.postMessage.mock.calls.at(-1)?.[0]).toEqual({
+      type: "chathermes.navigate",
+      url,
+    });
+    expect(h.client.navigate).not.toHaveBeenCalled();
     expect(h.openWindow).not.toHaveBeenCalled();
     h.patch({
       url,
@@ -728,39 +733,51 @@ describe("scheduled results", () => {
     await h.push(result);
     expect(h.show.mock.calls[1]![1].tag).toBe(options.tag);
   });
-  it.each([
-    "/chat/two?profile=alpha",
-    "/chat/two?profile=beta",
-    "/scheduled/audit/output%3A2026-01-01_00-00-00?profile=beta",
-    "/scheduled/audit/execution%3A" + "a".repeat(32) + "?profile=beta",
-  ])(
-    "messages an existing ChatHermes window and waits for loaded acknowledgement: %s",
-    async (route) => {
-      const h = harness();
-      h.client.focus.mockRejectedValue(new Error("focus denied"));
-      h.client.url = origin + "/chathermes?profile=alpha#/settings?profile=alpha";
-      const url = origin + "/chathermes?profile=beta#" + route;
-      let reply: any;
-      h.client.postMessage.mockImplementation((message, ports) => {
-        expect(message).toEqual({ type: "chathermes.navigate", url });
-        reply = ports[0];
-      });
-      let finished = false;
-      const click = h
-        .dispatch("notificationclick", { notification: { data: { url } } })
-        .then(() => {
-          finished = true;
-        });
-      await vi.waitFor(() => expect(reply).toBeDefined());
-      expect(finished).toBe(false);
-      expect(h.client.navigate).not.toHaveBeenCalled();
-      reply.postMessage({ type: "chathermes.navigated", url });
-      await click;
-      expect(h.client.navigate).not.toHaveBeenCalled();
-      expect(h.client.focus).toHaveBeenCalledOnce();
-      expect(h.openWindow).not.toHaveBeenCalled();
-    },
-  );
+  it.each(
+    ["/chathermes?profile=alpha#/settings?profile=alpha", "/sessions?profile=alpha"].flatMap(
+      (clientPath) =>
+        [
+          "/chat/two?profile=alpha",
+          "/chat/two?profile=beta",
+          "/scheduled/audit/output%3A2026-01-01_00-00-00?profile=beta",
+          "/scheduled/audit/execution%3A" + "a".repeat(32) + "?profile=beta",
+        ].map((route) => [route, clientPath] as const),
+    ),
+  )("waits for loaded acknowledgement of %s from %s", async (route, clientPath) => {
+    const h = harness();
+    h.client.focus.mockRejectedValue(new Error("focus denied"));
+    h.client.url = origin + clientPath;
+    const url = origin + "/chathermes?profile=beta#" + route;
+    let reply: any;
+    h.client.postMessage.mockImplementation((message, ports) => {
+      expect(message).toEqual({ type: "chathermes.navigate", url });
+      reply = ports[0];
+    });
+    let finished = false;
+    const click = h.dispatch("notificationclick", { notification: { data: { url } } }).then(() => {
+      finished = true;
+    });
+    await vi.waitFor(() => expect(reply).toBeDefined());
+    expect(finished).toBe(false);
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    reply.postMessage({ type: "chathermes.navigated", url });
+    await click;
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    expect(h.client.focus).toHaveBeenCalledOnce();
+    expect(h.openWindow).not.toHaveBeenCalled();
+  });
+  it("routes a host /sessions client through the plugin bridge before any browser fallback", async () => {
+    const h = harness();
+    h.client.url = origin + "/sessions?profile=alpha";
+    const url = origin + "/chathermes?profile=beta#/chat/two?profile=beta";
+    await h.dispatch("notificationclick", { notification: { data: { url } } });
+    expect(h.client.postMessage).toHaveBeenCalledWith(
+      { type: "chathermes.navigate", url },
+      expect.anything(),
+    );
+    expect(h.client.navigate).not.toHaveBeenCalled();
+    expect(h.openWindow).not.toHaveBeenCalled();
+  });
   it.each(["timeout", "wrong destination", "postMessage throws"])(
     "falls back to the exact URL without a duplicate window on %s",
     async (failure) => {
@@ -789,7 +806,7 @@ describe("scheduled results", () => {
     },
   );
   it.each([false, true])(
-    "reuses a client after timeout when focus fails and fallback is unavailable/rejected: %s",
+    "opens the destination after timeout when focus fails and navigation is unavailable/rejected: %s",
     async (rejects) => {
       vi.useFakeTimers();
       try {
@@ -804,10 +821,31 @@ describe("scheduled results", () => {
         await vi.advanceTimersByTimeAsync(10000);
         await click;
         expect(h.client.focus).toHaveBeenCalledOnce();
-        expect(h.openWindow).not.toHaveBeenCalled();
+        expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(h.notifications[0].data.url);
       } finally {
         vi.useRealTimers();
       }
+    },
+  );
+  it.each(["rejected", "null"])(
+    "opens the exact notification destination when a dashboard client's navigation is %s",
+    async (failure) => {
+      const h = harness();
+      h.client.url = origin + "/sessions";
+      h.client.postMessage.mockImplementation(() => {
+        throw new Error("No plugin bridge");
+      });
+      if (failure === "rejected")
+        h.client.navigate.mockRejectedValue(
+          new TypeError("This service worker is not the client's active service worker."),
+        );
+      else h.client.navigate.mockResolvedValue(null);
+      const url =
+        origin +
+        "/chathermes?profile=beta#/scheduled/audit/output%3A2026-01-01_00-00-00?profile=beta";
+      await h.dispatch("notificationclick", { notification: { data: { url } } });
+      expect(h.client.navigate).toHaveBeenCalledExactlyOnceWith(url);
+      expect(h.openWindow).toHaveBeenCalledExactlyOnceWith(url);
     },
   );
   it("prefers ChatHermes over another dashboard window, then reuses that dashboard if alone", async () => {
@@ -817,8 +855,10 @@ describe("scheduled results", () => {
       id: "other",
       url: origin + "/sessions",
       focus: vi.fn(),
-      navigate: vi.fn(),
-      postMessage: vi.fn(),
+      navigate: vi.fn(async () => ({ url: origin + "/sessions" })),
+      postMessage: vi.fn(() => {
+        throw new Error("No bridge loaded");
+      }),
     };
     h.client.url = origin + "/chathermes#/settings";
     h.setClients([other, h.client]);
