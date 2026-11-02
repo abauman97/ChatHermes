@@ -194,6 +194,15 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await composer.fill("Draft while activity arrives");
   await expect(composer).toBeFocused();
   await page.screenshot({ path: info.outputPath("activity-streaming.png") });
+  const liveTool = work.locator(".activity-active:not(.activity-thinking)");
+  await expect(liveTool.locator("summary")).toBeVisible();
+  await expect(liveTool.locator("summary")).toContainText(/Waiting…|Running…/);
+  await expect(liveTool).not.toHaveAttribute("open", "");
+  await expect(liveTool.locator("pre")).toBeHidden();
+  await page.screenshot({ path: info.outputPath("tool-streaming-collapsed.png") });
+  await liveTool.locator("summary").click();
+  await expect(liveTool.locator("pre")).toBeVisible();
+  await expect(liveTool.locator("pre")).toContainText("workflow-tool-start");
   await expect(page.locator(".message.assistant").last()).toHaveText(
     "Tool completed: workflow-tool-ok.",
   );
@@ -205,7 +214,10 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await page.screenshot({ path: info.outputPath("activity-collapsed.png") });
   await summary.click();
   await expect(work.locator(".activity:visible")).toHaveCount(2);
-  for (const row of await work.locator(".activity").all()) await row.locator("summary").click();
+  for (const row of await work.locator(".activity").all()) {
+    if (!(await row.evaluate((element) => (element as HTMLDetailsElement).open)))
+      await row.locator("summary").click();
+  }
   await expect(work.locator("pre").first()).toContainText(
     "Inspect the workspace before answering.",
   );

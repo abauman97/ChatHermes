@@ -86,7 +86,9 @@ sending independently of editing. Keep standalone composer tests provider-free.
 `transcriptEntries` preserves history/live fallback rules without modifying or
 reconciling runtime blocks. Assistant turn keys scope local block IDs; historical
 turns receive their own working state. Work remains before text; `TurnWork` and
-`ActivityRow` retain their disclosure state and `v-show` row instances. Active disclosures expand to show arriving data, untouched completed rows collapse, and explicit manual toggles persist.
+`ActivityRow` retain their disclosure state and `v-show` row instances. Active
+thinking disclosures expand to show arriving data. Tool bodies stay collapsed
+until opened, untouched completed rows collapse, and explicit manual toggles persist.
 
 Request forms are keyed by `[profile, session, envelope ID]`. The adapter accepts
 only known payload shapes and never displays unknown params. Forms own drafts
@@ -314,6 +316,8 @@ text keeps its order. Active activity stays visible below the summary; delegated
 work remains live until it settles even if the parent turn has finished. Settled
 activity folds into the summary, including failed, interrupted and unavailable
 results, whose status remains in the summary. Expanding the history exposes each
-row and its inspectable input/output; live updates preserve disclosure choices.
+row; tool input/output bodies require their own explicit expansion, including
+while running. Live tool labels and statuses remain visible while bodies are
+collapsed, and expanded bodies keep streaming. Live updates preserve disclosure choices.
 Delivered artifact cards and interactive approval/clarification controls remain
 accessible outside collapsed details.
