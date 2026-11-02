@@ -2,6 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { mount as vueMount, flushPromises } from "@vue/test-utils";
 import { createChatHermesRouter } from "./router";
+import {
+  createNotificationNavigation,
+  notificationNavigationKey,
+} from "./router/notification-navigation";
 function routeUrl() {
   return new URL(location.hash.slice(1) || "/", location.origin);
 }
@@ -1991,6 +1995,8 @@ describe("notification navigation acknowledgements", () => {
       );
       const wrapper = mount(App);
       await flushPromises();
+      await wrapper.vm.$router.push("/settings?profile=alpha");
+      const navigate = vi.spyOn(wrapper.vm.$router, "push");
       const reply = send("/chat/notified?profile=" + profile);
       await flushPromises();
       expect(owner.attach).toHaveBeenCalledWith(profile, "notified");
@@ -2001,6 +2007,7 @@ describe("notification navigation acknowledgements", () => {
       hydrated.resolve(true);
       await flushPromises();
       expect(wrapper.text()).toContain("Loaded notification destination");
+      expect(navigate).toHaveBeenCalledWith("/chat/notified?profile=" + profile);
       expect(wrapper.get(".topbar-profile").text()).toBe(profile);
       expect(reply.postMessage).toHaveBeenCalledExactlyOnceWith({
         type: "chathermes.navigated",
@@ -2010,6 +2017,65 @@ describe("notification navigation acknowledgements", () => {
       wrapper.unmount();
     },
   );
+  it.each([
+    "/chat/notified?profile=beta",
+    "/scheduled/audit/output%3A2026-01-01_00-00-00?profile=beta",
+  ])(
+    "resolves a queued host /sessions click through Vue Router and loaded content: %s",
+    async (path) => {
+      workerMessages();
+      const loaded = deferred<Response>();
+      mockFetch(async (input) => {
+        if (input.includes("/messages") || input.includes("/scheduled/output"))
+          return loaded.promise;
+        if (/\/scheduled\?/.test(input)) return json({ jobs: [{ id: "audit" }] });
+        return json({ sessions: [], total: 0 });
+      });
+      history.replaceState({ idx: 3 }, "", "/sessions?profile=alpha");
+      const bridge = createNotificationNavigation();
+      const postMessage = vi.fn(),
+        close = vi.fn();
+      const url = location.origin + "/chathermes?profile=stale#" + path;
+      bridge.receive({
+        data: { type: "chathermes.navigate", url },
+        ports: [{ postMessage, close }],
+      } as unknown as MessageEvent);
+      const router = createChatHermesRouter(undefined, bridge.pendingUrl());
+      const push = vi.spyOn(router, "push");
+      const wrapper = vueMount(App, {
+        global: { plugins: [router], provide: { [notificationNavigationKey]: bridge } },
+      });
+      await flushPromises();
+      expect(postMessage).not.toHaveBeenCalled();
+      loaded.resolve(
+        json({ messages: [{ role: "assistant", content: "Exact host destination loaded" }] }),
+      );
+      await flushPromises();
+      await flushPromises();
+      expect(push).toHaveBeenCalledWith(path);
+      expect(wrapper.text()).toContain("Exact host destination loaded");
+      expect(router.currentRoute.value.query.profile).toBe("beta");
+      expect(postMessage).toHaveBeenCalledExactlyOnceWith({ type: "chathermes.navigated", url });
+      expect(close).toHaveBeenCalledOnce();
+      wrapper.unmount();
+    },
+  );
+  it.each([
+    "/chat/%2Fbad?profile=beta",
+    "/chat/s1?profile=alpha&profile=beta",
+    "/unknown?profile=beta",
+  ])("does not acknowledge a guard redirect away from %s", async (path) => {
+    const send = workerMessages();
+    mockFetch(async () => json({ sessions: [], total: 0 }));
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.vm.$router.push("/settings?profile=alpha");
+    const reply = send(path);
+    await flushPromises();
+    expect(reply.postMessage).not.toHaveBeenCalled();
+    expect(reply.close).toHaveBeenCalledOnce();
+    wrapper.unmount();
+  });
   it("rejects an attached native session when saved history fails", async () => {
     const send = workerMessages();
     const factory = nativeSession.useNativeSession;

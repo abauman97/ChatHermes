@@ -232,4 +232,16 @@ test("@desktop worker clicks load exact session/profile and saved scheduled outp
   await area.focus();
   await expect(area).toBeFocused();
   await page.screenshot({ path: info.outputPath("notification-loaded-scheduled.png") });
+
+  if (info.project.name === "mobile")
+    await plugin.getByRole("button", { name: "Open navigation", exact: true }).click();
+  await plugin.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(plugin.locator(".settings-page")).toBeVisible();
+  await click(target);
+  await expect(plugin.locator(".message.user")).toHaveText(prompt);
+  await expect(plugin.locator(".message.assistant")).toContainText("Stream complete.");
+  expect(new URL(page.url()).hash).toBe(new URL(target).hash);
+  await area.focus();
+  await expect(area).toBeFocused();
+  await page.screenshot({ path: info.outputPath("notification-from-settings.png") });
 });

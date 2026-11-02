@@ -283,17 +283,15 @@ self.addEventListener("notificationclick", (event) => {
           // Activation restrictions can deny focus. Routing the existing
           // client must still run; it does not require focus permission.
         }
-        if (new URL(client.url).pathname === APP_URL && (await navigateInApp(client, target)))
-          return;
+        if (await navigateInApp(client, target)) return;
         if (typeof client.navigate === "function") {
           try {
-            await client.navigate(target.href);
-            return;
+            if (await client.navigate(target.href)) return;
           } catch {
-            // Keep the existing PWA open rather than creating a duplicate.
+            // A dashboard page outside this worker's scope cannot be navigated
+            // by this worker. Fall through to the browser's window-opening path.
           }
         }
-        return;
       }
       await self.clients.openWindow(target.href);
     })(),

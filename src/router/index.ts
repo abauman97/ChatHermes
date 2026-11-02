@@ -152,8 +152,9 @@ export function createChatHermesRouter(
     )
       return { name: "settings", query: { ...to.query, return_to: "/" }, replace: true };
   });
-  // Restore a canonical document-entry hash if Hermes profile hydration removed it.
+  // Recover only a missing hash. A newer canonical destination may have arrived
+  // while the host was importing the plugin; the document entry must not win.
   const initial = initialUrl && resolvePluginUrl(initialUrl);
-  if (initial) history.replace(initial);
+  if (initial && !resolvePluginUrl(window.location.href)) history.replace(initial);
   return router;
 }

@@ -122,6 +122,20 @@ explicit private daemon addresses. Never publish browser controls publicly.
 | `CHATHERMES_ANDROID_CDP_ENDPOINT` | Explicit client-reachable CDP endpoint                                  |
 | `CHATHERMES_CHROMIUM`             | Optional installed desktop Chrome executable                            |
 
+Container health checks run inside Docker; they do not establish that the test
+runner can reach published ports. Endpoint helpers use the configured ports (or
+the defaults above), not the running containers' publications. When reusing an
+existing project, inspect its publications with `docker compose --project-directory
+. -f tests/docker/compose.yml ps`, then set the matching port settings or explicit
+URL overrides before loading fixtures or running tests. Check
+`PUT <MockServer URL>/mockserver/status` from the runner: a healthy container
+with a refused connection usually means the publication or host is wrong.
+Android also needs a runner-reachable CDP endpoint; a remote daemon's loopback
+publication requires a tunnel. Keep that tunnel private and point
+`CHATHERMES_ANDROID_CDP_ENDPOINT` at its local address. The emulator's
+`localhost:9119` dashboard address is separate: preparation connects it through
+ADB reverse and the existing Android-container proxy to the Compose service.
+
 Run one suite at a time per project/device. Use `CHATHERMES_NATIVE_TESTS=1`
 with `--grep "@installed|@native"` to verify installation and real portrait/landscape
 keyboard geometry. The optional native notification scenario also requires real FCM
