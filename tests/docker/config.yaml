@@ -7,6 +7,10 @@ providers:
     api_mode: chat_completions
     request_timeout_seconds: 3600
     stale_timeout_seconds: 1800
+dashboard:
+  basic_auth:
+    username: tester
+    password: chathermes-local-test
 toolsets:
   - hermes-cli
   - browser

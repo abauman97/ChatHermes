@@ -30,6 +30,18 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   await nav();
   await shell.getByRole("button", { name: "Settings", exact: true }).click();
   const toggle = shell.getByRole("checkbox", { name: "Kanban Viewer", exact: true });
+  const setting = shell.locator(".settings-row").filter({
+    has: page.getByRole("checkbox", { name: "Kanban Viewer", exact: true }),
+  });
+  const heading = setting.getByRole("heading", { name: "Kanban Viewer", exact: true });
+  await expect(heading).toBeVisible();
+  await expect(heading).toHaveCSS("font-weight", "600");
+  await expect(setting.locator(':scope > svg.settings-icon[aria-hidden="true"]')).toHaveCount(1);
+  await expect(setting.locator("label")).toContainText(
+    "Show the Hermes Kanban board in navigation.",
+  );
+  await expect(setting.locator("label").getByRole("checkbox")).toHaveCount(1);
+  await expect(toggle).toHaveAccessibleDescription("Show the Hermes Kanban board in navigation.");
   await expect(
     shell
       .locator(".settings-group")

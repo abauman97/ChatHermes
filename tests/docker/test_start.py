@@ -79,6 +79,11 @@ class RuntimeConfigTest(unittest.TestCase):
             for path in homes:
                 config = yaml.safe_load((path / "config.yaml").read_text())
                 self.assertEqual(config["platforms"]["api_server"]["port"], 8643)
+                self.assertEqual(
+                    config["dashboard"]["basic_auth"],
+                    {"username": "tester", "password": "chathermes-local-test"},
+                )
+                self.assertIn("dashboard_auth/basic", config["plugins"]["enabled"])
                 self.assertEqual(config["model"]["default"], self.env["TEST_LLM_API_MODEL"])
                 self.assertNotIn(self.env["TEST_LLM_API_KEY"], (path / "config.yaml").read_text())
                 import json
@@ -92,6 +97,20 @@ class RuntimeConfigTest(unittest.TestCase):
                 self.assertEqual((path / ".env").stat().st_mode & 0o777, 0o600)
             start.configure(self.assets)
             self.assertEqual([(path / ".env").read_text() for path in homes], keys)
+
+    def test_basic_login_is_configured_without_inherited_dashboard_credentials(self):
+        # The pinned provider reads dashboard.basic_auth from the active home.
+        # Container-only env vars are insufficient evidence for routed profiles.
+        with patch.dict(os.environ, self.env, clear=True):
+            start.configure(self.assets)
+            home = Path(self.env["HERMES_HOME"])
+            for path in (home, home / "profiles/alpha", home / "profiles/beta"):
+                config = yaml.safe_load((path / "config.yaml").read_text())
+                self.assertEqual(
+                    config["dashboard"]["basic_auth"],
+                    {"username": "tester", "password": "chathermes-local-test"},
+                )
+                self.assertIn("dashboard_auth/basic", config["plugins"]["enabled"])
 
     def test_explicit_push_url_is_seeded_for_every_plugin_host(self):
         import json

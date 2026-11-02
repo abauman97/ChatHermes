@@ -174,12 +174,24 @@ const {
       </RouterLink>
       <RouterLink
         v-if="kanban.visible.value"
-        class="kanban-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-base hover:bg-[#303030]"
+        class="kanban-nav flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
         :aria-current="route.name === 'kanban' ? 'page' : undefined"
         :to="screenLink('kanban')"
         @click="drawer = false"
-        >Kanban</RouterLink
       >
+        <svg
+          class="size-6"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" />
+        </svg>
+        <span>Kanban</span>
+      </RouterLink>
       <SessionSidebar
         heading="Recents"
         :sessions="sessions"

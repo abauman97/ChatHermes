@@ -137,6 +137,24 @@ def configure(asset_root=Path("/opt/chathermes")):
         config_file.write_text(yaml.safe_dump(profile_config, sort_keys=False))
         config_file.chmod(0o600)
 
+    # Dashboard auth is resolved from the process launch scope. Do not rely on
+    # environment variables: the bundled provider reads this config directly.
+    profile_config = copy.deepcopy(config)
+    profile_config["model"].update(default=model, base_url=base_url)
+    profile_config["providers"]["chathermes-test"].update(
+        base_url=base_url, default_model=model, models={model: {}}
+    )
+    profile_config["platforms"]["api_server"].update(
+        host=os.environ["API_SERVER_HOST"], port=int(os.environ["API_SERVER_PORT"])
+    )
+    profile_config.setdefault("dashboard", {})["basic_auth"] = {
+        "username": "tester",
+        "password": "chathermes-local-test",
+    }
+    home_config = home / "config.yaml"
+    home_config.write_text(yaml.safe_dump(profile_config, sort_keys=False))
+    home_config.chmod(0o600)
+
 
 if __name__ == "__main__":
     try:
