@@ -2142,13 +2142,29 @@ describe("optional Kanban navigation", () => {
       expect(wrapper.find(".kanban-nav").exists()).toBe(false);
       await wrapper.find(".drawer-settings").trigger("click");
       await flushPromises();
-      const toggle = wrapper.get('input[aria-label="Kanban Viewer"]');
+      const toggle = wrapper.get('input[aria-labelledby="kanban-heading"]');
       expect(toggle.element.closest(".settings-group")?.textContent).toContain("Keep Screen Awake");
+      const row = wrapper.get(".kanban-setting");
+      expect(row.get("h3").text()).toBe("Kanban Viewer");
+      expect(row.get("h3").classes()).toContain("font-semibold");
+      expect(
+        row.element.previousElementSibling?.matches('svg.settings-icon[aria-hidden="true"]'),
+      ).toBe(true);
+      expect(row.get("label input").element).toBe(toggle.element);
+      expect(row.get("label #kanban-description").text()).toBe(
+        "Show the Hermes Kanban board in navigation.",
+      );
+      expect(toggle.attributes("aria-describedby")).toBe("kanban-description");
       expect((toggle.element as HTMLInputElement).checked).toBe(false);
       expect((toggle.element as HTMLInputElement).disabled).toBe(false);
       await toggle.setValue(true);
       await flushPromises();
-      expect(wrapper.get(".kanban-nav").text()).toBe("Kanban");
+      const kanbanLink = wrapper.get(".kanban-nav");
+      expect(kanbanLink.text()).toBe("Kanban");
+      expect(kanbanLink.classes()).toContain("w-full");
+      expect(kanbanLink.classes()).toContain("text-left");
+      expect(kanbanLink.find("svg").classes()).toContain("size-6");
+      expect(kanbanLink.find("svg").attributes("aria-hidden")).toBe("true");
       boards.mockRejectedValue(new Error("plugin disabled"));
       await wrapper
         .findAll("button")
@@ -2158,6 +2174,7 @@ describe("optional Kanban navigation", () => {
       expect(wrapper.find(".kanban-nav").exists()).toBe(false);
       expect((toggle.element as HTMLInputElement).disabled).toBe(true);
       expect(wrapper.text()).toContain("Hermes Kanban is inactive");
+      expect(row.get('[role="status"]').text()).toContain("Hermes Kanban is inactive");
     } finally {
       wrapper.unmount();
     }

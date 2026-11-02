@@ -4,6 +4,13 @@ Compose starts services; preparation scripts make browsers usable; Playwright
 verifies user contracts. A failed command leaves everything running for inspection.
 No provider credentials or `.env` file are needed for deterministic tests.
 
+The fixture seeds `dashboard.basic_auth` in each profile using the synthetic
+`tester` account below. Its health check requires a password-capable `basic`
+provider, not merely a successful `/api/auth/providers` response. An OAuth-only
+response (such as Nous) does not satisfy fixture readiness. With remote Docker,
+check the Compose service's endpoint rather than a workspace-local dashboard
+that happens to use the same port.
+
 ## First run and explicit rebuild
 
 From the repository root:

@@ -97,26 +97,38 @@ onMounted(() => heading.value?.focus());
           </div>
         </div>
         <div v-if="kanban" class="settings-row settings-notifications">
-          <div>
-            <label class="flex min-h-[44px] items-center gap-3 text-base">
+          <svg
+            class="settings-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" />
+          </svg>
+          <div class="kanban-setting">
+            <h3 id="kanban-heading" class="text-sm font-semibold text-white">Kanban Viewer</h3>
+            <label class="mt-2 flex min-h-[44px] items-center gap-3 text-sm">
               <input
                 type="checkbox"
-                aria-label="Kanban Viewer"
+                aria-labelledby="kanban-heading"
+                aria-describedby="kanban-description"
                 :checked="kanban.enabled.value"
                 :disabled="!kanban.available.value || kanban.checking.value"
                 @change="kanban.setEnabled(($event.target as HTMLInputElement).checked)"
               />
-              Kanban Viewer
+              <span id="kanban-description" role="status">
+                {{
+                  kanban.checking.value
+                    ? "Checking Hermes Kanban…"
+                    : kanban.available.value
+                      ? "Show the Hermes Kanban board in navigation."
+                      : "Hermes Kanban is inactive or its authenticated API is unavailable."
+                }}
+              </span>
             </label>
-            <p class="text-sm text-[#a3a3a3]" role="status">
-              {{
-                kanban.checking.value
-                  ? "Checking Hermes Kanban…"
-                  : kanban.available.value
-                    ? "Show the Hermes Kanban board in navigation."
-                    : "Hermes Kanban is inactive or its authenticated API is unavailable."
-              }}
-            </p>
             <button
               class="min-h-[44px] underline"
               :disabled="kanban.checking.value"
