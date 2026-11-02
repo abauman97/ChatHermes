@@ -1,3 +1,4 @@
+import { provideKanban } from "../features/kanban/context";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 import { useProjectWorkspace } from "../features/projects/composables/useProjectWorkspace";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -231,6 +232,7 @@ export function useApplication() {
   });
   provideChat(chat);
   const wakeLock = useWakeLock();
+  const kanban = provideKanban(offline);
   const scheduled = provideScheduled({ profile, offline, creating, recentSession });
 
   const nativeMode = canStream;
@@ -986,6 +988,7 @@ export function useApplication() {
   provideInbox({ profile, inboxRevision, openInboxItem, refreshInbox });
   provideArtifacts({ profile, projects, recentSession });
   provideSettings({
+    kanban,
     profile,
     profiles,
     pushState,
@@ -1047,6 +1050,7 @@ export function useApplication() {
     sidebar,
     chatPlane,
     drawerSwipe,
+    kanban,
     settingsButton,
     inboxUnread,
     settingsPage,

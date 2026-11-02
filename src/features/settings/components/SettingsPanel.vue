@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { provideKanban } from "../../kanban/context";
 import { onMounted, ref } from "vue";
 import type { PushState } from "../../notifications/services/push";
 
 defineProps<{
+  kanban?: ReturnType<typeof provideKanban>;
   profile: string;
   profiles: { name: string }[];
   pushState: PushState;
@@ -92,6 +94,36 @@ onMounted(() => heading.value?.focus());
             <p v-if="!wakeLockAvailable" class="mt-1 text-sm">
               Screen wake lock is unavailable in this browser.
             </p>
+          </div>
+        </div>
+        <div v-if="kanban" class="settings-row settings-notifications">
+          <div>
+            <label class="flex min-h-[44px] items-center gap-3 text-base">
+              <input
+                type="checkbox"
+                aria-label="Kanban Viewer"
+                :checked="kanban.enabled.value"
+                :disabled="!kanban.available.value || kanban.checking.value"
+                @change="kanban.setEnabled(($event.target as HTMLInputElement).checked)"
+              />
+              Kanban Viewer
+            </label>
+            <p class="text-sm text-[#a3a3a3]" role="status">
+              {{
+                kanban.checking.value
+                  ? "Checking Hermes Kanban…"
+                  : kanban.available.value
+                    ? "Show the Hermes Kanban board in navigation."
+                    : "Hermes Kanban is inactive or its authenticated API is unavailable."
+              }}
+            </p>
+            <button
+              class="min-h-[44px] underline"
+              :disabled="kanban.checking.value"
+              @click="kanban.check()"
+            >
+              Recheck availability
+            </button>
           </div>
         </div>
       </div>

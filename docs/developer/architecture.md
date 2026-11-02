@@ -60,6 +60,10 @@ proof of native Android or iOS keyboard behavior; device verification is separat
 | `src/assets/styles/`                  | Shared stylesheet and existing DOM/CSS contracts                                                                |
 | `src/vendor/hermes/`                  | Pinned gateway contract and transport primitives; do not edit generated contracts                               |
 
+`src/features/kanban/` owns the optional global availability/preference gate,
+direct Kanban REST client, board/task Vue UI and board-owned event/poll lifecycle.
+It uses the host SDK for event authentication; Kanban data stays in Hermes.
+
 Do not create empty stores, views, artifacts, or shared composables
 folders. Attachments currently belong to chat; scheduled output is a real feature.
 Keep tests beside the code they exercise. App integration tests stay beside App.
@@ -86,9 +90,7 @@ sending independently of editing. Keep standalone composer tests provider-free.
 `transcriptEntries` preserves history/live fallback rules without modifying or
 reconciling runtime blocks. Assistant turn keys scope local block IDs; historical
 turns receive their own working state. Work remains before text; `TurnWork` and
-`ActivityRow` retain their disclosure state and `v-show` row instances. Active
-thinking disclosures expand to show arriving data. Tool bodies stay collapsed
-until opened, untouched completed rows collapse, and explicit manual toggles persist.
+`ActivityRow` retain their disclosure state and `v-show` row instances. Active disclosures expand to show arriving data, untouched completed rows collapse, and explicit manual toggles persist.
 
 Request forms are keyed by `[profile, session, envelope ID]`. The adapter accepts
 only known payload shapes and never displays unknown params. Forms own drafts
@@ -306,18 +308,3 @@ verifies a visible, connected client before closing exact profile/session matche
 Other devices observe shared changes on their next refresh.
 Resolved requests are not inferred from notification read state. Requests that
 vanish from the runtime before collection have no durable native history to replay.
-
-## Assistant activity display
-
-Each assistant turn has one inline activity summary, collapsed by default, at
-its first activity. Thinking/reasoning, tool calls and delegated tasks share
-that history, including activity separated by assistant response text. Response
-text keeps its order. Active activity stays visible below the summary; delegated
-work remains live until it settles even if the parent turn has finished. Settled
-activity folds into the summary, including failed, interrupted and unavailable
-results, whose status remains in the summary. Expanding the history exposes each
-row; tool input/output bodies require their own explicit expansion, including
-while running. Live tool labels and statuses remain visible while bodies are
-collapsed, and expanded bodies keep streaming. Live updates preserve disclosure choices.
-Delivered artifact cards and interactive approval/clarification controls remain
-accessible outside collapsed details.

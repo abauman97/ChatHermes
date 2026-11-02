@@ -247,19 +247,9 @@ validated multipart prompt mechanism rather than a session-wide attachment queue
 Timeline cards and the backend index use the same explicit delivery contract
 and share one preview/download component. Generated artifact cards
 require explicit `MEDIA:` delivery directives or existing `Attached file` /
-`Attached image` annotations. Markdown links and images with explicit local
-`MEDIA:` destinations (for example `[Report](MEDIA:/opt/data/report.pdf)` and
-`![Chart](MEDIA:/opt/data/chart.png)`) use the same authenticated artifact
-preview/download cards, preserving surrounding prose. These destinations must
-be local paths; remote URLs, executable schemes, control characters, code,
-quoted blocks, lists and untrusted tool content cannot assert this delivery.
-Ordinary HTTPS Markdown images remain inline images.
-Plain paragraph labels followed exclusively by local directives (for example
-`Desktop board: MEDIA:/opt/data/board.png`) also assert delivery. Labels remain
-visible; multiple directives are validated together and deduplicated. Labels
-use 1–80 ASCII letters, digits, spaces, parentheses, slashes, underscores or
-hyphens, begin with a letter and end with a colon. Trailing prose, quoted
-examples, lists and untrusted wrappers remain outside this channel.
+`Attached image` annotations. Markdown images with explicit `MEDIA:` sources
+(for example `![Chart](MEDIA:/opt/data/chart.png)`) use the same authenticated
+artifact preview flow. Ordinary HTTPS Markdown images remain inline images.
 MEDIA parsing retains quoted paths, spaced media
 filenames, unknown formats, and extensionless files; no extension eligibility
 filter is used. Bare paths, ordinary markdown links (including `file:`, `sandbox:`, and
@@ -362,3 +352,55 @@ Kinds are `turn.complete`, `approval`, `clarify` and `attention`.
 Notification mutations do not answer, cancel or resolve native requests and do
 not change Web Push receipts. See [architecture](architecture.md#managed-inbox)
 for collection, initialization and recovery bounds.
+
+## Optional Kanban frontend
+
+`src/features/kanban/` calls the existing authenticated, same-origin
+`/api/plugins/kanban/` API directly; it does not use the chat gateway, add Python
+routes, or persist task data. The contract was reviewed against Hermes
+`bf0203a794a07aac3ff764972ab9087baa4e4f4e` and the upstream Desktop Kanban
+[`api.ts`](https://github.com/NousResearch/hermes-agent/blob/main/apps/desktop/src/plugins/kanban/api.ts),
+[`types.ts`](https://github.com/NousResearch/hermes-agent/blob/main/apps/desktop/src/plugins/kanban/types.ts),
+`board.tsx` and `drawer.tsx`.
+
+The global browser preference `chathermes.kanban-viewer` defaults false. A valid
+`GET /boards` response gates enabling and navigation. Probes run on mount,
+foreground/online transitions, and every 30 seconds while visible. Recheck is also
+explicitly available in Settings and the unavailable viewer. The browser has one
+same-origin backend, not Desktop's connection registry. Requests intentionally use
+the dashboard's launch backend scope, independently of ChatHermes's chat profile.
+A remount probes again; no remote gateway credentials or connection management are
+introduced. Plugin/auth failures fail closed without displaying server error bodies.
+
+The selected board is browser-local (`chathermes.kanban-board`). All board reads,
+task writes, comments, attachment operations/downloads, logs, dispatch nudges and
+event connections carry an explicit board slug. No request calls `/boards/{slug}/switch`.
+`/workflow` supplies manual move targets, further restricted by `drag_target`;
+without that contract moves are disabled. Hermes validates the transition and owns
+all worker/dependency rules. Successful task writes nudge the existing `/dispatch`
+endpoint, as Desktop does; they never implement an executor or retry an uncertain
+write. Conflict messages are generic and retain the current task for inspection.
+
+Board snapshots (`/board`) provide columns and `latest_event_id`. Detail collections
+are siblings of `task` on `/tasks/{id}`. Events connect to
+`/events?board=…&since=<snapshot-or-frame-cursor>` through the host SDK’s
+`buildWsUrl` (fresh gated ticket or loopback credential on each dial), invalidate
+reads, and reconnect
+with bounded exponential backoff and the last received cursor. Eight-second
+snapshot/detail polling remains active as fallback. Board changes, disabling,
+hidden documents and unmount abort reads, close the socket and clear timers;
+obsolete callbacks cannot apply another board's data. Foregrounding refetches the
+snapshot before reconnecting. Task details remain inspectable with their drafts
+across background/foreground changes. Attachments use `FormData` with the native
+`file` field; absent attachment support hides its controls. Logs read at most the
+last 16 KiB.
+
+The current vertical slice does **not** claim full Desktop parity: see the
+[user guide](../user/features.md#kanban-viewer) for controls retained in Hermes.
+No unsupported control is shown as a stub. Board transfer uses backend filesystem
+paths and Desktop native pickers; a browser implementation needs a reviewed UX and
+integration coverage. Orchestration/profile edits and AI-assisted task helpers
+need deterministic fixtures for their auxiliary-model and worker side effects
+before being exposed. Advanced execution controls and diagnostic actions likewise
+need real-worker lifecycle coverage. These remain follow-up work, not changes to
+Hermes core.

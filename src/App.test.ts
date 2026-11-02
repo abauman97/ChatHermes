@@ -2126,3 +2126,40 @@ it("leaves Escape to a native dialog before closing the mobile drawer", async ()
   expect(opener.attributes("aria-expanded")).toBe("false");
   wrapper.unmount();
 });
+
+describe("optional Kanban navigation", () => {
+  it("shows navigation only for an enabled, available backend and hides it when availability is revoked", async () => {
+    const { api: kanbanApi } = await import("./features/kanban/api");
+    const boards = vi
+      .spyOn(kanbanApi, "boards")
+      .mockResolvedValue({ boards: [{ slug: "default" }], current: "default" });
+    mockFetch(async (input) =>
+      json(input.includes("/capabilities") ? streaming : { sessions: [], total: 0 }),
+    );
+    const wrapper = mount(App);
+    try {
+      await flushPromises();
+      expect(wrapper.find(".kanban-nav").exists()).toBe(false);
+      await wrapper.find(".drawer-settings").trigger("click");
+      await flushPromises();
+      const toggle = wrapper.get('input[aria-label="Kanban Viewer"]');
+      expect(toggle.element.closest(".settings-group")?.textContent).toContain("Keep Screen Awake");
+      expect((toggle.element as HTMLInputElement).checked).toBe(false);
+      expect((toggle.element as HTMLInputElement).disabled).toBe(false);
+      await toggle.setValue(true);
+      await flushPromises();
+      expect(wrapper.get(".kanban-nav").text()).toBe("Kanban");
+      boards.mockRejectedValue(new Error("plugin disabled"));
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "Recheck availability")!
+        .trigger("click");
+      await flushPromises();
+      expect(wrapper.find(".kanban-nav").exists()).toBe(false);
+      expect((toggle.element as HTMLInputElement).disabled).toBe(true);
+      expect(wrapper.text()).toContain("Hermes Kanban is inactive");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+});

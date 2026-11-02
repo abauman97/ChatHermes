@@ -58,3 +58,38 @@ To receive Cron notifications, [configure ChatHermes delivery](notifications.md#
 ## Share and reopen links
 
 Use the current page URL to reopen a chat, Project, or scheduled run under dashboard authentication. Canonical links use a hash, such as `/chathermes?profile=default#/chat/session_123?profile=default`. Older query-only page/session links are no longer interpreted; reopen the destination through the drawer to obtain a current link.
+
+## Kanban Viewer
+
+In **Settings → Global settings**, enable **Kanban Viewer** to show **Kanban** in
+navigation. It shares a card with **Keep Screen Awake**. It starts disabled and is saved in this browser for all chat profiles.
+The toggle is unavailable when the dashboard cannot access Hermes's Kanban API;
+use **Recheck availability** after enabling Kanban in Hermes or signing in again.
+Kanban uses the dashboard's backend, independently of your selected chat profile.
+
+Choose a board without changing Hermes's CLI/global current board. Use the screen
+**···** menu to refresh, create boards, open **Board settings**, or show archived tasks.
+Use **New task** inside a lane to create in that status; runtime-controlled lanes
+keep this button disabled. Creating in Done requires a completion summary. Board settings let you edit the name, description and
+backend default directory, or archive a non-default board. Create and edit tasks,
+assign priority and profile, and optionally override
+model/provider and reasoning effort for the next worker run. A blank override
+inherits the assigned profile. Reassigning a task releases any active worker claim.
+
+Select a task to inspect dependencies, comments, attachments, activity, worker log,
+run history and results. Add comments, upload/download/remove attachments, archive,
+restore or permanently delete a task. On desktop, drag cards between eligible
+columns; on mobile, use **Move task** in the task details. Hermes supplies the
+allowed move targets and enforces dependencies and lifecycle rules. Running,
+scheduled and review are not offered as drag targets. During dispatch, Hermes
+can immediately promote a dependency-free Todo task back to Ready.
+
+Changes from Hermes's other clients arrive through its event stream, with an
+eight-second refresh fallback. Reads pause in hidden tabs. If Kanban becomes
+unavailable, the viewer closes its subscriptions while chat continues working.
+
+This integration covers core board and task operations. For board project binding,
+board archive transfer, bulk operations, orchestration/profile configuration,
+AI-assisted specification/decomposition/estimation, dependency editing,
+review/scheduling handoffs, workspace/runtime/skills/goal configuration, and
+advanced diagnostic or execution controls, use Hermes Desktop or CLI.

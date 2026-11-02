@@ -1,3 +1,5 @@
+import KanbanPage from "../features/kanban/pages/KanbanPage.vue";
+import KanbanActions from "../features/kanban/KanbanActions.vue";
 import InboxActions from "../features/inbox/components/InboxActions.vue";
 import ProjectConfirmation from "../features/projects/components/ProjectConfirmation.vue";
 import HomePage from "../features/chat/pages/HomePage.vue";
@@ -121,6 +123,12 @@ export function createChatHermesRouter(
         name: "settings",
         components: { default: SettingsPage },
         meta: { title: "Settings", hideComposer: true },
+      },
+      {
+        path: "/kanban",
+        name: "kanban",
+        components: { default: KanbanPage, actions: KanbanActions },
+        meta: { title: "Kanban", hideComposer: true },
       },
       { path: "/:pathMatch(.*)*", redirect: "/" },
     ],

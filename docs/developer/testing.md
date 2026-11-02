@@ -60,3 +60,17 @@ other Python contracts.
 ## Documentation checks
 
 Resolve relative Markdown links from each document's own directory, including fragments and image paths. Check links to moved records and source files as well as the documentation index. Historical local evidence may be absent; label it as an unavailable historical path rather than a working link. Keep commands aligned with `package.json`, installation scripts, plugin configuration, and the reviewed native contract.
+
+### Kanban integration
+
+`npm test` includes Kanban availability/preference, authenticated board-scoped REST,
+event cursor/reconnection, polling and stale-response contracts. Run the real API
+and UI slice with `npm run test:integration -- tests/workflows/kanban.spec.ts`.
+It creates uniquely named boards and unassigned tasks using the real plugin,
+exercises task editing, moving, comments, attachments, external-client updates,
+archive/delete, board isolation and the global opt-in on desktop and mobile.
+Screenshots include Settings, board and task details. Fixtures/state are retained
+on failure. The suite needs the upstream Kanban plugin API active; a missing API
+is a failure rather than silently skipped coverage. Unit transport faults cover
+reconnect/polling; real active-worker execution and native device behavior remain
+separate verification work.
