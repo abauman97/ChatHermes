@@ -1,6 +1,7 @@
 """Durable notification addresses, independent of push and native request resolution."""
 
 import asyncio
+import json
 import math
 import time
 from typing import override
@@ -17,12 +18,40 @@ LABELS = {
 }
 
 
+def is_subagent(session):
+    config = session.get("model_config") or {}
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError:
+            config = {}
+    return session.get("source") == "subagent" or (
+        isinstance(config, dict) and config.get("_delegate_from") is not None
+    )
+
+
 def insert(db, profile, session, identity, kind, occurred, title, preview):
     db.execute(
         """INSERT OR IGNORE INTO inbox
         (profile,session,event_id,kind,occurred,title,preview) VALUES (?,?,?,?,?,?,?)""",
         (profile, session, str(identity), kind, occurred, title[:200], preview[:400]),
     )
+    # Keep superseded identities as tombstones: delayed history and duplicate
+    # viewer frames must never restore an older notification, even after deletion.
+    db.execute(
+        """UPDATE inbox SET deleted=1 WHERE profile=? AND session=? AND id != (
+            SELECT id FROM inbox WHERE profile=? AND session=?
+            ORDER BY occurred DESC,id DESC LIMIT 1)""",
+        (profile, session, profile, session),
+    )
+
+
+def dismiss_subagents(store, profile, children):
+    with database(store) as db:
+        db.executemany(
+            "UPDATE inbox SET deleted=1 WHERE profile=? AND session=?",
+            [(profile, child) for child in children],
+        )
 
 
 def record(store, profile, session, identity, kind, *, occurred=None, title="", preview=""):
@@ -199,10 +228,13 @@ def delete_read(store, profiles):
 
 def delete_item(store, profiles, identity):
     with database(store) as db:
-        return db.execute(
-            f"UPDATE inbox SET read=1,deleted=1 WHERE id=? AND profile IN ({','.join('?' for _ in profiles) or 'NULL'}) AND deleted=0",
-            [identity, *profiles],
-        ).rowcount > 0
+        return (
+            db.execute(
+                f"UPDATE inbox SET read=1,deleted=1 WHERE id=? AND profile IN ({','.join('?' for _ in profiles) or 'NULL'}) AND deleted=0",
+                [identity, *profiles],
+            ).rowcount
+            > 0
+        )
 
 
 class Source(HistorySource):
@@ -340,10 +372,16 @@ class Service:
                     since = cutoffs[profile]
                     clean = await asyncio.to_thread(self.source.redact, profile)
                     sessions = await self.source.sessions(profile)
+                    children = {s["id"] for s in sessions if is_subagent(s)}
+                    if children:
+                        await asyncio.to_thread(dismiss_subagents, self.store, profile, children)
+                    sessions = [s for s in sessions if s["id"] not in children]
                     titles = {s["id"]: s.get("title") or "Untitled chat" for s in sessions}
                     for session, identity, kind in await asyncio.to_thread(
                         self.source.attention, profile
                     ):
+                        if session in children:
+                            continue
                         await asyncio.to_thread(
                             record,
                             self.store,

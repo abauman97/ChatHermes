@@ -780,10 +780,14 @@ def _record_inbox(profile, session, identity, kind):
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
         row = db.get_session(session)
+        if _inbox.is_subagent(row or {}):
+            return
         title = clean((row or {}).get("title") or "Untitled chat")
+        occurred = None
         if kind == "turn.complete":
             message = next((m for m in db.get_messages(session) if m["id"] == identity), None)
             origin = (message or {}).get("message_uid") or str(identity)
+            occurred = (message or {}).get("timestamp")
         else:
             origin = str(identity)
     finally:
@@ -796,7 +800,14 @@ def _record_inbox(profile, session, identity, kind):
     if kind == "turn.complete" and preview is None:
         raise ValueError("Completion not committed")
     _inbox.record(
-        _push_store_module, profile, session, origin, kind, title=title, preview=preview or ""
+        _push_store_module,
+        profile,
+        session,
+        origin,
+        kind,
+        occurred=occurred,
+        title=title,
+        preview=preview or "",
     )
     if _inbox_service is not None:
         _inbox_service.trigger()

@@ -349,6 +349,8 @@ plugin process only sees its owning profile. No push subscription is required.
   It pages through the owning profile and matches the exact session.
 
 Kinds are `turn.complete`, `approval`, `clarify` and `attention`.
+Only the latest notification per profile/session is visible, across all kinds;
+new events replace older items. Subagent sessions are excluded.
 Notification mutations do not answer, cancel or resolve native requests and do
 not change Web Push receipts. See [architecture](architecture.md#managed-inbox)
 for collection, initialization and recovery bounds.

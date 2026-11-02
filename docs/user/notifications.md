@@ -7,6 +7,8 @@ across accessible Hermes profiles. Inbox works without browser notification
 permission or push subscriptions. Choose **All profiles** or the currently selected
 **Profile**, and use **Unread only** to filter the list. Items show their profile,
 chat title, event type, time and a short preview, newest first.
+Each profile/chat keeps only its latest notification; a new response or request
+replaces its previous item. Subagent sessions are excluded.
 
 Opening an item loads its owning profile and chat. Whenever a chat opens
 successfully, its Inbox notifications are deleted, including read items, regardless

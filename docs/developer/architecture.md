@@ -284,6 +284,13 @@ including deduplication across compaction copies; requests use their original
 request/operation identity within the owning profile/session. Read and deletion
 state survive duplicate frames, reconciliation and restart. Deletion retains an
 identity tombstone. Push receipts and visible-chat suppression remain independent.
+Only the latest event by occurrence time (then inbox ID) remains visible per
+profile/session, across completion and attention kinds. Superseded events retain
+tombstones, including during upgrades, so delayed history and replay cannot
+replace newer notifications or resurrect deleted ones. Delegated sessions are
+excluded using Hermes's `subagent` source and `_delegate_from` model configuration
+marker; reconciliation also removes their previously collected items. Ordinary
+continuation sessions remain eligible.
 
 Each profile has a durable first-discovery time. Older responses are skipped;
 existing unresolved requests may still appear. The worker checks profiles every
