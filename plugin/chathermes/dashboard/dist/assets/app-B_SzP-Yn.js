@@ -12112,7 +12112,7 @@ var Ov = ["open"], kv = {
 			"failed",
 			"interrupted",
 			"unknown"
-		].includes(r.value || "")), a = /* @__PURE__ */ B(null), o = X(() => a.value ?? (n.value || t.activity.kind === "thinking" && i.value)), s = /* @__PURE__ */ B(), c = /* @__PURE__ */ B(!0);
+		].includes(r.value || "")), a = /* @__PURE__ */ B(null), o = X(() => a.value ?? (t.activity.kind === "thinking" && (n.value || i.value))), s = /* @__PURE__ */ B(), c = /* @__PURE__ */ B(!0);
 		function l() {
 			let e = s.value;
 			e && (c.value = e.scrollHeight - e.scrollTop - e.clientHeight < 24);
