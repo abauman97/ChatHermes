@@ -11483,7 +11483,7 @@ var zg = {
 		return (e, F) => (W(), G("div", o_, [
 			q("aside", {
 				ref: (e) => w.value = e,
-				class: de(["sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-1 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white", z(_) ? "translate-x-0" : "-translate-x-full"]),
+				class: de(["sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-0.5 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white", z(_) ? "translate-x-0" : "-translate-x-full"]),
 				style: oe(z(E).sidebarStyle.value),
 				onTouchstart: F[15] ||= (...e) => z(E).start && z(E).start(...e),
 				onTouchmove: F[16] ||= (...e) => z(E).move && z(E).move(...e),
@@ -15056,7 +15056,7 @@ var pb = ["open"], mb = {
 	}
 }), Aw = "chathermes";
 function jw() {
-	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/", i = r(), a = () => window.history.state?.[Aw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/inbox", i = r(), a = () => window.history.state?.[Aw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
