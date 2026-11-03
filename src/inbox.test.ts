@@ -78,6 +78,16 @@ async function open() {
   await flushPromises();
   return wrapper;
 }
+it("opens Inbox from the dashboard with compact sidebar navigation and a focusable composer", async () => {
+  history.replaceState({}, "", "/chathermes");
+  const wrapper = await open();
+  expect(wrapper.vm.$route.name).toBe("inbox");
+  expect(wrapper.get(".inbox-nav").attributes("aria-current")).toBe("page");
+  expect(wrapper.text()).toContain("Alpha response");
+  expect(wrapper.get(".sidebar").classes()).toContain("gap-0.5");
+  expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+  wrapper.unmount();
+});
 function readyNative() {
   const factory = nativeSession.useNativeSession;
   let activity: ((profile: string, session: string) => void) | undefined;
