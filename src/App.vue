@@ -121,7 +121,7 @@ const {
         >
       </RouterLink>
       <RouterLink
-        class="projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        class="projects-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.meta.section === 'projects' ? 'page' : undefined"
         :to="screenLink('projects')"
         @click="drawer = false"
@@ -138,7 +138,7 @@ const {
         >Projects
       </RouterLink>
       <RouterLink
-        class="scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        class="scheduled-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.meta.section === 'scheduled' ? 'page' : undefined"
         :to="screenLink('scheduled')"
         @click="drawer = false"
@@ -156,7 +156,7 @@ const {
         >Scheduled
       </RouterLink>
       <RouterLink
-        class="artifacts-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        class="artifacts-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.name === 'artifacts' ? 'page' : undefined"
         :to="screenLink('artifacts')"
         @click="drawer = false"
@@ -174,7 +174,7 @@ const {
       </RouterLink>
       <RouterLink
         v-if="kanban.visible.value"
-        class="kanban-nav flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        class="kanban-nav flex min-h-[36px] w-full items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.name === 'kanban' ? 'page' : undefined"
         :to="screenLink('kanban')"
         @click="drawer = false"
