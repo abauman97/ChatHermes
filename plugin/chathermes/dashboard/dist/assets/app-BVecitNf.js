@@ -11516,7 +11516,7 @@ var zg = {
 					}, " × ", 512)
 				]),
 				qi(z(yc), {
-					class: "inbox-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
+					class: "inbox-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "inbox" ? "page" : void 0,
 					to: z(fe)("inbox"),
 					onClick: F[2] ||= (e) => _.value = !1
