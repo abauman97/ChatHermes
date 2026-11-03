@@ -174,6 +174,7 @@ watch(
   <div class="relative flex min-h-0 w-full flex-1">
     <div
       ref="transcript"
+      data-drawer-swipe
       style="overflow-anchor: none"
       class="transcript flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-6 text-white min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9"
       tabindex="-1"
