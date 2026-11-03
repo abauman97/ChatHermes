@@ -85,6 +85,10 @@ it("opens Inbox from the dashboard with compact sidebar navigation and a focusab
   expect(wrapper.get(".inbox-nav").attributes("aria-current")).toBe("page");
   expect(wrapper.text()).toContain("Alpha response");
   expect(wrapper.get(".sidebar").classes()).toContain("gap-0.5");
+  for (const nav of [".projects-nav", ".scheduled-nav", ".artifacts-nav"]) {
+    expect(wrapper.get(nav).classes()).toContain("min-h-[36px]");
+    expect(wrapper.get(nav).classes()).toContain("py-1");
+  }
   expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });
