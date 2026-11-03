@@ -10403,7 +10403,7 @@ function dg(e, t) {
 }
 //#endregion
 //#region src/composables/useDrawerSwipe.ts
-var fg = "button, a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not(.transcript), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
+var fg = "button, a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
 function pg(e, t, n, r) {
 	let i = /* @__PURE__ */ R(null), a, o = 0, s = 0, c = 0, l = 0, u = () => window.matchMedia("(max-width: 700px)").matches;
 	function d() {
@@ -10413,7 +10413,7 @@ function pg(e, t, n, r) {
 	function f(r) {
 		if (d(), !u() || r.touches.length !== 1) return;
 		let i = r.touches[0], l = r.target;
-		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(fg)) && (e.value || l.closest(".transcript"))) {
+		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(fg)) && (e.value || l.closest("[data-drawer-swipe]"))) {
 			if (l.closest(".scrim")) {
 				let e = n()?.getBoundingClientRect();
 				if (!e || i.clientY < e.top || i.clientY > e.bottom) return;
@@ -13493,6 +13493,7 @@ var pb = ["open"], mb = {
 		}), (t, n) => (W(), G("div", zb, [q("div", {
 			ref_key: "transcript",
 			ref: s,
+			"data-drawer-swipe": "",
 			style: { "overflow-anchor": "none" },
 			class: "transcript flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-6 text-white min-[701px]:px-[max(24px,calc((100%-760px)/2))] min-[701px]:py-9",
 			tabindex: "-1",
@@ -13828,6 +13829,7 @@ var pb = ["open"], mb = {
 		return (e, t) => (W(), K(yx));
 	}
 }), Sx = {
+	"data-drawer-swipe": "",
 	"aria-label": "Inbox",
 	class: "min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
 }, Cx = { class: "mx-auto max-w-3xl" }, wx = { class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm" }, Tx = { class: "flex items-center gap-2" }, Ex = { value: "profile" }, Dx = {
