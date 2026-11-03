@@ -97,7 +97,7 @@ const {
         </button>
       </div>
       <RouterLink
-        class="inbox-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]"
+        class="inbox-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.name === 'inbox' ? 'page' : undefined"
         :to="screenLink('inbox')"
         @click="drawer = false"
