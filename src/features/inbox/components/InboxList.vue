@@ -66,7 +66,11 @@ watch(
 onBeforeUnmount(() => controller?.abort());
 </script>
 <template>
-  <section aria-label="Inbox" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5">
+  <section
+    data-drawer-swipe
+    aria-label="Inbox"
+    class="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
+  >
     <div class="mx-auto max-w-3xl">
       <div
         class="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm"

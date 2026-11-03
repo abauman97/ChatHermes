@@ -1665,6 +1665,88 @@ describe("local mobile drawer swipes", () => {
     expect(opened()).toBe(false);
   });
 
+  it("requires explicit surface opt-in rather than the transcript class", async () => {
+    const transcript = wrapper.get(".transcript").element;
+    expect(transcript.hasAttribute("data-drawer-swipe")).toBe(true);
+    transcript.removeAttribute("data-drawer-swipe");
+    await swipe(transcript, 80, 250);
+    expect(opened()).toBe(false);
+    transcript.setAttribute("data-drawer-swipe", "");
+    transcript.classList.remove("transcript");
+    await swipe(transcript, 80, 250);
+    expect(opened()).toBe(true);
+  });
+
+  it.each(["dashboard entry", "/inbox"])(
+    "opens from the Inbox scroll surface at %s while preserving controls and vertical scrolling",
+    async (path) => {
+      vi.spyOn(api, "inbox").mockResolvedValue({
+        items: [
+          {
+            id: 1,
+            profile: "alpha",
+            session: "inbox-chat",
+            event_id: "event",
+            kind: "turn.complete",
+            occurred: 100,
+            title: "Inbox chat",
+            preview: "Response",
+            read: false,
+          },
+        ],
+        unread: 1,
+        byProfile: { alpha: 1 },
+        nextCursor: "next",
+      });
+      if (path === "dashboard entry") {
+        wrapper.unmount();
+        history.replaceState({}, "", "/chathermes");
+        wrapper = mount(App);
+        await flushPromises();
+        vi.spyOn(wrapper.get(".sidebar").element, "getBoundingClientRect").mockReturnValue({
+          width: 300,
+        } as DOMRect);
+      } else await wrapper.vm.$router.push(path);
+      await flushPromises();
+      const inbox = wrapper.get('[aria-label="Inbox"]');
+      expect(inbox.attributes("data-drawer-swipe")).toBeDefined();
+      expect(inbox.classes()).toContain("overflow-y-auto");
+      for (const control of inbox.findAll("select, label, button, li button p")) {
+        await swipe(control.element, 80, 250);
+        expect(opened()).toBe(false);
+      }
+      await touch(inbox.element, "touchstart", 80);
+      const vertical = await touch(inbox.element, "touchmove", 85, 250);
+      expect(vertical.defaultPrevented).toBe(false);
+      const afterVertical = await touch(inbox.element, "touchmove", 250, 260);
+      expect(afterVertical.defaultPrevented).toBe(false);
+      await touch(inbox.element, "touchend", 250, 260);
+      expect(opened()).toBe(false);
+      await swipe(inbox.element, 240, 80);
+      expect(opened()).toBe(false);
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({ matches: false })),
+      );
+      await swipe(inbox.element, 80, 250);
+      expect(opened()).toBe(false);
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => ({ matches: true })),
+      );
+      // Non-interactive descendants inherit the scroll surface's opt-in.
+      const surface = inbox.get("ol").element;
+      await touch(surface, "touchstart", 80);
+      const horizontal = await touch(surface, "touchmove", 250, 205, 400);
+      expect(horizontal.defaultPrevented).toBe(true);
+      expect(wrapper.get(".sidebar").attributes("style")).toContain("translate: -130px 0");
+      await touch(surface, "touchend", 250, 205);
+      expect(opened()).toBe(true);
+      await swipe(wrapper.get(".brand").element, 240, 100);
+      expect(opened()).toBe(false);
+    },
+  );
+
   it("snaps short slow drags back and accepts a short fast flick", async () => {
     const transcript = wrapper.get(".transcript").element;
     await swipe(transcript, 80, 130);

@@ -1,9 +1,9 @@
 import { computed, ref, watch, type Ref } from "vue";
 
 const controls =
-  'button, a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex]:not([data-chat-message]):not(.transcript), [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
+  'button, a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
 
-/** Local touch handlers only: opening belongs to the transcript, never the viewport. */
+/** Local touch handlers only: scroll surfaces explicitly opt in to opening the drawer. */
 export function useDrawerSwipe(
   open: Ref<boolean>,
   width: () => number,
@@ -30,7 +30,7 @@ export function useDrawerSwipe(
     const touch = event.touches[0]!;
     const target = event.target;
     if (touch.clientX < 30 || !(target instanceof Element) || target.closest(controls)) return;
-    if (!open.value && !target.closest(".transcript")) return;
+    if (!open.value && !target.closest("[data-drawer-swipe]")) return;
     if (target.closest(".scrim")) {
       const bounds = plane()?.getBoundingClientRect();
       if (!bounds || touch.clientY < bounds.top || touch.clientY > bounds.bottom) return;
