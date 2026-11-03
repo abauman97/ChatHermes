@@ -11540,7 +11540,7 @@ var zg = {
 					_: 1
 				}, 8, ["aria-current", "to"]),
 				qi(z(yc), {
-					class: "projects-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
+					class: "projects-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).meta.section === "projects" ? "page" : void 0,
 					to: z(fe)("projects"),
 					onClick: F[3] ||= (e) => _.value = !1
@@ -11556,7 +11556,7 @@ var zg = {
 					_: 1
 				}, 8, ["aria-current", "to"]),
 				qi(z(yc), {
-					class: "scheduled-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
+					class: "scheduled-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).meta.section === "scheduled" ? "page" : void 0,
 					to: z(fe)("scheduled"),
 					onClick: F[4] ||= (e) => _.value = !1
@@ -11578,7 +11578,7 @@ var zg = {
 					_: 1
 				}, 8, ["aria-current", "to"]),
 				qi(z(yc), {
-					class: "artifacts-nav flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
+					class: "artifacts-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "artifacts" ? "page" : void 0,
 					to: z(fe)("artifacts"),
 					onClick: F[5] ||= (e) => _.value = !1
@@ -11595,7 +11595,7 @@ var zg = {
 				}, 8, ["aria-current", "to"]),
 				z(D).visible.value ? (W(), K(z(yc), {
 					key: 0,
-					class: "kanban-nav flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-base hover:bg-[#303030]",
+					class: "kanban-nav flex min-h-[36px] w-full items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "kanban" ? "page" : void 0,
 					to: z(fe)("kanban"),
 					onClick: F[6] ||= (e) => _.value = !1
