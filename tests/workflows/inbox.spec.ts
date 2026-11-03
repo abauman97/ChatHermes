@@ -34,6 +34,20 @@ test("global inbox collects closed-page responses across profiles without push a
       )
       .toBe(true);
   }
+  for (const selected of ["alpha", "beta"]) {
+    await authenticate(page, `${origin}/chathermes?profile=${selected}#/inbox?profile=${selected}`);
+    const inbox = page.getByRole("region", { name: "Inbox", exact: true });
+    for (const profile of ["alpha", "beta"])
+      await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
+    await page.reload();
+    for (const profile of ["alpha", "beta"])
+      await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
+    await page.screenshot({ path: info.outputPath(`inbox-${selected}.png`) });
+    await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("profile");
+    await expect(inbox.locator(`li[data-session="${sessions[selected]}"]`)).toHaveCount(1);
+    const other = selected === "alpha" ? "beta" : "alpha";
+    await expect(inbox.locator(`li[data-session="${sessions[other]}"]`)).toHaveCount(0);
+  }
   await authenticate(page, `${origin}/chathermes?profile=default#/inbox?profile=default`);
   const inbox = page.getByRole("region", { name: "Inbox", exact: true });
   await expect(inbox).toBeVisible();

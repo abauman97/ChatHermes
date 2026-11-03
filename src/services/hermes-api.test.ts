@@ -5,6 +5,50 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("dashboard plugin Hermes client", () => {
+  it.each(["", "default", "alpha", "beta"])(
+    "routes global Inbox through default and keeps profile operations scoped from %s",
+    async (profile) => {
+      const fake = vi.fn(async (_input: string, _init?: RequestInit) => new Response("{}"));
+      vi.stubGlobal("fetch", fake);
+      await api.inbox(profile);
+      const controller = new AbortController();
+      await api.inbox(
+        profile,
+        { scope: "all", unread: true, cursor: "100:42", limit: 1 },
+        controller.signal,
+      );
+      await api.deleteReadInbox(profile, "all");
+      await api.inbox(profile, { scope: "profile" });
+      await api.deleteReadInbox(profile, "profile");
+      await api.readInbox(profile, 42);
+      await api.deleteInboxItem(profile, 42);
+      const urls = fake.mock.calls.map(([url]) => new URL(url, "https://dashboard.test"));
+      expect(urls.map((url) => url.searchParams.get("profile"))).toEqual([
+        "default",
+        "default",
+        "default",
+        profile || null,
+        profile || null,
+        profile || null,
+        profile || null,
+      ]);
+      expect(Object.fromEntries(urls[1]!.searchParams)).toEqual({
+        scope: "all",
+        unread: "true",
+        cursor: "100:42",
+        limit: "1",
+        profile: "default",
+      });
+      expect(fake.mock.calls[1]?.[1]).toMatchObject({
+        signal: controller.signal,
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      expect(urls[2]!.pathname).toBe("/api/plugins/chathermes/inbox/read");
+      expect(urls[2]!.searchParams.get("scope")).toBe("all");
+      expect(fake.mock.calls[2]?.[1]?.method).toBe("DELETE");
+    },
+  );
   it("deletes an Inbox item through its authenticated owning-profile route", async () => {
     const fake = vi.fn(
       async (_input: string, _init?: RequestInit) =>

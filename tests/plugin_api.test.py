@@ -3082,6 +3082,138 @@ async def test_archive_keeps_tracking_and_only_confirmed_delete_removes_it(app, 
 
 
 @run_async
+@pytest.mark.parametrize("selected", ["alpha", "beta"])
+async def test_inbox_default_routing_and_real_secondary_host_boundary(
+    app, monkeypatch, tmp_path, selected
+):
+    """Keep global collection in default; real IPC stripping cannot widen a host."""
+    from types import SimpleNamespace
+
+    from fastapi import Request
+    from fastapi.responses import Response
+
+    forwarder = pytest.importorskip("hermes_cli.web_server_plugin_profiles")
+    from hermes_cli import plugin_host_http_auth as admission
+    from hermes_cli import plugins, profiles, web_server_profiles
+    from hermes_constants import get_hermes_home
+
+    root = tmp_path / "hermes"
+    for name in ("default", "alpha", "beta"):
+        home = root if name == "default" else root / "profiles" / name
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yaml").write_text("{}")
+    monkeypatch.delenv("HERMES_PLUGIN_HOST_PROCESS", raising=False)
+    monkeypatch.setattr(profiles, "_get_default_hermes_home", lambda: root)
+    monkeypatch.setattr(web_server_profiles, "get_process_hermes_home", lambda: root)
+    monkeypatch.setattr(forwarder, "get_process_hermes_home", lambda: root)
+    monkeypatch.setattr(
+        profiles, "list_profiles", lambda: [SimpleNamespace(name=p) for p in ("alpha", "beta")]
+    )
+    monkeypatch.setattr(
+        forwarder,
+        "_secondary_hosted_plugin",
+        lambda name: (
+            {"_dir": "synthetic", "_api_file": "plugin_api.py"}
+            if forwarder.secondary_profile_home() is not None
+            else None
+        ),
+    )
+    monkeypatch.setattr(admission, "admitted_for_sensitive_route", lambda request: True)
+    ids = {}
+    for name in ("default", "alpha", "beta", "private"):
+        plugin._inbox.record(plugin._push_store_module, name, "same", "request", "clarify")
+        ids[name] = plugin._inbox.page(plugin._push_store_module, [name])["items"][0]["id"]
+    forwarded = []
+    hosted = FastAPI()
+    hosted.include_router(plugin.router)
+
+    def asgi_request(name, directory, api_file, method, path, query, headers, body, **options):
+        home = get_hermes_home()
+        forwarded.append((home.name, query))
+
+        async def dispatch():
+            # Model the child process's own home, not a client identity header.
+            with monkeypatch.context() as child:
+                child.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")
+                child.setattr(web_server_profiles, "get_process_hermes_home", lambda: home)
+                transport = httpx.ASGITransport(
+                    app=admission.with_hosted_admission(hosted, options["authenticated"])
+                )
+                async with httpx.AsyncClient(transport=transport, base_url="http://host") as client:
+                    response = await client.request(method, path, params=query, content=body)
+                return {
+                    "status": response.status_code,
+                    "headers": list(response.headers.multi_items()),
+                    "body": response.content,
+                }
+
+        return asyncio.run(dispatch())
+
+    monkeypatch.setattr(
+        plugins,
+        "get_plugin_manager",
+        lambda: SimpleNamespace(_plugin_host=lambda: SimpleNamespace(asgi_request=asgi_request)),
+    )
+    dashboard = FastAPI()
+
+    @dashboard.api_route("/api/plugins/chathermes/{path:path}", methods=["GET", "PUT", "DELETE"])
+    async def route(request: Request, path: str):
+        with forwarder.plugin_request_scope(request.scope):
+            response = await forwarder.forward_secondary_plugin_request(request, "chathermes")
+            if response is not None:
+                return response
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://default"
+            ) as client:
+                response = await client.request(request.method, str(request.url))
+                return Response(
+                    response.content, response.status_code, headers=dict(response.headers)
+                )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=dashboard), base_url="http://dashboard.test"
+    ) as client:
+        inbox = "/api/plugins/chathermes/inbox"
+        # The browser uses this same default URL from every selected profile.
+        global_page = await client.get(inbox + "?profile=default&scope=all")
+        assert global_page.status_code == 200
+        assert set(global_page.json()["byProfile"]) == {"default", "alpha", "beta"}
+        assert forwarded == []
+        local = await client.get(inbox + f"?profile={selected}&scope=all")
+        assert set(local.json()["byProfile"]) == {selected}
+        assert forwarded[-1] == (selected, "scope=all")
+        filtered = await client.get(
+            inbox + f"?profile={selected}&scope=profile",
+            headers={"x-profile": "private", "x-hermes-plugin-host-process": "0"},
+        )
+        assert set(filtered.json()["byProfile"]) == {selected}
+        other = "beta" if selected == "alpha" else "alpha"
+        for name in (other, "default", "private"):
+            for method, suffix in (("PUT", "/read"), ("DELETE", "")):
+                denied = await client.request(
+                    method, inbox + f"/{ids[name]}{suffix}?profile={selected}"
+                )
+                assert denied.status_code == 404
+        assert (
+            await client.put(inbox + f"/{ids[selected]}/read?profile={selected}")
+        ).status_code == 200
+        # Read items outside this host must survive its bulk delete as well.
+        for name in (other, "private"):
+            plugin._inbox.mark_read(plugin._push_store_module, [name], ids[name])
+        assert (
+            await client.delete(inbox + f"/read?profile={selected}&scope=all")
+        ).status_code == 200
+        remaining = (await client.get(inbox + "?profile=default&scope=all")).json()
+        assert {item["profile"] for item in remaining["items"]} == {"default", other}
+        assert (await client.delete(inbox + "/read?profile=default&scope=all")).status_code == 200
+        assert set((await client.get(inbox + "?profile=default")).json()["byProfile"]) == {
+            "default"
+        }
+        private = plugin._inbox.page(plugin._push_store_module, ["private"])["items"]
+        assert len(private) == 1 and private[0]["read"]
+
+
+@run_async
 async def test_inbox_api_global_profile_pages_read_delete_and_host_boundary(app, monkeypatch):
     async def accessible(_self):
         return ["alpha", "beta"]

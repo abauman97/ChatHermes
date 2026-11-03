@@ -330,6 +330,11 @@ never interrupt, close, archive, delete, or move a native session.
 All routes inherit dashboard authentication and return private/no-store responses.
 All-profile queries are bounded by the server's accessible profile set; a hosted
 plugin process only sees its owning profile. No push subscription is required.
+The browser routes All-profile Inbox reads and delete-read operations explicitly
+through `profile=default`, regardless of the selected UI profile. Profile-filtered
+reads and individual item mutations use the owning profile's route. Hermes strips
+the routing profile before secondary-host IPC; those hosts still recover their
+process identity and cannot read or mutate another profile's notifications.
 
 - `GET /inbox?scope=all&profile=…&limit=50&cursor=…&unread=false` returns
   `{items, unread, byProfile, nextCursor, revision}`. `revision` changes when collection, read state or deletion changes in this scope. `scope=profile` selects the request

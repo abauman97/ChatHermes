@@ -138,14 +138,22 @@ export const api = {
       limit: String(options.limit || 50),
     });
     if (options.cursor) query.set("cursor", options.cursor);
-    return request<InboxPage>(profile, "/inbox?" + query, { signal });
+    // Hermes routes named profiles into isolated plugin hosts. Global Inbox
+    // reads must use the default dashboard's accessible set, like default entry.
+    return request<InboxPage>(
+      options.scope === "profile" ? profile : "default",
+      "/inbox?" + query,
+      { signal },
+    );
   },
   readInbox: (profile: string, id: number) =>
     request(profile, "/inbox/" + id + "/read", { method: "PUT" }),
   deleteInboxItem: (profile: string, id: number) =>
     request(profile, "/inbox/" + id, { method: "DELETE" }),
   deleteReadInbox: (profile: string, scope: "all" | "profile") =>
-    request(profile, "/inbox/read?scope=" + scope, { method: "DELETE" }),
+    request(scope === "profile" ? profile : "default", "/inbox/read?scope=" + scope, {
+      method: "DELETE",
+    }),
   artifacts: (profile: string, projectId?: string, cursor?: string, signal?: AbortSignal) => {
     const query = new URLSearchParams({ limit: "50" });
     if (projectId !== undefined) query.set("project_id", projectId);
