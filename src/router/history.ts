@@ -9,7 +9,7 @@ export function createPluginHistory(): RouterHistory {
   let listeners: Array<(to: string, from: string, info: NavigationInformation) => void> = [];
   let paused = false,
     destroyed = false;
-  const readLocation = () => resolvePluginUrl(window.location.href) || "/";
+  const readLocation = () => resolvePluginUrl(window.location.href) || "/inbox";
   let current = readLocation();
   const readEntry = (): Entry | undefined => window.history.state?.[namespace];
   let position = readEntry()?.position ?? 0;

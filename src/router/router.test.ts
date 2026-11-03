@@ -96,6 +96,21 @@ describe("plugin routing", () => {
   });
 });
 describe("host history", () => {
+  it.each([
+    ["", "inbox"],
+    ["#/", "home"],
+    ["#/chat/s1?profile=alpha", "chat"],
+    ["#/projects", "projects"],
+  ])("opens Inbox by default while preserving explicit destinations: %s", async (hash, name) => {
+    history.replaceState({ usr: { host: true }, idx: 4, key: "entry" }, "", "/chathermes" + hash);
+    const length = history.length;
+    const router = createChatHermesRouter();
+    await router.push(router.options.history.location);
+    expect(router.currentRoute.value.name).toBe(name);
+    expect(history.length).toBe(length);
+    expect(history.state).toMatchObject({ usr: { host: true }, idx: 4, key: "entry" });
+    router.options.history.destroy();
+  });
   it("namespaces plugin state while preserving host state and index/key conventions", () => {
     const plugin = createPluginHistory();
     plugin.replace("/?profile=alpha", { replacement: true });
