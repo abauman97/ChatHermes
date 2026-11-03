@@ -4852,11 +4852,11 @@ var Q = {
 			unread: String(t.unread || !1),
 			limit: String(t.limit || 50)
 		});
-		return t.cursor && r.set("cursor", t.cursor), yl(e, "/inbox?" + r, { signal: n });
+		return t.cursor && r.set("cursor", t.cursor), yl(t.scope === "profile" ? e : "default", "/inbox?" + r, { signal: n });
 	},
 	readInbox: (e, t) => yl(e, "/inbox/" + t + "/read", { method: "PUT" }),
 	deleteInboxItem: (e, t) => yl(e, "/inbox/" + t, { method: "DELETE" }),
-	deleteReadInbox: (e, t) => yl(e, "/inbox/read?scope=" + t, { method: "DELETE" }),
+	deleteReadInbox: (e, t) => yl(t === "profile" ? e : "default", "/inbox/read?scope=" + t, { method: "DELETE" }),
 	artifacts: (e, t, n, r) => {
 		let i = new URLSearchParams({ limit: "50" });
 		return t !== void 0 && i.set("project_id", t), n && i.set("cursor", n), yl(e, `/artifacts?${i}`, { signal: r });
