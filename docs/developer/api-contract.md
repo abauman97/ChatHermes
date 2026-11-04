@@ -13,38 +13,14 @@ The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob
 ## Persisted transcript pages
 
 The chat viewer requests `GET /api/sessions/{id}/messages?limit=120&offset=N&order=latest&inline_images=false&include_compacted=true&transcript=1`
-through the authenticated plugin proxy. `offset` counts retained logical rows from
+through the authenticated plugin proxy. `offset` counts Hermes display rows from
 the newest end; each page is chronological. Native resume/activation requests use
 `omit_messages=true`; persisted hydration no longer downloads the native display
 history as well.
 
-The opt-in ChatHermes extension opens the owning profile's SessionDB read-only.
-It requires only the reviewed unmodified Hermes pin; no shared-history API or
-patched runtime is used. It follows Desktop's compression lineage, summary-carrier
-folding, live/newest representative preference, model-only filtering and rewind
-removal, using the pinned storage metadata and display projection.
-
-ChatHermes selects a metadata plan before paging. Retired original rows anchor
-surviving copies, avoiding the observed single-segment compaction ordering bug
-where Desktop REST's reconciled `display_order` moves uncovered user copies past
-archived answers. Native Desktop resume uses `_dedupe_display_generations` over
-retained rows instead; retired original anchors are absent there too. These paths
-are not universally identical at the pin. ChatHermes deliberately uses occurrence
-UID plus display identity to retain distinct repeated sends, including identical
-content and timestamps, instead of Desktop's content/timestamp identity alone.
-For legacy independently backfilled UIDs, matching uses full identity, indexed
-slot (or verified compression lineage), compaction generation and suffix occurrence ordinal.
-Rotation leaves parent rows active, so only same-session fallback requires an
-inactive original. Shared occurrence UIDs take precedence for an identity at each
-generation boundary, preventing ordinal inference from absorbing fresh repeated sends.
-This fallback cannot distinguish a new occurrence with exactly the same durable
-coordinates from a historical copy; it is not a universal occurrence guarantee.
-In-place pruning preserves the original slot and selects one live representative;
-a later shortened tool copy does not replace or duplicate its full original output,
-including active parent originals across verified compression rotations. This uses
-the durable occurrence UID and timestamp, not a tool call ID or matching content;
-real repeated calls remain separate and child rewind retires ancestor copies.
-Only the requested page plus one preceding boundary row is decoded.
+The opt-in plugin extension opens the owning profile's SessionDB read-only,
+resolves the resume tip, and delegates ancestor expansion, generation deduplication
+and rewind removal to `get_messages(...include_compacted=True, include_ancestors=True)`.
 It applies the pinned Desktop `_project_for_display` and honors `display_content`;
 standalone compaction summaries never reach the browser. Inline image bytes become authenticated `artifact-images` addresses; image reads select one profile-owned lineage row rather than scanning the transcript. `display_id` is a stable
 logical first-row identity for rendering; `id` remains the durable representative
@@ -59,14 +35,8 @@ multiple compactions. Markers follow the pre-compaction retained tail in logical
 message order. Unrecorded/provider-only rewrites without durable row anchors
 cannot be reconstructed and are never guessed from message text or token counts.
 
-A hash of lineage metadata, flagged carrier fingerprints and each segment's
-pinned `transcript_revision` fences pagination, including in-place content and
-reasoning rewrites. Every page performs linear metadata work across the lineage;
-there is no shared materialization, cross-request plan cache or constant-work
-paging guarantee. Indexed ordinary message bodies are not read for this plan;
-unindexed legacy rows require body reads to derive identities. Memory scales
-with metadata size and decoded page payloads, rather than all message payloads.
-Changed append, rewind, compaction or rotation state returns
+A content-free identity/active-state revision (with flagged carrier fingerprints)
+fences pagination. Changed append, rewind, compaction or rotation state returns
 409; the client refreshes its loaded window before advancing. Refresh and backfill
 results are guarded by profile/session generation and request identity. Live
 projections remain until their persistence coverage is proven. A settled omitted
@@ -75,34 +45,8 @@ agrees with the latest saved occurrence. Earlier pages load
 near scroll-top and through a retryable button; a DOM anchor preserves the reader
 while pages prepend or live content grows.
 
-Incomplete running snapshots merge text that extends saved partial output.
-When Hermes supplies `correction_offsets`, resume splits assistant text around
-each correction using Python Unicode code-point offsets, including repeated
-corrections. A saved prefix of the user/correction sequence can be reused even
-when later corrections have not yet persisted. It must end at the latest saved
-user, have no equally long or longer competing prefix occurrence, valid offsets,
-no queued input, and saved assistant prose consistent with the snapshot segments. Saved row IDs
-survive adoption; only the unsaved corrections receive new bubbles. Repeated
-original prompts require enough saved correction context to distinguish them.
-Each snapshot segment merges into the saved text phases in place,
-preserving their order around reasoning/tools and their assistant images, including
-image-only phases. Only unseen suffix text extends the last phase or follows a
-trailing tool. Native multipart content retains images alongside its text summary.
-Ambiguous, older or conflicting sequences remain unbound;
-matching prompt text alone does not retire a correction sequence.
-Missing/invalid offsets cannot establish historical placement.
-An empty cached `blocks` array does not override saved assistant content.
-
-This reconstructs retained message history; it cannot promise an exact durable
-replay of every live event. The pinned native transport supplies no complete
-durable event sequence. Tool progress, disclosure timing, and correction
-boundaries not persisted by Hermes can be unavailable after reconnect/restart.
-The recovery warning describes that running replay limit; it does not assert
-that Hermes stored every live event. See the [audit and upstream requirements](../internal/verification/2026-11-04-transcript-fidelity.md).
-
-Older Hermes stores without the required metadata retain the ordinary gateway
-proxy. There is no requirement to install a patched runtime. An explicit
-`pagination.order="latest"` is required to adopt a bounded tail.
+Older Hermes versions without the storage helpers keep the ordinary gateway
+proxy. An explicit `pagination.order="latest"` is required to adopt a bounded tail.
 An orderless response falls back to oldest-first full pagination, matching Desktop;
 responses without pagination are complete. Legacy latest paging without revision
 support revalidates the loaded tail before advancing.

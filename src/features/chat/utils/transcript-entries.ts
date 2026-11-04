@@ -79,9 +79,7 @@ export function transcriptEntries(input: {
       const blocks =
         last && (!input.turnUserCount || input.turnUserCount === userCount) && input.blocks?.length
           ? input.blocks
-          : message.blocks?.length
-            ? message.blocks
-            : historyBlocks(visible.slice(index + 1, end));
+          : message.blocks || historyBlocks(visible.slice(index + 1, end));
       const turnBlocks = blocks.length ? blocks : last ? input.progress : [];
       const working =
         last &&

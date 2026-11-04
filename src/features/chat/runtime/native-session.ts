@@ -323,16 +323,12 @@ export function useNativeSession(
     user = undefined;
     pendingInput = false;
     completed = [];
-    hasCorrections = false;
     const history = value.messages.map(
       (row) =>
         ({
           ...row,
           id: row.row_id == null ? undefined : String(row.row_id),
-          content:
-            Array.isArray(row.content) || row.role === "tool"
-              ? row.content
-              : row.text || row.content || "",
+          content: row.role === "tool" ? row.content : row.text || row.content || "",
           tool_name: row.name,
         }) as Message,
     );
@@ -346,115 +342,30 @@ export function useNativeSession(
       : recovered;
     busy.value = !!(value.running || value.queued);
     if (!value.recovery.complete && value.inflight?.user) {
-      const corrections = value.inflight.corrections || [];
-      const offsets = value.inflight.correction_offsets;
-      // Hermes counts Python Unicode code points, not JavaScript UTF-16 units.
-      const assistant = Array.from(value.inflight.assistant || "");
-      const validOffsets =
-        corrections.length > 0 &&
-        offsets?.length === corrections.length &&
-        offsets.every(
-          (offset, index) =>
-            Number.isInteger(offset) &&
-            offset >= 0 &&
-            offset <= assistant.length &&
-            (index === 0 || offset >= offsets[index - 1]!),
-        );
-      const saved = messages.value;
-      const users = saved.flatMap((row, index) => (row.role === "user" ? [index] : []));
-      const sequence = [value.inflight.user, ...corrections];
-      const matches = users.flatMap((_, ordinal) => {
-        const indices: number[] = [];
-        for (const at of users.slice(ordinal, ordinal + sequence.length)) {
-          const n = indices.length;
-          if (
-            messageText(saved[at]!.content) !== sequence[n] ||
-            (saved[at]!.display_kind || undefined) !==
-              (n === 0 ? value.inflight!.display_kind || undefined : undefined)
-          )
-            break;
-          indices.push(at);
-        }
-        return indices.length ? [indices] : [];
-      });
-      // Persistence may stop before any correction. Adopt only a unique prefix
-      // ending at the latest user; any equally long earlier match is ambiguous.
-      // A longer saved sequence can disambiguate repeated original prompts.
-      const tail = matches.find((indices) => indices.at(-1) === users.at(-1));
-      const savedProseAgrees = (indices: number[]) =>
-        indices.every((at, n) => {
-          const end = users.find((index) => index > at) ?? saved.length;
-          const prose = saved
-            .slice(at + 1, end)
-            .filter((row) => row.role === "assistant")
-            .map((row) => messageText(row.content))
-            .join("");
-          const startOffset = n === 0 ? 0 : offsets![n - 1]!;
-          const endOffset = offsets![n] ?? assistant.length;
-          return assistant.slice(startOffset, endOffset).join("").startsWith(prose);
-        });
-      const matched =
-        validOffsets &&
-        !value.queued &&
-        tail &&
-        matches.filter((indices) => indices.length >= tail.length).length === 1 &&
-        savedProseAgrees(tail)
-          ? tail
-          : undefined;
-      const last = users.at(-1) ?? -1;
-      const anchor = matched?.[0] ?? (corrections.length ? -1 : last);
-      const adopt = (at: number) => {
-        user = saved[at];
-        turn = reactive(createTurn());
-        const end = users.find((index) => index > at) ?? saved.length;
-        mergeHistoryBlocks(turn, historyBlocks(saved.slice(at + 1, end)), busy.value);
-        user!.blocks = turn.blocks;
-      };
+      const last = messages.value.reduce(
+        (last, row, index) => (row.role === "user" ? index : last),
+        -1,
+      );
       if (
-        anchor < 0 ||
-        messageText(saved[anchor]!.content) !== value.inflight.user ||
-        (saved[anchor]!.display_kind || undefined) !== (value.inflight.display_kind || undefined)
+        last < 0 ||
+        messageText(messages.value[last]!.content) !== value.inflight.user ||
+        (messages.value[last]!.display_kind || undefined) !==
+          (value.inflight.display_kind || undefined)
       ) {
         input(value.inflight.user, false, undefined, {
           display_kind: value.inflight.display_kind || undefined,
           display_metadata: value.inflight.display_metadata,
         });
       } else {
-        adopt(anchor);
-        if (matched) messages.value = [...saved.slice(0, anchor), user!];
+        user = messages.value[last];
+        turn = reactive(createTurn());
+        const recoveredBlocks = historyBlocks(messages.value.slice(last + 1));
+        mergeHistoryBlocks(turn, recoveredBlocks, busy.value);
+        user!.blocks = turn.blocks;
       }
-      const correction = (index: number) => {
-        input(corrections[index]!, true);
-        if (matched?.[index + 1] !== undefined) {
-          adopt(matched[index + 1]!);
-          messages.value[messages.value.length - 1] = user!;
-        }
-      };
-      if (validOffsets) {
-        // Merge each correction segment into its saved phases. Text blocks also
-        // own images; rebuilding them would discard images and move prose past
-        // tools whose actual order is already known from persisted history.
-        let start = 0;
-        for (let index = 0; index < corrections.length; index++) {
-          const end = offsets[index]!;
-          if (end > start)
-            reduceTurn(turn!, {
-              type: "text.snapshot",
-              data: { text: assistant.slice(start, end).join("") },
-            });
-          correction(index);
-          start = end;
-        }
-        if (start < assistant.length)
-          reduceTurn(turn!, {
-            type: "text.snapshot",
-            data: { text: assistant.slice(start).join("") },
-          });
-      } else {
-        if (value.inflight.assistant)
-          reduceTurn(turn!, { type: "text.snapshot", data: { text: value.inflight.assistant } });
-        for (let index = 0; index < corrections.length; index++) correction(index);
-      }
+      if (value.inflight.assistant && !turn!.blocks.some((block) => block.kind === "text"))
+        reduceTurn(turn!, { type: "text.snapshot", data: { text: value.inflight.assistant } });
+      for (const text of value.inflight.corrections || []) input(text, true);
       if (value.inflight.error) error.value = value.inflight.error;
       status.value =
         gatewayDisplay(user!) === "status"
