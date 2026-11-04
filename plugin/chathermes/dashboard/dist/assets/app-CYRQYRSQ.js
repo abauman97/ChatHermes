@@ -10658,10 +10658,10 @@ async function Ig(e, t, n) {
 	return r;
 }
 function Lg(e) {
-	let t = Tl(e?.messages.slice().reverse().find((e) => e.role === "assistant" && Tl(e.content))?.content) || e?.output;
-	return t ? [{
+	let t = e?.messages.slice().reverse().find((e) => e.role === "assistant" && Tl(e.content).trim()), n = t ? Tl(t.content) : e?.output;
+	return n ? [{
 		role: "assistant",
-		content: t
+		content: n
 	}] : [];
 }
 //#endregion
@@ -11104,8 +11104,23 @@ function Rg() {
 		Bt.set(i, a), await a, Bt.get(i) === a && Bt.delete(i);
 	}
 	async function Ht(e) {
-		let t = n.currentRoute.value;
-		if (await Q.session(e.profile, e.session), t !== n.currentRoute.value) throw Error("Navigation changed");
+		let t = n.currentRoute.value, r = await Q.session(e.profile, e.session);
+		if (t !== n.currentRoute.value) throw Error("Navigation changed");
+		if (r.source === "kanban") {
+			let i = r.kanban_task;
+			if (!i) throw Error("Task unavailable");
+			if (await Hc.task(i.board, i.task), !Je.visible.value && (await Je.check(), !Je.available.value)) throw Error("Kanban unavailable");
+			if (t !== n.currentRoute.value) throw Error("Navigation changed");
+			Je.setEnabled(!0), await h({
+				name: "kanban",
+				query: {
+					profile: e.profile,
+					board: i.board,
+					task: i.task
+				}
+			}), Je.visible.value && (await Q.deleteInboxItem(e.profile, e.id), await zt(!1));
+			return;
+		}
 		if (await h({
 			name: "chat",
 			params: { sessionId: e.session },
@@ -11906,26 +11921,24 @@ function D_(e, t, n, r) {
 }
 //#endregion
 //#region src/features/kanban/TaskForm.vue?vue&type=script&setup=true&lang.ts
-var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
-	key: 2,
+var O_ = { key: 0 }, k_ = ["value"], A_ = {
+	key: 1,
 	class: "kanban-inline"
-}, M_ = ["value"], N_ = { class: "kanban-toolbar" }, P_ = ["disabled"], F_ = ["disabled"], I_ = /* @__PURE__ */ V({
+}, j_ = ["value"], M_ = { class: "kanban-toolbar" }, N_ = ["disabled"], P_ = ["disabled"], F_ = /* @__PURE__ */ V({
 	__name: "TaskForm",
 	props: {
 		task: {},
-		creationStatus: {},
 		assignees: {},
 		busy: { type: Boolean }
 	},
 	emits: ["save", "cancel"],
 	setup(e, { emit: t }) {
-		let n = e, r = t, i = /* @__PURE__ */ R(n.task?.title || ""), a = /* @__PURE__ */ R(n.task?.body || ""), o = /* @__PURE__ */ R(n.task?.priority || 0), s = /* @__PURE__ */ R(n.task?.assignee || ""), c = /* @__PURE__ */ R(n.task?.model_override || ""), l = /* @__PURE__ */ R(n.task?.provider_override || ""), u = /* @__PURE__ */ R(n.task?.reasoning_effort || ""), d = /* @__PURE__ */ R(!1), f = /* @__PURE__ */ R("");
-		function p() {
-			i.value.trim() && (n.creationStatus !== "done" || f.value.trim()) && r("save", {
+		let n = e, r = t, i = /* @__PURE__ */ R(n.task?.title || ""), a = /* @__PURE__ */ R(n.task?.body || ""), o = /* @__PURE__ */ R(n.task?.priority || 0), s = /* @__PURE__ */ R(n.task?.assignee || ""), c = /* @__PURE__ */ R(n.task?.model_override || ""), l = /* @__PURE__ */ R(n.task?.provider_override || ""), u = /* @__PURE__ */ R(n.task?.reasoning_effort || ""), d = /* @__PURE__ */ R(!1);
+		function f() {
+			i.value.trim() && r("save", {
 				title: i.value.trim(),
 				body: a.value,
 				priority: o.value,
-				...n.creationStatus === "done" ? { summary: f.value.trim() } : {},
 				...n.task ? {} : {
 					assignee: s.value || null,
 					triage: d.value
@@ -11939,25 +11952,20 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 		}
 		return (t, n) => (W(), G("form", {
 			class: "kanban-form",
-			onSubmit: Oo(p, ["prevent"])
+			onSubmit: Oo(f, ["prevent"])
 		}, [
-			q("label", null, [n[10] ||= J("Title", -1), B(q("input", {
+			q("label", null, [n[9] ||= J("Title", -1), B(q("input", {
 				"onUpdate:modelValue": n[0] ||= (e) => i.value = e,
 				required: "",
 				"aria-label": "Task title"
 			}, null, 512), [[vo, i.value]])]),
-			q("label", null, [n[11] ||= J("Description", -1), B(q("textarea", {
+			q("label", null, [n[10] ||= J("Description", -1), B(q("textarea", {
 				"onUpdate:modelValue": n[1] ||= (e) => a.value = e,
 				rows: "4",
 				"aria-label": "Task description"
 			}, null, 512), [[vo, a.value]])]),
-			e.creationStatus === "done" ? (W(), G("label", O_, [n[12] ||= J("Completion summary", -1), B(q("textarea", {
-				"onUpdate:modelValue": n[2] ||= (e) => f.value = e,
-				required: "",
-				"aria-label": "Task completion summary"
-			}, null, 512), [[vo, f.value]])])) : Y("v-if", !0),
-			q("label", null, [n[13] ||= J("Priority", -1), B(q("input", {
-				"onUpdate:modelValue": n[3] ||= (e) => o.value = e,
+			q("label", null, [n[11] ||= J("Priority", -1), B(q("input", {
+				"onUpdate:modelValue": n[2] ||= (e) => o.value = e,
 				type: "number",
 				step: "1",
 				"aria-label": "Task priority"
@@ -11967,32 +11975,32 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				void 0,
 				{ number: !0 }
 			]])]),
-			e.task ? Y("v-if", !0) : (W(), G("label", k_, [n[15] ||= J("Assignee", -1), B(q("select", {
-				"onUpdate:modelValue": n[4] ||= (e) => s.value = e,
+			e.task ? Y("v-if", !0) : (W(), G("label", O_, [n[13] ||= J("Assignee", -1), B(q("select", {
+				"onUpdate:modelValue": n[3] ||= (e) => s.value = e,
 				"aria-label": "Task assignee"
-			}, [n[14] ||= q("option", { value: "" }, "Unassigned", -1), (W(!0), G(U, null, H(e.assignees, (e) => (W(), G("option", {
+			}, [n[12] ||= q("option", { value: "" }, "Unassigned", -1), (W(!0), G(U, null, H(e.assignees, (e) => (W(), G("option", {
 				key: e,
 				value: e
-			}, L(e), 9, A_))), 128))], 512), [[xo, s.value]])])),
-			!e.task && !e.creationStatus ? (W(), G("label", j_, [B(q("input", {
-				"onUpdate:modelValue": n[5] ||= (e) => d.value = e,
+			}, L(e), 9, k_))), 128))], 512), [[xo, s.value]])])),
+			e.task ? Y("v-if", !0) : (W(), G("label", A_, [B(q("input", {
+				"onUpdate:modelValue": n[4] ||= (e) => d.value = e,
 				type: "checkbox"
-			}, null, 512), [[yo, d.value]]), n[16] ||= J("Start in triage", -1)])) : Y("v-if", !0),
+			}, null, 512), [[yo, d.value]]), n[14] ||= J("Start in triage", -1)])),
 			q("details", null, [
-				n[21] ||= q("summary", null, "Worker overrides", -1),
-				n[22] ||= q("p", { class: "kanban-muted" }, " Blank values inherit the assigned profile. Overrides apply to the next worker run. ", -1),
-				q("label", null, [n[17] ||= J("Model override", -1), B(q("input", {
-					"onUpdate:modelValue": n[6] ||= (e) => c.value = e,
+				n[19] ||= q("summary", null, "Worker overrides", -1),
+				n[20] ||= q("p", { class: "kanban-muted" }, " Blank values inherit the assigned profile. Overrides apply to the next worker run. ", -1),
+				q("label", null, [n[15] ||= J("Model override", -1), B(q("input", {
+					"onUpdate:modelValue": n[5] ||= (e) => c.value = e,
 					"aria-label": "Task model override"
 				}, null, 512), [[vo, c.value]])]),
-				q("label", null, [n[18] ||= J("Provider override", -1), B(q("input", {
-					"onUpdate:modelValue": n[7] ||= (e) => l.value = e,
+				q("label", null, [n[16] ||= J("Provider override", -1), B(q("input", {
+					"onUpdate:modelValue": n[6] ||= (e) => l.value = e,
 					"aria-label": "Task provider override"
 				}, null, 512), [[vo, l.value]])]),
-				q("label", null, [n[20] ||= J("Reasoning effort", -1), B(q("select", {
-					"onUpdate:modelValue": n[8] ||= (e) => u.value = e,
+				q("label", null, [n[18] ||= J("Reasoning effort", -1), B(q("select", {
+					"onUpdate:modelValue": n[7] ||= (e) => u.value = e,
 					"aria-label": "Task reasoning effort"
-				}, [n[19] ||= q("option", { value: "" }, "Inherit profile", -1), (W(), G(U, null, H([
+				}, [n[17] ||= q("option", { value: "" }, "Inherit profile", -1), (W(), G(U, null, H([
 					"none",
 					"minimal",
 					"low",
@@ -12004,47 +12012,47 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				], (e) => q("option", {
 					key: e,
 					value: e
-				}, L(e), 9, M_)), 64))], 512), [[xo, u.value]])])
+				}, L(e), 9, j_)), 64))], 512), [[xo, u.value]])])
 			]),
-			q("div", N_, [q("button", {
+			q("div", M_, [q("button", {
 				disabled: e.busy || !i.value.trim(),
 				type: "submit"
-			}, L(e.task ? "Save task" : "Create task"), 9, P_), q("button", {
+			}, L(e.task ? "Save task" : "Create task"), 9, N_), q("button", {
 				type: "button",
 				disabled: e.busy,
-				onClick: n[9] ||= (e) => r("cancel")
-			}, "Cancel", 8, F_)])
+				onClick: n[8] ||= (e) => r("cancel")
+			}, "Cancel", 8, P_)])
 		], 32));
 	}
-}), L_ = {
+}), I_ = {
 	class: "kanban-detail",
 	"aria-label": "Task details"
-}, R_ = { class: "kanban-toolbar" }, z_ = { class: "kanban-muted" }, B_ = { key: 0 }, V_ = { key: 1 }, H_ = {
+}, L_ = { class: "kanban-toolbar" }, R_ = { class: "kanban-muted" }, z_ = { key: 0 }, B_ = { key: 1 }, V_ = {
 	key: 2,
 	class: "kanban-muted"
-}, U_ = { key: 0 }, W_ = { class: "kanban-prose" }, G_ = ["disabled"], K_ = { class: "kanban-toolbar" }, q_ = ["value", "disabled"], J_ = ["value"], Y_ = ["value"], X_ = ["disabled"], Z_ = ["disabled"], Q_ = ["value"], $_ = ["disabled"], ev = { key: 5 }, tv = { class: "kanban-prose" }, nv = { class: "kanban-prose" }, rv = { open: "" }, iv = {
+}, H_ = { key: 0 }, U_ = { class: "kanban-prose" }, W_ = ["disabled"], G_ = { class: "kanban-toolbar" }, K_ = ["value", "disabled"], q_ = ["value"], J_ = ["value"], Y_ = ["disabled"], X_ = ["disabled"], Z_ = ["value"], Q_ = ["disabled"], $_ = { key: 5 }, ev = { class: "kanban-prose" }, tv = { class: "kanban-prose" }, nv = { open: "" }, rv = {
 	key: 0,
 	class: "kanban-muted"
-}, av = ["onClick"], ov = { open: "" }, sv = { class: "kanban-muted" }, cv = { class: "kanban-prose" }, lv = ["disabled"], uv = {
+}, iv = ["onClick"], av = { open: "" }, ov = { class: "kanban-muted" }, sv = { class: "kanban-prose" }, cv = ["disabled"], lv = {
 	key: 6,
 	open: ""
-}, dv = ["href"], fv = { class: "kanban-muted" }, pv = [
+}, uv = ["href"], dv = { class: "kanban-muted" }, fv = [
 	"disabled",
 	"aria-label",
 	"onClick"
-], mv = { class: "kanban-upload" }, hv = ["disabled"], gv = {
+], pv = { class: "kanban-upload" }, mv = ["disabled"], hv = {
 	key: 0,
 	class: "kanban-muted"
-}, _v = { class: "kanban-prose" }, vv = {
+}, gv = { class: "kanban-prose" }, _v = {
 	key: 0,
 	class: "kanban-prose"
+}, vv = {
+	key: 0,
+	class: "kanban-muted"
 }, yv = {
 	key: 0,
 	class: "kanban-muted"
-}, bv = {
-	key: 0,
-	class: "kanban-muted"
-}, xv = ["disabled"], Sv = /* @__PURE__ */ V({
+}, bv = ["disabled"], xv = /* @__PURE__ */ V({
 	__name: "TaskDetail",
 	props: {
 		board: {},
@@ -12092,8 +12100,8 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 		function m(e) {
 			return (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString();
 		}
-		return (t, n) => (W(), G("section", L_, [
-			q("div", R_, [q("h2", {
+		return (t, n) => (W(), G("section", I_, [
+			q("div", L_, [q("h2", {
 				ref_key: "heading",
 				ref: i,
 				tabindex: "-1",
@@ -12102,11 +12110,11 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				"aria-label": "Close task details",
 				onClick: n[0] ||= (e) => r("close")
 			}, "Close")]),
-			q("p", z_, L(e.detail.task.id) + " · " + L(e.detail.task.status) + " · Priority " + L(e.detail.task.priority ?? 0), 1),
-			e.detail.task.progress ? (W(), G("p", B_, L(e.detail.task.progress.done) + "/" + L(e.detail.task.progress.total) + " subtasks complete ", 1)) : Y("v-if", !0),
-			e.detail.task.block_kind ? (W(), G("p", V_, "Block reason: " + L(e.detail.task.block_kind), 1)) : Y("v-if", !0),
-			e.detail.task.worker_pid ? (W(), G("p", H_, [J(" Worker " + L(e.detail.task.worker_pid), 1), e.detail.task.last_heartbeat_at ? (W(), G("span", U_, " · Heartbeat " + L(m(e.detail.task.last_heartbeat_at)), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
-			a.value ? (W(), K(I_, {
+			q("p", R_, L(e.detail.task.id) + " · " + L(e.detail.task.status) + " · Priority " + L(e.detail.task.priority ?? 0), 1),
+			e.detail.task.progress ? (W(), G("p", z_, L(e.detail.task.progress.done) + "/" + L(e.detail.task.progress.total) + " subtasks complete ", 1)) : Y("v-if", !0),
+			e.detail.task.block_kind ? (W(), G("p", B_, "Block reason: " + L(e.detail.task.block_kind), 1)) : Y("v-if", !0),
+			e.detail.task.worker_pid ? (W(), G("p", V_, [J(" Worker " + L(e.detail.task.worker_pid), 1), e.detail.task.last_heartbeat_at ? (W(), G("span", H_, " · Heartbeat " + L(m(e.detail.task.last_heartbeat_at)), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
+			a.value ? (W(), K(F_, {
 				key: 3,
 				task: e.detail.task,
 				assignees: e.assignees,
@@ -12117,30 +12125,30 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				"task",
 				"assignees",
 				"busy"
-			])) : (W(), G(U, { key: 4 }, [q("p", W_, L(e.detail.task.body || "No description."), 1), q("button", {
+			])) : (W(), G(U, { key: 4 }, [q("p", U_, L(e.detail.task.body || "No description."), 1), q("button", {
 				disabled: e.busy,
 				onClick: n[2] ||= (e) => a.value = !0
-			}, "Edit task", 8, G_)], 64)),
-			q("div", K_, [
+			}, "Edit task", 8, W_)], 64)),
+			q("div", G_, [
 				q("label", null, [n[11] ||= J("Move task", -1), q("select", {
 					"aria-label": "Move task",
 					value: e.detail.task.status,
 					disabled: e.busy || !e.workflow,
 					onChange: n[3] ||= (e) => u("", "PATCH", { status: e.target.value })
-				}, [q("option", { value: e.detail.task.status }, L(e.detail.task.status), 9, J_), (W(!0), G(U, null, H(e.workflow?.columns.filter((t) => t.drag_target && e.workflow?.manual[e.detail.task.status]?.includes(t.key)), (e) => (W(), G("option", {
+				}, [q("option", { value: e.detail.task.status }, L(e.detail.task.status), 9, q_), (W(!0), G(U, null, H(e.workflow?.columns.filter((t) => t.drag_target && e.workflow?.manual[e.detail.task.status]?.includes(t.key)), (e) => (W(), G("option", {
 					key: e.key,
 					value: e.key
-				}, L(e.label), 9, Y_))), 128))], 40, q_)]),
+				}, L(e.label), 9, J_))), 128))], 40, K_)]),
 				e.detail.task.status === "archived" ? Y("v-if", !0) : (W(), G("button", {
 					key: 0,
 					disabled: e.busy,
 					onClick: n[4] ||= (e) => u("", "PATCH", { status: "archived" })
-				}, " Archive task ", 8, X_)),
+				}, " Archive task ", 8, Y_)),
 				e.detail.task.status === "running" ? (W(), G("button", {
 					key: 1,
 					disabled: e.busy,
 					onClick: n[5] ||= (e) => u("/reclaim", "POST", {})
-				}, " Reclaim worker ", 8, Z_)) : Y("v-if", !0)
+				}, " Reclaim worker ", 8, X_)) : Y("v-if", !0)
 			]),
 			q("form", {
 				class: "kanban-toolbar",
@@ -12155,30 +12163,30 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				}, [n[12] ||= q("option", { value: "" }, "Unassigned", -1), (W(!0), G(U, null, H(Array.from(new Set([...e.assignees, e.detail.task.assignee || ""].filter(Boolean))), (e) => (W(), G("option", {
 					key: e,
 					value: e
-				}, L(e), 9, Q_))), 128))], 512), [[xo, s.value]])]),
-				q("button", { disabled: e.busy }, "Reassign task", 8, $_),
+				}, L(e), 9, Z_))), 128))], 512), [[xo, s.value]])]),
+				q("button", { disabled: e.busy }, "Reassign task", 8, Q_),
 				n[14] ||= q("p", { class: "kanban-muted" }, "Reassigning releases any active worker claim.", -1)
 			], 32),
-			e.detail.task.latest_summary || e.detail.task.result ? (W(), G("details", ev, [
+			e.detail.task.latest_summary || e.detail.task.result ? (W(), G("details", $_, [
 				n[15] ||= q("summary", null, "Result and latest summary", -1),
-				q("p", tv, L(e.detail.task.latest_summary), 1),
-				q("p", nv, L(e.detail.task.result), 1)
+				q("p", ev, L(e.detail.task.latest_summary), 1),
+				q("p", tv, L(e.detail.task.result), 1)
 			])) : Y("v-if", !0),
-			q("details", rv, [n[16] ||= q("summary", null, "Dependencies and linked tasks", -1), (W(), G(U, null, H(["parents", "children"], (t) => q("div", { key: t }, [
+			q("details", nv, [n[16] ||= q("summary", null, "Dependencies and linked tasks", -1), (W(), G(U, null, H(["parents", "children"], (t) => q("div", { key: t }, [
 				q("h3", null, L(t === "parents" ? "Depends on" : "Children"), 1),
-				e.detail.links[t].length ? Y("v-if", !0) : (W(), G("p", iv, "None")),
+				e.detail.links[t].length ? Y("v-if", !0) : (W(), G("p", rv, "None")),
 				(W(!0), G(U, null, H(e.detail.links[t], (t) => (W(), G("button", {
 					key: t,
 					class: "kanban-link",
 					onClick: (e) => r("select", t)
-				}, L(e.detail.link_tasks?.find((e) => e.id === t)?.title || t) + " · " + L(e.detail.link_tasks?.find((e) => e.id === t)?.status), 9, av))), 128))
+				}, L(e.detail.link_tasks?.find((e) => e.id === t)?.title || t) + " · " + L(e.detail.link_tasks?.find((e) => e.id === t)?.status), 9, iv))), 128))
 			])), 64))]),
-			q("details", ov, [
+			q("details", av, [
 				q("summary", null, "Comments (" + L(e.detail.comments.length) + ")", 1),
 				(W(!0), G(U, null, H(e.detail.comments, (e) => (W(), G("article", {
 					key: e.id,
 					class: "kanban-comment"
-				}, [q("p", sv, L(e.author) + " · " + L(m(e.created_at)), 1), q("p", cv, L(e.body), 1)]))), 128)),
+				}, [q("p", ov, L(e.author) + " · " + L(m(e.created_at)), 1), q("p", sv, L(e.body), 1)]))), 128)),
 				q("form", {
 					class: "kanban-form",
 					onSubmit: Oo(f, ["prevent"])
@@ -12187,9 +12195,9 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 					"aria-label": "New task comment",
 					required: "",
 					rows: "3"
-				}, null, 512), [[vo, o.value]])]), q("button", { disabled: e.busy || !o.value.trim() }, "Add comment", 8, lv)], 32)
+				}, null, 512), [[vo, o.value]])]), q("button", { disabled: e.busy || !o.value.trim() }, "Add comment", 8, cv)], 32)
 			]),
-			e.detail.attachments == null ? Y("v-if", !0) : (W(), G("details", uv, [
+			e.detail.attachments == null ? Y("v-if", !0) : (W(), G("details", lv, [
 				q("summary", null, "Attachments (" + L(e.detail.attachments.length) + ")", 1),
 				(W(!0), G(U, null, H(e.detail.attachments, (t) => (W(), G("div", {
 					key: t.id,
@@ -12200,34 +12208,34 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 						href: z(Bc)("/attachments/" + encodeURIComponent(t.id), e.board),
 						target: "_blank",
 						rel: "noopener"
-					}, L(t.filename), 9, dv),
-					q("span", fv, L(t.size ?? 0) + " bytes", 1),
+					}, L(t.filename), 9, uv),
+					q("span", dv, L(t.size ?? 0) + " bytes", 1),
 					q("button", {
 						disabled: e.busy,
 						"aria-label": "Remove attachment " + t.filename,
 						onClick: (e) => r("operation", "/attachments/" + encodeURIComponent(t.id), "DELETE", void 0, !1)
-					}, " Remove ", 8, pv)
+					}, " Remove ", 8, fv)
 				]))), 128)),
-				q("label", mv, [n[18] ||= J("Attach file", -1), q("input", {
+				q("label", pv, [n[18] ||= J("Attach file", -1), q("input", {
 					type: "file",
 					"aria-label": "Task attachment",
 					disabled: e.busy,
 					onChange: p
-				}, null, 40, hv)])
+				}, null, 40, mv)])
 			])),
 			q("details", null, [
 				q("summary", null, "Run history (" + L(e.detail.runs.length) + ")", 1),
-				e.detail.runs.length ? Y("v-if", !0) : (W(), G("p", gv, "No runs yet.")),
+				e.detail.runs.length ? Y("v-if", !0) : (W(), G("p", hv, "No runs yet.")),
 				(W(!0), G(U, null, H(e.detail.runs, (e) => (W(), G("article", {
 					key: e.id,
 					class: "kanban-comment"
 				}, [
 					q("h3", null, "Run " + L(e.id) + " · " + L(e.profile) + " · " + L(e.outcome || e.status), 1),
-					q("p", _v, L(e.summary), 1),
-					e.error ? (W(), G("p", vv, L(e.error), 1)) : Y("v-if", !0)
+					q("p", gv, L(e.summary), 1),
+					e.error ? (W(), G("p", _v, L(e.error), 1)) : Y("v-if", !0)
 				]))), 128))
 			]),
-			q("details", null, [n[19] ||= q("summary", null, "Worker log", -1), e.log?.exists ? (W(), G(U, { key: 1 }, [e.log.truncated ? (W(), G("p", bv, "Showing the last 16 KiB.")) : Y("v-if", !0), q("pre", null, L(e.log.content), 1)], 64)) : (W(), G("p", yv, "No worker log yet."))]),
+			q("details", null, [n[19] ||= q("summary", null, "Worker log", -1), e.log?.exists ? (W(), G(U, { key: 1 }, [e.log.truncated ? (W(), G("p", yv, "Showing the last 16 KiB.")) : Y("v-if", !0), q("pre", null, L(e.log.content), 1)], 64)) : (W(), G("p", vv, "No worker log yet."))]),
 			q("details", null, [q("summary", null, "Activity (" + L(e.detail.events.length) + ")", 1), (W(!0), G(U, null, H(e.detail.events, (e) => (W(), G("p", {
 				key: e.id,
 				class: "kanban-muted"
@@ -12239,365 +12247,352 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 					key: 1,
 					disabled: e.busy,
 					onClick: n[10] ||= (e) => u("", "DELETE", void 0)
-				}, " Confirm delete task ", 8, xv)) : (W(), G("button", {
+				}, " Confirm delete task ", 8, bv)) : (W(), G("button", {
 					key: 0,
 					onClick: n[9] ||= (e) => c.value = !0
 				}, "Delete task…"))
 			])
 		]));
 	}
-}), Cv = {
+}), Sv = {
 	key: 0,
 	class: "kanban-empty"
-}, wv = ["disabled"], Tv = { class: "kanban-toolbar" }, Ev = ["value"], Dv = {
-	key: 0,
+}, Cv = ["disabled"], wv = { class: "kanban-toolbar" }, Tv = ["value"], Ev = ["disabled", "aria-expanded"], Dv = {
+	key: 1,
 	role: "alert",
 	class: "kanban-error"
 }, Ov = {
-	key: 1,
+	key: 2,
 	role: "status",
 	class: "kanban-muted"
 }, kv = {
-	key: 2,
+	key: 3,
 	class: "kanban-muted"
 }, Av = { key: 0 }, jv = { class: "kanban-toolbar" }, Mv = ["disabled"], Nv = ["disabled"], Pv = ["disabled"], Fv = ["disabled"], Iv = {
-	key: 4,
+	key: 5,
 	role: "status"
 }, Lv = {
-	key: 5,
+	key: 6,
 	class: "kanban-empty"
 }, Rv = {
 	class: "kanban-columns",
 	"aria-label": "Board columns"
-}, zv = ["aria-label", "onDrop"], Bv = { class: "kanban-muted" }, Vv = [
-	"data-status",
-	"disabled",
-	"title",
-	"aria-expanded",
-	"onClick"
-], Hv = {
-	key: 1,
+}, zv = ["aria-label", "onDrop"], Bv = { class: "kanban-muted" }, Vv = {
+	key: 0,
 	class: "kanban-muted"
-}, Uv = [
+}, Hv = [
 	"data-task-id",
 	"draggable",
 	"onDragstart",
 	"onClick"
-], Wv = { class: "kanban-muted" }, Gv = { key: 0 }, Kv = { key: 1 }, qv = { key: 2 }, Jv = {
+], Uv = { class: "kanban-muted" }, Wv = { key: 0 }, Gv = { key: 1 }, Kv = { key: 2 }, qv = {
 	key: 3,
 	class: "kanban-card-summary"
-}, Yv = {
+}, Jv = {
 	key: 1,
 	class: "kanban-detail",
 	"aria-label": "Task details"
-}, Xv = /* @__PURE__ */ V({
+}, Yv = /* @__PURE__ */ V({
 	__name: "KanbanPage",
 	setup(e) {
-		let t = Yc(), n = /* @__PURE__ */ R();
-		async function r() {
-			let e = C.value;
-			C.value = "", await yn(), Array.from(n.value?.querySelectorAll(".kanban-card") || []).find((t) => t.dataset.taskId === e)?.focus();
+		let t = Yc(), n = kc(), r = /* @__PURE__ */ R();
+		async function i() {
+			let e = w.value;
+			w.value = "", await yn(), Array.from(r.value?.querySelectorAll(".kanban-card") || []).find((t) => t.dataset.taskId === e)?.focus();
 		}
-		let i = /* @__PURE__ */ R([]), a = /* @__PURE__ */ R(""), o = /* @__PURE__ */ R(!1), s = /* @__PURE__ */ R(), c = /* @__PURE__ */ R(""), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(!1), f = /* @__PURE__ */ R(""), p = /* @__PURE__ */ R(""), m = /* @__PURE__ */ R(""), h = /* @__PURE__ */ R(""), g = /* @__PURE__ */ R(""), _ = /* @__PURE__ */ R(""), v = /* @__PURE__ */ R(!1), y = D_(a, t.visible, o, () => {
+		let a = /* @__PURE__ */ R([]), o = /* @__PURE__ */ R(""), s = /* @__PURE__ */ R(!1), c = /* @__PURE__ */ R(), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(""), f = /* @__PURE__ */ R(!1), p = /* @__PURE__ */ R(!1), m = /* @__PURE__ */ R(""), h = /* @__PURE__ */ R(""), g = /* @__PURE__ */ R(""), _ = /* @__PURE__ */ R(""), v = /* @__PURE__ */ R(""), y = /* @__PURE__ */ R(!1), b = D_(o, t.visible, s, () => {
 			t.check();
-		}), { snapshot: b, detail: x, log: S, taskId: C, error: w, loading: T } = y, E = X(() => i.value.find((e) => e.slug === a.value)), D = !1, O = 0;
+		}), { snapshot: x, detail: S, log: C, taskId: w, error: T, loading: E } = b, D = X(() => a.value.find((e) => e.slug === o.value)), O = !1, k = 0;
 		fr(() => {
-			D = !0, O++, t.screenActions.value = [];
+			O = !0, k++, t.screenActions.value = [];
 		});
-		function k() {
+		function A() {
 			try {
 				return localStorage.getItem("chathermes.kanban-board") || "";
 			} catch {
 				return "";
 			}
 		}
-		let A;
-		async function ee() {
-			A?.abort();
-			let e = A = new AbortController(), n = O;
+		let ee;
+		async function j() {
+			ee?.abort();
+			let e = ee = new AbortController(), r = k;
 			try {
-				let r = await Hc.boards(e.signal);
-				if (D || n !== O || !t.visible.value) return;
-				if (i.value = r.boards, !r.boards.some((e) => e.slug === a.value)) {
-					let e = k();
-					a.value = r.boards.find((t) => t.slug === e)?.slug || r.boards.find((e) => e.slug === r.current)?.slug || r.boards[0]?.slug || "";
+				let i = await Hc.boards(e.signal);
+				if (O || r !== k || !t.visible.value) return;
+				if (a.value = i.boards, !i.boards.some((e) => e.slug === o.value)) {
+					let e = typeof n.query.board == "string" ? n.query.board : A();
+					o.value = i.boards.find((t) => t.slug === e)?.slug || i.boards.find((e) => e.slug === i.current)?.slug || i.boards[0]?.slug || "";
 				}
-				c.value = "";
-			} catch (r) {
-				!D && !e.signal.aborted && n === O && (c.value = r instanceof zc ? r.message : "Could not load boards.", r instanceof zc && [
+				l.value = "";
+			} catch (n) {
+				!O && !e.signal.aborted && r === k && (l.value = n instanceof zc ? n.message : "Could not load boards.", n instanceof zc && [
 					401,
 					403,
 					404,
 					503
-				].includes(r.status) && t.unavailable());
+				].includes(n.status) && t.unavailable());
 			}
 		}
 		Ln(t.visible, (e, t, n) => {
-			if (O++, !e) {
-				i.value = [], a.value = "", s.value = void 0, f.value = "", p.value = "", d.value = !1;
+			if (k++, !e) {
+				a.value = [], o.value = "", c.value = void 0, p.value = !1, m.value = "", f.value = !1;
 				return;
 			}
 			let r = new AbortController();
-			ee(), Hc.workflow(r.signal).then((e) => {
-				r.signal.aborted || (s.value = e);
+			j(), Hc.workflow(r.signal).then((e) => {
+				r.signal.aborted || (c.value = e);
 			}).catch(() => {});
-			let o = setInterval(() => {
-				document.visibilityState === "visible" && ee();
+			let i = setInterval(() => {
+				document.visibilityState === "visible" && j();
 			}, 8e3);
 			n(() => {
-				r.abort(), A?.abort(), clearInterval(o);
+				r.abort(), ee?.abort(), clearInterval(i);
 			});
-		}, { immediate: !0 }), Ln(a, (e) => {
-			O++, d.value = !1, f.value = "", p.value = "", l.value = "", u.value = "", v.value = !1;
+		}, { immediate: !0 }), Ln(o, (e) => {
+			k++, f.value = !1, p.value = !1, m.value = "", u.value = "", d.value = "", y.value = !1, e === n.query.board && typeof n.query.task == "string" && (w.value = n.query.task);
 			try {
 				localStorage.setItem("chathermes.kanban-board", e);
 			} catch {}
 		}), Ln([
-			d,
-			a,
+			() => n.query.board,
+			() => n.query.task,
+			t.visible
+		], ([e, t, n]) => {
+			if (n && typeof e == "string" && typeof t == "string") {
+				if (o.value !== e) {
+					a.value.some((t) => t.slug === e) && (o.value = e);
+					return;
+				}
+				w.value = t;
+			}
+		}, { immediate: !0 }), Ln([
+			f,
 			o,
+			s,
 			t.visible
 		], () => {
 			t.screenActions.value = t.visible.value ? [
 				{
 					label: "Refresh",
-					disabled: d.value,
+					disabled: f.value,
 					run: () => {
 						N();
 					}
 				},
 				{
 					label: "New board",
-					disabled: d.value,
+					disabled: f.value,
 					run: () => {
 						P("create");
 					}
 				},
 				{
 					label: "Board settings",
-					disabled: d.value || !a.value,
+					disabled: f.value || !o.value,
 					run: () => {
 						P("edit");
 					}
 				},
 				{
 					label: "Show archived tasks",
-					checked: o.value,
+					checked: s.value,
 					run: () => {
-						o.value = !o.value;
+						s.value = !s.value;
 					}
 				}
 			] : [];
 		}, { immediate: !0 });
-		function j(e) {
-			return e === "archived" || !!s.value?.columns.find((t) => t.key === e)?.drag_target;
-		}
-		async function te(e) {
-			f.value = e, await yn(), n.value?.querySelector(".kanban-column input[aria-label=\"Task title\"]")?.focus();
+		async function te() {
+			p.value = !0, await yn(), r.value?.querySelector("input[aria-label=\"Task title\"]")?.focus();
 		}
 		async function M() {
-			let e = f.value;
-			f.value = "", await yn(), Array.from(n.value?.querySelectorAll(".kanban-new-task") || []).find((t) => t.dataset.status === e)?.focus();
+			p.value = !1, await yn(), r.value?.querySelector(".kanban-new-task")?.focus();
 		}
 		async function N() {
-			await Promise.all([ee(), y.refresh()]);
+			await Promise.all([j(), b.refresh()]);
 		}
 		async function ne(e, n, r = !1) {
-			if (d.value || !t.visible.value) return;
-			let i = O, o = a.value;
-			d.value = !0, l.value = "", u.value = "";
+			if (f.value || !t.visible.value) return;
+			let i = k, a = o.value;
+			f.value = !0, u.value = "", d.value = "";
 			try {
 				let t = await e();
-				if (r && o && Hc.write("/dispatch", "POST", {}, o).catch(() => {}), D || i !== O) return;
+				if (r && a && Hc.write("/dispatch", "POST", {}, a).catch(() => {}), O || i !== k) return;
 				if (t && typeof t == "object" && "ok" in t && t.ok === !1) {
-					l.value = "Hermes could not complete this action. Check the task state in Hermes.";
+					u.value = "Hermes could not complete this action. Check the task state in Hermes.";
 					return;
 				}
-				t && typeof t == "object" && "warning" in t && t.warning && (u.value = "Hermes saved the task with a dispatcher warning. Check the Hermes dispatcher if it does not start."), n?.(), await N();
+				t && typeof t == "object" && "warning" in t && t.warning && (d.value = "Hermes saved the task with a dispatcher warning. Check the Hermes dispatcher if it does not start."), n?.(), await N();
 			} catch (e) {
-				!D && i === O && (l.value = e instanceof zc ? e.message : "Kanban operation failed. Refresh to inspect the outcome before retrying.", await y.refresh());
+				!O && i === k && (u.value = e instanceof zc ? e.message : "Kanban operation failed. Refresh to inspect the outcome before retrying.", await b.refresh());
 			} finally {
-				!D && i === O && (d.value = !1);
+				!O && i === k && (f.value = !1);
 			}
 		}
 		function re(e, t, n, r = !0, i) {
-			let o = a.value;
-			ne(() => Hc.write(e, t, n, o), () => {
-				i?.(), t === "DELETE" && e === "/tasks/" + encodeURIComponent(C.value) && (C.value = "");
+			let a = o.value;
+			ne(() => Hc.write(e, t, n, a), () => {
+				i?.(), t === "DELETE" && e === "/tasks/" + encodeURIComponent(w.value) && (w.value = "");
 			}, r);
 		}
 		async function ie(e) {
-			let t = a.value, n = f.value, r = O, { summary: i, ...o } = e, s = !1;
+			let t = o.value, n = k, r = !1;
 			await ne(async () => {
-				let e = await Hc.write("/tasks", "POST", {
-					...o,
-					triage: n === "triage"
-				}, t);
-				if (s = !0, e.task.status !== n && (await Hc.write("/tasks/" + encodeURIComponent(e.task.id), "PATCH", {
-					status: n,
-					...n === "done" ? { summary: i } : {}
-				}, t)).ok === !1) throw Error("Task created but its lane transition was refused.");
-				return e;
-			}, void 0, !0), s && !D && r === O && await M();
+				let n = await Hc.write("/tasks", "POST", e, t);
+				return r = !0, n;
+			}, void 0, !0), r && !O && n === k && await M();
 		}
 		function ae(e) {
-			let t = a.value, n = C.value;
+			let t = o.value, n = w.value;
 			ne(() => Hc.upload(t, n, e));
 		}
 		function P(e) {
-			p.value = e, m.value = e === "edit" ? a.value : "", h.value = e === "edit" && E.value?.name || "", g.value = e === "edit" && E.value?.description || "", _.value = e === "edit" && E.value?.default_workdir || "";
+			m.value = e, h.value = e === "edit" ? o.value : "", g.value = e === "edit" && D.value?.name || "", _.value = e === "edit" && D.value?.description || "", v.value = e === "edit" && D.value?.default_workdir || "";
 		}
 		function oe() {
-			let e = p.value === "edit", t = {
-				name: h.value,
-				description: g.value,
-				default_workdir: _.value,
+			let e = m.value === "edit", t = {
+				name: g.value,
+				description: _.value,
+				default_workdir: v.value,
 				...e ? {} : {
-					slug: m.value.trim(),
+					slug: h.value.trim(),
 					switch: !1
 				}
 			};
-			ne(() => Hc.write("/boards" + (e ? "/" + encodeURIComponent(a.value) : ""), e ? "PATCH" : "POST", t), () => {
-				p.value = "";
+			ne(() => Hc.write("/boards" + (e ? "/" + encodeURIComponent(o.value) : ""), e ? "PATCH" : "POST", t), () => {
+				m.value = "";
 			});
 		}
 		function se() {
-			let e = a.value;
+			let e = o.value;
 			ne(() => Hc.write("/boards/" + encodeURIComponent(e), "DELETE", void 0), () => {
-				v.value = !1;
+				y.value = !1;
 			});
 		}
 		function ce(e, t) {
-			let n = b.value?.columns.flatMap((e) => e.tasks).find((t) => t.id === e);
-			n && s.value?.columns.some((e) => e.key === t && e.drag_target) && s.value.manual[n.status]?.includes(t) && re("/tasks/" + encodeURIComponent(e), "PATCH", { status: t });
+			let n = x.value?.columns.flatMap((e) => e.tasks).find((t) => t.id === e);
+			n && c.value?.columns.some((e) => e.key === t && e.drag_target) && c.value.manual[n.status]?.includes(t) && re("/tasks/" + encodeURIComponent(e), "PATCH", { status: t });
 		}
 		function le(e, t) {
 			e.dataTransfer?.setData("application/x-chathermes-task", JSON.stringify({
-				board: a.value,
+				board: o.value,
 				id: t
 			}));
 		}
 		function ue(e, t) {
 			try {
 				let n = JSON.parse(e.dataTransfer?.getData("application/x-chathermes-task") || "");
-				n.board === a.value && ce(n.id, t);
+				n.board === o.value && ce(n.id, t);
 			} catch {}
 		}
-		return (e, o) => (W(), G("section", {
+		return (e, n) => (W(), G("section", {
 			ref_key: "page",
-			ref: n,
+			ref: r,
 			class: "kanban-page page-content",
 			"aria-label": "Kanban viewer"
 		}, [z(t).visible.value ? (W(), G(U, { key: 1 }, [
-			q("div", Tv, [q("label", null, [o[11] ||= J("Board", -1), B(q("select", {
-				"onUpdate:modelValue": o[1] ||= (e) => a.value = e,
+			q("div", wv, [q("label", null, [n[11] ||= J("Board", -1), B(q("select", {
+				"onUpdate:modelValue": n[1] ||= (e) => o.value = e,
 				"aria-label": "Kanban board"
-			}, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("option", {
+			}, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("option", {
 				key: e.slug,
 				value: e.slug
-			}, L(e.name || e.slug), 9, Ev))), 128))], 512), [[xo, a.value]])])]),
-			c.value || l.value || z(w) ? (W(), G("p", Dv, L(l.value || c.value || z(w)), 1)) : Y("v-if", !0),
-			u.value ? (W(), G("p", Ov, L(u.value), 1)) : Y("v-if", !0),
-			s.value ? Y("v-if", !0) : (W(), G("p", kv, " Manual movement is unavailable until the Hermes workflow API responds. ")),
-			p.value ? (W(), G("form", {
-				key: 3,
+			}, L(e.name || e.slug), 9, Tv))), 128))], 512), [[xo, o.value]])]), q("button", {
+				class: "kanban-new-task",
+				disabled: f.value || !o.value || p.value,
+				"aria-expanded": p.value,
+				onClick: te
+			}, " New task ", 8, Ev)]),
+			p.value ? (W(), K(F_, {
+				key: o.value,
+				assignees: z(x)?.assignees || [],
+				busy: f.value,
+				onSave: ie,
+				onCancel: M
+			}, null, 8, ["assignees", "busy"])) : Y("v-if", !0),
+			l.value || u.value || z(T) ? (W(), G("p", Dv, L(u.value || l.value || z(T)), 1)) : Y("v-if", !0),
+			d.value ? (W(), G("p", Ov, L(d.value), 1)) : Y("v-if", !0),
+			c.value ? Y("v-if", !0) : (W(), G("p", kv, " Manual movement is unavailable until the Hermes workflow API responds. ")),
+			m.value ? (W(), G("form", {
+				key: 4,
 				class: "kanban-form kanban-board-editor",
 				"aria-label": "Board settings",
 				onSubmit: Oo(oe, ["prevent"])
 			}, [
-				p.value === "create" ? (W(), G("label", Av, [o[12] ||= J("Board slug", -1), B(q("input", {
-					"onUpdate:modelValue": o[2] ||= (e) => m.value = e,
+				m.value === "create" ? (W(), G("label", Av, [n[12] ||= J("Board slug", -1), B(q("input", {
+					"onUpdate:modelValue": n[2] ||= (e) => h.value = e,
 					required: "",
 					"aria-label": "Board slug"
-				}, null, 512), [[vo, m.value]])])) : Y("v-if", !0),
-				q("label", null, [o[13] ||= J("Board name", -1), B(q("input", {
-					"onUpdate:modelValue": o[3] ||= (e) => h.value = e,
+				}, null, 512), [[vo, h.value]])])) : Y("v-if", !0),
+				q("label", null, [n[13] ||= J("Board name", -1), B(q("input", {
+					"onUpdate:modelValue": n[3] ||= (e) => g.value = e,
 					"aria-label": "Board name"
-				}, null, 512), [[vo, h.value]])]),
-				q("label", null, [o[14] ||= J("Description", -1), B(q("textarea", {
-					"onUpdate:modelValue": o[4] ||= (e) => g.value = e,
-					"aria-label": "Board description"
 				}, null, 512), [[vo, g.value]])]),
-				q("label", null, [o[15] ||= J("Default directory on Hermes", -1), B(q("input", {
-					"onUpdate:modelValue": o[5] ||= (e) => _.value = e,
-					"aria-label": "Board default directory"
+				q("label", null, [n[14] ||= J("Description", -1), B(q("textarea", {
+					"onUpdate:modelValue": n[4] ||= (e) => _.value = e,
+					"aria-label": "Board description"
 				}, null, 512), [[vo, _.value]])]),
+				q("label", null, [n[15] ||= J("Default directory on Hermes", -1), B(q("input", {
+					"onUpdate:modelValue": n[5] ||= (e) => v.value = e,
+					"aria-label": "Board default directory"
+				}, null, 512), [[vo, v.value]])]),
 				q("div", jv, [
-					q("button", { disabled: d.value }, "Save board", 8, Mv),
+					q("button", { disabled: f.value }, "Save board", 8, Mv),
 					q("button", {
 						type: "button",
-						disabled: d.value,
-						onClick: o[6] ||= (e) => p.value = ""
+						disabled: f.value,
+						onClick: n[6] ||= (e) => m.value = ""
 					}, "Cancel", 8, Nv),
-					p.value === "edit" && a.value !== "default" && !v.value ? (W(), G("button", {
+					m.value === "edit" && o.value !== "default" && !y.value ? (W(), G("button", {
 						key: 0,
 						type: "button",
-						disabled: d.value,
-						onClick: o[7] ||= (e) => v.value = !0
+						disabled: f.value,
+						onClick: n[7] ||= (e) => y.value = !0
 					}, " Archive board…", 8, Pv)) : Y("v-if", !0),
-					v.value ? (W(), G("button", {
+					y.value ? (W(), G("button", {
 						key: 1,
 						type: "button",
-						disabled: d.value,
+						disabled: f.value,
 						onClick: se
 					}, " Confirm archive board ", 8, Fv)) : Y("v-if", !0)
 				])
 			], 32)) : Y("v-if", !0),
-			z(T) ? (W(), G("p", Iv, "Loading board…")) : !i.value.length && !c.value ? (W(), G("p", Lv, " No boards available. Create a board to get started. ")) : Y("v-if", !0),
-			q("div", { class: de(["kanban-workspace", { "has-detail": z(C) }]) }, [q("div", Rv, [(W(!0), G(U, null, H(z(b)?.columns, (e) => (W(), G("section", {
+			z(E) ? (W(), G("p", Iv, "Loading board…")) : !a.value.length && !l.value ? (W(), G("p", Lv, " No boards available. Create a board to get started. ")) : Y("v-if", !0),
+			q("div", { class: de(["kanban-workspace", { "has-detail": z(w) }]) }, [q("div", Rv, [(W(!0), G(U, null, H(z(x)?.columns, (e) => (W(), G("section", {
 				key: e.name,
 				class: de(["kanban-column", { "kanban-column-empty": !e.tasks.length }]),
 				"aria-label": e.name + " tasks",
-				onDragover: o[8] ||= Oo(() => {}, ["prevent"]),
+				onDragover: n[8] ||= Oo(() => {}, ["prevent"]),
 				onDrop: Oo((t) => ue(t, e.name), ["prevent"])
 			}, [
-				q("h2", null, [J(L(s.value?.columns.find((t) => t.key === e.name)?.label || e.name) + " ", 1), q("span", Bv, L(e.tasks.length), 1)]),
-				q("button", {
-					class: "kanban-new-task",
-					"data-status": e.name,
-					disabled: d.value || !a.value || !j(e.name),
-					title: j(e.name) ? void 0 : "Hermes controls entry into this lane.",
-					"aria-expanded": f.value === e.name,
-					onClick: (t) => te(e.name)
-				}, " New task ", 8, Vv),
-				f.value === e.name ? (W(), K(I_, {
-					key: a.value + ":" + e.name,
-					assignees: z(b)?.assignees || [],
-					busy: d.value,
-					"creation-status": e.name,
-					onSave: ie,
-					onCancel: M
-				}, null, 8, [
-					"assignees",
-					"busy",
-					"creation-status"
-				])) : Y("v-if", !0),
-				e.tasks.length ? Y("v-if", !0) : (W(), G("p", Hv, "No tasks")),
+				q("h2", null, [J(L(c.value?.columns.find((t) => t.key === e.name)?.label || e.name) + " ", 1), q("span", Bv, L(e.tasks.length), 1)]),
+				e.tasks.length ? Y("v-if", !0) : (W(), G("p", Vv, "No tasks")),
 				(W(!0), G(U, null, H(e.tasks, (e) => (W(), G("button", {
 					key: e.id,
-					class: de(["kanban-card", { selected: z(C) === e.id }]),
+					class: de(["kanban-card", { selected: z(w) === e.id }]),
 					"data-task-id": e.id,
-					draggable: !d.value,
+					draggable: !f.value,
 					onDragstart: (t) => le(t, e.id),
-					onClick: (t) => C.value = e.id
+					onClick: (t) => w.value = e.id
 				}, [
 					q("strong", null, L(e.title), 1),
-					q("span", Wv, L(e.status) + " · " + L(e.assignee || "Unassigned") + " · Priority " + L(e.priority ?? 0), 1),
-					e.progress ? (W(), G("span", Gv, L(e.progress.done) + "/" + L(e.progress.total) + " subtasks", 1)) : Y("v-if", !0),
-					e.comment_count ? (W(), G("span", Kv, L(e.comment_count) + " comments", 1)) : Y("v-if", !0),
-					e.warnings?.count ? (W(), G("span", qv, L(e.warnings.count) + " warnings", 1)) : Y("v-if", !0),
-					e.latest_summary ? (W(), G("span", Jv, L(e.latest_summary), 1)) : Y("v-if", !0)
-				], 42, Uv))), 128))
-			], 42, zv))), 128))]), z(x) ? (W(), K(Sv, {
-				key: a.value + ":" + z(x).task.id,
-				board: a.value,
-				detail: z(x),
-				log: z(S),
-				workflow: s.value,
-				assignees: z(b)?.assignees || [],
-				busy: d.value,
-				onClose: r,
-				onSelect: o[9] ||= (e) => C.value = e,
+					q("span", Uv, L(e.status) + " · " + L(e.assignee || "Unassigned") + " · Priority " + L(e.priority ?? 0), 1),
+					e.progress ? (W(), G("span", Wv, L(e.progress.done) + "/" + L(e.progress.total) + " subtasks", 1)) : Y("v-if", !0),
+					e.comment_count ? (W(), G("span", Gv, L(e.comment_count) + " comments", 1)) : Y("v-if", !0),
+					e.warnings?.count ? (W(), G("span", Kv, L(e.warnings.count) + " warnings", 1)) : Y("v-if", !0),
+					e.latest_summary ? (W(), G("span", qv, L(e.latest_summary), 1)) : Y("v-if", !0)
+				], 42, Hv))), 128))
+			], 42, zv))), 128))]), z(S) ? (W(), K(xv, {
+				key: o.value + ":" + z(S).task.id,
+				board: o.value,
+				detail: z(S),
+				log: z(C),
+				workflow: c.value,
+				assignees: z(x)?.assignees || [],
+				busy: f.value,
+				onClose: i,
+				onSelect: n[9] ||= (e) => w.value = e,
 				onOperation: re,
 				onUpload: ae
 			}, null, 8, [
@@ -12607,18 +12602,18 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				"workflow",
 				"assignees",
 				"busy"
-			])) : z(C) ? (W(), G("section", Yv, [q("button", { onClick: o[10] ||= (e) => C.value = "" }, "Close task details"), q("p", null, L(z(w) ? "Task details are unavailable. Refresh or select another task." : "Loading task…"), 1)])) : Y("v-if", !0)], 2)
-		], 64)) : (W(), G("div", Cv, [q("p", null, L(z(t).enabled.value ? "Hermes Kanban is unavailable. Your chats remain available." : "Enable Kanban Viewer in global Settings to view boards."), 1), q("button", {
+			])) : z(w) ? (W(), G("section", Jv, [q("button", { onClick: n[10] ||= (e) => w.value = "" }, "Close task details"), q("p", null, L(z(T) ? "Task details are unavailable. Refresh or select another task." : "Loading task…"), 1)])) : Y("v-if", !0)], 2)
+		], 64)) : (W(), G("div", Sv, [q("p", null, L(z(t).enabled.value ? "Hermes Kanban is unavailable. Your chats remain available." : "Enable Kanban Viewer in global Settings to view boards."), 1), q("button", {
 			disabled: z(t).checking.value,
-			onClick: o[0] ||= (e) => z(t).check()
-		}, " Recheck availability ", 8, wv)]))], 512));
+			onClick: n[0] ||= (e) => z(t).check()
+		}, " Recheck availability ", 8, Cv)]))], 512));
 	}
-}), Zv = [
+}), Xv = [
 	"role",
 	"aria-checked",
 	"disabled",
 	"onClick"
-], Qv = /* @__PURE__ */ V({
+], Zv = /* @__PURE__ */ V({
 	__name: "KanbanActions",
 	setup(e) {
 		let t = Yc();
@@ -12628,9 +12623,9 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 			"aria-checked": e.checked,
 			disabled: e.disabled,
 			onClick: (t) => e.run()
-		}, L(e.label), 9, Zv))), 128)) : Y("v-if", !0);
+		}, L(e.label), 9, Xv))), 128)) : Y("v-if", !0);
 	}
-}), $v = /* @__PURE__ */ V({
+}), Qv = /* @__PURE__ */ V({
 	__name: "InboxActions",
 	setup(e) {
 		let { refreshInbox: t, inboxRevision: n } = yg();
@@ -12644,11 +12639,11 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 			}
 		}, " Refresh inbox "));
 	}
-}), ey = { id: "project-confirmation-text" }, ty = {
+}), $v = { id: "project-confirmation-text" }, ey = {
 	key: 0,
 	role: "alert",
 	class: "project-error"
-}, ny = { class: "project-actions" }, ry = ["disabled"], iy = ["disabled"], ay = /* @__PURE__ */ V({
+}, ty = { class: "project-actions" }, ny = ["disabled"], ry = ["disabled"], iy = /* @__PURE__ */ V({
 	__name: "ProjectConfirmation",
 	setup(e) {
 		let { projectConfirmation: t, selectedProject: n, projectBusy: r, offline: i, manageError: a, manageProject: o, projectId: s } = Og(), c = /* @__PURE__ */ R();
@@ -12669,39 +12664,39 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 			"aria-labelledby": "project-confirmation-text",
 			onKeydown: o[0] ||= Ao(Oo((e) => !z(r) && l(), ["stop", "prevent"]), ["esc"])
 		}, [
-			q("p", ey, L(z(t) === "delete" ? `Delete ${z(n).label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${z(n).label}? You can restore it from Archived projects.`), 1),
-			z(a) ? (W(), G("p", ty, L(z(a)), 1)) : Y("v-if", !0),
-			q("div", ny, [q("button", {
+			q("p", $v, L(z(t) === "delete" ? `Delete ${z(n).label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${z(n).label}? You can restore it from Archived projects.`), 1),
+			z(a) ? (W(), G("p", ey, L(z(a)), 1)) : Y("v-if", !0),
+			q("div", ty, [q("button", {
 				ref_key: "projectConfirmCancel",
 				ref: c,
 				class: "project-button",
 				disabled: z(r),
 				onClick: l
-			}, " Cancel", 8, ry), q("button", {
+			}, " Cancel", 8, ny), q("button", {
 				class: "project-button project-danger",
 				disabled: z(r) || z(i),
 				onClick: u
-			}, L(z(t) === "delete" ? "Delete project permanently" : "Confirm archive"), 9, iy)])
+			}, L(z(t) === "delete" ? "Delete project permanently" : "Confirm archive"), 9, ry)])
 		], 32)) : Y("v-if", !0);
 	}
-}), oy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", sy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", cy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ly = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", uy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", dy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", fy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", py = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", my = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", hy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", gy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", _y = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", vy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", yy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", by = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", xy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", Sy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", Cy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", wy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", Ty = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", Ey = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Dy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", Oy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", ky = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Ay = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", jy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", My = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, Ny = ["aria-label"], Py = ["src", "alt"], Fy = { class: "flex min-w-0 items-center gap-3 p-3" }, Iy = ["src"], Ly = { class: "min-w-0 flex-1" }, Ry = ["aria-label"], zy = {
+}), ay = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", oy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", sy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", cy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ly = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", uy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", dy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", fy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", py = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", my = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", hy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", gy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", _y = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", vy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", yy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", by = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", xy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", Sy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", Cy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", wy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", Ty = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Ey = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", Dy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", Oy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", ky = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", Ay = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", jy = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, My = ["aria-label"], Ny = ["src", "alt"], Py = { class: "flex min-w-0 items-center gap-3 p-3" }, Fy = ["src"], Iy = { class: "min-w-0 flex-1" }, Ly = ["aria-label"], Ry = {
 	key: 1,
 	class: "block truncate text-sm font-medium"
-}, By = { class: "block text-xs text-[#b4b4b4]" }, Vy = [
+}, zy = { class: "block text-xs text-[#b4b4b4]" }, By = [
 	"href",
 	"download",
 	"aria-label"
-], Hy = { class: "mb-4 flex items-center gap-3" }, Uy = { class: "min-w-0 flex-1 break-words" }, Wy = ["href", "download"], Gy = {
+], Vy = { class: "mb-4 flex items-center gap-3" }, Hy = { class: "min-w-0 flex-1 break-words" }, Uy = ["href", "download"], Wy = {
 	key: 0,
 	role: "status"
-}, Ky = {
+}, Gy = {
 	key: 1,
 	role: "alert",
 	class: "text-red-200"
-}, qy = {
+}, Ky = {
 	key: 2,
 	class: "max-h-[70dvh] overflow-auto whitespace-pre-wrap break-words text-sm"
-}, Jy = ["src", "alt"], Yy = ["src", "title"], Xy = ["src"], Zy = ["src"], Qy = /* @__PURE__ */ V({
+}, qy = ["src", "alt"], Jy = ["src", "title"], Yy = ["src"], Xy = ["src"], Zy = /* @__PURE__ */ V({
 	__name: "ArtifactCard",
 	props: {
 		file: {},
@@ -12710,32 +12705,32 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = e, r = t, i = /* #__PURE__ */ Object.assign({
-			"../../../assets/file-icons/blank.svg": oy,
-			"../../../assets/file-icons/css.svg": sy,
-			"../../../assets/file-icons/csv.svg": cy,
-			"../../../assets/file-icons/doc.svg": ly,
-			"../../../assets/file-icons/docx.svg": uy,
-			"../../../assets/file-icons/gz.svg": dy,
-			"../../../assets/file-icons/html.svg": fy,
-			"../../../assets/file-icons/js.svg": py,
-			"../../../assets/file-icons/json.svg": my,
-			"../../../assets/file-icons/md.svg": hy,
-			"../../../assets/file-icons/mp3.svg": gy,
-			"../../../assets/file-icons/mp4.svg": _y,
-			"../../../assets/file-icons/pdf.svg": vy,
-			"../../../assets/file-icons/ppt.svg": yy,
-			"../../../assets/file-icons/pptx.svg": by,
-			"../../../assets/file-icons/py.svg": xy,
-			"../../../assets/file-icons/svg.svg": Sy,
-			"../../../assets/file-icons/tar.svg": Cy,
-			"../../../assets/file-icons/ts.svg": wy,
-			"../../../assets/file-icons/txt.svg": Ty,
-			"../../../assets/file-icons/wav.svg": Ey,
-			"../../../assets/file-icons/xls.svg": Dy,
-			"../../../assets/file-icons/xlsx.svg": Oy,
-			"../../../assets/file-icons/xml.svg": ky,
-			"../../../assets/file-icons/yaml.svg": Ay,
-			"../../../assets/file-icons/zip.svg": jy
+			"../../../assets/file-icons/blank.svg": ay,
+			"../../../assets/file-icons/css.svg": oy,
+			"../../../assets/file-icons/csv.svg": sy,
+			"../../../assets/file-icons/doc.svg": cy,
+			"../../../assets/file-icons/docx.svg": ly,
+			"../../../assets/file-icons/gz.svg": uy,
+			"../../../assets/file-icons/html.svg": dy,
+			"../../../assets/file-icons/js.svg": fy,
+			"../../../assets/file-icons/json.svg": py,
+			"../../../assets/file-icons/md.svg": my,
+			"../../../assets/file-icons/mp3.svg": hy,
+			"../../../assets/file-icons/mp4.svg": gy,
+			"../../../assets/file-icons/pdf.svg": _y,
+			"../../../assets/file-icons/ppt.svg": vy,
+			"../../../assets/file-icons/pptx.svg": yy,
+			"../../../assets/file-icons/py.svg": by,
+			"../../../assets/file-icons/svg.svg": xy,
+			"../../../assets/file-icons/tar.svg": Sy,
+			"../../../assets/file-icons/ts.svg": Cy,
+			"../../../assets/file-icons/txt.svg": wy,
+			"../../../assets/file-icons/wav.svg": Ty,
+			"../../../assets/file-icons/xls.svg": Ey,
+			"../../../assets/file-icons/xlsx.svg": Dy,
+			"../../../assets/file-icons/xml.svg": Oy,
+			"../../../assets/file-icons/yaml.svg": ky,
+			"../../../assets/file-icons/zip.svg": Ay
 		}), a = X(() => i[`../../../assets/file-icons/${$p(n.file.name)}.svg`] || i["../../../assets/file-icons/blank.svg"]), o = X(() => tm(n.file)), s = /* @__PURE__ */ R(), c = /* @__PURE__ */ R(""), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(!1), f = /* @__PURE__ */ R(!1), p;
 		function m() {
 			p?.abort(), c.value.startsWith("blob:") && URL.revokeObjectURL(c.value), c.value = "", l.value = "";
@@ -12815,7 +12810,7 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 			} catch {
 				i.signal.aborted || (f.value = !0);
 			}
-		}, { immediate: !0 }), (t, n) => (W(), G("div", My, [
+		}, { immediate: !0 }), (t, n) => (W(), G("div", jy, [
 			o.value === "image" && g.value && !f.value ? (W(), G("button", {
 				key: 0,
 				type: "button",
@@ -12828,21 +12823,21 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				class: "max-h-72 w-full object-contain",
 				onLoad: n[0] ||= (e) => r("imageLoad"),
 				onError: n[1] ||= (e) => f.value = !0
-			}, null, 40, Py)], 8, Ny)) : Y("v-if", !0),
-			q("div", Fy, [
+			}, null, 40, Ny)], 8, My)) : Y("v-if", !0),
+			q("div", Py, [
 				o.value !== "image" || f.value ? (W(), G("img", {
 					key: 0,
 					src: a.value,
 					alt: "",
 					class: "size-10 shrink-0"
-				}, null, 8, Iy)) : Y("v-if", !0),
-				q("div", Ly, [o.value ? (W(), G("button", {
+				}, null, 8, Fy)) : Y("v-if", !0),
+				q("div", Iy, [o.value ? (W(), G("button", {
 					key: 0,
 					type: "button",
 					class: "block w-full truncate text-left text-sm font-medium hover:underline",
 					"aria-label": `Preview ${e.file.name}`,
 					onClick: h
-				}, L(e.file.name), 9, Ry)) : (W(), G("span", zy, L(e.file.name), 1)), q("span", By, [J(L(z($p)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + L(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
+				}, L(e.file.name), 9, Ly)) : (W(), G("span", Ry, L(e.file.name), 1)), q("span", zy, [J(L(z($p)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + L(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
 				q("a", {
 					href: z(nm)(e.file, e.profile, !0),
 					download: e.file.name,
@@ -12855,7 +12850,7 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 					stroke: "currentColor",
 					"stroke-width": "1.5",
 					"aria-hidden": "true"
-				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, Vy)
+				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, By)
 			]),
 			yr(t.$slots, "footer"),
 			q("dialog", {
@@ -12864,13 +12859,13 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 				class: "artifact-preview fixed m-auto max-h-[90dvh] w-[min(900px,94vw)] overflow-auto rounded-2xl border border-[#424242] bg-[#212121] p-4 text-white backdrop:bg-black/80",
 				onClose: m,
 				onClick: n[3] ||= (e) => e.target === s.value && s.value?.close()
-			}, [q("div", Hy, [
-				q("h2", Uy, L(e.file.name), 1),
+			}, [q("div", Vy, [
+				q("h2", Hy, L(e.file.name), 1),
 				q("a", {
 					href: z(nm)(e.file, e.profile, !0),
 					download: e.file.name,
 					class: "text-sm underline"
-				}, "Download", 8, Wy),
+				}, "Download", 8, Uy),
 				q("button", {
 					type: "button",
 					autofocus: "",
@@ -12878,41 +12873,41 @@ var O_ = { key: 0 }, k_ = { key: 1 }, A_ = ["value"], j_ = {
 					"aria-label": "Close preview",
 					onClick: n[2] ||= (e) => s.value?.close()
 				}, " ✕ ")
-			]), d.value ? (W(), G("p", Gy, "Loading preview…")) : u.value ? (W(), G("p", Ky, L(u.value), 1)) : o.value === "text" ? (W(), G("pre", qy, L(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
+			]), d.value ? (W(), G("p", Wy, "Loading preview…")) : u.value ? (W(), G("p", Gy, L(u.value), 1)) : o.value === "text" ? (W(), G("pre", Ky, L(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
 				key: 3,
 				src: c.value,
 				alt: e.file.name,
 				class: "max-h-[70dvh] w-full object-contain"
-			}, null, 8, Jy)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
+			}, null, 8, qy)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
 				key: 4,
 				src: c.value,
 				title: e.file.name,
 				class: "h-[70dvh] w-full bg-white"
-			}, null, 8, Yy)) : o.value === "video" && c.value ? (W(), G("video", {
+			}, null, 8, Jy)) : o.value === "video" && c.value ? (W(), G("video", {
 				key: 5,
 				src: c.value,
 				controls: "",
 				class: "max-h-[70dvh] w-full"
-			}, null, 8, Xy)) : o.value === "audio" && c.value ? (W(), G("audio", {
+			}, null, 8, Yy)) : o.value === "audio" && c.value ? (W(), G("audio", {
 				key: 6,
 				src: c.value,
 				controls: "",
 				class: "w-full"
-			}, null, 8, Zy)) : Y("v-if", !0)], 544)
+			}, null, 8, Xy)) : Y("v-if", !0)], 544)
 		]));
 	}
-}), $y = new Up({
+}), Qy = new Up({
 	html: !1,
 	breaks: !0,
 	linkify: !0
 });
-$y.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
-function eb(e) {
-	return $y.render(e);
+Qy.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
+function $y(e) {
+	return Qy.render(e);
 }
 //#endregion
 //#region src/features/chat/components/UserMessage.vue?vue&type=script&setup=true&lang.ts
-var tb = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, nb = ["innerHTML"], rb = /* @__PURE__ */ V({
+var eb = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, tb = ["innerHTML"], nb = /* @__PURE__ */ V({
 	__name: "UserMessage",
 	props: {
 		message: {},
@@ -12922,10 +12917,10 @@ var tb = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = t;
-		return (t, r) => (W(), G("article", tb, [q("div", {
+		return (t, r) => (W(), G("article", eb, [q("div", {
 			class: "message-content markdown-content break-words text-base leading-7",
-			innerHTML: z(eb)(z(sm)(z(Tl)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
-		}, null, 8, nb), (W(!0), G(U, null, H(z(cm)(e.message), (t) => (W(), K(Qy, {
+			innerHTML: z($y)(z(sm)(z(Tl)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
+		}, null, 8, tb), (W(!0), G(U, null, H(z(cm)(e.message), (t) => (W(), K(Zy, {
 			key: t.path,
 			file: {
 				...t,
@@ -12938,7 +12933,7 @@ var tb = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 });
 //#endregion
 //#region src/features/chat/utils/activity-runs.ts
-function ib(e) {
+function rb(e) {
 	let t = [], n;
 	for (let r of e) (r.kind !== "text" && r.kind !== "thinking" || r.content.trim()) && (r.kind === "text" ? t.push({
 		id: r.id,
@@ -12953,28 +12948,28 @@ function ib(e) {
 }
 //#endregion
 //#region src/features/chat/utils/activity-labels.ts
-var ab = (e) => [
+var ib = (e) => [
 	"terminal",
 	"execute_code",
 	"python"
 ].includes(e.toolName || "");
-function ob(e) {
+function ab(e) {
 	try {
 		return JSON.parse(e.content) || {};
 	} catch {
 		return {};
 	}
 }
-function sb(e) {
-	let t = ob(e), n = t.command ?? t.code;
+function ob(e) {
+	let t = ab(e), n = t.command ?? t.code;
 	return typeof n == "string" && n.trim().split("\n")[0] || "";
 }
-function cb(e, t) {
-	if (ab(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${sb(e) || "command"}`;
+function sb(e, t) {
+	if (ib(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${ob(e) || "command"}`;
 	let n = (e.toolName || "tool").replace(/_/g, " ");
 	return /^(used|using) tool$/i.test(e.title) ? `${t ? "Using" : e.state === "completed" ? "Used" : "Tool:"} ${n}` : e.title || n;
 }
-var lb = {
+var cb = {
 	explore: {
 		past: "Explored",
 		present: "Exploring",
@@ -13016,9 +13011,9 @@ var lb = {
 		nouns: ["tool", "tools"]
 	}
 };
-function ub(e) {
+function lb(e) {
 	let t = e.toolName || "";
-	return ab(e) ? "run" : [
+	return ib(e) ? "run" : [
 		"read_file",
 		"list_files",
 		"search_files",
@@ -13026,9 +13021,9 @@ function ub(e) {
 		"search"
 	].includes(t) ? "explore" : ["web_search", "session_search_recall"].includes(t) ? "search" : t === "web_extract" ? "read" : t === "browser_navigate" ? "browse" : t.startsWith("browser_") ? "interact" : t === "vision_analyze" ? "analyze" : "other";
 }
-function db(e, t) {
-	let n = ob(e);
-	if (t === "run") return sb(e);
+function ub(e, t) {
+	let n = ab(e);
+	if (t === "run") return ob(e);
 	if (t === "other" || t === "interact") return "";
 	if (t === "search") {
 		let e = n.query ?? n.search_term;
@@ -13045,15 +13040,15 @@ function db(e, t) {
 	let r = n.path ?? n.file ?? n.filepath;
 	return typeof r == "string" && r.split(/[\\/]/).at(-1) || "";
 }
-function fb(e, t) {
-	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? ub(n) : void 0, i = [];
-	for (let t of Object.keys(lb)) {
-		let n = e.filter((e) => ub(e) === t);
+function db(e, t) {
+	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? lb(n) : void 0, i = [];
+	for (let t of Object.keys(cb)) {
+		let n = e.filter((e) => lb(e) === t);
 		if (!n.length) continue;
-		let a = lb[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
-			let r = ob(n).urls;
+		let a = cb[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
+			let r = ab(n).urls;
 			return e + (t === "read" && Array.isArray(r) && r.length ? r.length : 1);
-		}, 0), l = c === 1 && (o || t !== "run") ? db(n[0], t) : "", u = o ? a.present : s ? a.past : "";
+		}, 0), l = c === 1 && (o || t !== "run") ? ub(n[0], t) : "", u = o ? a.present : s ? a.past : "";
 		i.push([u, l || `${c} ${a.nouns[c === 1 ? 0 : 1]}`].filter(Boolean).join(" "));
 	}
 	let a = e.filter((e) => e.state === "failed").length;
@@ -13061,33 +13056,33 @@ function fb(e, t) {
 }
 //#endregion
 //#region src/components/ActivityRow.vue?vue&type=script&setup=true&lang.ts
-var pb = ["open"], mb = {
+var fb = ["open"], pb = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, hb = {
+}, mb = {
 	key: 1,
 	"aria-hidden": "true"
-}, gb = ["title"], _b = {
+}, hb = ["title"], gb = {
 	key: 2,
 	class: "activity-meta"
-}, vb = {
+}, _b = {
 	key: 3,
 	class: "activity-meta"
-}, yb = {
+}, vb = {
 	key: 4,
 	class: "activity-meta"
-}, bb = {
+}, yb = {
 	key: 5,
 	class: "activity-meta"
-}, xb = {
+}, bb = {
 	key: 6,
 	class: "activity-meta"
-}, Sb = {
+}, xb = {
 	key: 1,
 	class: "ml-6 py-1 text-sm",
 	role: "status"
-}, Cb = /* @__PURE__ */ V({
+}, Sb = /* @__PURE__ */ V({
 	__name: "ActivityRow",
 	props: {
 		activity: {},
@@ -13119,7 +13114,7 @@ var pb = ["open"], mb = {
 		}, { immediate: !0 }), dr(() => {
 			d && clearInterval(d);
 		});
-		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : cb(t.activity, n.value));
+		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : sb(t.activity, n.value));
 		function m(e) {
 			let t = e.target.open;
 			t !== o.value && (a.value = t);
@@ -13133,14 +13128,14 @@ var pb = ["open"], mb = {
 			open: o.value,
 			onToggle: m
 		}, [q("summary", { onClick: c[0] ||= Oo((e) => a.value = !o.value, ["prevent"]) }, [
-			z(ab)(e.activity) ? (W(), G("span", mb, "›_")) : Y("v-if", !0),
-			i.value ? (W(), G("span", hb, "!")) : Y("v-if", !0),
+			z(ib)(e.activity) ? (W(), G("span", pb, "›_")) : Y("v-if", !0),
+			i.value ? (W(), G("span", mb, "!")) : Y("v-if", !0),
 			q("span", {
 				class: de(["activity-label", { "working-shimmer": n.value }]),
 				title: p.value
-			}, L(p.value), 11, gb),
-			r.value === "failed" ? (W(), G("span", _b, " · Failed")) : r.value === "interrupted" ? (W(), G("span", vb, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", yb, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", bb, " · " + L(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
-			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", xb, " · " + L(f.value.toFixed(1)) + "s", 1)),
+			}, L(p.value), 11, hb),
+			r.value === "failed" ? (W(), G("span", gb, " · Failed")) : r.value === "interrupted" ? (W(), G("span", _b, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", vb, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", yb, " · " + L(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
+			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", bb, " · " + L(f.value.toFixed(1)) + "s", 1)),
 			q("span", {
 				class: de(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
@@ -13154,20 +13149,20 @@ var pb = ["open"], mb = {
 			e.activity.toolName,
 			e.activity.content,
 			e.activity.output
-		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", Sb, "Working…")) : Y("v-if", !0)], 42, pb));
+		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", xb, "Working…")) : Y("v-if", !0)], 42, fb));
 	}
-}), wb = {
+}), Cb = {
 	class: "turn-work",
 	"aria-label": "Assistant activity"
-}, Tb = ["aria-expanded", "aria-controls"], Eb = {
+}, wb = ["aria-expanded", "aria-controls"], Tb = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, Db = ["title"], Ob = {
+}, Eb = ["title"], Db = {
 	key: 1,
 	class: "sr-only",
 	role: "status"
-}, kb = ["id"], Ab = /* @__PURE__ */ V({
+}, Ob = ["id"], kb = /* @__PURE__ */ V({
 	__name: "TurnWork",
 	props: {
 		activities: {},
@@ -13177,38 +13172,38 @@ var pb = ["open"], mb = {
 	setup(e) {
 		let t = e, n = /* @__PURE__ */ R(null), r = qn(), i = (e) => !e.complete && (t.working || !!e.delegated), a = X(() => t.activities.filter((e) => !i(e))), o = X(() => n.value ?? !1), s = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length && [
 			a.value.some((e) => e.kind === "thinking") ? "Thought" : "",
-			fb(a.value.filter((e) => e.kind === "tool"), !1),
+			db(a.value.filter((e) => e.kind === "tool"), !1),
 			...["interrupted", "unknown"].flatMap((e) => {
 				let t = a.value.filter((t) => e === "unknown" ? t.state === e || !t.complete : t.state === e && t.complete).length;
 				return t ? [`${t} ${e === "unknown" ? "results unavailable" : e}`] : [];
 			})
 		].filter(Boolean).join(", ") || "Working…");
-		return (t, a) => (W(), G("section", wb, [q("button", {
+		return (t, a) => (W(), G("section", Cb, [q("button", {
 			type: "button",
 			class: "work-summary",
 			"aria-expanded": o.value,
 			"aria-controls": z(r),
 			onClick: a[0] ||= (e) => n.value = !o.value
 		}, [
-			e.activities.some(z(ab)) ? (W(), G("span", Eb, "›_")) : Y("v-if", !0),
+			e.activities.some(z(ib)) ? (W(), G("span", Tb, "›_")) : Y("v-if", !0),
 			q("span", {
 				class: de(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
 				title: s.value
-			}, L(s.value), 11, Db),
+			}, L(s.value), 11, Eb),
 			q("span", {
 				class: de(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
 			}, "›", 2),
-			e.approvalPending ? (W(), G("span", Ob, "Waiting for approval")) : Y("v-if", !0)
-		], 8, Tb), q("div", {
+			e.approvalPending ? (W(), G("span", Db, "Waiting for approval")) : Y("v-if", !0)
+		], 8, wb), q("div", {
 			id: z(r),
 			class: "work-timeline"
-		}, [(W(!0), G(U, null, H(e.activities, (n) => (W(), G(U, { key: n.id }, [B(q("div", { class: de({ "current-activity": i(n) }) }, [qi(Cb, {
+		}, [(W(!0), G(U, null, H(e.activities, (n) => (W(), G(U, { key: n.id }, [B(q("div", { class: de({ "current-activity": i(n) }) }, [qi(Sb, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, o.value || i(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 8, kb)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, o.value || i(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 8, Ob)]));
 	}
-}), jb = { class: "message assistant w-full self-start" }, Mb = ["innerHTML"], Nb = /* @__PURE__ */ V({
+}), Ab = { class: "message assistant w-full self-start" }, jb = ["innerHTML"], Mb = /* @__PURE__ */ V({
 	__name: "AssistantTextBlock",
 	props: {
 		block: {},
@@ -13219,12 +13214,12 @@ var pb = ["open"], mb = {
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = e, r = X(() => am(n.block.content)), i = t;
-		return (t, n) => (W(), G("article", jb, [
+		return (t, n) => (W(), G("article", Ab, [
 			q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: z(eb)(r.value.text)
-			}, null, 8, Mb),
-			(W(!0), G(U, null, H(r.value.files.filter((t) => !e.excludedPaths?.includes(t.path)), (t) => (W(), K(Qy, {
+				innerHTML: z($y)(r.value.text)
+			}, null, 8, jb),
+			(W(!0), G(U, null, H(r.value.files.filter((t) => !e.excludedPaths?.includes(t.path)), (t) => (W(), K(Zy, {
 				key: t.path,
 				file: {
 					...t,
@@ -13233,7 +13228,7 @@ var pb = ["open"], mb = {
 				profile: e.profile,
 				onImageLoad: n[0] ||= (e) => i("imageLoad")
 			}, null, 8, ["file", "profile"]))), 128)),
-			(W(!0), G(U, null, H(e.block.images, (t) => (W(), K(Qy, {
+			(W(!0), G(U, null, H(e.block.images, (t) => (W(), K(Zy, {
 				key: t,
 				file: {
 					path: t,
@@ -13246,13 +13241,13 @@ var pb = ["open"], mb = {
 			}, null, 8, ["file", "profile"]))), 128))
 		]));
 	}
-}), Pb = { class: "assistant-turn grid min-w-0 gap-1" }, Fb = {
+}), Nb = { class: "assistant-turn grid min-w-0 gap-1" }, Pb = {
 	key: 1,
 	class: "response-actions flex items-center gap-1 text-[#a3a3a3]"
-}, Ib = ["disabled"], Lb = {
+}, Fb = ["disabled"], Ib = {
 	role: "status",
 	class: "text-xs"
-}, Rb = /* @__PURE__ */ V({
+}, Lb = /* @__PURE__ */ V({
 	__name: "AssistantTurn",
 	props: {
 		entry: {},
@@ -13262,7 +13257,7 @@ var pb = ["open"], mb = {
 	},
 	emits: ["imageLoad", "branch"],
 	setup(e, { emit: t }) {
-		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? am(e.content).files.map((e) => e.path) : [])), i = X(() => ib(n.entry.blocks)), a = X(() => {
+		let n = e, r = X(() => n.entry.blocks.flatMap((e) => e.kind === "text" ? am(e.content).files.map((e) => e.path) : [])), i = X(() => rb(n.entry.blocks)), a = X(() => {
 			let e = new Set(r.value), t = /* @__PURE__ */ new Map();
 			for (let r of n.entry.blocks) r.kind === "tool" && t.set(r.id, om(r).filter((t) => !e.has(t.path) && (e.add(t.path), !0)));
 			return t;
@@ -13274,14 +13269,14 @@ var pb = ["open"], mb = {
 				c.value = "Could not copy. Select the response text to copy it.";
 			}
 		}
-		return (t, n) => (W(), G("div", Pb, [
-			(W(!0), G(U, null, H(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(Ab, {
+		return (t, n) => (W(), G("div", Nb, [
+			(W(!0), G(U, null, H(i.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(kb, {
 				key: 0,
 				activities: t.activities,
 				working: !!e.entry.working,
 				"approval-pending": e.entry.approvalPending
 			}, {
-				result: jn(({ activity: t }) => [(W(!0), G(U, null, H(o(t), (t) => (W(), K(Qy, {
+				result: jn(({ activity: t }) => [(W(!0), G(U, null, H(o(t), (t) => (W(), K(Zy, {
 					key: t.path,
 					file: {
 						...t,
@@ -13295,7 +13290,7 @@ var pb = ["open"], mb = {
 				"activities",
 				"working",
 				"approval-pending"
-			])) : (W(), K(Nb, {
+			])) : (W(), K(Mb, {
 				key: 1,
 				block: t.block,
 				profile: e.profile,
@@ -13306,14 +13301,14 @@ var pb = ["open"], mb = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.entry.working && !i.value.some((e) => e.kind === "tools") ? (W(), K(Ab, {
+			e.entry.working && !i.value.some((e) => e.kind === "tools") ? (W(), K(kb, {
 				key: 0,
 				activities: [],
 				working: !0,
 				"approval-pending": e.entry.approvalPending
 			}, null, 8, ["approval-pending"])) : Y("v-if", !0),
 			yr(t.$slots, "request"),
-			!e.entry.working && l.value.trim() ? (W(), G("div", Fb, [
+			!e.entry.working && l.value.trim() ? (W(), G("div", Pb, [
 				q("button", {
 					type: "button",
 					"aria-label": "Copy response",
@@ -13344,48 +13339,48 @@ var pb = ["open"], mb = {
 					class: "flex size-9 items-center justify-center rounded-lg hover:bg-[#303030] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white",
 					onPointerdown: n[3] ||= Oo(() => {}, ["prevent"]),
 					onClick: n[4] ||= (t) => s("branch", e.entry.responseId)
-				}, [...n[6] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Ib)) : Y("v-if", !0),
-				q("span", Lb, L(c.value), 1)
+				}, [...n[6] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, Fb)) : Y("v-if", !0),
+				q("span", Ib, L(c.value), 1)
 			])) : Y("v-if", !0)
 		]));
 	}
-}), zb = { class: "relative flex min-h-0 w-full flex-1" }, Bb = {
+}), Rb = { class: "relative flex min-h-0 w-full flex-1" }, zb = {
 	key: 0,
 	class: "text-center text-sm text-[#a3a3a3]"
-}, Vb = ["disabled"], Hb = {
+}, Bb = ["disabled"], Vb = {
 	key: 0,
 	role: "status"
-}, Ub = {
+}, Hb = {
 	key: 1,
 	class: "muted text-sm text-[#a3a3a3]"
-}, Wb = {
+}, Ub = {
 	key: 2,
 	class: "empty-state mx-auto flex w-full max-w-[760px] flex-1 flex-col"
-}, Gb = {
+}, Wb = {
 	key: 0,
 	"data-compaction": "",
 	class: "flex items-center gap-3 text-xs text-[#a3a3a3]",
 	role: "separator",
 	"aria-label": "Context compacted"
-}, Kb = {
+}, Gb = {
 	key: 2,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, qb = { class: "system-notices" }, Jb = { class: "cursor-pointer select-none" }, Yb = { class: "mt-2 whitespace-pre-wrap break-words" }, Xb = {
+}, Kb = { class: "system-notices" }, qb = { class: "cursor-pointer select-none" }, Jb = { class: "mt-2 whitespace-pre-wrap break-words" }, Yb = {
 	key: 3,
 	class: "assistant-turn",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, Zb = {
+}, Xb = {
 	key: 4,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, Qb = {
+}, Zb = {
 	key: 6,
 	class: "message assistant w-full self-start",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, $b = ["innerHTML"], ex = /* @__PURE__ */ V({
+}, Qb = ["innerHTML"], $b = /* @__PURE__ */ V({
 	__name: "ChatTranscript",
 	props: {
 		hasEarlier: { type: Boolean },
@@ -13490,7 +13485,7 @@ var pb = ["open"], mb = {
 		}, {
 			deep: !0,
 			flush: "post"
-		}), (t, n) => (W(), G("div", zb, [q("div", {
+		}), (t, n) => (W(), G("div", Rb, [q("div", {
 			ref_key: "transcript",
 			ref: s,
 			"data-drawer-swipe": "",
@@ -13507,18 +13502,18 @@ var pb = ["open"], mb = {
 			ref: c,
 			class: "flex min-h-full shrink-0 flex-col gap-7"
 		}, [
-			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", Bb, [q("button", {
+			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", zb, [q("button", {
 				type: "button",
 				disabled: e.loadingEarlier,
 				class: "rounded-full px-4 py-2 hover:bg-[#303030] disabled:opacity-60",
 				onClick: y
-			}, L(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, Vb), e.earlierError ? (W(), G("p", Hb, L(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
-			e.loading ? (W(), G("div", Ub, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", Wb, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
-			(W(!0), G(U, null, H(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", Gb, [...n[2] ||= [
+			}, L(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, Bb), e.earlierError ? (W(), G("p", Vb, L(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
+			e.loading ? (W(), G("div", Hb, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", Ub, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
+			(W(!0), G(U, null, H(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", Wb, [...n[2] ||= [
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1),
 				q("span", null, "Context compacted", -1),
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1)
-			]])) : r.kind === "user" ? (W(), K(rb, {
+			]])) : r.kind === "user" ? (W(), K(nb, {
 				key: 1,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -13530,7 +13525,7 @@ var pb = ["open"], mb = {
 				"message",
 				"profile",
 				"session-id"
-			])) : r.kind === "status" ? (W(), G("div", Kb, [q("details", qb, [q("summary", Jb, L(r.text), 1), q("p", Yb, L(r.content), 1)])])) : (W(), K(Rb, {
+			])) : r.kind === "status" ? (W(), G("div", Gb, [q("details", Kb, [q("summary", qb, L(r.text), 1), q("p", Jb, L(r.content), 1)])])) : (W(), K(Lb, {
 				key: 3,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -13553,17 +13548,17 @@ var pb = ["open"], mb = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", Xb, [qi(Ab, {
+			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", Yb, [qi(kb, {
 				activities: e.progress,
 				working: !0,
 				"approval-pending": e.approvalPending
 			}, null, 8, ["activities", "approval-pending"])])) : Y("v-if", !0),
-			e.statusLabel && !e.working ? (W(), G("div", Zb, L(e.statusLabel), 1)) : Y("v-if", !0),
+			e.statusLabel && !e.working ? (W(), G("div", Xb, L(e.statusLabel), 1)) : Y("v-if", !0),
 			o.value.some((e) => e.kind === "turn" && e.working) ? Y("v-if", !0) : yr(t.$slots, "request", {}, void 0, void 0, 5),
-			e.draft && !e.blocks?.length ? (W(), G("article", Qb, [q("div", {
+			e.draft && !e.blocks?.length ? (W(), G("article", Zb, [q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: z(eb)(e.draft)
-			}, null, 8, $b)])) : Y("v-if", !0)
+				innerHTML: z($y)(e.draft)
+			}, null, 8, Qb)])) : Y("v-if", !0)
 		], 512)], 544), !u.value && !e.home && !e.loading ? (W(), G("button", {
 			key: 0,
 			type: "button",
@@ -13580,10 +13575,10 @@ var pb = ["open"], mb = {
 			"stroke-width": "2"
 		}, [q("path", { d: "M12 5v14m-7-7 7 7 7-7" })], -1)]])) : Y("v-if", !0)]));
 	}
-}), tx = {
+}), ex = {
 	key: 0,
 	class: "approval-choices grid grid-cols-1 gap-2 my-3"
-}, nx = ["disabled", "onClick"], rx = /* @__PURE__ */ V({
+}, tx = ["disabled", "onClick"], nx = /* @__PURE__ */ V({
 	__name: "ApprovalRequest",
 	props: {
 		request: {},
@@ -13603,18 +13598,18 @@ var pb = ["open"], mb = {
 				}
 			}
 		}
-		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", tx, [(W(!0), G(U, null, H(e.request.params.choices, (t) => (W(), G("button", {
+		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", ex, [(W(!0), G(U, null, H(e.request.params.choices, (t) => (W(), G("button", {
 			key: t,
 			class: de(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
 			disabled: e.disabled || n.value,
 			onMousedown: i[0] ||= Oo(() => {}, ["prevent"]),
 			onClick: (e) => r(t)
-		}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, nx))), 128))])) : Y("v-if", !0)], 64));
+		}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, tx))), 128))])) : Y("v-if", !0)], 64));
 	}
-}), ix = { class: "clarification-card" }, ax = ["disabled"], ox = {
+}), rx = { class: "clarification-card" }, ix = ["disabled"], ax = {
 	key: 0,
 	class: "clarification-choices"
-}, sx = ["aria-pressed", "onClick"], cx = { class: "clarification-other" }, lx = ["onUpdate:modelValue", "aria-label"], ux = ["disabled"], dx = /*#__PURE__*/ ((e, t) => {
+}, ox = ["aria-pressed", "onClick"], sx = { class: "clarification-other" }, cx = ["onUpdate:modelValue", "aria-label"], lx = ["disabled"], ux = /*#__PURE__*/ ((e, t) => {
 	let n = e.__vccOpts || e;
 	for (let [e, r] of t) n[e] = r;
 	return n;
@@ -13646,28 +13641,28 @@ var pb = ["open"], mb = {
 		function c() {
 			!n.disabled && Object.keys(o()).length && r("answer", o());
 		}
-		return (t, n) => (W(), G("div", ix, [(W(!0), G(U, null, H(e.questions, (t) => (W(), G("form", {
+		return (t, n) => (W(), G("div", rx, [(W(!0), G(U, null, H(e.questions, (t) => (W(), G("form", {
 			key: t.qid,
 			onSubmit: Oo(c, ["prevent"])
 		}, [q("fieldset", { disabled: e.disabled }, [
 			q("legend", null, L(t.question), 1),
-			t.choices?.length ? (W(), G("div", ox, [(W(!0), G(U, null, H(t.choices, (e) => (W(), G("button", {
+			t.choices?.length ? (W(), G("div", ax, [(W(!0), G(U, null, H(t.choices, (e) => (W(), G("button", {
 				key: e,
 				type: "button",
 				"aria-pressed": t.multi_select ? i.value[t.qid]?.includes(e) ?? !1 : void 0,
 				onClick: (n) => s(t, e)
-			}, L(e), 9, sx))), 128))])) : Y("v-if", !0),
-			q("div", cx, [B(q("input", {
+			}, L(e), 9, ox))), 128))])) : Y("v-if", !0),
+			q("div", sx, [B(q("input", {
 				"onUpdate:modelValue": (e) => a.value[t.qid] = e,
 				placeholder: "Other response",
 				"aria-label": t.question + " — Other response"
-			}, null, 8, lx), [[vo, a.value[t.qid]]]), q("button", {
+			}, null, 8, cx), [[vo, a.value[t.qid]]]), q("button", {
 				type: "submit",
 				disabled: e.disabled || !Object.keys(o()).length
-			}, "Send", 8, ux)])
-		], 8, ax)], 32))), 128))]));
+			}, "Send", 8, lx)])
+		], 8, ix)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-4672d460"]]), fx = /* @__PURE__ */ V({
+}), [["__scopeId", "data-v-4672d460"]]), dx = /* @__PURE__ */ V({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},
@@ -13686,13 +13681,13 @@ var pb = ["open"], mb = {
 				}
 			}
 		}
-		return (t, i) => (W(), K(dx, {
+		return (t, i) => (W(), K(ux, {
 			questions: e.request.params.questions,
 			disabled: e.disabled || n.value,
 			onAnswer: r
 		}, null, 8, ["questions", "disabled"]));
 	}
-}), px = { class: "block my-3" }, mx = ["aria-label", "disabled"], hx = ["disabled"], gx = /* @__PURE__ */ V({
+}), fx = { class: "block my-3" }, px = ["aria-label", "disabled"], mx = ["disabled"], hx = /* @__PURE__ */ V({
 	__name: "SecretRequest",
 	props: {
 		request: {},
@@ -13711,20 +13706,20 @@ var pb = ["open"], mb = {
 				r.value = !1;
 			}
 		}
-		return (t, a) => (W(), G(U, null, [q("p", null, L(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", px, [J(L(e.request.params.env_var) + " ", 1), B(q("input", {
+		return (t, a) => (W(), G(U, null, [q("p", null, L(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", fx, [J(L(e.request.params.env_var) + " ", 1), B(q("input", {
 			"onUpdate:modelValue": a[0] ||= (e) => n.value = e,
 			type: "password",
 			autocomplete: "off",
 			"aria-label": e.request.params.prompt || "Secret",
 			disabled: e.disabled || r.value,
 			class: "block w-full rounded-lg bg-[#303030] p-2 text-base"
-		}, null, 8, mx), [[vo, n.value]])]), q("button", {
+		}, null, 8, px), [[vo, n.value]])]), q("button", {
 			type: "submit",
 			disabled: e.disabled || r.value || !n.value,
 			class: "rounded-lg bg-[#303030] p-2 text-base"
-		}, " Submit secret ", 8, hx)], 32)], 64));
+		}, " Submit secret ", 8, mx)], 32)], 64));
 	}
-}), _x = { key: 3 }, vx = /* @__PURE__ */ V({
+}), gx = { key: 3 }, _x = /* @__PURE__ */ V({
 	__name: "LiveRequest",
 	setup(e) {
 		let { view: t, scope: n, actions: r } = Zm(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
@@ -13736,7 +13731,7 @@ var pb = ["open"], mb = {
 			]),
 			class: "notice px-5 py-3 text-sm",
 			role: "status"
-		}, [z(i).kind === "approval" ? (W(), K(rx, {
+		}, [z(i).kind === "approval" ? (W(), K(nx, {
 			key: 0,
 			request: z(i),
 			disabled: z(a),
@@ -13747,7 +13742,7 @@ var pb = ["open"], mb = {
 			"disabled",
 			"active",
 			"answer"
-		])) : z(i).kind === "clarify" ? (W(), K(fx, {
+		])) : z(i).kind === "clarify" ? (W(), K(dx, {
 			key: 1,
 			request: z(i),
 			disabled: z(a),
@@ -13756,7 +13751,7 @@ var pb = ["open"], mb = {
 			"request",
 			"disabled",
 			"answer"
-		])) : z(i).kind === "secret" ? (W(), K(gx, {
+		])) : z(i).kind === "secret" ? (W(), K(hx, {
 			key: 2,
 			request: z(i),
 			disabled: z(a),
@@ -13765,9 +13760,9 @@ var pb = ["open"], mb = {
 			"request",
 			"disabled",
 			"answer"
-		])) : (W(), G("p", _x, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
+		])) : (W(), G("p", gx, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
 	}
-}), yx = /* @__PURE__ */ V({
+}), vx = /* @__PURE__ */ V({
 	__name: "ChatConversation",
 	setup(e) {
 		let { view: t, scope: n, actions: r } = Zm(), { profile: i, session: a } = n, { messages: o, loading: s, busy: c, approvalPending: l, status: u } = t, d = /* @__PURE__ */ R(), f = Pn(Qm);
@@ -13775,7 +13770,7 @@ var pb = ["open"], mb = {
 			f && (f.value = d.value);
 		}), dr(() => {
 			f && f.value === d.value && (f.value = void 0);
-		}), (e, n) => (W(), K(ex, {
+		}), (e, n) => (W(), K($b, {
 			ref_key: "transcript",
 			ref: d,
 			profile: z(i),
@@ -13797,7 +13792,7 @@ var pb = ["open"], mb = {
 			"response-targets": z(t).responseTargets.value,
 			onBranch: z(r).branch
 		}, {
-			request: jn(() => [qi(vx)]),
+			request: jn(() => [qi(_x)]),
 			_: 1
 		}, 8, [
 			"profile",
@@ -13818,32 +13813,32 @@ var pb = ["open"], mb = {
 			"onBranch"
 		]));
 	}
-}), bx = /* @__PURE__ */ V({
+}), yx = /* @__PURE__ */ V({
 	__name: "HomePage",
 	setup(e) {
-		return (e, t) => (W(), K(yx));
+		return (e, t) => (W(), K(vx));
 	}
-}), xx = /* @__PURE__ */ V({
+}), bx = /* @__PURE__ */ V({
 	__name: "ChatPage",
 	setup(e) {
-		return (e, t) => (W(), K(yx));
+		return (e, t) => (W(), K(vx));
 	}
-}), Sx = {
+}), xx = {
 	"data-drawer-swipe": "",
 	"aria-label": "Inbox",
 	class: "min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
-}, Cx = { class: "mx-auto max-w-3xl" }, wx = { class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm" }, Tx = { class: "flex items-center gap-2" }, Ex = { value: "profile" }, Dx = {
+}, Sx = { class: "mx-auto max-w-3xl" }, Cx = { class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm" }, wx = { class: "flex items-center gap-2" }, Tx = { value: "profile" }, Ex = {
 	key: 0,
 	role: "alert",
 	class: "mb-4 text-red-200"
-}, Ox = {
+}, Dx = {
 	key: 1,
 	role: "status",
 	class: "text-[#b4b4b4]"
-}, kx = {
+}, Ox = {
 	key: 2,
 	class: "text-[#b4b4b4]"
-}, Ax = { class: "divide-y divide-[#363636]" }, jx = ["data-session"], Mx = ["disabled", "onClick"], Nx = { class: "min-w-0 truncate font-medium" }, Px = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Fx = { class: "flex items-center gap-2 text-xs text-[#777]" }, Ix = ["datetime"], Lx = ["disabled"], Rx = /* @__PURE__ */ V({
+}, kx = { class: "divide-y divide-[#363636]" }, Ax = ["data-session"], jx = ["disabled", "onClick"], Mx = { class: "min-w-0 truncate font-medium" }, Nx = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Px = { class: "flex items-center gap-2 text-xs text-[#777]" }, Fx = ["datetime"], Ix = ["disabled"], Lx = /* @__PURE__ */ V({
 	__name: "InboxList",
 	props: {
 		profile: {},
@@ -13882,7 +13877,7 @@ var pb = ["open"], mb = {
 				try {
 					await n.openItem(e);
 				} catch {
-					l.value = "Could not open this chat. The notification remains unread.";
+					l.value = "Could not open this notification. It remains unread.";
 				} finally {
 					c.value = void 0;
 				}
@@ -13892,15 +13887,15 @@ var pb = ["open"], mb = {
 			n.profile,
 			n.revision,
 			i.value
-		], () => void d(), { immediate: !0 }), dr(() => u?.abort()), (t, n) => (W(), G("section", Sx, [q("div", Cx, [
-			q("div", wx, [q("label", Tx, [n[3] ||= J("View ", -1), B(q("select", {
+		], () => void d(), { immediate: !0 }), dr(() => u?.abort()), (t, n) => (W(), G("section", xx, [q("div", Sx, [
+			q("div", Cx, [q("label", wx, [n[3] ||= J("View ", -1), B(q("select", {
 				"onUpdate:modelValue": n[0] ||= (e) => i.value = e,
 				"aria-label": "Inbox view",
 				class: "rounded-lg bg-[#303030] px-2 py-1 text-sm"
-			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", Ex, "Profile: " + L(e.profile || "default"), 1)], 512), [[xo, i.value]])])]),
-			l.value ? (W(), G("p", Dx, L(l.value), 1)) : Y("v-if", !0),
-			s.value && !a.value.length ? (W(), G("p", Ox, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", kx, "No unread notifications.")),
-			q("ol", Ax, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("li", {
+			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", Tx, "Profile: " + L(e.profile || "default"), 1)], 512), [[xo, i.value]])])]),
+			l.value ? (W(), G("p", Ex, L(l.value), 1)) : Y("v-if", !0),
+			s.value && !a.value.length ? (W(), G("p", Dx, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", Ox, "No unread notifications.")),
+			q("ol", kx, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("li", {
 				key: e.id,
 				"data-session": e.session
 			}, [q("button", {
@@ -13908,19 +13903,19 @@ var pb = ["open"], mb = {
 				disabled: !!c.value,
 				onClick: (t) => f(e)
 			}, [
-				q("p", Nx, L(e.title || "Untitled chat"), 1),
-				q("p", Px, L(e.preview), 1),
-				q("div", Fx, [q("span", null, L(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, L((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Ix)])
-			], 8, Mx)], 8, jx))), 128))]),
+				q("p", Mx, L(e.title || "Untitled chat"), 1),
+				q("p", Nx, L(e.preview), 1),
+				q("div", Px, [q("span", null, L(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, L((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Fx)])
+			], 8, jx)], 8, Ax))), 128))]),
 			o.value ? (W(), G("button", {
 				key: 3,
 				class: "my-5 min-h-11 rounded-full border border-[#555] px-5",
 				disabled: s.value,
 				onClick: n[1] ||= (e) => d(!0)
-			}, " Load More ", 8, Lx)) : Y("v-if", !0)
+			}, " Load More ", 8, Ix)) : Y("v-if", !0)
 		])]));
 	}
-}), zx = /* @__PURE__ */ V({
+}), Rx = /* @__PURE__ */ V({
 	__name: "InboxPage",
 	setup(e) {
 		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = yg(), a = kc(), o = Oc(), s = X({
@@ -13932,7 +13927,7 @@ var pb = ["open"], mb = {
 				} });
 			}
 		});
-		return (e, a) => (W(), K(Rx, {
+		return (e, a) => (W(), K(Lx, {
 			scope: s.value,
 			"onUpdate:scope": a[0] ||= (e) => s.value = e,
 			profile: z(t),
@@ -13947,24 +13942,24 @@ var pb = ["open"], mb = {
 			"onRefresh"
 		]));
 	}
-}), Bx = {
+}), zx = {
 	class: "min-h-0 flex-1 overflow-y-auto px-5 py-6",
 	"aria-label": "Artifacts"
-}, Vx = { class: "mx-auto max-w-[1100px]" }, Hx = { class: "mb-5 flex items-center justify-between" }, Ux = ["disabled"], Wx = {
+}, Bx = { class: "mx-auto max-w-[1100px]" }, Vx = { class: "mb-5 flex items-center justify-between" }, Hx = ["disabled"], Ux = {
 	key: 0,
 	role: "status",
 	class: "text-sm text-[#b4b4b4]"
-}, Gx = {
+}, Wx = {
 	key: 1,
 	role: "alert",
 	class: "mb-4 text-sm text-red-200"
-}, Kx = {
+}, Gx = {
 	key: 2,
 	class: "text-sm text-[#b4b4b4]"
-}, qx = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, Jx = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, Yx = {
+}, Kx = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, qx = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, Jx = {
 	key: 0,
 	class: "mb-1 block truncate"
-}, Xx = { class: "flex min-w-0 items-center gap-3" }, Zx = { class: "shrink-0" }, Qx = ["title", "onClick"], $x = ["aria-label", "onClick"], eS = ["disabled"], tS = { key: 0 }, nS = { class: "mb-3 break-words" }, rS = { class: "flex justify-end gap-4" }, iS = ["disabled"], aS = ["disabled"], oS = /* @__PURE__ */ V({
+}, Yx = { class: "flex min-w-0 items-center gap-3" }, Xx = { class: "shrink-0" }, Zx = ["title", "onClick"], Qx = ["aria-label", "onClick"], $x = ["disabled"], eS = { key: 0 }, tS = { class: "mb-3 break-words" }, nS = { class: "flex justify-end gap-4" }, rS = ["disabled"], iS = ["disabled"], aS = /* @__PURE__ */ V({
 	__name: "ArtifactBrowser",
 	props: {
 		profile: {},
@@ -14018,35 +14013,35 @@ var pb = ["open"], mb = {
 				c.value = !1;
 			}
 		}
-		return Ln([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), dr(() => d?.abort()), (t, n) => (W(), G("section", Bx, [q("div", Vx, [
-			q("div", Hx, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
+		return Ln([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), dr(() => d?.abort()), (t, n) => (W(), G("section", zx, [q("div", Bx, [
+			q("div", Vx, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
 				class: "text-sm underline",
 				disabled: a.value,
 				onClick: n[0] ||= (e) => f()
-			}, "Refresh", 8, Ux)]),
-			a.value ? (W(), G("p", Wx, "Loading artifacts…")) : Y("v-if", !0),
-			o.value ? (W(), G("p", Gx, L(o.value), 1)) : Y("v-if", !0),
-			!a.value && !i.value.length ? (W(), G("p", Kx, "No artifacts found.")) : Y("v-if", !0),
-			q("div", qx, [(W(!0), G(U, null, H(i.value, (t) => (W(), K(Qy, {
+			}, "Refresh", 8, Hx)]),
+			a.value ? (W(), G("p", Ux, "Loading artifacts…")) : Y("v-if", !0),
+			o.value ? (W(), G("p", Wx, L(o.value), 1)) : Y("v-if", !0),
+			!a.value && !i.value.length ? (W(), G("p", Gx, "No artifacts found.")) : Y("v-if", !0),
+			q("div", Kx, [(W(!0), G(U, null, H(i.value, (t) => (W(), K(Zy, {
 				key: `${t.sessionId}:${t.path}`,
 				file: t,
 				profile: e.profile
 			}, {
-				footer: jn(() => [q("div", Jx, [t.projectTitle ? (W(), G("span", Yx, L(t.projectTitle), 1)) : Y("v-if", !0), q("div", Xx, [
-					q("span", Zx, L(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
+				footer: jn(() => [q("div", qx, [t.projectTitle ? (W(), G("span", Jx, L(t.projectTitle), 1)) : Y("v-if", !0), q("div", Yx, [
+					q("span", Xx, L(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
 					q("button", {
 						type: "button",
 						class: "min-w-0 flex-1 truncate py-2 text-left underline",
 						title: t.sessionTitle,
 						onClick: (e) => r("openSession", t.sessionId)
-					}, L(t.sessionTitle), 9, Qx),
+					}, L(t.sessionTitle), 9, Zx),
 					/^(https?:|data:)|^\/api\/plugins\/chathermes\/artifact-images\//.test(t.path) ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
 						class: "shrink-0 py-2 hover:text-white",
 						"aria-label": `Delete ${t.name}`,
 						onClick: (e) => s.value = t
-					}, " Delete ", 8, $x))
+					}, " Delete ", 8, Qx))
 				])])]),
 				_: 2
 			}, 1032, ["file", "profile"]))), 128))]),
@@ -14056,7 +14051,7 @@ var pb = ["open"], mb = {
 				class: "my-6 rounded-full border border-[#555] px-5 py-2 text-sm",
 				disabled: a.value,
 				onClick: n[1] ||= (e) => f(!0)
-			}, L(a.value ? "Loading…" : "Load More"), 9, eS)) : Y("v-if", !0),
+			}, L(a.value ? "Loading…" : "Load More"), 9, $x)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "confirmation",
 				ref: l,
@@ -14064,25 +14059,25 @@ var pb = ["open"], mb = {
 				"aria-label": "Delete artifact",
 				onCancel: n[3] ||= (e) => c.value && e.preventDefault(),
 				onClose: n[4] ||= (e) => s.value = void 0
-			}, [s.value ? (W(), G("div", tS, [
-				q("h3", nS, "Delete " + L(s.value.name) + " from Hermes?", 1),
+			}, [s.value ? (W(), G("div", eS, [
+				q("h3", tS, "Delete " + L(s.value.name) + " from Hermes?", 1),
 				n[6] ||= q("p", { class: "mb-5 text-sm text-[#b4b4b4]" }, " This removes the server file. References in conversation history remain. ", -1),
-				q("div", rS, [q("button", {
+				q("div", nS, [q("button", {
 					autofocus: "",
 					disabled: c.value,
 					onClick: n[2] ||= (e) => s.value = void 0
-				}, "Cancel", 8, iS), q("button", {
+				}, "Cancel", 8, rS), q("button", {
 					disabled: c.value,
 					onClick: p
-				}, L(c.value ? "Deleting…" : "Delete file"), 9, aS)])
+				}, L(c.value ? "Deleting…" : "Delete file"), 9, iS)])
 			])) : Y("v-if", !0)], 544)
 		])]));
 	}
-}), sS = /* @__PURE__ */ V({
+}), oS = /* @__PURE__ */ V({
 	__name: "ArtifactsPage",
 	setup(e) {
 		let { profile: t, projects: n, recentSession: r } = Sg();
-		return (e, i) => (W(), K(oS, {
+		return (e, i) => (W(), K(aS, {
 			profile: z(t),
 			projects: z(n),
 			onOpenSession: z(r)
@@ -14092,27 +14087,27 @@ var pb = ["open"], mb = {
 			"onOpenSession"
 		]));
 	}
-}), cS = {
+}), sS = {
 	class: "projects-page page-content",
 	"aria-label": "Projects"
-}, lS = { class: "page-heading" }, uS = ["disabled"], dS = {
+}, cS = { class: "page-heading" }, lS = ["disabled"], uS = {
 	key: 0,
 	class: "project-muted"
-}, fS = { class: "project-actions" }, pS = ["disabled"], mS = ["disabled"], hS = {
+}, dS = { class: "project-actions" }, fS = ["disabled"], pS = ["disabled"], mS = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, gS = {
+}, hS = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, _S = {
+}, gS = {
 	key: 4,
 	class: "project-muted"
-}, vS = {
+}, _S = {
 	class: "project-list",
 	"aria-label": "Project list"
-}, yS = ["aria-label", "onClick"], bS = /* @__PURE__ */ V({
+}, vS = ["aria-label", "onClick"], yS = /* @__PURE__ */ V({
 	__name: "ProjectList",
 	props: {
 		projects: {},
@@ -14135,14 +14130,14 @@ var pb = ["open"], mb = {
 				...s.value.trim() ? { primary_path: s.value.trim() } : {}
 			});
 		}
-		return (t, n) => (W(), G("section", cS, [
-			q("div", lS, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
+		return (t, n) => (W(), G("section", sS, [
+			q("div", cS, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: n[0] ||= (e) => a.value = !a.value
-			}, " New project ", 8, uS))]),
-			e.archived ? (W(), G("p", dS, "Archived projects")) : Y("v-if", !0),
+			}, " New project ", 8, lS))]),
+			e.archived ? (W(), G("p", uS, "Archived projects")) : Y("v-if", !0),
 			a.value && !e.archived ? (W(), G("form", {
 				key: 1,
 				class: "project-form",
@@ -14158,22 +14153,22 @@ var pb = ["open"], mb = {
 					"onUpdate:modelValue": n[2] ||= (e) => s.value = e,
 					placeholder: "/path/on/hermes/server"
 				}, null, 512), [[vo, s.value]])]),
-				q("div", fS, [q("button", {
+				q("div", dS, [q("button", {
 					class: "project-button",
 					disabled: e.busy || e.offline || !o.value.trim()
-				}, " Create project", 8, pS), q("button", {
+				}, " Create project", 8, fS), q("button", {
 					type: "button",
 					class: "project-button",
 					disabled: e.busy,
 					onClick: n[3] ||= (e) => a.value = !1
-				}, " Cancel ", 8, mS)])
+				}, " Cancel ", 8, pS)])
 			], 32)) : Y("v-if", !0),
-			e.error ? (W(), G("p", hS, [J(L(e.error) + " ", 1), q("button", {
+			e.error ? (W(), G("p", mS, [J(L(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[4] ||= (e) => r("retry")
 			}, "Retry Projects")])) : Y("v-if", !0),
-			e.loading ? (W(), G("p", gS, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", _S, L(e.archived ? "No archived projects." : "No projects yet."), 1)),
-			q("nav", vS, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
+			e.loading ? (W(), G("p", hS, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", gS, L(e.archived ? "No archived projects." : "No projects yet."), 1)),
+			q("nav", _S, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				"aria-label": e.label,
 				onClick: (t) => r("select", e.id)
@@ -14189,14 +14184,14 @@ var pb = ["open"], mb = {
 				}, [q("path", { d: "M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" })], -1),
 				q("span", null, [q("strong", null, L(e.label), 1), q("small", null, L(e.archived ? "Archived" : e.isAuto ? "Discovered workspace" : `${e.sessionCount} ${e.sessionCount === 1 ? "chat" : "chats"}`), 1)]),
 				n[9] ||= q("span", { "aria-hidden": "true" }, "›", -1)
-			], 8, yS))), 128))])
+			], 8, vS))), 128))])
 		]));
 	}
-}), xS = /* @__PURE__ */ V({
+}), bS = /* @__PURE__ */ V({
 	__name: "ProjectsPage",
 	setup(e) {
 		let { projects: t, projectsLoading: n, projectsError: r, manageError: i, projectBusy: a, offline: o, chooseProject: s, loadProjects: c, manageProject: l } = Og(), u = kc(), d = X(() => u.query.archived === "1");
-		return (e, u) => (W(), K(bS, {
+		return (e, u) => (W(), K(yS, {
 			projects: z(t),
 			archived: d.value,
 			loading: z(n),
@@ -14218,77 +14213,77 @@ var pb = ["open"], mb = {
 			"onManage"
 		]));
 	}
-}), SS = {
+}), xS = {
 	class: "project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10",
 	"aria-label": "Selected Project"
-}, CS = { class: "project-home-content" }, wS = {
+}, SS = { class: "project-home-content" }, CS = {
 	key: 0,
 	role: "status"
-}, TS = {
+}, wS = {
 	key: 1,
 	class: "mb-4 text-[#fecaca]",
 	role: "alert"
-}, ES = {
+}, TS = {
 	class: "mb-5 flex gap-5 text-sm",
 	"aria-label": "Project view"
-}, DS = ["aria-pressed"], OS = ["aria-pressed"], kS = /* @__PURE__ */ V({
+}, ES = ["aria-pressed"], DS = ["aria-pressed"], OS = /* @__PURE__ */ V({
 	__name: "ProjectLayout",
 	setup(e) {
 		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i, showProjects: a } = Og(), o = kc(), s = Oc();
-		return (e, c) => (W(), G("section", SS, [q("div", CS, [
+		return (e, c) => (W(), G("section", xS, [q("div", SS, [
 			q("button", {
 				class: "project-back",
 				onClick: c[0] ||= (e) => z(a)(!!z(t)?.archived)
 			}, " ← Projects "),
-			z(n) ? (W(), G("p", wS, "Loading Project…")) : Y("v-if", !0),
-			z(r) ? (W(), G("p", TS, [J(L(z(r)) + " ", 1), q("button", {
+			z(n) ? (W(), G("p", CS, "Loading Project…")) : Y("v-if", !0),
+			z(r) ? (W(), G("p", wS, [J(L(z(r)) + " ", 1), q("button", {
 				class: "underline",
 				onClick: c[1] ||= (...e) => z(i) && z(i)(...e)
 			}, "Retry Project")])) : Y("v-if", !0),
-			z(t) ? (W(), G(U, { key: 2 }, [q("nav", ES, [q("button", {
+			z(t) ? (W(), G(U, { key: 2 }, [q("nav", TS, [q("button", {
 				"aria-pressed": z(o).name === "project",
 				onClick: c[2] ||= (e) => z(s).push({
 					name: "project",
 					params: z(o).params,
 					query: z(o).query
 				})
-			}, " Sessions / Chat ", 8, DS), q("button", {
+			}, " Sessions / Chat ", 8, ES), q("button", {
 				"aria-pressed": z(o).name === "project-artifacts",
 				onClick: c[3] ||= (e) => z(s).push({
 					name: "project-artifacts",
 					params: z(o).params,
 					query: z(o).query
 				})
-			}, " Artifacts ", 8, OS)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
+			}, " Artifacts ", 8, DS)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
 		])]));
 	}
-}), AS = {
+}), kS = {
 	key: 0,
 	class: "project-muted"
-}, jS = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, MS = {
+}, AS = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, jS = {
 	key: 1,
 	class: "text-sm text-[#b4b4b4]"
-}, NS = {
+}, MS = {
 	class: "project-chat-list",
 	"aria-label": "Project chats"
-}, PS = ["aria-label", "onClick"], FS = { class: "project-chat-title" }, IS = {
+}, NS = ["aria-label", "onClick"], PS = { class: "project-chat-title" }, FS = {
 	key: 0,
 	class: "project-chat-preview"
-}, LS = /* @__PURE__ */ V({
+}, IS = /* @__PURE__ */ V({
 	__name: "ProjectHomePage",
 	setup(e) {
 		let { selectedProject: t, visibleSessions: n, chooseSession: r, chooseProject: i } = Og();
-		return (e, a) => (W(), K(kS, null, {
+		return (e, a) => (W(), K(OS, null, {
 			default: jn(() => [z(t) ? (W(), G(U, { key: 0 }, [
-				z(t).archived ? (W(), G("p", AS, "Archived project")) : Y("v-if", !0),
-				q("p", jS, L(z(El)(z(t)) ? "Workspace: " + z(El)(z(t)) : z(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
-				z(n).length ? Y("v-if", !0) : (W(), G("p", MS, "No conversations yet.")),
-				q("nav", NS, [(W(!0), G(U, null, H(z(n), (e) => (W(), G("button", {
+				z(t).archived ? (W(), G("p", kS, "Archived project")) : Y("v-if", !0),
+				q("p", AS, L(z(El)(z(t)) ? "Workspace: " + z(El)(z(t)) : z(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
+				z(n).length ? Y("v-if", !0) : (W(), G("p", jS, "No conversations yet.")),
+				q("nav", MS, [(W(!0), G(U, null, H(z(n), (e) => (W(), G("button", {
 					key: e.id,
 					class: "project-chat-row",
 					"aria-label": e.title || "Untitled session",
 					onClick: (t) => z(r)(e.id)
-				}, [q("span", FS, L(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", IS, L(e.preview), 1)) : Y("v-if", !0)], 8, PS))), 128))]),
+				}, [q("span", PS, L(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", FS, L(e.preview), 1)) : Y("v-if", !0)], 8, NS))), 128))]),
 				q("button", {
 					class: "project-back mt-5",
 					onClick: a[0] ||= (e) => z(i)("")
@@ -14297,12 +14292,12 @@ var pb = ["open"], mb = {
 			_: 1
 		}));
 	}
-}), RS = /* @__PURE__ */ V({
+}), LS = /* @__PURE__ */ V({
 	__name: "ProjectArtifactsPage",
 	setup(e) {
 		let { selectedProject: t, profile: n, visibleSessions: r, recentSession: i } = Og();
-		return (e, a) => (W(), K(kS, null, {
-			default: jn(() => [z(t) ? (W(), K(oS, {
+		return (e, a) => (W(), K(OS, null, {
+			default: jn(() => [z(t) ? (W(), K(aS, {
 				key: 0,
 				project: z(t),
 				profile: z(n),
@@ -14317,25 +14312,25 @@ var pb = ["open"], mb = {
 			_: 1
 		}));
 	}
-}), zS = {
+}), RS = {
 	key: 0,
 	class: "project-settings"
-}, BS = ["disabled"], VS = {
+}, zS = ["disabled"], BS = {
 	key: 0,
 	class: "project-error",
 	role: "alert"
-}, HS = {
+}, VS = {
 	key: 1,
 	class: "project-muted",
 	role: "status"
-}, US = ["disabled"], WS = { class: "project-field-row" }, GS = ["disabled"], KS = {
+}, HS = ["disabled"], US = { class: "project-field-row" }, WS = ["disabled"], GS = {
 	key: 2,
 	class: "project-muted"
-}, qS = { class: "project-folders" }, JS = { class: "folder-path" }, YS = { key: 0 }, XS = { key: 1 }, ZS = { class: "project-actions" }, QS = ["disabled", "onClick"], $S = [
+}, KS = { class: "project-folders" }, qS = { class: "folder-path" }, JS = { key: 0 }, YS = { key: 1 }, XS = { class: "project-actions" }, ZS = ["disabled", "onClick"], QS = [
 	"disabled",
 	"aria-label",
 	"onClick"
-], eC = ["disabled"], tC = { class: "project-checkbox" }, nC = ["disabled"], rC = { id: "project-confirm-text" }, iC = { class: "project-actions" }, aC = ["disabled"], oC = ["disabled"], sC = /* @__PURE__ */ V({
+], $S = ["disabled"], eC = { class: "project-checkbox" }, tC = ["disabled"], nC = { id: "project-confirm-text" }, rC = { class: "project-actions" }, iC = ["disabled"], aC = ["disabled"], oC = /* @__PURE__ */ V({
 	__name: "ProjectSettings",
 	props: {
 		project: {},
@@ -14371,22 +14366,22 @@ var pb = ["open"], mb = {
 			let e = f.value;
 			e && h(e.action, e.fields);
 		}
-		return (t, n) => e.project.isAuto ? (W(), G("div", zS, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
+		return (t, n) => e.project.isAuto ? (W(), G("div", RS, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
 			class: "project-button",
 			disabled: e.busy || e.offline,
 			onClick: n[0] ||= (t) => r("manage", "create", {
 				name: e.project.label,
 				primary_path: e.project.path || e.project.repos.find((e) => e.path)?.path || ""
 			})
-		}, " Save project ", 8, BS)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
+		}, " Save project ", 8, zS)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
 			key: 1,
 			ref_key: "settings",
 			ref: m,
 			tabindex: "-1",
 			class: "project-settings"
 		}, [
-			e.error ? (W(), G("p", VS, L(e.error), 1)) : Y("v-if", !0),
-			e.busy ? (W(), G("p", HS, "Saving project…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", BS, L(e.error), 1)) : Y("v-if", !0),
+			e.busy ? (W(), G("p", VS, "Saving project…")) : Y("v-if", !0),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[6] ||= Oo((e) => h("update", {
@@ -14407,7 +14402,7 @@ var pb = ["open"], mb = {
 					maxlength: "4096",
 					rows: "2"
 				}, null, 512), [[vo, a.value]])]),
-				q("div", WS, [q("label", null, [n[15] ||= J("Icon", -1), B(q("input", {
+				q("div", US, [q("label", null, [n[15] ||= J("Icon", -1), B(q("input", {
 					"onUpdate:modelValue": n[3] ||= (e) => o.value = e,
 					maxlength: "64"
 				}, null, 512), [[vo, o.value]])]), q("label", null, [n[16] ||= J("Color", -1), B(q("input", {
@@ -14422,26 +14417,26 @@ var pb = ["open"], mb = {
 				q("button", {
 					class: "project-button",
 					disabled: !i.value.trim()
-				}, "Save changes", 8, GS)
-			], 8, US)], 32),
+				}, "Save changes", 8, WS)
+			], 8, HS)], 32),
 			n[21] ||= q("h3", null, "Folders", -1),
 			n[22] ||= q("p", { class: "project-muted" }, " The primary folder is used for new chats. Existing chats keep their workspace. ", -1),
-			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", KS, "No folders configured.")),
-			q("ul", qS, [(W(!0), G(U, null, H(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", JS, [
+			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", GS, "No folders configured.")),
+			q("ul", KS, [(W(!0), G(U, null, H(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", qS, [
 				J(L(t.label || t.path), 1),
-				t.label ? (W(), G("small", YS, L(t.path), 1)) : Y("v-if", !0),
-				t.is_primary ? (W(), G("small", XS, "Primary folder")) : Y("v-if", !0)
-			]), q("div", ZS, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
+				t.label ? (W(), G("small", JS, L(t.path), 1)) : Y("v-if", !0),
+				t.is_primary ? (W(), G("small", YS, "Primary folder")) : Y("v-if", !0)
+			]), q("div", XS, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: (e) => h("set_primary", { path: t.path })
-			}, " Make primary", 8, QS)), q("button", {
+			}, " Make primary", 8, ZS)), q("button", {
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				"aria-label": `Remove folder ${t.path}`,
 				onClick: (e) => g("remove_folder", { path: t.path }, `Remove ${t.path} from this project? The folder and existing chats will be kept.`)
-			}, " Remove ", 8, $S)])]))), 128))]),
+			}, " Remove ", 8, QS)])]))), 128))]),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[10] ||= Oo((e) => h("add_folder", {
@@ -14460,15 +14455,15 @@ var pb = ["open"], mb = {
 					"onUpdate:modelValue": n[8] ||= (e) => u.value = e,
 					maxlength: "160"
 				}, null, 512), [[vo, u.value]])]),
-				q("label", tC, [B(q("input", {
+				q("label", eC, [B(q("input", {
 					"onUpdate:modelValue": n[9] ||= (e) => d.value = e,
 					type: "checkbox"
 				}, null, 512), [[yo, d.value]]), n[20] ||= J(" Use as primary folder", -1)]),
 				q("button", {
 					class: "project-button",
 					disabled: !l.value.trim()
-				}, "Add folder", 8, nC)
-			], 8, eC)], 32),
+				}, "Add folder", 8, tC)
+			], 8, $S)], 32),
 			f.value ? (W(), G("div", {
 				key: 3,
 				class: "project-confirmation",
@@ -14476,41 +14471,41 @@ var pb = ["open"], mb = {
 				"aria-modal": "false",
 				"aria-labelledby": "project-confirm-text",
 				onKeydown: n[11] ||= Ao(Oo((t) => !e.busy && _(), ["prevent"]), ["esc"])
-			}, [q("p", rC, L(f.value.text), 1), q("div", iC, [q("button", {
+			}, [q("p", nC, L(f.value.text), 1), q("div", rC, [q("button", {
 				ref_key: "cancelButton",
 				ref: p,
 				class: "project-button",
 				disabled: e.busy,
 				onClick: _
-			}, " Cancel", 8, aC), q("button", {
+			}, " Cancel", 8, iC), q("button", {
 				class: "project-button project-danger",
 				disabled: e.busy || e.offline,
 				onClick: v
-			}, " Confirm removal ", 8, oC)])], 32)) : Y("v-if", !0)
+			}, " Confirm removal ", 8, aC)])], 32)) : Y("v-if", !0)
 		], 512));
 	}
-}), cC = {
+}), sC = {
 	class: "page-content project-editor",
 	"aria-label": "Edit project"
-}, lC = {
+}, cC = {
 	key: 0,
 	role: "status"
-}, uC = {
+}, lC = {
 	key: 1,
 	role: "alert"
-}, dC = /* @__PURE__ */ V({
+}, uC = /* @__PURE__ */ V({
 	__name: "ProjectSettingsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, projectBusy: i, offline: a, manageError: o, manageProject: s, chooseProject: c, projectLoading: l, projectError: u, loadProject: d } = Og();
-		return (e, f) => (W(), G("section", cC, [
+		return (e, f) => (W(), G("section", sC, [
 			q("button", {
 				class: "project-back",
 				onClick: f[0] ||= (e) => z(c)(z(n))
 			}, " ← " + L(z(r)?.label || "Project"), 1),
 			f[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit project", -1),
-			z(l) ? (W(), G("p", lC, "Loading Project…")) : Y("v-if", !0),
-			z(u) ? (W(), G("p", uC, [J(L(z(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => z(d) && z(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			z(r) ? (W(), K(sC, {
+			z(l) ? (W(), G("p", cC, "Loading Project…")) : Y("v-if", !0),
+			z(u) ? (W(), G("p", lC, [J(L(z(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => z(d) && z(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			z(r) ? (W(), K(oC, {
 				key: JSON.stringify([z(t), z(r).id]),
 				project: z(r),
 				busy: z(i),
@@ -14526,18 +14521,18 @@ var pb = ["open"], mb = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), fC = {
+}), dC = {
 	key: 0,
 	role: "status"
-}, pC = {
+}, fC = {
 	key: 1,
 	role: "alert",
 	class: "project-error"
-}, mC = ["disabled"], hC = { key: 2 }, gC = { class: "project-muted" }, _C = ["disabled"], vC = {
+}, pC = ["disabled"], mC = { key: 2 }, hC = { class: "project-muted" }, gC = ["disabled"], _C = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, yC = ["disabled"], bC = /* @__PURE__ */ V({
+}, vC = ["disabled"], yC = /* @__PURE__ */ V({
 	__name: "ProjectInstructions",
 	props: {
 		profile: {},
@@ -14582,52 +14577,52 @@ var pb = ["open"], mb = {
 			onSubmit: Oo(p, ["prevent"])
 		}, [
 			i[3] ||= q("p", { class: "project-muted" }, "Custom instructions guide Hermes when it works in this project.", -1),
-			a.value ? (W(), G("p", fC, "Loading instructions…")) : Y("v-if", !0),
-			s.value ? (W(), G("p", pC, [J(L(s.value) + " ", 1), q("button", {
+			a.value ? (W(), G("p", dC, "Loading instructions…")) : Y("v-if", !0),
+			s.value ? (W(), G("p", fC, [J(L(s.value) + " ", 1), q("button", {
 				type: "button",
 				class: "underline",
 				disabled: a.value || o.value || e.offline,
 				onClick: f
-			}, " Reload instructions ", 8, mC)])) : Y("v-if", !0),
-			l.value ? (W(), G("label", hC, [
+			}, " Reload instructions ", 8, pC)])) : Y("v-if", !0),
+			l.value ? (W(), G("label", mC, [
 				i[2] ||= J("Instructions ", -1),
-				q("span", gC, L(r.value), 1),
+				q("span", hC, L(r.value), 1),
 				B(q("textarea", {
 					"onUpdate:modelValue": i[0] ||= (e) => n.value = e,
 					rows: "14",
 					disabled: a.value || o.value,
 					onInput: i[1] ||= (e) => c.value = !1
-				}, null, 40, _C), [[vo, n.value]])
+				}, null, 40, gC), [[vo, n.value]])
 			])) : Y("v-if", !0),
-			c.value ? (W(), G("p", vC, "Instructions saved.")) : Y("v-if", !0),
+			c.value ? (W(), G("p", _C, "Instructions saved.")) : Y("v-if", !0),
 			q("button", {
 				class: "project-button justify-self-start",
 				disabled: !l.value || a.value || o.value || e.offline
-			}, L(o.value ? "Saving…" : "Save instructions"), 9, yC)
+			}, L(o.value ? "Saving…" : "Save instructions"), 9, vC)
 		], 32));
 	}
-}), xC = {
+}), bC = {
 	class: "page-content project-editor",
 	"aria-label": "Edit Instructions"
-}, SC = {
+}, xC = {
 	key: 0,
 	role: "status"
-}, CC = {
+}, SC = {
 	key: 1,
 	role: "alert"
-}, wC = /* @__PURE__ */ V({
+}, CC = /* @__PURE__ */ V({
 	__name: "ProjectInstructionsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, offline: i, chooseProject: a, projectLoading: o, projectError: s, loadProject: c } = Og();
-		return (e, l) => (W(), G("section", xC, [
+		return (e, l) => (W(), G("section", bC, [
 			q("button", {
 				class: "project-back",
 				onClick: l[0] ||= (e) => z(a)(z(n))
 			}, " ← " + L(z(r)?.label || "Project"), 1),
 			l[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit Instructions", -1),
-			z(o) ? (W(), G("p", SC, "Loading Project…")) : Y("v-if", !0),
-			z(s) ? (W(), G("p", CC, [J(L(z(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => z(c) && z(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			z(r) ? (W(), K(bC, {
+			z(o) ? (W(), G("p", xC, "Loading Project…")) : Y("v-if", !0),
+			z(s) ? (W(), G("p", SC, [J(L(z(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => z(c) && z(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			z(r) ? (W(), K(yC, {
 				key: JSON.stringify([z(t), z(r).id]),
 				profile: z(t),
 				"project-id": z(r).id,
@@ -14639,18 +14634,18 @@ var pb = ["open"], mb = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), TC = { class: "scheduled-heading" }, EC = { class: "scheduled-heading-content" }, DC = { class: "page-heading" }, OC = {
+}), wC = { class: "scheduled-heading" }, TC = { class: "scheduled-heading-content" }, EC = { class: "page-heading" }, DC = {
 	key: 0,
 	class: "project-muted"
-}, kC = {
+}, OC = {
 	key: 1,
 	role: "status",
 	class: "project-muted"
-}, AC = {
+}, kC = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, jC = /* @__PURE__ */ V({
+}, AC = /* @__PURE__ */ V({
 	__name: "ScheduledHeading",
 	props: {
 		title: {},
@@ -14660,27 +14655,27 @@ var pb = ["open"], mb = {
 	},
 	emits: ["retry"],
 	setup(e) {
-		return (t, n) => (W(), G("div", TC, [q("div", EC, [
-			q("div", DC, [q("h2", null, L(e.title || "Scheduled"), 1)]),
+		return (t, n) => (W(), G("div", wC, [q("div", TC, [
+			q("div", EC, [q("h2", null, L(e.title || "Scheduled"), 1)]),
 			yr(t.$slots, "default"),
-			e.subtitle ? (W(), G("p", OC, L(e.subtitle), 1)) : Y("v-if", !0),
-			e.loading ? (W(), G("p", kC, "Loading scheduled history…")) : Y("v-if", !0),
-			e.error ? (W(), G("p", AC, [J(L(e.error) + " ", 1), q("button", {
+			e.subtitle ? (W(), G("p", DC, L(e.subtitle), 1)) : Y("v-if", !0),
+			e.loading ? (W(), G("p", OC, "Loading scheduled history…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", kC, [J(L(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[0] ||= (e) => t.$emit("retry")
 			}, "Retry")])) : Y("v-if", !0)
 		])]));
 	}
-}), MC = {
+}), jC = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, NC = { class: "scheduled-filter" }, PC = { class: "scheduled-content" }, FC = {
+}, MC = { class: "scheduled-filter" }, NC = { class: "scheduled-content" }, PC = {
 	key: 0,
 	class: "project-muted"
-}, IC = {
+}, FC = {
 	class: "scheduled-list",
 	"aria-label": "Scheduled jobs"
-}, LC = ["onClick"], RC = /* @__PURE__ */ V({
+}, IC = ["onClick"], LC = /* @__PURE__ */ V({
 	__name: "ScheduledListPage",
 	setup(e) {
 		let t = kc(), n = Oc(), r = /* @__PURE__ */ R([]), i = X({
@@ -14697,12 +14692,12 @@ var pb = ["open"], mb = {
 			if (!Array.isArray(n.jobs)) throw Error("Invalid jobs");
 			e.aborted || (r.value = n.jobs);
 		});
-		return (e, r) => (W(), G("section", MC, [qi(jC, {
+		return (e, r) => (W(), G("section", jC, [qi(AC, {
 			loading: z(o),
 			error: z(s),
 			onRetry: z(c)
 		}, {
-			default: jn(() => [q("label", NC, [r[2] ||= J("Show ", -1), B(q("select", {
+			default: jn(() => [q("label", MC, [r[2] ||= J("Show ", -1), B(q("select", {
 				"onUpdate:modelValue": r[0] ||= (e) => i.value = e,
 				"aria-label": "Job status"
 			}, [...r[1] ||= [
@@ -14715,7 +14710,7 @@ var pb = ["open"], mb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", PC, [!z(o) && !z(s) && !a.value.length ? (W(), G("p", FC, " No " + L(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", IC, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("button", {
+		]), q("div", NC, [!z(o) && !z(s) && !a.value.length ? (W(), G("p", PC, " No " + L(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", FC, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("button", {
 			key: e.id,
 			class: "scheduled-job-row",
 			onClick: (r) => z(n).push({
@@ -14727,18 +14722,18 @@ var pb = ["open"], mb = {
 			q("strong", null, L(e.name || e.id), 1),
 			q("small", null, L(e.schedule_display || "Scheduled job"), 1),
 			q("small", null, L(z(Pg)(e.last_run_at)), 1)
-		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, LC))), 128))])])]));
+		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, IC))), 128))])])]));
 	}
-}), zC = {
+}), RC = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, BC = { class: "scheduled-content" }, VC = {
+}, zC = { class: "scheduled-content" }, BC = {
 	key: 0,
 	class: "project-muted"
-}, HC = {
+}, VC = {
 	class: "scheduled-list",
 	"aria-label": "Job runs"
-}, UC = ["onClick"], WC = ["disabled"], GC = /* @__PURE__ */ V({
+}, HC = ["onClick"], UC = ["disabled"], WC = /* @__PURE__ */ V({
 	__name: "ScheduledJobPage",
 	setup(e) {
 		let t = kc(), n = Oc(), r = /* @__PURE__ */ R(), i = /* @__PURE__ */ R([]), a = /* @__PURE__ */ R(!1), o = /* @__PURE__ */ R(0), s = !1, { loading: c, error: l, retry: u } = Fg(async (e, t, n) => {
@@ -14755,7 +14750,7 @@ var pb = ["open"], mb = {
 		function d() {
 			s = !0, u();
 		}
-		return (e, o) => (W(), G("section", zC, [qi(jC, {
+		return (e, o) => (W(), G("section", RC, [qi(AC, {
 			title: r.value?.name || r.value?.id,
 			subtitle: "Run history · newest first",
 			loading: z(c),
@@ -14766,9 +14761,9 @@ var pb = ["open"], mb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", BC, [
-			!z(c) && !z(l) && !i.value.length ? (W(), G("p", VC, "No runs yet.")) : Y("v-if", !0),
-			q("nav", HC, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
+		]), q("div", zC, [
+			!z(c) && !z(l) && !i.value.length ? (W(), G("p", BC, "No runs yet.")) : Y("v-if", !0),
+			q("nav", VC, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				onClick: (r) => z(n).push({
 					name: "scheduled-run",
@@ -14782,25 +14777,25 @@ var pb = ["open"], mb = {
 				q("strong", null, L(z(Ng)(e.started_at)), 1),
 				q("small", null, L(e.title || "Job run"), 1),
 				q("small", null, L(e.end_reason || (e.source === "cron_output" ? "Saved output" : e.ended_at ? "Finished" : "In progress")), 1)
-			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, UC))), 128))]),
+			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, HC))), 128))]),
 			a.value ? (W(), G("button", {
 				key: 1,
 				class: "project-button",
 				disabled: z(c),
 				onClick: d
-			}, " Load older runs ", 8, WC)) : Y("v-if", !0)
+			}, " Load older runs ", 8, UC)) : Y("v-if", !0)
 		])]));
 	}
-}), KC = {
+}), GC = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, qC = {
+}, KC = {
 	key: 1,
 	class: "scheduled-content"
-}, JC = {
+}, qC = {
 	key: 0,
 	class: "project-muted"
-}, YC = /* @__PURE__ */ V({
+}, JC = /* @__PURE__ */ V({
 	__name: "ScheduledRunPage",
 	setup(e) {
 		let t = kc(), n = /* @__PURE__ */ R(), r = /* @__PURE__ */ R(), i = Fg(async (e, t, a, o) => {
@@ -14811,7 +14806,7 @@ var pb = ["open"], mb = {
 			let c = await Q.scheduledOutput(t, a, o, e);
 			e.aborted || (r.value = c, i.sessionId.value = c.session_id);
 		}), { loading: a, error: o, retry: s } = i, c = X(() => Lg(r.value));
-		return (e, i) => (W(), G("section", KC, [qi(jC, {
+		return (e, i) => (W(), G("section", GC, [qi(AC, {
 			title: n.value?.name || n.value?.id,
 			subtitle: r.value ? z(Ng)(r.value.started_at || 0) : void 0,
 			loading: z(a),
@@ -14823,63 +14818,63 @@ var pb = ["open"], mb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), c.value.length ? (W(), K(ex, {
+		]), c.value.length ? (W(), K($b, {
 			key: String(z(t).params.runId),
 			"follow-initially": !1,
 			messages: c.value,
 			draft: "",
 			loading: !1,
 			progress: []
-		}, null, 8, ["messages"])) : (W(), G("div", qC, [r.value ? (W(), G("p", JC, "No output was saved for this run.")) : Y("v-if", !0)]))]));
+		}, null, 8, ["messages"])) : (W(), G("div", KC, [r.value ? (W(), G("p", qC, "No output was saved for this run.")) : Y("v-if", !0)]))]));
 	}
-}), XC = {
+}), YC = {
 	class: "settings-page page-content",
 	"aria-label": "Settings"
-}, ZC = { class: "settings-content" }, QC = { class: "settings-heading" }, $C = {
+}, XC = { class: "settings-content" }, ZC = { class: "settings-heading" }, QC = {
 	class: "settings-group",
 	"aria-labelledby": "settings-profile-heading"
-}, ew = { class: "settings-row" }, tw = ["value"], nw = ["value"], rw = ["value"], iw = {
+}, $C = { class: "settings-row" }, ew = ["value"], tw = ["value"], nw = ["value"], rw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-app-heading"
-}, aw = { class: "settings-row settings-notifications" }, ow = { class: "wake-lock-setting" }, sw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, cw = ["checked"], lw = {
+}, iw = { class: "settings-row settings-notifications" }, aw = { class: "wake-lock-setting" }, ow = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, sw = ["checked"], cw = {
 	key: 0,
 	class: "mt-1 text-sm"
-}, uw = {
+}, lw = {
 	key: 0,
 	class: "settings-row settings-notifications"
-}, dw = { class: "kanban-setting" }, fw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, pw = ["checked", "disabled"], mw = {
+}, uw = { class: "kanban-setting" }, dw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, fw = ["checked", "disabled"], pw = {
 	id: "kanban-description",
 	role: "status"
-}, hw = ["disabled"], gw = {
+}, mw = ["disabled"], hw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-notifications-heading"
-}, _w = { class: "settings-row settings-notifications" }, vw = {
+}, gw = { class: "settings-row settings-notifications" }, _w = {
 	class: "push-setting",
 	"aria-labelledby": "notifications-heading"
-}, yw = {
+}, vw = {
 	id: "notifications-heading",
 	class: "text-sm font-medium text-white"
-}, bw = ["disabled"], xw = ["disabled"], Sw = {
+}, yw = ["disabled"], bw = ["disabled"], xw = {
 	key: 1,
 	class: "mt-1 text-sm text-[#dcae6e]",
 	role: "status"
-}, Cw = {
+}, Sw = {
 	key: 2,
 	class: "mt-1 text-sm"
-}, ww = {
+}, Cw = {
 	key: 3,
 	class: "mt-1 text-sm",
 	role: "status"
-}, Tw = {
+}, ww = {
 	key: 4,
 	class: "mt-1 text-sm"
-}, Ew = {
+}, Tw = {
 	key: 5,
 	class: "mt-1 text-sm"
-}, Dw = {
+}, Ew = {
 	key: 6,
 	class: "mt-1 text-sm"
-}, Ow = /* @__PURE__ */ V({
+}, Dw = /* @__PURE__ */ V({
 	__name: "SettingsPanel",
 	props: {
 		kanban: {},
@@ -14901,8 +14896,8 @@ var pb = ["open"], mb = {
 	],
 	setup(e, { emit: t }) {
 		let n = t, r = /* @__PURE__ */ R();
-		return cr(() => r.value?.focus()), (t, i) => (W(), G("section", XC, [q("div", ZC, [
-			q("div", QC, [q("h2", {
+		return cr(() => r.value?.focus()), (t, i) => (W(), G("section", YC, [q("div", XC, [
+			q("div", ZC, [q("h2", {
 				ref_key: "heading",
 				ref: r,
 				tabindex: "-1",
@@ -14916,7 +14911,7 @@ var pb = ["open"], mb = {
 				id: "settings-profile-heading",
 				class: "settings-section-title"
 			}, "Profile", -1),
-			q("div", $C, [q("div", ew, [i[8] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
+			q("div", QC, [q("div", $C, [i[8] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
 				id: "settings-profile",
 				value: e.profile,
 				onChange: i[1] ||= (e) => n("profile", e.target.value)
@@ -14925,17 +14920,17 @@ var pb = ["open"], mb = {
 				e.profile && !e.profiles.some((t) => t.name === e.profile) ? (W(), G("option", {
 					key: 0,
 					value: e.profile
-				}, L(e.profile), 9, nw)) : Y("v-if", !0),
+				}, L(e.profile), 9, tw)) : Y("v-if", !0),
 				(W(!0), G(U, null, H(e.profiles, (e) => (W(), G("option", {
 					key: e.name,
 					value: e.name
-				}, L(e.name), 9, rw))), 128))
-			], 40, tw)])]),
+				}, L(e.name), 9, nw))), 128))
+			], 40, ew)])]),
 			i[16] ||= q("h3", {
 				id: "settings-app-heading",
 				class: "settings-section-title"
 			}, "Global settings", -1),
-			q("div", iw, [q("div", aw, [i[11] ||= q("svg", {
+			q("div", rw, [q("div", iw, [i[11] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -14948,19 +14943,19 @@ var pb = ["open"], mb = {
 				width: "14",
 				height: "18",
 				rx: "2"
-			}), q("path", { d: "M9 17h6" })], -1), q("div", ow, [
+			}), q("path", { d: "M9 17h6" })], -1), q("div", aw, [
 				i[10] ||= q("h3", {
 					id: "wake-lock-heading",
 					class: "text-sm font-medium text-white"
 				}, "Keep Screen Awake", -1),
-				q("label", sw, [q("input", {
+				q("label", ow, [q("input", {
 					type: "checkbox",
 					"aria-labelledby": "wake-lock-heading",
 					checked: e.keepScreenAwake,
 					onChange: i[2] ||= (e) => n("toggleWakeLock", e.target.checked)
-				}, null, 40, cw), i[9] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
-				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", lw, " Screen wake lock is unavailable in this browser. "))
-			])]), e.kanban ? (W(), G("div", uw, [i[13] ||= q("svg", {
+				}, null, 40, sw), i[9] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
+				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", cw, " Screen wake lock is unavailable in this browser. "))
+			])]), e.kanban ? (W(), G("div", lw, [i[13] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -14973,58 +14968,58 @@ var pb = ["open"], mb = {
 				width: "18",
 				height: "18",
 				rx: "2"
-			}), q("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), q("div", dw, [
+			}), q("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), q("div", uw, [
 				i[12] ||= q("h3", {
 					id: "kanban-heading",
 					class: "text-sm font-semibold text-white"
 				}, "Kanban Viewer", -1),
-				q("label", fw, [q("input", {
+				q("label", dw, [q("input", {
 					type: "checkbox",
 					"aria-labelledby": "kanban-heading",
 					"aria-describedby": "kanban-description",
 					checked: e.kanban.enabled.value,
 					disabled: !e.kanban.available.value || e.kanban.checking.value,
 					onChange: i[3] ||= (t) => e.kanban.setEnabled(t.target.checked)
-				}, null, 40, pw), q("span", mw, L(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
+				}, null, 40, fw), q("span", pw, L(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
 				q("button", {
 					class: "min-h-[44px] underline",
 					disabled: e.kanban.checking.value,
 					onClick: i[4] ||= (t) => e.kanban.check()
-				}, " Recheck availability ", 8, hw)
+				}, " Recheck availability ", 8, mw)
 			])])) : Y("v-if", !0)]),
 			i[17] ||= q("h3", {
 				id: "settings-notifications-heading",
 				class: "settings-section-title"
 			}, "Notifications", -1),
-			q("div", gw, [q("div", _w, [i[14] ||= q("svg", {
+			q("div", hw, [q("div", gw, [i[14] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
 				stroke: "currentColor",
 				"stroke-width": "1.5",
 				"aria-hidden": "true"
-			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", vw, [
-				q("h3", yw, " Notifications for " + L(e.profile || "default"), 1),
+			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", _w, [
+				q("h3", vw, " Notifications for " + L(e.profile || "default"), 1),
 				q("button", {
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.supported || !e.pushState.subscribed && !e.pushState.available,
 					onClick: i[5] ||= (e) => n("togglePush")
-				}, L(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, bw),
+				}, L(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, yw),
 				e.pushState.subscribed ? (W(), G("button", {
 					key: 0,
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.available,
 					onClick: i[6] ||= (e) => n("testPush")
-				}, " Send test ", 8, xw)) : Y("v-if", !0),
-				e.pushState.error || e.pushMessage ? (W(), G("p", Sw, L(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", Cw, " Notifications enabled for " + L(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", ww, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", Ew, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", Dw, " Notifications disabled for " + L(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", Tw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
+				}, " Send test ", 8, bw)) : Y("v-if", !0),
+				e.pushState.error || e.pushMessage ? (W(), G("p", xw, L(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", Sw, " Notifications enabled for " + L(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", Cw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", Tw, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", Ew, " Notifications disabled for " + L(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", ww, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
 			])])])
 		])]));
 	}
-}), kw = /* @__PURE__ */ V({
+}), Ow = /* @__PURE__ */ V({
 	__name: "SettingsPage",
 	setup(e) {
 		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, kanban: c, chooseProfile: l, togglePush: u, testPush: d, closeSettings: f } = Tg();
-		return (e, p) => (W(), K(Ow, {
+		return (e, p) => (W(), K(Dw, {
 			kanban: z(c),
 			profile: z(t),
 			profiles: z(n),
@@ -15056,9 +15051,9 @@ var pb = ["open"], mb = {
 			"onClose"
 		]));
 	}
-}), Aw = "chathermes";
-function jw() {
-	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/inbox", i = r(), a = () => window.history.state?.[Aw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), kw = "chathermes";
+function Aw() {
+	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/inbox", i = r(), a = () => window.history.state?.[kw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -15067,7 +15062,7 @@ function jw() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[Aw] = {
+		}, a[kw] = {
 			current: e,
 			position: o,
 			state: s
@@ -15109,7 +15104,7 @@ function jw() {
 }
 //#endregion
 //#region src/features/projects/components/ProjectActions.vue?vue&type=script&setup=true&lang.ts
-var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], Iw = ["disabled"], Lw = /* @__PURE__ */ V({
+var jw = ["disabled"], Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], Iw = /* @__PURE__ */ V({
 	__name: "ProjectActions",
 	setup(e) {
 		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = Og(), u = kc(), d = Oc();
@@ -15133,7 +15128,7 @@ var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], 
 				role: "menuitem",
 				disabled: z(a) || z(c) || !z(t) || z(t).archived || !z(El)(z(t)),
 				onClick: n[0] ||= (e) => z(s)()
-			}, " New Project Chat ", 8, Mw)) : Y("v-if", !0),
+			}, " New Project Chat ", 8, jw)) : Y("v-if", !0),
 			q("button", {
 				role: "menuitem",
 				onClick: n[1] ||= (e) => f("edit")
@@ -15142,7 +15137,7 @@ var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], 
 				role: "menuitem",
 				disabled: z(a) || !z(El)(z(t)),
 				onClick: n[2] ||= (e) => f("instructions")
-			}, " Edit Instructions ", 8, Nw),
+			}, " Edit Instructions ", 8, Mw),
 			z(t).isAuto ? Y("v-if", !0) : (W(), G(U, { key: 1 }, [z(t).archived ? (W(), G("button", {
 				key: 0,
 				role: "menuitem",
@@ -15151,20 +15146,20 @@ var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], 
 					id: z(r),
 					restore: !0
 				})
-			}, " Restore project ", 8, Pw)) : (W(), G("button", {
+			}, " Restore project ", 8, Nw)) : (W(), G("button", {
 				key: 1,
 				role: "menuitem",
 				disabled: z(i) || z(a),
 				onClick: n[4] ||= (e) => p("archive")
-			}, " Archive project ", 8, Fw)), q("button", {
+			}, " Archive project ", 8, Pw)), q("button", {
 				class: "project-danger",
 				role: "menuitem",
 				disabled: z(i) || z(a),
 				onClick: n[5] ||= (e) => p("delete")
-			}, " Delete project ", 8, Iw)], 64))
+			}, " Delete project ", 8, Fw)], 64))
 		], 64)) : Y("v-if", !0);
 	}
-}), Rw = ["aria-checked"], zw = ["aria-checked"], Bw = /* @__PURE__ */ V({
+}), Lw = ["aria-checked"], Rw = ["aria-checked"], zw = /* @__PURE__ */ V({
 	__name: "ProjectsActions",
 	setup(e) {
 		let t = kc(), n = X(() => t.query.archived === "1"), { showProjects: r } = Og();
@@ -15172,13 +15167,13 @@ var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], 
 			role: "menuitemradio",
 			"aria-checked": !n.value,
 			onClick: t[0] ||= (e) => z(r)(!1)
-		}, " Active projects", 8, Rw), q("button", {
+		}, " Active projects", 8, Lw), q("button", {
 			role: "menuitemradio",
 			"aria-checked": n.value,
 			onClick: t[1] ||= (e) => z(r)(!0)
-		}, " Archived projects ", 8, zw)], 64));
+		}, " Archived projects ", 8, Rw)], 64));
 	}
-}), Vw = ["disabled"], Hw = ["disabled"], Uw = /* @__PURE__ */ V({
+}), Bw = ["disabled"], Vw = ["disabled"], Hw = /* @__PURE__ */ V({
 	__name: "ScheduledActions",
 	setup(e) {
 		let { current: t, offline: n, creating: r, recentSession: i } = jg();
@@ -15187,34 +15182,34 @@ var Mw = ["disabled"], Nw = ["disabled"], Pw = ["disabled"], Fw = ["disabled"], 
 			"data-test": "refresh-scheduled",
 			disabled: !z(t) || z(t).loading.value,
 			onClick: a[0] ||= (e) => z(t)?.retry()
-		}, " Refresh", 8, Vw), z(t)?.sessionId.value ? (W(), G("button", {
+		}, " Refresh", 8, Bw), z(t)?.sessionId.value ? (W(), G("button", {
 			key: 0,
 			role: "menuitem",
 			"data-test": "resume-scheduled-session",
 			disabled: z(n) || z(r) || z(t).loading.value,
 			onClick: a[1] ||= (e) => z(i)(z(t).sessionId.value)
-		}, " Resume Session ", 8, Hw)) : Y("v-if", !0)], 64));
+		}, " Resume Session ", 8, Vw)) : Y("v-if", !0)], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function Ww(e = jw(), t) {
+function Uw(e = Aw(), t) {
 	let n = Dc({
 		history: e,
 		routes: [
 			{
 				path: "/",
 				name: "home",
-				components: { default: bx },
+				components: { default: yx },
 				meta: { chat: !0 }
 			},
 			{
 				path: "/chat/:sessionId",
 				name: "chat",
 				components: {
-					default: xx,
-					actions: Lw,
-					dialogs: ay
+					default: bx,
+					actions: Iw,
+					dialogs: iy
 				},
 				meta: { chat: !0 }
 			},
@@ -15222,15 +15217,15 @@ function Ww(e = jw(), t) {
 				path: "/inbox",
 				name: "inbox",
 				components: {
-					default: zx,
-					actions: $v
+					default: Rx,
+					actions: Qv
 				},
 				meta: { title: "Inbox" }
 			},
 			{
 				path: "/artifacts",
 				name: "artifacts",
-				components: { default: sS },
+				components: { default: oS },
 				meta: {
 					title: "Artifacts",
 					hideComposer: !0
@@ -15240,8 +15235,8 @@ function Ww(e = jw(), t) {
 				path: "/projects",
 				name: "projects",
 				components: {
-					default: xS,
-					actions: Bw
+					default: bS,
+					actions: zw
 				},
 				meta: {
 					title: "Projects",
@@ -15252,9 +15247,9 @@ function Ww(e = jw(), t) {
 				path: "/projects/:projectId",
 				name: "project",
 				components: {
-					default: LS,
-					actions: Lw,
-					dialogs: ay
+					default: IS,
+					actions: Iw,
+					dialogs: iy
 				},
 				meta: {
 					section: "projects",
@@ -15265,9 +15260,9 @@ function Ww(e = jw(), t) {
 				path: "/projects/:projectId/artifacts",
 				name: "project-artifacts",
 				components: {
-					default: RS,
-					actions: Lw,
-					dialogs: ay
+					default: LS,
+					actions: Iw,
+					dialogs: iy
 				},
 				meta: {
 					section: "projects",
@@ -15278,9 +15273,9 @@ function Ww(e = jw(), t) {
 				path: "/projects/:projectId/settings",
 				name: "project-settings",
 				components: {
-					default: dC,
-					actions: Lw,
-					dialogs: ay
+					default: uC,
+					actions: Iw,
+					dialogs: iy
 				},
 				meta: { section: "projects" }
 			},
@@ -15288,9 +15283,9 @@ function Ww(e = jw(), t) {
 				path: "/projects/:projectId/instructions",
 				name: "project-instructions",
 				components: {
-					default: wC,
-					actions: Lw,
-					dialogs: ay
+					default: CC,
+					actions: Iw,
+					dialogs: iy
 				},
 				meta: { section: "projects" }
 			},
@@ -15298,8 +15293,8 @@ function Ww(e = jw(), t) {
 				path: "/scheduled",
 				name: "scheduled",
 				components: {
-					default: RC,
-					actions: Uw
+					default: LC,
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15310,8 +15305,8 @@ function Ww(e = jw(), t) {
 				path: "/scheduled/:jobId",
 				name: "scheduled-job",
 				components: {
-					default: GC,
-					actions: Uw
+					default: WC,
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15322,8 +15317,8 @@ function Ww(e = jw(), t) {
 				path: "/scheduled/:jobId/:runId",
 				name: "scheduled-run",
 				components: {
-					default: YC,
-					actions: Uw
+					default: JC,
+					actions: Hw
 				},
 				meta: {
 					title: "Scheduled",
@@ -15333,7 +15328,7 @@ function Ww(e = jw(), t) {
 			{
 				path: "/settings",
 				name: "settings",
-				components: { default: kw },
+				components: { default: Ow },
 				meta: {
 					title: "Settings",
 					hideComposer: !0
@@ -15343,8 +15338,8 @@ function Ww(e = jw(), t) {
 				path: "/kanban",
 				name: "kanban",
 				components: {
-					default: Xv,
-					actions: Qv
+					default: Yv,
+					actions: Zv
 				},
 				meta: {
 					title: "Kanban",
@@ -15374,9 +15369,9 @@ function Ww(e = jw(), t) {
 }
 //#endregion
 //#region src/main.ts
-function Gw(e, t) {
-	let n = Po(E_).use(Ww(void 0, e));
+function Ww(e, t) {
+	let n = Po(E_).use(Uw(void 0, e));
 	return t && n.provide(Lc, t), n;
 }
 //#endregion
-export { E_ as App, Gw as createChatHermesApp };
+export { E_ as App, Ww as createChatHermesApp };
