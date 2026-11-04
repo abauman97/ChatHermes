@@ -197,9 +197,11 @@ test("reasoning and tools share one collapsed history with the active stream bel
   const liveTool = work.locator(".activity-active:not(.activity-thinking)");
   await expect(liveTool.locator("summary")).toBeVisible();
   await expect(liveTool.locator("summary")).toContainText(/Waiting…|Running…/);
-  await expect(liveTool).not.toHaveAttribute("open", "");
+  await expect(liveTool).toHaveAttribute("open", "");
+  await expect(liveTool.locator("pre")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("tool-streaming-expanded.png") });
+  await liveTool.locator("summary").click();
   await expect(liveTool.locator("pre")).toBeHidden();
-  await page.screenshot({ path: info.outputPath("tool-streaming-collapsed.png") });
   await liveTool.locator("summary").click();
   await expect(liveTool.locator("pre")).toBeVisible();
   await expect(liveTool.locator("pre")).toContainText("workflow-tool-start");

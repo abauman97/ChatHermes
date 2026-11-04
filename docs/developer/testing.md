@@ -45,7 +45,7 @@ Real-provider testing is explicit opt-in through `npm run live:real` with root `
 The route-page workflow (`tests/workflows/route-pages.spec.ts`) opens each destination directly in the authenticated plugin, reloads nested pages, and checks back/forward traversal and composer/session continuity during streaming. Scheduled page tests also cover late responses after resource/profile changes and abort on navigation. Run these within the same isolated deterministic Docker project as the other workflows.
 
 The transcript workflow (`tests/workflows/transcript.spec.ts`) seeds real Hermes
-compaction/rotation/rewind history, then checks bounded HTTP/native reads, scroll
+compaction/rotation/rewind history, then checks bounded HTTP responses and omitted native history, scroll
 and fallback pagination, anchors, reconnect, live backfill and restored tool output
 in the authenticated desktop/mobile plugin. Its mid-flight resume scenario uses
 a paced `[workflow-resume]` SSE fixture, takes the browser context offline, and
@@ -55,7 +55,16 @@ exact final text, saved history, draft/focus and scroll anchoring without route
 mocks. `tests/transcript.test.py` integrates
 with the pinned runtime's SQLite and display projection, including page sizes
 1, 7, 119 and 120. Run it with the same uv environment and runtime `PYTHONPATH` as the
-other Python contracts.
+other Python contracts. Comparisons execute the pinned Desktop REST handler on the
+same disposable DB, including a synthetic assistant-only coverage fixture that
+returns answers before cloned prompts on both paths. This is evidence of a shared
+limitation, not a production coverage diagnosis or a rendered Electron test.
+`persisted-live-turn.test.ts` also executes pinned Desktop functions with plain-text
+presentation adapters for interval, prefix and candidate comparisons; those
+comparisons skip explicitly when the source checkout is absent. Full native
+recovery assertions remain in `native-session.test.ts` and the mounted workflow.
+The multi-rotation cost test counts payload rows/characters independently of HTTP
+page length; all-ancestor work remains unbounded at the pin.
 
 ## Documentation checks
 

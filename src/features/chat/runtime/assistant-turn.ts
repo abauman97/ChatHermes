@@ -234,7 +234,7 @@ export function reduceTurn(turn: AssistantTurn, event: TurnEvent): void {
 export function historyBlocks(messages: Message[]): TurnBlock[] {
   const turn = createTurn();
   for (const message of messages) {
-    if (message.blocks) {
+    if (message.blocks?.length) {
       turn.blocks.push(...message.blocks);
       continue;
     }

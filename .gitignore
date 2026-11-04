@@ -41,7 +41,7 @@ __pycache__/
 .pytest_cache/
 
 .venv/
-.hermes-source/
+.hermes-source
 *.egg-info/
 plugin/chathermes/build/
 compose.override.yml

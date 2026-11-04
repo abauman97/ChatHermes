@@ -3331,3 +3331,34 @@ async def test_worker_session_detail_exposes_only_resolved_task_address(
             {"object": "hermes.session", "session": expected} if enveloped else expected
         )
         assert KEY not in response.text
+
+
+@run_async
+async def test_transcript_route_preserves_real_desktop_ids_and_profile_isolation(
+    app, monkeypatch, tmp_path
+):
+    from hermes_cli import web_server_sessions
+    from hermes_cli.web_routers import sessions
+    from hermes_state import SessionDB
+
+    monkeypatch.setattr(sessions, "_history_profile_home", lambda profile: tmp_path)
+    path = tmp_path / "history.db"
+    db = SessionDB(db_path=path)
+    db.create_session("desktop-parity", source="desktop", profile_name="alpha")
+    user = db.append_message("desktop-parity", "user", "Same prompt")
+    answer = db.append_message("desktop-parity", "assistant", "Same answer")
+    db.close()
+    monkeypatch.setattr(
+        web_server_sessions,
+        "_open_session_db_for_profile",
+        lambda profile, *, read_only: SessionDB(db_path=path, read_only=True),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        route = "/api/plugins/chathermes/api/sessions/desktop-parity/messages?transcript=1"
+        response = await client.get(route + "&profile=alpha")
+        assert response.status_code == 200, response.text
+        assert [row["id"] for row in response.json()["data"]] == [user, answer]
+        assert response.json()["pagination"]["order"] == "latest"
+        assert (await client.get(route + "&profile=beta")).status_code == 404

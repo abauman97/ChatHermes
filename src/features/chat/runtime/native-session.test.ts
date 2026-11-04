@@ -1172,3 +1172,144 @@ it("hydrates the persisted prefix while an omitted resumed turn is still running
   expect(session.busy.value).toBe(true);
   session.close();
 });
+
+it("reconciles omitted partial tool commentary before later deltas without repeating text", async () => {
+  const rows = [
+    { id: "1", role: "user", content: "Repeat" },
+    { id: "2", role: "assistant", content: "Old answer" },
+    { id: "3", role: "user", content: "Repeat" },
+    {
+      id: "4",
+      role: "assistant",
+      content: "Starting 😀",
+      tool_calls: [{ id: "call", function: { name: "terminal" } }],
+    },
+    { id: "5", role: "tool", content: "Output", tool_call_id: "call" },
+  ];
+  vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: rows,
+    nextOffset: 5,
+    hasMore: false,
+    revision: "r",
+    projected: true,
+  });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  fake.hooks!.snapshot({
+    messages: [],
+    messages_omitted: true,
+    running: true,
+    inflight: { user: "Repeat", assistant: "Starting 😀\n\nContinuing", streaming: true },
+    recovery: { complete: false, base_row_ids: null },
+  } as any);
+  fake.hooks!.recovered();
+  await session.hydrate();
+  fake.hooks!.event({ type: "message.delta", payload: { text: " after reconnect" } } as any);
+  const active = session.messages.value.find((row) => row.id === "3")!;
+  expect(session.messages.value.map((row) => row.id)).toEqual(["1", "2", "3"]);
+  expect(active.blocks).toEqual([
+    expect.objectContaining({ kind: "text", content: "Starting 😀" }),
+    expect.objectContaining({ kind: "tool", id: "call", output: "Output" }),
+    expect.objectContaining({ kind: "text", content: "\n\nContinuing after reconnect" }),
+  ]);
+  expect(fake.rpc.mock.calls.some(([method]) => method === "prompt.submit")).toBe(false);
+  session.close();
+});
+
+it("restores correction text in Python code-point intervals including non-BMP characters", async () => {
+  vi.spyOn(api, "messages").mockResolvedValue([]);
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  fake.hooks!.snapshot({
+    messages: [],
+    running: true,
+    messages_omitted: true,
+    inflight: {
+      user: "Question",
+      assistant: "A😀B final",
+      corrections: ["Guide"],
+      correction_offsets: [3],
+    },
+    recovery: { complete: false, base_row_ids: null },
+  } as any);
+  fake.hooks!.recovered();
+  expect(
+    session.messages.value.map((row) => [row.content, row.blocks?.map((block) => block.content)]),
+  ).toEqual([
+    ["Question", ["A😀B"]],
+    ["Guide", [" final"]],
+  ]);
+  session.close();
+});
+
+it("keeps backfill retryable when a revision page does not advance", async () => {
+  const tail = {
+    messages: [{ id: "tail", role: "user", content: "Tail" }],
+    nextOffset: 120,
+    hasMore: true,
+    revision: "r",
+    projected: true,
+  };
+  const latest = vi.spyOn(api, "latestMessages").mockResolvedValue(tail);
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  await session.hydrate();
+  latest.mockResolvedValue({
+    ...tail,
+    messages: [{ id: "older", role: "user", content: "Earlier" }],
+  });
+  await session.loadEarlier();
+  expect(session.earlierError.value).toContain("Try again");
+  expect(session.hasEarlier.value).toBe(true);
+  expect(session.messages.value.map((row) => row.id)).toEqual(["tail"]);
+  session.close();
+});
+
+it("keeps reasoning and later text phases arriving while partial saved history loads", async () => {
+  const rows = [
+    { id: "3", role: "user", content: "Question" },
+    {
+      id: "4",
+      role: "assistant",
+      content: "Starting",
+      tool_calls: [{ id: "call", function: { name: "terminal" } }],
+    },
+    { id: "5", role: "tool", content: "Output", tool_call_id: "call" },
+  ];
+  let finish!: (value: any) => void;
+  vi.spyOn(api, "latestMessages").mockResolvedValue({
+    messages: rows,
+    nextOffset: 3,
+    hasMore: false,
+    revision: "r",
+    projected: true,
+  });
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  fake.hooks!.snapshot({
+    messages: [],
+    messages_omitted: true,
+    running: true,
+    inflight: { user: "Question", assistant: "Starting\n\nContinuing", streaming: true },
+    recovery: { complete: false, base_row_ids: null },
+  } as any);
+  vi.spyOn(api, "latestMessages").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  fake.hooks!.recovered();
+  fake.hooks!.event({ type: "reasoning.delta", payload: { text: "Fresh reasoning" } } as any);
+  fake.hooks!.event({ type: "message.delta", payload: { text: "Fresh phase" } } as any);
+  finish({ messages: rows, nextOffset: 3, hasMore: false, revision: "r", projected: true });
+  await vi.waitFor(() => expect(session.messages.value[0]?.id).toBe("3"));
+  expect(session.messages.value[0]?.blocks?.map((block) => [block.kind, block.content])).toEqual([
+    ["text", "Starting"],
+    ["tool", ""],
+    ["text", "\n\nContinuing"],
+    ["thinking", "Fresh reasoning"],
+    ["text", "Fresh phase"],
+  ]);
+  session.close();
+});

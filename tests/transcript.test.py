@@ -61,23 +61,9 @@ def test_full_incremental_history_compaction_rotations_dedupe_and_rewind(db, lim
         "Replacement after rewind"
     ]
     assert len({str(row["id"]) for row in rows}) == len(rows)
-    assert len([row for row in rows if row.get("display_kind") == "compaction"]) == 3
+    assert len([row for row in rows if row.get("display_kind") == "compaction"]) == 0
     assert "INTERNAL COMPACTION SUMMARY" not in str(rows)
     assert "Persisted prompt 168" not in str(rows)
-    for n, preceding in (
-        (1, "Persisted answer 079"),
-        (2, "Persisted answer 119"),
-        (3, "Persisted answer 139"),
-    ):
-        markers = [i for i, row in enumerate(rows) if row.get("display_kind") == "compaction"]
-        assert (
-            next(
-                row["content"]
-                for row in reversed(rows[: markers[n - 1]])
-                if row.get("display_kind") != "hidden"
-            )
-            == preceding
-        )
 
 
 def test_revision_rejects_append_rewind_and_rotation_between_pages(db):
@@ -118,7 +104,7 @@ def test_profile_ownership_and_display_content(db):
     assert "Internal summary" not in str(result["data"])
 
 
-def test_rotation_without_flag_uses_proven_compression_edge(db):
+def test_rotation_without_flag_matches_desktop_without_invented_marker(db):
     db.create_session("root", source="desktop")
     db.append_message("root", "user", "Original")
     db.append_message("root", "assistant", "Before rotation")
@@ -135,10 +121,9 @@ def test_rotation_without_flag_uses_proven_compression_edge(db):
     assert [row.get("content") for row in visible] == [
         "Original",
         "Before rotation",
-        "",
         "After rotation",
     ]
-    assert visible[2]["display_kind"] == "compaction"
+    assert not any(row.get("display_kind") == "compaction" for row in visible)
 
 
 def test_no_marker_for_summary_looking_user_text_or_branch(db):
@@ -161,7 +146,7 @@ def test_no_marker_for_summary_looking_user_text_or_branch(db):
     )
 
 
-def test_large_session_initial_page_never_materializes_all_payloads(db, monkeypatch):
+def test_single_segment_page_limits_payloads(db, monkeypatch):
     db.create_session("large", source="desktop")
     rows = [
         {
@@ -223,3 +208,195 @@ def test_compacted_inline_images_keep_bounded_authenticated_addresses(db, monkey
     assert transcript.read_inline_image("alpha", "images", str(image_id), 1) == data
     with pytest.raises(ValueError):
         transcript.read_inline_image("beta", "images", str(image_id), 1)
+
+
+def desktop_page(db, monkeypatch, sid, limit, offset=0):
+    """Execute the pinned Desktop REST handler, not a second selector."""
+    import asyncio
+
+    from hermes_cli.web_routers import sessions
+
+    monkeypatch.setattr(sessions, "_with_db", lambda profile, read, **kw: read(db))
+    monkeypatch.setattr(sessions, "_history_profile_home", lambda profile: db.db_path.parent)
+    return asyncio.run(
+        sessions.get_session_messages(
+            sid,
+            profile="default",
+            limit=limit,
+            offset=offset,
+            order="latest",
+            include_compacted=True,
+            inline_images=True,
+        )
+    )["messages"]
+
+
+@pytest.mark.parametrize("limit", [1, 7, 119, 120])
+def test_desktop_route_parity_for_same_source_history(db, monkeypatch, limit):
+    seeded = seed(db, "desktop-comparison")
+    offset = 0
+    while True:
+        expected = desktop_page(db, monkeypatch, seeded["id"], limit, offset)
+        actual = transcript.read_page(db, seeded["id"], "default", limit, offset)
+        # Hidden scaffold bodies are deliberately withheld by the plugin. All
+        # source identities and their sequence must still be Desktop's sequence.
+        assert [row["id"] for row in actual["data"]] == [row["id"] for row in expected]
+        for plugin, desktop in zip(actual["data"], expected, strict=True):
+            assert plugin.get("display_kind") == desktop.get("display_kind")
+            if desktop.get("display_kind") != "hidden":
+                assert plugin["content"] == desktop.get("display_content", desktop["content"])
+        offset = actual["transcript"]["next_offset"]
+        if not actual["transcript"]["has_more"]:
+            break
+
+
+def test_uncovered_clone_shape_shares_desktop_limitation(db, monkeypatch):
+    fixture = load(ROOT / "tests/fixtures/transcript.py").seed_uncovered_clones(db, "clones")
+    expected = desktop_page(db, monkeypatch, fixture["id"], 120)
+    actual = transcript.read_page(db, fixture["id"], "default")["data"]
+
+    def visible(rows):
+        return [(row["id"], row["content"]) for row in rows if row.get("display_kind") != "hidden"]
+
+    assert visible(actual) == visible(expected)
+    # The pinned Desktop path returns retained answers, then newly placed user
+    # clones. Passing parity is not a fix for the user's requested interleaving.
+    assert [row["content"] for row in expected if row.get("display_kind") != "hidden"] == [
+        *[f"Clone answer {n}" for n in range(6)],
+        *[f"Clone prompt {n}" for n in range(6)],
+    ]
+    retired = db._read_all(
+        "SELECT id, message_uid, display_order FROM messages WHERE active=0 AND compacted=0 ORDER BY id"
+    )
+    clones = [
+        row for row in expected if row["role"] == "user" and row.get("display_kind") != "hidden"
+    ]
+    assert len(retired) == len(clones) == 6
+    assert all(new["id"] > old["id"] for old, new in zip(retired, clones, strict=True))
+
+
+def test_repeated_occurrences_follow_desktop_identity_rules(db, monkeypatch):
+    db.create_session("repeat", source="desktop", profile_name="default")
+    for stamp in (1700000100, 1700000102):
+        db.append_message("repeat", "user", "Repeat", timestamp=stamp)
+        db.append_message("repeat", "assistant", "Same answer", timestamp=stamp + 1)
+    rows = transcript.read_page(db, "repeat", "default")["data"]
+    expected = desktop_page(db, monkeypatch, "repeat", 120)
+    assert [row["id"] for row in rows] == [row["id"] for row in expected]
+    assert len(rows) == 4
+    # Even separate append calls at an identical timestamp/content collapse by
+    # Hermes display identity. Do not invent local occurrence UIDs to undo that.
+    db.append_message("repeat", "user", "Repeat", timestamp=1700000102)
+    assert len(desktop_page(db, monkeypatch, "repeat", 120)) == 4
+    assert len(transcript.read_page(db, "repeat", "default")["data"]) == 4
+
+
+def test_multi_rotation_work_is_measured_separately_from_response_size(db, monkeypatch):
+    db.create_session("cost", source="desktop", profile_name="default")
+    db.append_messages_batch(
+        "cost",
+        [
+            {"role": "user", "content": str(n) + "x" * 2048, "timestamp": 1700000000 + n}
+            for n in range(1200)
+        ],
+    )
+    for parent, child in (("cost", "cost-1"), ("cost-1", "cost-2")):
+        db.publish_compression_child(
+            parent_session_id=parent,
+            child_session_id=child,
+            source="desktop",
+            messages=db.get_messages(parent)[-2:],
+            require_compression_lease=False,
+        )
+    read = db._read_all
+    payloads = []
+
+    def measured(sql, params=()):
+        result = read(sql, params)
+        if "SELECT * FROM messages" in sql and "session_id IN" in sql:
+            payloads.append((len(result), sum(len(str(row["content"])) for row in result)))
+        return result
+
+    monkeypatch.setattr(db, "_read_all", measured)
+    result = transcript.read_page(db, "cost", "default")
+    assert len(result["data"]) == 120
+    assert payloads and payloads[0][0] >= 1200
+    assert payloads[0][1] > 2_400_000
+    print(f"multi-rotation: response={len(result['data'])} payload_reads={payloads}")
+
+
+def test_cursor_detects_in_place_rewrite_and_mid_read_mutation(db, monkeypatch):
+    db.create_session("rewrite", source="desktop", profile_name="default")
+    message = db.append_message("rewrite", "user", "Before")
+    first = transcript.read_page(db, "rewrite", "default")
+    db._conn.execute("UPDATE messages SET content=? WHERE id=?", ("After!", message))
+    db._conn.commit()
+    with pytest.raises(HTTPException) as error:
+        transcript.read_page(db, "rewrite", "default", revision=first["transcript"]["revision"])
+    assert error.value.status_code == 409
+    original = db.get_messages
+
+    def changed(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        db.append_message("rewrite", "assistant", "Raced")
+        return rows
+
+    monkeypatch.setattr(db, "get_messages", changed)
+    with pytest.raises(HTTPException) as error:
+        transcript.read_page(db, "rewrite", "default")
+    assert error.value.status_code == 409
+
+
+def test_desktop_projection_tools_attachments_and_hidden_rows(db, monkeypatch):
+    db.create_session("parts", source="desktop", profile_name="default")
+    db.append_message("parts", "user", "Question with file\n@file:/tmp/synthetic.txt")
+    db.append_message(
+        "parts",
+        "assistant",
+        "Checking",
+        tool_calls=[
+            {"id": "call", "type": "function", "function": {"name": "terminal", "arguments": "{}"}}
+        ],
+    )
+    db.append_message("parts", "tool", "Tool output", tool_call_id="call", tool_name="terminal")
+    db.append_message("parts", "assistant", "Answer", reasoning="Saved thought")
+    db.append_message("parts", "user", "[System: scaffold]")
+    expected = desktop_page(db, monkeypatch, "parts", 120)
+    actual = transcript.read_page(db, "parts", "default")["data"]
+    assert [row["id"] for row in actual] == [row["id"] for row in expected]
+    for plugin, desktop in zip(actual, expected, strict=True):
+        if desktop.get("display_kind") == "hidden":
+            assert plugin["content"] == ""
+        else:
+            for key in (
+                "role",
+                "content",
+                "reasoning",
+                "tool_calls",
+                "tool_call_id",
+                "tool_name",
+                "display_metadata",
+            ):
+                assert plugin.get(key) == desktop.get(key)
+
+
+def test_revision_rejects_rotation_and_cross_profile_lineage(db):
+    db.create_session("rotate", source="desktop", profile_name="default")
+    db.append_message("rotate", "user", "Original")
+    cursor = transcript.read_page(db, "rotate", "default")["transcript"]["revision"]
+    db.publish_compression_child(
+        parent_session_id="rotate",
+        child_session_id="rotated",
+        source="desktop",
+        profile_name="default",
+        messages=db.get_messages("rotate"),
+        require_compression_lease=False,
+    )
+    with pytest.raises(HTTPException) as error:
+        transcript.read_page(db, "rotate", "default", revision=cursor)
+    assert error.value.status_code == 409
+    db._conn.execute("UPDATE sessions SET profile_name='beta' WHERE id='rotate'")
+    db._conn.commit()
+    with pytest.raises(HTTPException) as error:
+        transcript.read_page(db, "rotated", "default")
+    assert error.value.status_code == 404

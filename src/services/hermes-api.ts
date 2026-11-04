@@ -351,11 +351,21 @@ export const api = {
     }
     // Old gateways may ignore order while still echoing pagination. Adopt only
     // an explicitly confirmed tail; otherwise use the shared oldest-page contract.
-    if (page.pagination && page.pagination.order !== "latest")
-      return { messages: await api.messages(profile, id, signal), nextOffset: 0, hasMore: false };
+    if (page.pagination?.order !== "latest") {
+      // Desktop treats short oldest pages and pre-pagination replies as complete.
+      const messages =
+        !page.pagination || page.messages.length < page.pagination.limit
+          ? page.messages
+          : await api.messages(profile, id, signal);
+      return { messages, nextOffset: 0, hasMore: false };
+    }
+    if (page.transcript?.has_more && page.transcript.next_offset <= offset)
+      throw new Error("History pagination did not advance");
     return {
       messages: page.messages,
-      nextOffset: page.transcript?.next_offset ?? offset + page.messages.length,
+      nextOffset:
+        page.transcript?.next_offset ??
+        offset + (page.pagination?.returned ?? page.messages.length),
       hasMore:
         page.transcript?.has_more ??
         Boolean(
@@ -400,7 +410,8 @@ export const api = {
         throw cause;
       }
       const signature = JSON.stringify(page.messages);
-      if (offset && signature === previousPage) return messages;
+      if (offset && signature === previousPage)
+        throw new Error("History pagination repeated a page");
       previousPage = signature;
       messages.push(
         ...page.messages.filter((row) => {
@@ -416,7 +427,8 @@ export const api = {
         !page.messages.length
       )
         return messages;
-      offset += page.messages.length;
+      if (page.pagination.returned <= 0) throw new Error("History pagination did not advance");
+      offset += page.pagination.returned;
     }
   },
 };
