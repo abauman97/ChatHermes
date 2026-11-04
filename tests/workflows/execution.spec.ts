@@ -68,7 +68,7 @@ test("execution finishes after navigating away and restores without resubmission
 
 test("thinking streams through Hermes and remains inspectable after completion", async ({
   page,
-}) => {
+}, info) => {
   await page
     .getByRole("textbox", { name: "Message Hermes" })
     .fill(`[workflow-thinking] ${randomUUID()}`);
@@ -79,6 +79,10 @@ test("thinking streams through Hermes and remains inspectable after completion",
   await expect(thought).toBeVisible();
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
   await expect(thought).not.toHaveAttribute("open", "");
+  // Completed work collapses its parent disclosure. Open that user-visible
+  // control before inspecting the thought retained inside it.
+  await page.locator(".turn-work").last().locator(".work-summary").click();
   await thought.locator("summary").click();
   await expect(thought).toContainText("Second visible chunk.");
+  await page.screenshot({ path: info.outputPath("thinking-completed-expanded.png") });
 });

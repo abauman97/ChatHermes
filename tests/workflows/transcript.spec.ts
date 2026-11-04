@@ -5,6 +5,147 @@ import { api, runtime } from "./helpers";
 
 const seed = readFileSync(new URL("../fixtures/transcript.py", import.meta.url), "utf8");
 
+test("legacy rotation before UID migration deduplicates and child rewind retires parent copies", async ({
+  page,
+}, info) => {
+  const id = `legacy-rotation-${randomUUID()}`;
+  const invoke = (operation: string) =>
+    runtime(
+      `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(${operation}(db,sys.argv[1])))\nfinally: db.close()`,
+      id,
+    );
+  invoke("seed_legacy_rotated");
+  const plugin = page.locator(".chathermes-embedded");
+  await page.goto(
+    `${new URL(page.url()).origin}/chathermes?profile=default#/chat/${id}?profile=default`,
+  );
+  const pair = ["Repeated rotated ask", "Repeated rotated answer"];
+  await expect(plugin.locator(".message")).toHaveText([...pair, ...pair]);
+  await page.reload();
+  await expect(plugin.locator(".message")).toHaveText([...pair, ...pair]);
+  await page.screenshot({ path: info.outputPath("history-legacy-rotation.png") });
+  invoke("rewind_legacy_rotated");
+  await page.reload();
+  await expect(plugin.locator(".message")).toHaveText(pair);
+  await expect(plugin).not.toContainText("INTERNAL LEGACY ROTATION");
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill("Draft after legacy child rewind");
+  await expect(composer).toBeFocused();
+  await page.screenshot({ path: info.outputPath("history-legacy-rotation-rewound.png") });
+});
+
+test("legacy copies and an in-place assistant prune reload as single occurrences", async ({
+  page,
+}, info) => {
+  const id = `legacy-prune-${randomUUID()}`;
+  runtime(
+    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed_legacy_pruned(db,sys.argv[1])))\nfinally: db.close()`,
+    id,
+  );
+  const plugin = page.locator(".chathermes-embedded");
+  await page.goto(
+    `${new URL(page.url()).origin}/chathermes?profile=default#/chat/${id}?profile=default`,
+  );
+  const expected = [
+    "Repeated legacy ask",
+    "Repeated legacy answer",
+    "Repeated legacy ask",
+    "Repeated legacy answer",
+    "Inspect assistant prune",
+    "Pruned assistant response",
+  ];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(plugin.locator(".message")).toHaveText(expected);
+    await expect(plugin).not.toContainText("Original assistant before prune");
+    const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+    await composer.fill("Unsent legacy recovery draft");
+    await expect(composer).toBeFocused();
+    if (!attempt) await page.reload();
+  }
+  await page.screenshot({ path: info.outputPath("history-legacy-assistant-prune.png") });
+});
+
+for (const rotate of [false, true]) {
+  test(`compacted ${rotate ? "rotated" : "in-place"} tool result reloads once with its full archived output`, async ({
+    page,
+  }, info) => {
+    const id = `tool-copy-${randomUUID()}`;
+    runtime(
+      `import sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry:\n sid=sys.argv[1]\n db.create_session(sid,source='desktop')\n db.append_message(sid,'user','Inspect archived tool result')\n db.append_message(sid,'assistant','',tool_calls=[{'id':'call','type':'function','function':{'name':'terminal','arguments':'{}'}}])\n db.append_message(sid,'tool','Full original tool output',tool_call_id='call',tool_name='terminal')\n db.append_message(sid,'assistant','Final saved response')\n tail=db.get_messages_as_conversation(sid,include_row_ids=True)[-2]\n tail['content']='Shortened compaction stub'\n ${rotate ? "db.publish_compression_child(parent_session_id=sid,child_session_id=sid+'-child',source='desktop',messages=[{'role':'user','content':'INTERNAL TOOL SUMMARY','_compressed_summary':True},tail],require_compression_lease=False)" : "db.archive_and_compact(sid,[{'role':'user','content':'INTERNAL TOOL SUMMARY','_compressed_summary':True},tail])"}\n print(json.dumps({'id':sid}))\nfinally: db.close()`,
+      id,
+    );
+    const plugin = page.locator(".chathermes-embedded");
+    await page.goto(
+      `${new URL(page.url()).origin}/chathermes?profile=default#/chat/${id}?profile=default`,
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(plugin.locator(".message.assistant")).toHaveText("Final saved response");
+      const group = plugin.locator(".turn-work .work-summary");
+      if (await group.isVisible()) await group.click();
+      const tool = plugin.locator(".activity");
+      await expect(tool).toHaveCount(1);
+      await tool.locator("summary").click();
+      await expect(tool).toContainText("Full original tool output");
+      await expect(tool).not.toContainText("Shortened compaction stub");
+      if (attempt === 0) await page.reload();
+    }
+    await page.screenshot({ path: info.outputPath("history-full-tool-result.png") });
+  });
+}
+
+test("repeated occurrences keep every interleaved answer across compaction and paged reconnect", async ({
+  page,
+}, info) => {
+  const id = `uncovered-${randomUUID()}`;
+  const invoke = (operation: string) =>
+    runtime(
+      `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(${operation}(db,sys.argv[1])))\nfinally: db.close()`,
+      id,
+    );
+  invoke("seed_uncovered");
+  const plugin = page.locator(".chathermes-embedded");
+  const history = plugin.getByRole("log", { name: "Conversation" });
+  const earlier = plugin.getByRole("button", { name: "Show earlier messages", exact: true });
+  const url = `${new URL(page.url()).origin}/chathermes?profile=default#/chat/${id}?profile=default`;
+  const expected = Array.from({ length: 140 }, (_, n) => [
+    "Genuine repeated prompt",
+    `Distinct answer ${String(n).padStart(3, "0")}`,
+  ]).flat();
+  const loadAll = async () => {
+    await expect(history).toContainText("Distinct answer 139");
+    while (await earlier.count()) {
+      await expect(earlier).toBeEnabled();
+      const before = await history.locator(".message").count();
+      await earlier.evaluate((element) => (element as HTMLButtonElement).click());
+      await expect.poll(() => history.locator(".message").count()).toBeGreaterThan(before);
+    }
+    await expect(history.locator(".message")).toHaveCount(expected.length);
+    expect(
+      (await history.locator(".message").allTextContents()).map((text) => text.trim()),
+    ).toEqual(expected);
+  };
+  await page.goto(url);
+  await loadAll();
+  const baseline = await history.locator(".message").allTextContents();
+  invoke("compact_uncovered");
+  await page.context().setOffline(true);
+  await expect(plugin.getByRole("status").filter({ hasText: "offline" }).first()).toBeVisible();
+  await page.context().setOffline(false);
+  await expect(plugin.getByRole("separator", { name: "Context compacted" })).toHaveCount(1);
+  await expect(history.locator(".message")).toHaveCount(expected.length);
+  expect(await history.locator(".message").allTextContents()).toEqual(baseline);
+  await page.reload();
+  await loadAll();
+  await expect(history).not.toContainText("INTERNAL GAP SUMMARY");
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill("Unsent draft after history recovery");
+  await expect(composer).toBeFocused();
+  await history.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.screenshot({ path: info.outputPath("history-uncovered-interleaving.png") });
+});
+
 test("compacted rotated history pages chronologically, survives reconnect and excludes rewind", async ({
   page,
 }, info) => {
@@ -181,9 +322,15 @@ test("live tool response survives a changed backfill cursor without moving the r
   await expect(
     history.locator(".message.user").filter({ hasText: "[workflow-context]" }),
   ).toHaveCount(1);
-  const work = plugin.locator(".turn-work").last();
-  if (await work.locator(".work-summary").isVisible()) await work.locator(".work-summary").click();
-  const tool = plugin
+  const work = plugin
+    .locator(".turn-work")
+    .filter({
+      has: page.locator(".activity").filter({ hasText: /terminal/i }),
+    })
+    .last();
+  const summary = work.locator(".work-summary");
+  if ((await summary.getAttribute("aria-expanded")) === "false") await summary.click();
+  const tool = work
     .locator(".activity")
     .filter({ hasText: /terminal/i })
     .last();

@@ -88,7 +88,21 @@ sending independently of editing. Keep standalone composer tests provider-free.
 
 `ChatTranscript` owns scrolling, native toggle capture and image load updates.
 `transcriptEntries` preserves history/live fallback rules without modifying or
-reconciling runtime blocks. Assistant turn keys scope local block IDs; historical
+reconciling runtime blocks. Empty block caches fall through to saved responses.
+The authenticated ChatHermes reader builds a read-only metadata plan using the
+unmodified pinned SessionDB. Retired originals anchor retained compaction clones;
+UID plus display identity preserves repeated occurrences and retirement removes
+rewound copies. Legacy copies use full identities and suffix occurrence ordinals,
+with ambiguity limits documented in the [API contract](api-contract.md).
+This local selection intentionally differs from Desktop in the observed ordering
+case; it requires no Hermes patch. Each request scans lineage metadata and decodes
+only the selected page plus one boundary row. Pruning follows the original slot.
+Native incomplete resume
+merges newer snapshot text and uses correction offsets to restore text boundaries.
+A uniquely evidenced saved correction prefix retains its row identities, images
+and tool phases while unsaved corrections become separate bubbles. Equally long
+competing prefixes, conflicting prose and queued input prevent adoption.
+Assistant turn keys scope local block IDs; historical
 turns receive their own working state. Work remains before text; `TurnWork` and
 `ActivityRow` retain their disclosure state and `v-show` row instances. Active disclosures expand to show arriving data, untouched completed rows collapse, and explicit manual toggles persist.
 

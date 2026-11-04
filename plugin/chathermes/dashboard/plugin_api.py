@@ -467,7 +467,7 @@ async def messages(request: Request, session_id: str):
                 _safe_body(json.dumps(result).encode(), key), media_type="application/json"
             )
         except ImportError, AttributeError, NotImplementedError:
-            # Older Hermes stores retain the gateway's compatibility behavior.
+            # Older stores retain the gateway compatibility behavior.
             pass
     return await _proxy(request, "/api/sessions/" + quote(session_id, safe="") + "/messages")
 
