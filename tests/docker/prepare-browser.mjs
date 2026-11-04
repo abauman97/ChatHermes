@@ -13,7 +13,8 @@ import { startChrome, waitForChrome, openDashboard } from "./android-browser.mjs
 
 const sessions = new Map();
 
-export async function authenticate(page, url = `${dashboardURL()}/chathermes`) {
+// Workflow prerequisites start on New chat; the bare plugin URL opens Inbox.
+export async function authenticate(page, url = `${dashboardURL()}/chathermes#/`) {
   const origin = new URL(url).origin;
   if (!(await page.context().cookies(origin)).length && sessions.has(origin)) {
     await page.context().addCookies(sessions.get(origin));

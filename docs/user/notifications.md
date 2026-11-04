@@ -10,7 +10,10 @@ chat title, event type, time and a short preview, newest first.
 Each profile/chat keeps only its latest notification; a new response or request
 replaces its previous item. Subagent sessions are excluded.
 
-Opening an item loads its owning profile and chat. Whenever a chat opens
+Opening a chat item loads its owning profile and chat. Kanban worker items open
+the linked board and task, enabling Kanban Viewer if necessary. If the persisted
+task link is missing or ambiguous, the notification remains unread.
+Whenever a chat opens
 successfully, its Inbox notifications are deleted, including read items, regardless
 of how you navigated there. Deletion is checked again when a final response arrives,
 the chat reconnects, and the visible Inbox count refreshes. Matching system push

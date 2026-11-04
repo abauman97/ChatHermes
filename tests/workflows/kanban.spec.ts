@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures";
-import { api } from "./helpers";
+import { api, runtime } from "./helpers";
 
 test("Kanban opt-in, board isolation, task operations and upstream synchronization", async ({
   page,
@@ -59,7 +59,9 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   const openMenu = async () => {
     await shell.getByRole("button", { name: "Screen options", exact: true }).click();
   };
-  await expect(viewer.locator(".kanban-toolbar").getByRole("button")).toHaveCount(0);
+  await expect(
+    viewer.locator(".kanban-toolbar").getByRole("button", { name: "New task", exact: true }),
+  ).toHaveCount(1);
   await openMenu();
   await page.screenshot({ animations: "disabled", path: info.outputPath("kanban-menu.png") });
   await menu.getByRole("menuitem", { name: "Refresh", exact: true }).click();
@@ -79,37 +81,20 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   await viewer.getByRole("combobox", { name: "Kanban board", exact: true }).selectOption(marker);
   await expect(viewer.getByRole("region", { name: "todo tasks", exact: true })).toBeVisible();
   const triageLane = viewer.getByRole("region", { name: "triage tasks", exact: true });
-  const todoLane = viewer.getByRole("region", { name: "todo tasks", exact: true });
-  await expect(viewer.locator(".kanban-column")).toHaveCount(
-    await viewer.getByRole("button", { name: "New task", exact: true }).count(),
-  );
-  await todoLane.getByRole("button", { name: "New task", exact: true }).click();
-  await expect(todoLane.getByRole("textbox", { name: "Task title", exact: true })).toBeFocused();
-  await todoLane.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(todoLane.getByRole("button", { name: "New task", exact: true })).toBeFocused();
-  for (const status of ["blocked", "done"]) {
-    const lane = viewer.getByRole("region", { name: status + " tasks", exact: true });
-    await lane.getByRole("button", { name: "New task", exact: true }).click();
-    await lane
-      .getByRole("textbox", { name: "Task title", exact: true })
-      .fill(status + " task " + marker);
-    if (status === "done")
-      await lane
-        .getByRole("textbox", { name: "Task completion summary", exact: true })
-        .fill("Completed before adding to this board.");
-    await lane.getByRole("button", { name: "Create task", exact: true }).click();
-    await expect(
-      lane.locator(".kanban-card").filter({ hasText: status + " task " + marker }),
-    ).toBeVisible();
-  }
-  await triageLane.getByRole("button", { name: "New task", exact: true }).click();
-  await expect(triageLane.getByRole("textbox", { name: "Task title", exact: true })).toBeFocused();
-  await expect(viewer.getByRole("checkbox", { name: "Start in triage", exact: true })).toHaveCount(
-    0,
-  );
+  const newTask = viewer.getByRole("button", { name: "New task", exact: true });
+  await expect(newTask).toHaveCount(1);
+  await expect(
+    viewer.locator(".kanban-column").getByRole("button", { name: "New task", exact: true }),
+  ).toHaveCount(0);
+  await newTask.click();
+  await expect(viewer.getByRole("textbox", { name: "Task title", exact: true })).toBeFocused();
+  await viewer.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(newTask).toBeFocused();
+  await newTask.click();
+  await viewer.getByRole("checkbox", { name: "Start in triage", exact: true }).check();
   await page.screenshot({
     animations: "disabled",
-    path: info.outputPath("kanban-lane-create.png"),
+    path: info.outputPath("kanban-board-create.png"),
   });
   await viewer
     .getByRole("textbox", { name: "Task title", exact: true })
@@ -120,7 +105,7 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   await viewer.getByRole("button", { name: "Create task", exact: true }).click();
   const card = viewer.locator(".kanban-card").filter({ hasText: "First task " + marker });
   await expect(card).toBeVisible();
-  await expect(triageLane.getByRole("button", { name: "New task", exact: true })).toBeEnabled();
+  await expect(newTask).toBeEnabled();
   await expect(
     triageLane.locator(".kanban-card").filter({ hasText: "First task " + marker }),
   ).toBeVisible();
@@ -234,6 +219,57 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   await expect(
     viewer.locator(".kanban-card").filter({ hasText: "Updated task " + marker }),
   ).toHaveCount(0);
+  // Persisted worker history is a runtime prerequisite; the click and resolution
+  // use the real authenticated Inbox/session/Kanban routes.
+  const worker = runtime(
+    `
+import json,sys
+# The fixture image installs metadata dependencies; Hermes loads plugin source
+# from its home rather than installing the chathermes package into site-packages.
+sys.path.insert(0, '/opt/data/plugins')
+from hermes_cli import kanban_db as kb
+from hermes_cli.kanban_db_connect import connect_closing
+from hermes_cli.web_server_sessions import _open_session_db_for_profile
+from chathermes.dashboard import inbox, push_store
+board, title, sid = sys.argv[1:]
+with connect_closing(board=board) as conn:
+    task = kb.create_task(conn, title=title, board=board)
+    kb.complete_task(conn, task, summary='Finished worker task', metadata={'worker_session_id': sid})
+db = _open_session_db_for_profile('beta', read_only=False)
+db.create_session(sid, source='kanban')
+db.set_session_title(sid, title)
+identity = db.append_message(sid, 'assistant', 'Worker completion')
+db.close()
+inbox.record(push_store, 'beta', sid, str(identity), 'turn.complete', title=title, preview='Worker completion')
+print(json.dumps({'task':task, 'session':sid}))
+`,
+    marker,
+    "Inbox task " + marker,
+    "worker-" + randomUUID(),
+  );
+  await page.goto(new URL(page.url()).origin + "/chathermes#/inbox?profile=default");
+  const inbox = shell.getByRole("region", { name: "Inbox", exact: true });
+  await inbox.locator(`li[data-session="${worker.session}"]`).getByRole("button").click();
+  await expect(viewer.getByRole("combobox", { name: "Kanban board", exact: true })).toHaveValue(
+    marker,
+  );
+  await expect(
+    detail.getByRole("heading", { name: "Inbox task " + marker, exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(
+    (url) => url.hash.includes("task=" + worker.task) && url.hash.includes("profile=beta"),
+  );
+  await page.screenshot({ animations: "disabled", path: info.outputPath("kanban-inbox-task.png") });
+  await page.reload();
+  await expect(
+    detail.getByRole("heading", { name: "Inbox task " + marker, exact: true }),
+  ).toBeVisible();
+  await detail.getByRole("button", { name: "Close task details", exact: true }).click();
+  await viewer.getByRole("combobox", { name: "Kanban board", exact: true }).selectOption(other);
+  await expect(detail).toHaveCount(0);
+  await expect(viewer.getByRole("combobox", { name: "Kanban board", exact: true })).toHaveValue(
+    other,
+  );
   await nav();
   await shell.getByRole("button", { name: "Settings", exact: true }).click();
   await toggle.uncheck();

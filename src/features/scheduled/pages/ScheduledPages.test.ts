@@ -269,3 +269,45 @@ it("aborts superseded resource and profile reads without letting late output rep
   expect(wrapper.get('[aria-label="Scheduled jobs"]').text()).toContain("Security Audit");
   wrapper.unmount();
 });
+
+it("ignores trailing tool-call-only assistant rows and falls back to raw output when all responses are empty", async () => {
+  setup();
+  const output = vi.mocked(api.scheduledOutput).mockResolvedValue({
+    output: "Stale output",
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Final content-part response" }],
+        reasoning: "Hidden reasoning",
+      },
+      { role: "tool", content: "Hidden tool result", tool_name: "terminal" },
+      {
+        role: "assistant",
+        content: "   ",
+        tool_calls: [{ id: "work", function: { name: "terminal", arguments: "{}" } }],
+      },
+    ],
+  });
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/cron_audit_20260102_000000");
+  const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  await flushPromises();
+  expect(wrapper.get(".message.assistant").text()).toBe("Final content-part response");
+  expect(wrapper.find(".activity").exists()).toBe(false);
+  expect(wrapper.text()).not.toContain("Hidden");
+  expect(wrapper.text()).not.toContain("Stale output");
+  wrapper.unmount();
+  output.mockResolvedValue({
+    messages: [
+      { role: "assistant", content: " \n " },
+      { role: "tool", content: "Internal result" },
+    ],
+    output: "Raw saved result",
+  });
+  const raw = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  await flushPromises();
+  expect(raw.get(".message.assistant").text()).toBe("Raw saved result");
+  expect(raw.text()).not.toContain("Internal result");
+  raw.unmount();
+});

@@ -124,12 +124,12 @@ export async function readJob(profile: string, id: string, signal: AbortSignal) 
   return job;
 }
 export function outputMessages(output: ScheduledOutput | undefined) {
-  const text =
-    messageText(
-      output?.messages
-        .slice()
-        .reverse()
-        .find((row) => row.role === "assistant" && messageText(row.content))?.content,
-    ) || output?.output;
+  // Tool-call-only assistant rows are work, not responses. Once a response exists,
+  // never substitute stale raw output or carry its reasoning/tool disclosures.
+  const response = output?.messages
+    .slice()
+    .reverse()
+    .find((row) => row.role === "assistant" && messageText(row.content).trim());
+  const text = response ? messageText(response.content) : output?.output;
   return text ? [{ role: "assistant", content: text }] : [];
 }

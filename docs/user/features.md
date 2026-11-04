@@ -49,7 +49,7 @@ Artifacts come from explicit delivered-file references and uploads in saved hist
 
 ## Scheduled results
 
-Open **Scheduled** in the drawer and select Active, Paused, or Completed. Select a job, then a dated run to read the full output. Runs appear newest first; load older pages as needed. Agent transcripts retain thinking/tool disclosures, and script-only saved Markdown is readable.
+Open **Scheduled** in the drawer and select Active, Paused, or Completed. Select a job, then a dated run to read its final assistant response. Runs appear newest first; load older pages as needed. Intermediate responses, thinking and tool activity are hidden. Runs without an assistant response show their saved raw output.
 
 **Open a chat about this run** creates a separate normal chat and drafts the job, date, and saved output for review before sending. Create, schedule, pause, or modify jobs in Hermes's native dashboard. Deleted jobs and pruned output cannot be recovered.
 
@@ -69,8 +69,8 @@ Kanban uses the dashboard's backend, independently of your selected chat profile
 
 Choose a board without changing Hermes's CLI/global current board. Use the screen
 **···** menu to refresh, create boards, open **Board settings**, or show archived tasks.
-Use **New task** inside a lane to create in that status; runtime-controlled lanes
-keep this button disabled. Creating in Done requires a completion summary. Board settings let you edit the name, description and
+Use **New task** beside the board selector to create a task, optionally choosing
+**Start in triage**. Hermes controls initial placement and dispatch. Board settings let you edit the name, description and
 backend default directory, or archive a non-default board. Create and edit tasks,
 assign priority and profile, and optionally override
 model/provider and reasoning effort for the next worker run. A blank override

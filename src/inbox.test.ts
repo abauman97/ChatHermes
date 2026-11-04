@@ -350,3 +350,60 @@ it("refreshes shared read changes on foregrounding and updates the badge and vis
   expect(region.text()).toContain("Beta chat");
   wrapper.unmount();
 });
+
+it("opens a worker notification on its board and task without attaching a chat", async () => {
+  const { api: kanbanApi } = await import("./features/kanban/api");
+  vi.spyOn(kanbanApi, "boards").mockResolvedValue({ boards: [{ slug: "work" }], current: "work" });
+  vi.spyOn(kanbanApi, "workflow").mockResolvedValue({
+    columns: [],
+    manual: {},
+    archived: "archived",
+  });
+  vi.spyOn(kanbanApi, "board").mockResolvedValue({
+    columns: [],
+    assignees: [],
+    latest_event_id: 0,
+  });
+  vi.spyOn(kanbanApi, "task").mockResolvedValue({
+    task: { id: "t_worker", title: "Worker task", status: "done" },
+    comments: [],
+    runs: [],
+    events: [],
+    attachments: [],
+    links: { parents: [], children: [] },
+  });
+  vi.spyOn(kanbanApi, "log").mockResolvedValue({ exists: false, content: "", truncated: false });
+  vi.spyOn(api, "session").mockResolvedValue({
+    id: "same",
+    source: "kanban",
+    kanban_task: { board: "work", task: "t_worker" },
+  });
+  const deletion = vi.spyOn(api, "deleteInboxItem").mockResolvedValue({ deleted: true });
+  const wrapper = await open();
+  await wrapper.findAll('[data-session="same"] button')[0]!.trigger("click");
+  await flushPromises();
+  expect(wrapper.vm.$route.name).toBe("kanban");
+  expect(wrapper.vm.$route.query).toMatchObject({
+    board: "work",
+    task: "t_worker",
+    profile: "alpha",
+  });
+  expect(kanbanApi.task).toHaveBeenCalledWith("work", "t_worker");
+  expect(deletion).toHaveBeenCalledWith("alpha", 1);
+  expect(localStorage.getItem("chathermes.kanban-viewer")).toBe("true");
+  expect(wrapper.find(".message.assistant").exists()).toBe(false);
+  wrapper.unmount();
+  localStorage.removeItem("chathermes.kanban-viewer");
+});
+
+it("keeps a worker notification unread when no persisted task can be resolved", async () => {
+  vi.spyOn(api, "session").mockResolvedValue({ id: "same", source: "kanban", kanban_task: null });
+  const deletion = vi.spyOn(api, "deleteInboxItem");
+  const wrapper = await open();
+  await wrapper.findAll('[data-session="same"] button')[0]!.trigger("click");
+  await flushPromises();
+  expect(wrapper.vm.$route.name).toBe("inbox");
+  expect(wrapper.get('[role="alert"]').text()).toContain("remains unread");
+  expect(deletion).not.toHaveBeenCalled();
+  wrapper.unmount();
+});

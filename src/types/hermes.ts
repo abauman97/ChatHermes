@@ -1,5 +1,6 @@
 export interface Session {
   id: string;
+  kanban_task?: { board: string; task: string } | null;
   title?: string | null;
   preview?: string | null;
   source?: string | null;

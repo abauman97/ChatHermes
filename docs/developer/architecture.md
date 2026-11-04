@@ -219,11 +219,11 @@ native creation fails closed; it is never retried after an ambiguous outcome. Se
 
 The drawer's Scheduled screen groups persisted cron history by job in the
 selected Hermes profile. Active, Paused and Completed filters lead to dated
-runs (newest first), with older pages available and full output on selection.
-Agent transcripts retain thinking/tool disclosures; script-only saved Markdown
-is also readable. Reloadable job/run links stay within dashboard authentication.
-“Open a chat about this run” creates a separate normal chat and drafts the job,
-date and assistant/saved output for review before sending.
+runs (newest first), with older pages available and saved results on selection.
+Saved results show only the final nonblank assistant response without thinking or
+tool disclosures; runs without an assistant response fall back to saved Markdown.
+Reloadable job/run links stay within dashboard authentication. **Resume Session**
+in screen options opens the persisted session when one exists.
 
 The adapter follows the pinned Hermes dashboard contracts:
 `web_server_cron._cron_profile_home`, `_call_cron_for_profile` and

@@ -3,6 +3,7 @@ import {
   type NotificationNavigation,
 } from "../router/notification-navigation";
 import { provideKanban } from "../features/kanban/context";
+import { api as kanbanApi } from "../features/kanban/api";
 import type { RouteLocationNormalizedLoaded } from "vue-router";
 import { useProjectWorkspace } from "../features/projects/composables/useProjectWorkspace";
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -930,8 +931,29 @@ export function useApplication() {
   async function openInboxItem(item: InboxItem) {
     // Verify the owning history exists before leaving Inbox or changing read state.
     const revision = router.currentRoute.value;
-    await api.session(item.profile, item.session);
+    const history = await api.session(item.profile, item.session);
     if (revision !== router.currentRoute.value) throw new Error("Navigation changed");
+    if (history.source === "kanban") {
+      const target = history.kanban_task;
+      if (!target) throw new Error("Task unavailable");
+      await kanbanApi.task(target.board, target.task);
+      if (!kanban.visible.value) {
+        await kanban.check();
+        if (!kanban.available.value) throw new Error("Kanban unavailable");
+      }
+      if (revision !== router.currentRoute.value) throw new Error("Navigation changed");
+      // Opening a task is an explicit opt-in to its optional viewer.
+      kanban.setEnabled(true);
+      await navigate({
+        name: "kanban",
+        query: { profile: item.profile, board: target.board, task: target.task },
+      });
+      if (kanban.visible.value) {
+        await api.deleteInboxItem(item.profile, item.id);
+        await refreshInbox(false);
+      }
+      return;
+    }
     await navigate({
       name: "chat",
       params: { sessionId: item.session },
