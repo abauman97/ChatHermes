@@ -415,6 +415,16 @@ async def session(request: Request, session_id: str):
             _session_tracking.deletion_ids, _push_store_module, _rpc_profile(request), session_id
         )
     response = await _proxy(request, "/api/sessions/" + quote(session_id, safe=""))
+    if request.method == "GET" and response.status_code == 200:
+        payload = json.loads(response.body)
+        history = payload.get("session", payload)
+        if history.get("source") == "kanban":
+            try:
+                history["kanban_task"] = await run_in_threadpool(_inbox.kanban_target, history)
+            except Exception:
+                # Missing/unavailable ownership must never turn a worker into a chat.
+                history["kanban_task"] = None
+            return JSONResponse(payload)
     if (
         request.method == "DELETE"
         and response.status_code == 200

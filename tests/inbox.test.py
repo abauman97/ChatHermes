@@ -352,3 +352,33 @@ def test_multiple_recovered_turns_keep_only_latest_response(state):
         result = inbox.page(state, ["alpha"])
         assert result["unread"] == 1
         assert [item["preview"] for item in result["items"]] == ["Latest response"]
+
+
+def test_kanban_target_uses_unique_worker_run_not_creator_session(tmp_path, monkeypatch):
+    from hermes_cli import kanban_db as kb
+    from hermes_cli.kanban_db_connect import connect_closing
+
+    monkeypatch.delenv("HERMES_DELEGATED_CHILD_CONTEXT", raising=False)
+    monkeypatch.delenv("HERMES_KANBAN_DB", raising=False)
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(tmp_path))
+    kb.create_board("notifications", name="Notifications")
+    with connect_closing(board="notifications") as conn:
+        task = kb.create_task(
+            conn, title="Worker task", session_id="creator", board="notifications"
+        )
+        assert kb.complete_task(
+            conn, task, summary="Finished", metadata={"worker_session_id": "worker"}
+        )
+    assert inbox.kanban_target({"id": "worker", "source": "kanban"}) == {
+        "board": "notifications",
+        "task": task,
+    }
+    assert inbox.kanban_target({"id": "creator", "source": "kanban"}) is None
+    assert inbox.kanban_target({"id": "worker", "source": "desktop"}) is None
+    assert inbox.kanban_target({"id": "missing", "source": "kanban"}) is None
+    with connect_closing(board="notifications") as conn:
+        other = kb.create_task(conn, title="Ambiguous worker", board="notifications")
+        assert kb.complete_task(
+            conn, other, summary="Finished", metadata={"worker_session_id": "worker"}
+        )
+    assert inbox.kanban_target({"id": "worker", "source": "kanban"}) is None

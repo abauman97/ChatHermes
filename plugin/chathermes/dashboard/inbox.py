@@ -3,7 +3,9 @@
 import asyncio
 import json
 import math
+import sqlite3
 import time
+from contextlib import closing
 from typing import override
 
 from .artifact_indexer import Source as HistorySource
@@ -16,6 +18,35 @@ LABELS = {
     "clarify": "Clarification required",
     "attention": "Attention required",
 }
+
+
+def kanban_target(session):
+    """Resolve only persisted worker-run ownership, never originating chat IDs."""
+    if session.get("source") != "kanban":
+        return None
+    from hermes_cli import kanban_db as kb
+
+    matches = set()
+    for board in kb.list_boards(include_archived=False):
+        slug = board["slug"]
+        path = kb.kanban_db_path(board=slug)
+        if not path.is_file():
+            continue
+        # No migrations, current-board changes or task writes during navigation.
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
+            for task_id, metadata in conn.execute(
+                "SELECT task_id,metadata FROM task_runs WHERE metadata IS NOT NULL"
+            ):
+                try:
+                    data = json.loads(metadata)
+                except TypeError, ValueError:
+                    continue
+                if isinstance(data, dict) and data.get("worker_session_id") == session["id"]:
+                    matches.add((slug, task_id))
+    if len(matches) == 1:
+        board, task = matches.pop()
+        return {"board": board, "task": task}
+    return None
 
 
 def is_subagent(session):

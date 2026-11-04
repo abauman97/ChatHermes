@@ -3,7 +3,6 @@ import { ref } from "vue";
 import type { Task } from "./types";
 const props = defineProps<{
   task?: Task;
-  creationStatus?: string;
   assignees: string[];
   busy: boolean;
 }>();
@@ -16,14 +15,12 @@ const model = ref(props.task?.model_override || ""),
   provider = ref(props.task?.provider_override || ""),
   effort = ref(props.task?.reasoning_effort || "");
 const triage = ref(false);
-const summary = ref("");
 function save() {
-  if (!title.value.trim() || (props.creationStatus === "done" && !summary.value.trim())) return;
+  if (!title.value.trim()) return;
   emit("save", {
     title: title.value.trim(),
     body: body.value,
     priority: priority.value,
-    ...(props.creationStatus === "done" ? { summary: summary.value.trim() } : {}),
     // Reassignment of an existing task uses the dedicated reclaim-aware API.
     ...(!props.task ? { assignee: assignee.value || null, triage: triage.value } : {}),
     ...(model.value.trim()
@@ -43,13 +40,6 @@ function save() {
   <form class="kanban-form" @submit.prevent="save">
     <label>Title<input v-model="title" required aria-label="Task title" /></label>
     <label>Description<textarea v-model="body" rows="4" aria-label="Task description" /></label>
-    <label v-if="creationStatus === 'done'"
-      >Completion summary<textarea
-        v-model="summary"
-        required
-        aria-label="Task completion summary"
-      />
-    </label>
     <label
       >Priority<input v-model.number="priority" type="number" step="1" aria-label="Task priority"
     /></label>
@@ -59,7 +49,7 @@ function save() {
         <option v-for="name in assignees" :key="name" :value="name">{{ name }}</option>
       </select></label
     >
-    <label v-if="!task && !creationStatus" class="kanban-inline"
+    <label v-if="!task" class="kanban-inline"
       ><input v-model="triage" type="checkbox" />Start in triage</label
     >
     <details>

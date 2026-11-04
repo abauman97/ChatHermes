@@ -53,7 +53,7 @@ async function open(item: InboxItem) {
   try {
     await props.openItem(item);
   } catch {
-    error.value = "Could not open this chat. The notification remains unread.";
+    error.value = "Could not open this notification. It remains unread.";
   } finally {
     opening.value = undefined;
   }

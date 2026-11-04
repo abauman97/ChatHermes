@@ -360,6 +360,16 @@ Notification mutations do not answer, cancel or resolve native requests and do
 not change Web Push receipts. See [architecture](architecture.md#managed-inbox)
 for collection, initialization and recovery bounds.
 
+For Kanban worker sessions, the authenticated session detail response adds
+`kanban_task: {board, task}` (or null) to the session inside the
+`{object: "hermes.session", session: {…}}` envelope. This resolves a unique persisted
+`task_runs.metadata.worker_session_id` across active boards using read-only
+storage. It does not use a task's originating `session_id`, which names its creator
+chat. Inbox opening verifies the task through the Kanban API, then opens
+`/kanban?board=…&task=…` in the owning profile. Missing or ambiguous links stay
+unread. Opening a resolved task enables the optional viewer after a successful
+availability check.
+
 ## Optional Kanban frontend
 
 `src/features/kanban/` calls the existing authenticated, same-origin

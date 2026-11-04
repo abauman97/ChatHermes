@@ -61,6 +61,10 @@ other Python contracts.
 
 Resolve relative Markdown links from each document's own directory, including fragments and image paths. Check links to moved records and source files as well as the documentation index. Historical local evidence may be absent; label it as an unavailable historical path rather than a working link. Keep commands aligned with `package.json`, installation scripts, plugin configuration, and the reviewed native contract.
 
+The scheduled result workflow (`tests/workflows/scheduled-result.spec.ts`) seeds
+native Cron history and saved output, checks that only the final assistant response
+is shown without work disclosures, and verifies the raw-output fallback and reload.
+
 ### Kanban integration
 
 `npm test` includes Kanban availability/preference, authenticated board-scoped REST,
@@ -69,7 +73,9 @@ and UI slice with `npm run test:integration -- tests/workflows/kanban.spec.ts`.
 It creates uniquely named boards and unassigned tasks using the real plugin,
 exercises task editing, moving, comments, attachments, external-client updates,
 archive/delete, board isolation and the global opt-in on desktop and mobile.
-Screenshots include Settings, board and task details. Fixtures/state are retained
+The workflow also opens a persisted worker notification from Inbox, checks its
+board/task destination and reload, and verifies one task creation button beside
+the board selector. Screenshots include Settings, board and task details. Fixtures/state are retained
 on failure. The suite needs the upstream Kanban plugin API active; a missing API
 is a failure rather than silently skipped coverage. Unit transport faults cover
 reconnect/polling; real active-worker execution and native device behavior remain

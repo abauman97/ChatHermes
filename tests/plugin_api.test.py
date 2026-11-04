@@ -3292,3 +3292,42 @@ def test_live_inbox_filters_delegated_sessions_and_uses_committed_time(app, monk
         item["event_id"]
         for item in plugin._inbox.page(plugin._push_store_module, ["alpha"])["items"]
     ] == ["newer"]
+
+
+@run_async
+@pytest.mark.parametrize("ownership", ["resolved", "missing", "unavailable"])
+@pytest.mark.parametrize("enveloped", [True, False])
+async def test_worker_session_detail_exposes_only_resolved_task_address(
+    app, monkeypatch, ownership, enveloped
+):
+    def gateway(request):
+        history = {"id": "worker", "source": "kanban"}
+        payload = {"object": "hermes.session", "session": history} if enveloped else history
+        return httpx.Response(200, json=payload)
+
+    target = {"board": "work", "task": "t_worker"}
+
+    def resolve(session):
+        assert session == {"id": "worker", "source": "kanban"}
+        if ownership == "unavailable":
+            raise RuntimeError(KEY)
+        return target if ownership == "resolved" else None
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    monkeypatch.setattr(plugin._inbox, "kanban_target", resolve)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/api/sessions/worker?profile=alpha")
+        assert response.status_code == 200
+        expected = {
+            "id": "worker",
+            "source": "kanban",
+            "kanban_task": target if ownership == "resolved" else None,
+        }
+        assert response.json() == (
+            {"object": "hermes.session", "session": expected} if enveloped else expected
+        )
+        assert KEY not in response.text

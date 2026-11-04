@@ -64,9 +64,10 @@ test("Scheduled native history, saved output, pagination and session resume menu
   await expect(plugin.getByRole("button", { name: "Open a chat about this run" })).toHaveCount(0);
   await expect(plugin.locator(".activity[open]")).toHaveCount(0);
   expect(await plugin.locator(".transcript").evaluate((element) => element.scrollTop)).toBe(0);
-  await plugin.locator(".work-summary").click();
-  await plugin.locator(".activity summary").click();
-  await expect(plugin.locator(".activity pre")).toContainText("Synthetic audit checks passed.");
+  await expect(plugin.locator(".work-summary, .activity")).toHaveCount(0);
+  await expect(plugin.locator(".scheduled-page")).not.toContainText(
+    "Synthetic audit checks passed.",
+  );
   await page.screenshot({
     animations: "disabled",
     path: testInfo.outputPath("scheduled-agent-output.png"),

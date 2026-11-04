@@ -13,7 +13,7 @@ export const test = base.extend({
           contextOptions: { viewport, isMobile, hasTouch, userAgent, baseURL },
         });
     try {
-      if (android) await authenticate(prepared.page, "http://localhost:9119/chathermes");
+      if (android) await authenticate(prepared.page, "http://localhost:9119/chathermes#/");
       await use(prepared.page);
     } finally {
       if (!prepared.page.isClosed())

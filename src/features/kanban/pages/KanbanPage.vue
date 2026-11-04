@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { api, KanbanError } from "../api";
 import { useKanban } from "../context";
 import { useBoard } from "../useBoard";
@@ -7,6 +8,7 @@ import TaskForm from "../TaskForm.vue";
 import TaskDetail from "../TaskDetail.vue";
 import type { BoardMeta, Boards, Workflow } from "../types";
 const kanban = useKanban();
+const route = useRoute();
 const page = ref<HTMLElement>();
 async function closeTask() {
   const id = taskId.value;
@@ -24,7 +26,7 @@ const catalogError = ref(""),
   actionError = ref(""),
   notice = ref(""),
   busy = ref(false),
-  creating = ref("");
+  creating = ref(false);
 const boardEditor = ref<"create" | "edit" | "">("");
 const boardSlug = ref(""),
   boardName = ref(""),
@@ -60,7 +62,7 @@ async function loadCatalog() {
     if (disposed || token !== generation || !kanban.visible.value) return;
     boards.value = result.boards;
     if (!result.boards.some((b) => b.slug === selected.value)) {
-      const saved = remembered();
+      const saved = typeof route.query.board === "string" ? route.query.board : remembered();
       selected.value =
         result.boards.find((b) => b.slug === saved)?.slug ||
         result.boards.find((b) => b.slug === result.current)?.slug ||
@@ -84,7 +86,7 @@ watch(
       boards.value = [];
       selected.value = "";
       workflow.value = undefined;
-      creating.value = "";
+      creating.value = false;
       boardEditor.value = "";
       busy.value = false;
       return;
@@ -113,17 +115,31 @@ watch(
 watch(selected, (value) => {
   generation++;
   busy.value = false;
-  creating.value = "";
+  creating.value = false;
   boardEditor.value = "";
   actionError.value = "";
   notice.value = "";
   confirmArchive.value = false;
+  if (value === route.query.board && typeof route.query.task === "string")
+    taskId.value = route.query.task;
   try {
     localStorage.setItem("chathermes.kanban-board", value);
   } catch {
     /* Selection remains mount-local. */
   }
 });
+watch(
+  [() => route.query.board, () => route.query.task, kanban.visible],
+  ([board, task, visible]) => {
+    if (!visible || typeof board !== "string" || typeof task !== "string") return;
+    if (selected.value !== board) {
+      if (boards.value.some((row) => row.slug === board)) selected.value = board;
+      return;
+    }
+    taskId.value = task;
+  },
+  { immediate: true },
+);
 watch(
   [busy, selected, archived, kanban.visible],
   () => {
@@ -162,25 +178,15 @@ watch(
   },
   { immediate: true },
 );
-function canCreate(status: string) {
-  return (
-    status === "archived" || !!workflow.value?.columns.find((c) => c.key === status)?.drag_target
-  );
-}
-async function startTask(status: string) {
-  creating.value = status;
+async function startTask() {
+  creating.value = true;
   await nextTick();
-  page.value
-    ?.querySelector<HTMLInputElement>('.kanban-column input[aria-label="Task title"]')
-    ?.focus();
+  page.value?.querySelector<HTMLInputElement>('input[aria-label="Task title"]')?.focus();
 }
 async function cancelCreate() {
-  const status = creating.value;
-  creating.value = "";
+  creating.value = false;
   await nextTick();
-  Array.from(page.value?.querySelectorAll<HTMLButtonElement>(".kanban-new-task") || [])
-    .find((button) => button.dataset.status === status)
-    ?.focus();
+  page.value?.querySelector<HTMLButtonElement>(".kanban-new-task")?.focus();
 }
 async function refresh() {
   await Promise.all([loadCatalog(), live.refresh()]);
@@ -237,30 +243,17 @@ function taskOperation(
 }
 async function createTask(body: Record<string, unknown>) {
   const slug = selected.value;
-  const status = creating.value;
   const token = generation;
-  const { summary, ...taskBody } = body;
   let created = false;
   await perform(
     async () => {
       const result = await api.write<{ task: { id: string; status: string }; warning?: string }>(
         "/tasks",
         "POST",
-        { ...taskBody, triage: status === "triage" },
+        body,
         slug,
       );
       created = true;
-      if (result.task.status !== status) {
-        const moved = await api.write(
-          "/tasks/" + encodeURIComponent(result.task.id),
-          "PATCH",
-          { status, ...(status === "done" ? { summary } : {}) },
-          slug,
-        );
-        if (moved.ok === false) {
-          throw new Error("Task created but its lane transition was refused.");
-        }
-      }
       return result;
     },
     undefined,
@@ -357,7 +350,23 @@ function drop(event: DragEvent, status: string) {
             </option>
           </select></label
         >
+        <button
+          class="kanban-new-task"
+          :disabled="busy || !selected || creating"
+          :aria-expanded="creating"
+          @click="startTask"
+        >
+          New task
+        </button>
       </div>
+      <TaskForm
+        v-if="creating"
+        :key="selected"
+        :assignees="snapshot?.assignees || []"
+        :busy="busy"
+        @save="createTask"
+        @cancel="cancelCreate"
+      />
       <p v-if="catalogError || actionError || error" role="alert" class="kanban-error">
         {{ actionError || catalogError || error }}
       </p>
@@ -417,25 +426,6 @@ function drop(event: DragEvent, status: string) {
               {{ workflow?.columns.find((c) => c.key === column.name)?.label || column.name }}
               <span class="kanban-muted">{{ column.tasks.length }}</span>
             </h2>
-            <button
-              class="kanban-new-task"
-              :data-status="column.name"
-              :disabled="busy || !selected || !canCreate(column.name)"
-              :title="!canCreate(column.name) ? 'Hermes controls entry into this lane.' : undefined"
-              :aria-expanded="creating === column.name"
-              @click="startTask(column.name)"
-            >
-              New task
-            </button>
-            <TaskForm
-              v-if="creating === column.name"
-              :key="selected + ':' + column.name"
-              :assignees="snapshot?.assignees || []"
-              :busy="busy"
-              :creation-status="column.name"
-              @save="createTask"
-              @cancel="cancelCreate"
-            />
             <p v-if="!column.tasks.length" class="kanban-muted">No tasks</p>
             <button
               v-for="task in column.tasks"
