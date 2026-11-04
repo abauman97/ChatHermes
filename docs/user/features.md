@@ -10,7 +10,7 @@ Attach files or images with the composer, drag files onto the chat, or use camer
 
 Saved chats open at their latest messages. Scroll toward the top to load older history, or use **Show earlier messages**. Earlier messages remain available after context compaction and session rotation; **Context compacted** dividers mark persisted compression boundaries. Internal summaries and rewound messages stay hidden. Loading older messages preserves your reading position.
 
-Thinking and tool disclosures show the activity Hermes provides. Open a completed disclosure to inspect it. Approvals and clarification requests appear in the conversation; respond there to continue.
+Thinking and tool disclosures show the activity Hermes provides. Details stay collapsed by default, even while active. Expand a disclosure to inspect streaming or completed work. Approvals and clarification requests appear in the conversation; respond there to continue.
 
 ## Active and recent chats
 

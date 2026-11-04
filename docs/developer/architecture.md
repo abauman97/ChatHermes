@@ -99,7 +99,7 @@ interval and prefix heuristics. Clone ordering, ambiguous equal identities and
 multi-ancestor payload cost retain the pinned upstream limitations described in
 the [API contract](api-contract.md#persisted-transcript-pages).
 Work remains before text; `TurnWork` and
-`ActivityRow` retain their disclosure state and `v-show` row instances. Active disclosures expand to show arriving data, untouched completed rows collapse, and explicit manual toggles persist.
+`ActivityRow` retain their disclosure state and `v-show` row instances. Thinking and tool bodies stay collapsed by default, including while active. Users can expand them to inspect arriving data; explicit manual toggles persist through streaming, completion and group toggles.
 
 Request forms are keyed by `[profile, session, envelope ID]`. The adapter accepts
 only known payload shapes and never displays unknown params. Forms own drafts

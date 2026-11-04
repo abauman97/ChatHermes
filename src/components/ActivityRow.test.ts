@@ -93,7 +93,7 @@ describe("activity disclosures", () => {
     expect(wrapper.get("details").element.open).toBe(false);
     expect(wrapper.find(".working-shimmer").exists()).toBe(false);
   });
-  it("streams reasoning independently and collapses untouched completed thoughts", async () => {
+  it("keeps untouched reasoning collapsed while streaming and after completion", async () => {
     const thinking: Activity = {
       id: "r",
       kind: "thinking",
@@ -102,14 +102,41 @@ describe("activity disclosures", () => {
       complete: false,
     };
     const wrapper = mount(ActivityRow, { props: { activity: thinking } });
+    expect(wrapper.get("details").element.open).toBe(false);
+    expect(wrapper.get("summary").text()).toContain("Thinking…");
     await wrapper.setProps({ activity: { ...thinking, content: "First second" } });
-    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(wrapper.get("details").element.open).toBe(false);
     expect(wrapper.get("pre").text()).toBe("First second");
     await wrapper.setProps({ activity: { ...thinking, complete: true, duration: 2.5 } });
     expect(wrapper.get("details").element.open).toBe(false);
     expect(wrapper.get("summary").text()).toContain("Thought");
     expect(wrapper.get("summary").text()).toContain("2.5s");
   });
+  it.each(["completed", "failed", "interrupted", "unknown"] as const)(
+    "preserves reasoning disclosure choices through streaming and a %s result",
+    async (state) => {
+      const thinking: Activity = {
+        id: "r",
+        kind: "thinking",
+        title: "Thinking…",
+        content: "First",
+        complete: false,
+      };
+      const wrapper = mount(ActivityRow, { props: { activity: thinking } });
+      await wrapper.get("summary").trigger("click");
+      await wrapper.setProps({ activity: { ...thinking, content: "First second" } });
+      expect(wrapper.get("details").element.open).toBe(true);
+      expect(wrapper.get("pre").text()).toBe("First second");
+      await wrapper.setProps({ activity: { ...thinking, complete: true, state } });
+      expect(wrapper.get("details").element.open).toBe(true);
+      await wrapper.get("summary").trigger("click");
+      await wrapper.setProps({ activity: { ...thinking, content: "More reasoning" } });
+      expect(wrapper.get("details").element.open).toBe(false);
+      await wrapper.setProps({ activity: { ...thinking, complete: true, state } });
+      expect(wrapper.get("details").element.open).toBe(false);
+      wrapper.unmount();
+    },
+  );
   it("honors native keyboard disclosure changes without treating automatic toggle as intent", async () => {
     const wrapper = mount(ActivityRow, { props: { activity: tool } });
     await wrapper.get("details").trigger("toggle");
