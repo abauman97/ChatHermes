@@ -197,14 +197,13 @@ test("reasoning and tools share one collapsed history with the active stream bel
   const liveTool = work.locator(".activity-active:not(.activity-thinking)");
   await expect(liveTool.locator("summary")).toBeVisible();
   await expect(liveTool.locator("summary")).toContainText(/Waiting…|Running…/);
-  await expect(liveTool).toHaveAttribute("open", "");
-  await expect(liveTool.locator("pre")).toBeVisible();
-  await page.screenshot({ path: info.outputPath("tool-streaming-expanded.png") });
-  await liveTool.locator("summary").click();
+  await expect(liveTool).not.toHaveAttribute("open", "");
   await expect(liveTool.locator("pre")).toBeHidden();
+  await page.screenshot({ path: info.outputPath("tool-streaming-collapsed.png") });
   await liveTool.locator("summary").click();
   await expect(liveTool.locator("pre")).toBeVisible();
   await expect(liveTool.locator("pre")).toContainText("workflow-tool-start");
+  await page.screenshot({ path: info.outputPath("tool-streaming-expanded.png") });
   await expect(page.locator(".message.assistant").last()).toHaveText(
     "Tool completed: workflow-tool-ok.",
   );
@@ -216,6 +215,9 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await page.screenshot({ path: info.outputPath("activity-collapsed.png") });
   await summary.click();
   await expect(work.locator(".activity:visible")).toHaveCount(2);
+  const completedTool = work.locator(".activity:not(.activity-thinking)");
+  await expect(completedTool).toHaveAttribute("open", "");
+  await expect(completedTool.locator("pre")).toBeVisible();
   for (const row of await work.locator(".activity").all()) {
     if (!(await row.evaluate((element) => (element as HTMLDetailsElement).open)))
       await row.locator("summary").click();
@@ -232,4 +234,6 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await expect(summary).toHaveAttribute("aria-expanded", "false");
   await summary.click();
   await expect(work.locator(".activity:visible")).toHaveCount(2);
+  await expect(completedTool).not.toHaveAttribute("open", "");
+  await expect(completedTool.locator("pre")).toBeHidden();
 });
