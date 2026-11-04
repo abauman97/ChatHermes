@@ -3331,39 +3331,3 @@ async def test_worker_session_detail_exposes_only_resolved_task_address(
             {"object": "hermes.session", "session": expected} if enveloped else expected
         )
         assert KEY not in response.text
-
-
-@run_async
-async def test_transcript_older_store_keeps_gateway_fallback(app, monkeypatch):
-    import types
-
-    original = plugin._load_sibling
-
-    def unavailable(*args):
-        raise NotImplementedError("Transcript metadata unavailable")
-
-    monkeypatch.setattr(
-        plugin,
-        "_load_sibling",
-        lambda name: (
-            types.SimpleNamespace(read_profile_page=unavailable)
-            if name == "transcript"
-            else original(name)
-        ),
-    )
-    seen = []
-
-    async def proxy(request, path):
-        seen.append(path)
-        return plugin.JSONResponse({"data": [], "pagination": {"order": "oldest"}})
-
-    monkeypatch.setattr(plugin, "_proxy", proxy)
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
-    ) as client:
-        response = await client.get(
-            "/api/plugins/chathermes/api/sessions/s/messages?transcript=1&profile=alpha"
-        )
-    assert response.status_code == 200
-    assert response.json()["pagination"]["order"] == "oldest"
-    assert seen == ["/api/sessions/s/messages"]

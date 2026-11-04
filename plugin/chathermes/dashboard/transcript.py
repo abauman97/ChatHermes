@@ -11,203 +11,32 @@ from fastapi import HTTPException
 
 
 def _metadata(db, sid):
-    from hermes_state_identity import _uid_list
-
     lineage = db._resume_lineage_ids(sid)
     slots = ",".join("?" for _ in lineage)
-    # Keep fixed-width identities and carrier fingerprints, never all payloads.
-    # Only unindexed legacy rows need their body to compute an identity.
-    values = []
-    with db._read_ctx() as conn:
-        rows = conn.execute(
-            f"""SELECT id, session_id, active, compacted, display_order,
-            hex(display_identity) AS identity, message_uid, _compressed_summary, timestamp,
-            absorbed_message_uids, display_kind, display_metadata, role,
-            CASE WHEN display_identity IS NULL OR _compressed_summary = 1 THEN content END AS content,
-            CASE WHEN display_identity IS NULL THEN tool_calls END AS tool_calls,
-            tool_call_id, tool_name
-            FROM messages WHERE session_id IN ({slots}) ORDER BY id""",
-            lineage,
-        )
-        for raw in rows:
-            row = dict(raw)
-            if not row["identity"]:
-                row["identity"] = db._display_identity(db._display_dedupe_key(raw)).hex().upper()
-            row["display_metadata"] = db._decode_display_metadata(row["display_metadata"])
-            row["absorbed_message_uids"] = _uid_list(row["absorbed_message_uids"])
-            content = row.pop("content")
-            row.pop("tool_calls")
-            row["summary"] = (
-                hashlib.sha256(json.dumps(content).encode()).hexdigest()
-                if row["_compressed_summary"]
-                else None
-            )
-            values.append(row)
+    # Fixed-width identities only, plus bodies of explicitly flagged carriers.
+    # Never materialize the whole conversation's payload to page one segment.
+    rows = db._read_all(
+        f"""SELECT id, session_id, active, compacted, display_order,
+        hex(display_identity) AS identity, message_uid, _compressed_summary, timestamp,
+        display_kind, display_metadata,
+        CASE WHEN _compressed_summary = 1 THEN content ELSE NULL END AS summary
+        FROM messages WHERE session_id IN ({slots}) ORDER BY id""",
+        lineage,
+    )
+    values = [dict(row) for row in rows]
     segments = []
     for segment in lineage:
         session = db.get_session(segment)
         segments.append(
             {
                 key: session.get(key)
-                for key in (
-                    "id",
-                    "parent_session_id",
-                    "end_reason",
-                    "profile_name",
-                    "transcript_revision",
-                )
+                for key in ("id", "parent_session_id", "end_reason", "profile_name")
             }
         )
     revision = hashlib.sha256(
         json.dumps([sid, segments, values], sort_keys=True).encode()
     ).hexdigest()
     return values, revision
-
-
-def _occurrence_aliases(metadata):
-    """Recover legacy copy links without collapsing repeated rows in a generation.
-
-    The v31 backfill minted a different UID for every physical row. Only join
-    otherwise unlinked occurrences across a summary/lineage boundary, with an
-    identical indexed identity and slot. Match ordinally to retain multiplicity.
-    Explicit UID copy links take precedence over this legacy fallback. Metadata
-    spans only the runtime's verified compression lineage; rotation keeps the
-    closed parent's rows active, unlike in-place compaction.
-    """
-    from collections import Counter, defaultdict
-
-    counts = Counter(row["message_uid"] for row in metadata if row["message_uid"])
-    generations = []
-    segment = None
-    current = defaultdict(list)
-    seen = set()
-    for row in metadata:
-        if row["session_id"] != segment or row["_compressed_summary"]:
-            current = defaultdict(list)
-            generations.append(current)
-            seen = set()
-            segment = row["session_id"]
-        uid = row["message_uid"]
-        if not uid or row["_compressed_summary"] or uid in seen:
-            continue
-        seen.add(uid)
-        current[row["identity"]].append(row)
-    aliases, previous = {}, {}
-    for generation in generations:
-        for identity, peers in generation.items():
-            candidates = previous.get(identity, [])
-            # A shared UID already identifies the carried occurrences for this
-            # identity. Mixing ordinal inference with those explicit links can
-            # attach a fresh repeated send to a different, uncarried original.
-            if {row["message_uid"] for row in candidates} & {row["message_uid"] for row in peers}:
-                continue
-            # Compaction carries a suffix. If it carries only the last of N
-            # identical occurrences, do not attach it to the first occurrence.
-            shift = max(0, len(candidates) - len(peers))
-            for ordinal, row in enumerate(peers):
-                if ordinal + shift >= len(candidates):
-                    break
-                origin = candidates[ordinal + shift]
-                uid, old_uid = row["message_uid"], origin["message_uid"]
-                if (
-                    counts[old_uid] == 1
-                    and uid != old_uid
-                    and row["display_order"] is not None
-                    and (
-                        row["session_id"] != origin["session_id"]
-                        or (
-                            not origin["active"] and row["display_order"] == origin["display_order"]
-                        )
-                    )
-                ):
-                    aliases[uid] = aliases.get(old_uid, old_uid)
-        previous.update(generation)
-    return aliases
-
-
-def _display_plan(metadata):
-    """Choose retained representatives before slicing, including retired anchors.
-
-    UID distinguishes genuine occurrences; identity distinguishes rewritten
-    payloads (e.g. full tool output vs pruned stub). Legacy identities already
-    include timestamps/tool identity; never deduplicate by content alone.
-    A removed newest generation suppresses its copies across the lineage.
-    """
-    # Full output and a shortened handoff share an occurrence UID, but have
-    # different payload identities. Rotation leaves the parent's rows active;
-    # display_order is comparable only within one session. Metadata already
-    # spans the verified, profile-owned compression lineage.
-    tool_originals = {}
-    for row in metadata:
-        if (
-            row["role"] == "tool"
-            and row["message_uid"]
-            and (row["active"] or row["compacted"])
-            and row["display_order"] is not None
-            and not (row["display_metadata"] or {}).get("model_only")
-        ):
-            owner = (row["message_uid"], row["timestamp"])
-            tool_originals.setdefault(owner, row)
-    aliases = _occurrence_aliases(metadata)
-    first, first_uid, newest, uid_removed, chosen, positions = {}, {}, {}, {}, {}, {}
-    for row in metadata:
-        uid = aliases.get(row["message_uid"], row["message_uid"])
-        key = (uid, row["identity"] or row["id"])
-        if row["_compressed_summary"] and uid:
-            key = first_uid.get(uid, key)
-        elif uid:
-            first_uid.setdefault(uid, key)
-        first.setdefault(key, row["id"])
-        positions[row["id"]] = first[key]
-        removed = not (row["active"] or row["compacted"])
-        newest[key] = removed
-        for copied_uid in [uid, *row["absorbed_message_uids"]]:
-            if copied_uid:
-                uid_removed[aliases.get(copied_uid, copied_uid)] = removed
-        if removed or (row["display_metadata"] or {}).get("model_only"):
-            continue
-        if row["role"] == "tool" and row["display_order"] is not None:
-            origin = tool_originals.get((row["message_uid"], row["timestamp"]))
-            if origin and (
-                origin["session_id"] != row["session_id"]
-                or origin["display_order"] < row["display_order"]
-            ):
-                continue
-        current = chosen.get(key)
-        if current is None or (row["active"], row["id"]) > (current["active"], current["id"]):
-            chosen[key] = row
-    retained = [
-        row
-        for key, row in chosen.items()
-        if not newest[key]
-        and not uid_removed.get(aliases.get(row["message_uid"], row["message_uid"]), False)
-    ]
-    retained.sort(key=lambda row: positions[row["id"]])
-    # In-place pruning keeps the original slot. Choose its live representative
-    # once, rather than emitting the archived full copy beside that same slot.
-    slots, result = {}, []
-    by_id = {row["id"]: row for row in metadata}
-    for row in retained:
-        origin = by_id[positions[row["id"]]]
-        if not origin["message_uid"] or origin["display_order"] is None:
-            result.append(row)
-            continue
-        slot = (
-            origin["session_id"],
-            origin["message_uid"],
-            origin["timestamp"],
-            origin["display_order"],
-        )
-        previous = slots.get(slot)
-        if previous is None:
-            slots[slot] = row
-        else:
-            winner = max((previous, row), key=lambda item: (item["active"], item["id"]))
-            positions[winner["id"]] = min(positions[previous["id"]], positions[row["id"]])
-            slots[slot] = winner
-    result.extend(slots.values())
-    result.sort(key=lambda row: positions[row["id"]])
-    return result, positions
 
 
 def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
@@ -229,32 +58,36 @@ def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
     metadata, stamp = _metadata(db, sid)
     if revision and revision != stamp:
         raise HTTPException(409, "Transcript changed; refresh before loading earlier messages")
-    # Page the metadata plan, not Hermes's display_order: retired originals
-    # still anchor retained copies. Decode only this page plus one boundary row.
-    plan, positions = _display_plan(metadata)
-    selected = plan[::-1][offset:][: limit + 1][::-1]
-    selected_ids = [row["id"] for row in selected]
-    payloads = {}
-    for start in range(0, len(selected_ids), 900):
-        chunk = selected_ids[start : start + 900]
-        slots = ",".join("?" for _ in chunk)
-        payloads.update(
-            {
-                row["id"]: row
-                for row in db._read_all(f"SELECT * FROM messages WHERE id IN ({slots})", chunk)
-            }
-        )
-    if len(payloads) != len(selected_ids):
-        raise HTTPException(409, "Transcript changed during read; refresh and retry")
-    rows = [
-        db._row_to_message_dict(payloads[row_id], warn_context="transcript", summary_flag=True)
-        for row_id in selected_ids
-    ]
+    # One preceding row defines the open interval at a page boundary, even when
+    # a protected tail's current representative was inserted after compaction.
+    rows = db.get_messages(
+        sid,
+        limit=limit + 1,
+        offset=offset,
+        latest=True,
+        include_compacted=True,
+        include_ancestors=True,
+    )
     has_more = len(rows) > limit
     previous = rows.pop(0) if has_more else None
+    by_id = {row["id"]: row for row in metadata}
+    first, first_uid = {}, {}
+    for row in metadata:
+        key = row["identity"]
+        if row["message_uid"]:
+            first_uid.setdefault(row["message_uid"], row["id"])
+        if key:
+            first.setdefault(key, row["id"])
 
     def position(row):
-        return positions[int(row["id"])]
+        meta = by_id[int(row["id"])]
+        original = first.get(meta["identity"], meta["id"])
+        carrier = (
+            first_uid.get(meta["message_uid"], meta["id"])
+            if row.get("_compressed_summary")
+            else meta["id"]
+        )
+        return min(original, carrier, meta["display_order"] or meta["id"])
 
     # The summary flag is durable authority. Copies of the same carrier are
     # one boundary; changed carriers (including the same uid) are distinct.
@@ -380,17 +213,12 @@ def read_profile_page(profile, session_id, limit, offset, revision):
                 "display_identity",
                 "display_order",
                 "message_uid",
-                "absorbed_message_uids",
                 "_compressed_summary",
                 "compacted",
             }
             <= columns
         ):
             raise NotImplementedError("Transcript metadata unavailable")
-        if "transcript_revision" not in {
-            row["name"] for row in db._read_all("PRAGMA table_info(sessions)")
-        }:
-            raise NotImplementedError("Transcript revision unavailable")
         return read_page(db, session_id, profile, limit, offset, revision)
     finally:
         db.close()

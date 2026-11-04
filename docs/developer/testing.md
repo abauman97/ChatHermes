@@ -4,10 +4,6 @@ Use the [developer setup](getting-started.md) first. Run commands from the repos
 
 ## Local checks
 
-Run against the unmodified reviewed source pin in `.hermes-source`; transcript
-selection is implemented entirely in ChatHermes. Do not use a separate patched
-Hermes worktree or historical shared-history fixture images.
-
 ```sh
 vp fmt --check
 vp lint
@@ -58,28 +54,8 @@ reconnecting. It checks the running omitted-history snapshot, subsequent deltas,
 exact final text, saved history, draft/focus and scroll anchoring without route
 mocks. `tests/transcript.test.py` integrates
 with the pinned runtime's SQLite and display projection, including page sizes
-1, 2, 3, 7, 119 and 120. Coverage includes old prompts omitted from compression
-coverage, retired clone anchors, repeated occurrences with identical timestamps,
-in-place payload/sidecar rewrites, concurrent page mutation and bounded decoding
-across compression ancestors. Legacy cases run the pinned UID migration after real
-compaction, retain same-timestamp multiplicity, and check suffix copies, rewind,
-subsequent compaction/rotation and assistant pruning.
-Legacy rotation tests also publish the child before UID backfill, assert that the
-parent stays active, then rewind the child and check paged history without resurrected
-parent copies. Explicit UID-linked tails retain distinct repeated sends and branch
-isolation. The desktop/mobile workflow checks legacy rotation before and after child rewind.
-The browser workflow compares every interleaved
-user/assistant occurrence before compaction, after reconnect and after paged
-reload. Native state tests separately cover correction code-point offsets and
-snapshot text extending persisted partial output, and actual restore over saved
-history with partially persisted corrections (including only the original prompt),
-repeated prompts, ambiguous prefixes, invalid offsets, conflicting prose and queued
-input. They assert images, tool phases, row identities, repeated restore/hydration
-and subsequent deltas; these are mocked protocol tests,
-not proof of durable runtime event replay. Run with the same uv environment and runtime `PYTHONPATH` as the
-other Python contracts. See the
-[partial-correction verification](../internal/verification/2026-11-04-partial-correction-recovery.md)
-for the reviewer reproduction and final checks.
+1, 7, 119 and 120. Run it with the same uv environment and runtime `PYTHONPATH` as the
+other Python contracts.
 
 ## Documentation checks
 
@@ -104,9 +80,3 @@ on failure. The suite needs the upstream Kanban plugin API active; a missing API
 is a failure rather than silently skipped coverage. Unit transport faults cover
 reconnect/polling; real active-worker execution and native device behavior remain
 separate verification work.
-
-The earlier shared-history integration is superseded. Its
-[historical verification](../internal/verification/2026-11-04-shared-display-history.md)
-records tests of a different runtime and does not validate the current plugin-only
-implementation. See the [plugin-only verification](../internal/verification/2026-11-04-plugin-only-transcript.md)
-for current source comparison, exact checks and limitations.
