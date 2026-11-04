@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useNativeSession } from "./native-session";
-import { api } from "../../../services/hermes-api";
+import { api, messageText } from "../../../services/hermes-api";
 import { nativeOutcome } from "./native-admission";
 import type { NativeHooks } from "./native-chat";
 import { NativeError } from "./native-chat";
@@ -61,6 +61,429 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it("keeps snapshot text that extends persisted partial output during incomplete resume", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    fake.rpc.mockResolvedValue({ settled: false });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    fake.hooks!.snapshot({
+      messages: [
+        { row_id: 1, role: "user", text: "Ask" },
+        { row_id: 2, role: "assistant", text: "Before disconnect. " },
+      ],
+      running: true,
+      inflight: { user: "Ask", assistant: "Before disconnect. Arrived offline." },
+      recovery: { complete: false, base_row_ids: null },
+    } as any);
+    fake.hooks!.recovered();
+    expect(
+      session.messages.value[0]?.blocks
+        ?.filter((b) => b.kind === "text")
+        .map((b) => b.content)
+        .join(""),
+    ).toBe("Before disconnect. Arrived offline.");
+    session.close();
+  });
+  it("rebuilds correction bubbles at native code-point offsets on incomplete resume", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    fake.rpc.mockResolvedValue({ settled: false });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    const snapshot = {
+      session_id: "runtime",
+      messages: [],
+      messages_omitted: true,
+      running: true,
+      inflight: {
+        user: "Ask",
+        assistant: "A😀B!C",
+        corrections: ["Again", "Again"],
+        correction_offsets: [2, 4],
+      },
+      recovery: { complete: false, base_row_ids: null },
+    };
+    for (let n = 0; n < 2; n++) {
+      fake.hooks!.snapshot(snapshot as any);
+      fake.hooks!.recovered();
+      expect(session.messages.value.map((row) => row.content)).toEqual(["Ask", "Again", "Again"]);
+      expect(
+        session.messages.value.map((row) =>
+          row.blocks
+            ?.filter((b) => b.kind === "text")
+            .map((b) => b.content)
+            .join(""),
+        ),
+      ).toEqual(["A😀", "B!", "C"]);
+    }
+    fake.hooks!.event({ type: "message.delta", payload: { text: "D" } } as any);
+    expect(session.messages.value.at(-1)?.blocks?.at(-1)?.content).toBe("CD");
+    session.close();
+  });
+  it.each([false, true])(
+    "extends a saved snapshot after its last known phase without losing images (trailing tool: %s)",
+    async (trailingTool) => {
+      vi.spyOn(api, "messages").mockResolvedValue([]);
+      fake.rpc.mockResolvedValue({ settled: false });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      const image = "/api/plugins/chathermes/artifact-images/default/one/2";
+      const messages = [
+        { row_id: 1, role: "user", text: "Ask" },
+        {
+          row_id: 2,
+          role: "assistant",
+          text: "Before",
+          content: [
+            { type: "text", text: "Before" },
+            { type: "image_url", image_url: { url: image } },
+          ],
+        },
+        { row_id: 3, role: "tool", tool_call_id: "call", name: "terminal", content: "Output" },
+        ...(!trailingTool ? [{ row_id: 4, role: "assistant", text: "After" }] : []),
+      ];
+      const prefix = trailingTool ? "Before" : "BeforeAfter";
+      for (const text of [prefix, prefix + " offline"]) {
+        fake.hooks!.snapshot({
+          messages,
+          running: true,
+          inflight: { user: "Ask", assistant: text },
+          recovery: { complete: false, base_row_ids: null },
+        } as any);
+        fake.hooks!.recovered();
+        const blocks = session.messages.value[0]?.blocks;
+        expect(blocks?.[0]).toMatchObject({ kind: "text", content: "Before", images: [image] });
+        expect(blocks?.[1]).toMatchObject({ kind: "tool", output: "Output" });
+        expect(
+          blocks
+            ?.filter((b) => b.kind === "text")
+            .map((b) => b.content)
+            .join(""),
+        ).toBe(text);
+        if (text !== prefix)
+          expect(blocks?.[2]?.content).toBe(trailingTool ? " offline" : "After offline");
+      }
+      session.close();
+    },
+  );
+  it.each([
+    ["saved", false, false],
+    ["saved", true, false],
+    ["native", false, false],
+    ["native", true, false],
+    ["saved", false, true],
+    ["native", false, true],
+    ["saved", true, false, 1],
+    ["native", true, false, 1],
+    ["saved", true, false, 2],
+    ["native", true, false, 2],
+  ] as const)(
+    "preserves saved phases and assistant images while merging correction snapshots (%s, extends: %s, equal offsets: %s)",
+    async (source, extendsText, equalOffsets, savedUsers: number = 3) => {
+      const image = "/api/plugins/chathermes/artifact-images/default/one/2";
+      const multipart = (text: string) => [
+        { type: "text", text },
+        { type: "image_url", image_url: { url: image } },
+      ];
+      const allSaved = [
+        { id: "1", role: "user", content: multipart("Ask") },
+        { id: "2", role: "assistant", content: multipart("A😀"), reasoning: "Plan" },
+        {
+          id: "3",
+          role: "tool",
+          content: "First output",
+          tool_call_id: "first",
+          tool_name: "terminal",
+        },
+        { id: "4", role: "assistant", content: "B" },
+        { id: "5", role: "user", content: "Again" },
+        { id: "6", role: "assistant", content: multipart("") },
+        {
+          id: "7",
+          role: "tool",
+          content: "Second output",
+          tool_call_id: "second",
+          tool_name: "terminal",
+        },
+        ...(!equalOffsets ? [{ id: "8", role: "assistant", content: multipart("C") }] : []),
+        { id: "9", role: "user", content: "Again" },
+        { id: "10", role: "assistant", content: "D" },
+      ];
+      const saved = allSaved.slice(0, savedUsers === 1 ? 4 : savedUsers === 2 ? 8 : undefined);
+      vi.spyOn(api, "messages").mockResolvedValue(source === "saved" ? saved : []);
+      fake.rpc.mockResolvedValue({ settled: false });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await session.hydrate();
+      const snapshot = {
+        messages:
+          source === "saved"
+            ? []
+            : saved.map(({ id, ...row }) => ({
+                ...row,
+                row_id: Number(id),
+                text: typeof row.content === "string" ? row.content : row.content[0]!.text,
+                name: row.tool_name,
+              })),
+        messages_omitted: source === "saved",
+        running: true,
+        inflight: {
+          user: "Ask",
+          corrections: ["Again", "Again"],
+          correction_offsets: extendsText ? [11, 20] : equalOffsets ? [3, 3] : [3, 4],
+          assistant: extendsText
+            ? "A😀B offlineC offlineD offline"
+            : equalOffsets
+              ? "A😀BD"
+              : "A😀BCD",
+        },
+        recovery: { complete: false, base_row_ids: null },
+      };
+      const phases = () =>
+        session.messages.value.map((row) =>
+          row.blocks?.map((block) => ({
+            kind: block.kind,
+            content: block.content,
+            images: block.kind === "text" ? block.images : undefined,
+            output: block.kind !== "text" ? block.output : undefined,
+          })),
+        );
+      for (let n = 0; n < 2; n++) {
+        fake.hooks!.snapshot(snapshot as any);
+        fake.hooks!.recovered();
+        await session.hydrate();
+        expect(session.messages.value.map((row) => messageText(row.content))).toEqual([
+          "Ask",
+          "Again",
+          "Again",
+        ]);
+        expect(session.messages.value[0]?.content).toEqual(multipart("Ask"));
+        expect(session.messages.value.slice(0, savedUsers).map((row) => row.id)).toEqual(
+          ["1", "5", "9"].slice(0, savedUsers),
+        );
+        expect(phases()).toEqual([
+          [
+            expect.objectContaining({ kind: "thinking", content: "Plan" }),
+            expect.objectContaining({ kind: "text", content: "A😀", images: [image] }),
+            expect.objectContaining({ kind: "tool", output: "First output" }),
+            expect.objectContaining({ kind: "text", content: extendsText ? "B offline" : "B" }),
+          ],
+          savedUsers < 2
+            ? [expect.objectContaining({ kind: "text", content: "C offline" })]
+            : [
+                expect.objectContaining({ kind: "text", content: "", images: [image] }),
+                expect.objectContaining({ kind: "tool", output: "Second output" }),
+                ...(!equalOffsets
+                  ? [
+                      expect.objectContaining({
+                        kind: "text",
+                        content: extendsText ? "C offline" : "C",
+                        images: [image],
+                      }),
+                    ]
+                  : []),
+              ],
+          [expect.objectContaining({ kind: "text", content: extendsText ? "D offline" : "D" })],
+        ]);
+      }
+      fake.hooks!.event({ type: "message.delta", payload: { text: " live" } } as any);
+      expect(session.messages.value.at(-1)?.blocks?.at(-1)?.content).toBe(
+        extendsText ? "D offline live" : "D live",
+      );
+      session.close();
+    },
+  );
+  it.each([
+    { prompts: ["Ask"], corrections: ["Again"], offsets: [1], bind: true },
+    { prompts: ["Ask", "Again"], corrections: ["Again", "Again"], offsets: [1, 1], bind: true },
+    { prompts: ["Ask", "Other", "Ask", "Again"], corrections: ["Again"], offsets: [1], bind: true },
+    { prompts: ["Ask", "Ask"], corrections: ["Again"], offsets: [1], bind: false },
+    { prompts: ["Ask", "Again", "Ask"], corrections: ["Again"], offsets: [1], bind: false },
+    {
+      prompts: ["Ask", "Again", "Ask", "Again"],
+      corrections: ["Again", "Again"],
+      offsets: [1, 1],
+      bind: false,
+    },
+    { prompts: ["Ask", "Other"], corrections: ["Again"], offsets: [1], bind: false },
+    { prompts: ["Ask"], corrections: ["Again"], offsets: [99], bind: false },
+    { prompts: ["Ask"], corrections: ["Again"], offsets: [1], prose: "Conflicting", bind: false },
+    { prompts: ["Ask"], corrections: ["Again"], offsets: [1], queued: true, bind: false },
+  ])(
+    "binds only a uniquely evidenced persisted correction prefix: %j",
+    async ({ prompts, corrections, offsets, bind, prose, queued }) => {
+      const saved = prompts.map((content, index) => ({
+        id: String(index + 1),
+        role: "user",
+        content,
+      }));
+      vi.spyOn(api, "messages").mockResolvedValue([
+        ...saved,
+        ...(prose ? [{ id: "reply", role: "assistant", content: prose }] : []),
+      ]);
+      fake.rpc.mockResolvedValue({ settled: false });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await session.hydrate();
+      const snapshot = {
+        messages: [],
+        messages_omitted: true,
+        running: true,
+        queued,
+        inflight: { user: "Ask", corrections, correction_offsets: offsets, assistant: "AB" },
+        recovery: { complete: false, base_row_ids: null },
+      };
+      for (let n = 0; n < 2; n++) {
+        fake.hooks!.snapshot(snapshot as any);
+        fake.hooks!.recovered();
+        await session.hydrate();
+        const users = session.messages.value.filter((row) => row.role === "user");
+        expect(users.map((row) => row.content)).toEqual(
+          bind
+            ? [...prompts, ...corrections.slice(prompts.at(-1) === "Again" ? 1 : 0)]
+            : [...prompts, "Ask", ...corrections],
+        );
+        expect(users.slice(0, prompts.length).map((row) => row.id)).toEqual(
+          saved.map((row) => row.id),
+        );
+        if (bind) {
+          expect(
+            users
+              .at(-corrections.length - 1)
+              ?.blocks?.filter((b) => b.kind === "text")
+              .map((b) => b.content),
+          ).toEqual(["A"]);
+          expect(users.at(-1)?.blocks?.at(-1)?.content).toBe("B");
+        }
+      }
+      const beforeDelta = session.messages.value.at(-1)?.blocks?.at(-1)?.content || "";
+      fake.hooks!.event({ type: "message.delta", payload: { text: " live" } } as any);
+      expect(session.messages.value.at(-1)?.blocks?.at(-1)?.content).toBe(beforeDelta + " live");
+      session.close();
+    },
+  );
+  it.each([false, true])(
+    "reuses an unambiguous saved correction sequence during restore (omitted: %s)",
+    async (omitted) => {
+      const saved = [
+        { id: "1", role: "user", content: "Ask" },
+        { id: "2", role: "user", content: "Again" },
+      ];
+      vi.spyOn(api, "messages").mockResolvedValue(saved);
+      fake.rpc.mockResolvedValue({ settled: false });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await session.hydrate();
+      const snapshot = {
+        messages: omitted
+          ? []
+          : saved.map((row) => ({ row_id: Number(row.id), role: row.role, text: row.content })),
+        messages_omitted: omitted,
+        running: true,
+        inflight: {
+          user: "Ask",
+          corrections: ["Again"],
+          correction_offsets: [0],
+          assistant: "Latest",
+        },
+        recovery: { complete: false, base_row_ids: null },
+      };
+      for (let n = 0; n < 2; n++) {
+        fake.hooks!.snapshot(snapshot as any);
+        fake.hooks!.recovered();
+        await session.hydrate();
+        expect(session.messages.value.map((row) => row.content)).toEqual(["Ask", "Again"]);
+        expect(session.messages.value.map((row) => row.id)).toEqual(["1", "2"]);
+        expect(session.messages.value[1]?.blocks?.at(-1)?.content).toBe("Latest");
+      }
+      session.close();
+    },
+  );
+  it.each([
+    ["Ask", "Again", "Ask", "Again"],
+    ["Ask", "Again", "Later"],
+    ["Ask", "Again", "Ask"],
+    ["Ask", "Ask"],
+  ])("keeps ambiguous or older correction matches unbound: %j", async (...texts) => {
+    const saved = texts.map((content, index) => ({ id: String(index + 1), role: "user", content }));
+    vi.spyOn(api, "messages").mockResolvedValue(saved);
+    fake.rpc.mockResolvedValue({ settled: false });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    await session.hydrate();
+    fake.hooks!.snapshot({
+      messages: [],
+      messages_omitted: true,
+      running: true,
+      inflight: { user: "Ask", corrections: ["Again"], correction_offsets: [0], assistant: "New" },
+      recovery: { complete: false, base_row_ids: null },
+    } as any);
+    fake.hooks!.recovered();
+    expect(session.messages.value.map((row) => row.content)).toEqual([...texts, "Ask", "Again"]);
+    expect(session.error.value).toContain("outside retained recovery");
+    session.close();
+  });
+  it.each([undefined, [99], [0]])(
+    "keeps correction recovery unbound without consistent offset/prose evidence: %j",
+    async (offsets) => {
+      const saved = [
+        { id: "1", role: "user", content: "Ask" },
+        { id: "2", role: "user", content: "Again" },
+        { id: "3", role: "assistant", content: "Earlier unrelated answer" },
+      ];
+      vi.spyOn(api, "messages").mockResolvedValue(saved);
+      fake.rpc.mockResolvedValue({ settled: false });
+      const session = useNativeSession(vi.fn());
+      await session.attach("alpha", "one");
+      await session.hydrate();
+      fake.hooks!.snapshot({
+        messages: [],
+        messages_omitted: true,
+        running: true,
+        inflight: {
+          user: "Ask",
+          corrections: ["Again"],
+          correction_offsets: offsets,
+          assistant: "New",
+        },
+        recovery: { complete: false, base_row_ids: null },
+      } as any);
+      fake.hooks!.recovered();
+      expect(session.messages.value.map((row) => row.content)).toEqual([
+        ...saved.map((row) => row.content),
+        "Ask",
+        "Again",
+      ]);
+      session.close();
+    },
+  );
+  it("retains repeated identical corrections when the complete saved sequence is unique", async () => {
+    const texts = ["Ask", "Again", "Again"];
+    vi.spyOn(api, "messages").mockResolvedValue(
+      texts.map((content, index) => ({ id: String(index + 1), role: "user", content })),
+    );
+    fake.rpc.mockResolvedValue({ settled: false });
+    const session = useNativeSession(vi.fn());
+    await session.attach("alpha", "one");
+    await session.hydrate();
+    fake.hooks!.snapshot({
+      messages: [],
+      messages_omitted: true,
+      running: true,
+      inflight: {
+        user: "Ask",
+        corrections: ["Again", "Again"],
+        correction_offsets: [0, 1],
+        assistant: "AB",
+      },
+      recovery: { complete: false, base_row_ids: null },
+    } as any);
+    fake.hooks!.recovered();
+    expect(session.messages.value.map((row) => row.content)).toEqual(texts);
+    expect(session.messages.value.map((row) => row.id)).toEqual(["1", "2", "3"]);
+    expect(session.messages.value[1]?.blocks?.at(-1)?.content).toBe("A");
+    expect(session.messages.value[2]?.blocks?.at(-1)?.content).toBe("B");
+    session.close();
+  });
   it.each([false, true])(
     "preserves the rendered occurrence when saved history replaces it (omitted resume: %s)",
     async (omitted) => {

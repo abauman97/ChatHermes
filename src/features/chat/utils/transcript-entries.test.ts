@@ -4,6 +4,28 @@ import { gatewayDisplayText } from "../runtime/gateway-display";
 import type { Message, TurnBlock } from "../../../types/hermes";
 const text = (content: string): TurnBlock => ({ id: "block-1", kind: "text", content });
 describe("transcript entries", () => {
+  it("rebuilds interleaved saved replies when resumed user rows carry empty blocks", () => {
+    const messages: Message[] = Array.from({ length: 4 }, (_, n) => [
+      { id: `user-${n}`, role: "user" as const, content: "Same legitimate prompt", blocks: [] },
+      { id: `answer-${n}`, role: "assistant" as const, content: `Answer ${n}`, blocks: [] },
+    ]).flat();
+    const entries = transcriptEntries({ messages, progress: [] });
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      "user",
+      "turn",
+      "user",
+      "turn",
+      "user",
+      "turn",
+      "user",
+      "turn",
+    ]);
+    expect(
+      entries
+        .filter((entry) => entry.kind === "turn")
+        .map((entry) => entry.blocks.map((block) => block.content).join("")),
+    ).toEqual(["Answer 0", "Answer 1", "Answer 2", "Answer 3"]);
+  });
   it("filters system messages and preserves orphan saved output", () => {
     const entries = transcriptEntries({
       messages: [

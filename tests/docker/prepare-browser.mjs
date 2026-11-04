@@ -25,6 +25,9 @@ export async function authenticate(page, url = `${dashboardURL()}/chathermes#/`)
     await page.getByLabel("Password", { exact: true }).fill("chathermes-local-test");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.waitForURL((value) => value.pathname !== "/login");
+    // Fragments never reach the login server. Restore the requested New chat
+    // or session destination after its redirect, before declaring the UI ready.
+    await page.goto(url);
   }
   await page
     .getByRole("button", { name: "Choose model", exact: true })
