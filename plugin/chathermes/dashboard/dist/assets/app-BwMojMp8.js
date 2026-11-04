@@ -8426,7 +8426,7 @@ function xm(e, t) {
 function Sm(e) {
 	let t = vm();
 	for (let n of e) {
-		if (n.blocks) {
+		if (n.blocks?.length) {
 			t.blocks.push(...n.blocks);
 			continue;
 		}
@@ -8681,7 +8681,7 @@ function Em(e) {
 			}
 			let c = a + 1;
 			for (; c < t.length && t[c].role !== "user" && um(t[c]) === "message";) c++;
-			let l = c === t.length, u = l && (!e.turnUserCount || e.turnUserCount === i) && e.blocks?.length ? e.blocks : o.blocks || Sm(t.slice(a + 1, c)), d = u.length ? u : l ? e.progress : [], f = l && (e.working ?? !!((o.blocks || e.blocks?.length || e.progress.length) && d.some((e) => e.kind !== "text" && !e.complete)));
+			let l = c === t.length, u = l && (!e.turnUserCount || e.turnUserCount === i) && e.blocks?.length ? e.blocks : o.blocks?.length ? o.blocks : Sm(t.slice(a + 1, c)), d = u.length ? u : l ? e.progress : [], f = l && (e.working ?? !!((o.blocks || e.blocks?.length || e.progress.length) && d.some((e) => e.kind !== "text" && !e.complete)));
 			(d.length || f) && n.push({
 				kind: "turn",
 				blocks: d,
@@ -8903,29 +8903,57 @@ function Pm(e, t, n, r) {
 			session: L,
 			info: e.info,
 			generation: t
-		}), oe = !0, me = e.messages_omitted === !0, he = !!e.queued, ce++, Ce = void 0, F = void 0, I = void 0, be = !1, pe = [];
+		}), oe = !0, me = e.messages_omitted === !0, he = !!e.queued, ce++, Ce = void 0, F = void 0, I = void 0, be = !1, pe = [], xe = !1;
 		let n = e.messages.map((e) => ({
 			...e,
 			id: e.row_id == null ? void 0 : String(e.row_id),
-			content: e.role === "tool" ? e.content : e.text || e.content || "",
+			content: Array.isArray(e.content) || e.role === "tool" ? e.content : e.text || e.content || "",
 			tool_name: e.name
 		})), r = new Set(e.recovery.base_row_ids || []), a = e.recovery.complete ? n.filter((e) => e.id && r.has(e.id)) : n, o = new Set(b?.messages.map((e) => e.id));
 		if (k.value = b ? [...b.messages, ...a.filter((e) => !o.has(e.id))] : a, A.value = !!(e.running || e.queued), !e.recovery.complete && e.inflight?.user) {
-			let t = k.value.reduce((e, t, n) => t.role === "user" ? n : e, -1);
-			if (t < 0 || Tl(k.value[t].content) !== e.inflight.user || (k.value[t].display_kind || void 0) !== (e.inflight.display_kind || void 0)) Oe(e.inflight.user, !1, void 0, {
+			let t = e.inflight.corrections || [], n = e.inflight.correction_offsets, r = Array.from(e.inflight.assistant || ""), i = t.length > 0 && n?.length === t.length && n.every((e, t) => Number.isInteger(e) && e >= 0 && e <= r.length && (t === 0 || e >= n[t - 1])), a = k.value, o = a.flatMap((e, t) => e.role === "user" ? [t] : []), s = [e.inflight.user, ...t], c = o.flatMap((t, n) => {
+				let r = [];
+				for (let t of o.slice(n, n + s.length)) {
+					let n = r.length;
+					if (Tl(a[t].content) !== s[n] || (a[t].display_kind || void 0) !== (n === 0 && e.inflight.display_kind || void 0)) break;
+					r.push(t);
+				}
+				return r.length ? [r] : [];
+			}), l = c.find((e) => e.at(-1) === o.at(-1)), u = i && !e.queued && l && c.filter((e) => e.length >= l.length).length === 1 && ((e) => e.every((e, t) => {
+				let i = o.find((t) => t > e) ?? a.length, s = a.slice(e + 1, i).filter((e) => e.role === "assistant").map((e) => Tl(e.content)).join(""), c = t === 0 ? 0 : n[t - 1], l = n[t] ?? r.length;
+				return r.slice(c, l).join("").startsWith(s);
+			}))(l) ? l : void 0, d = o.at(-1) ?? -1, f = u?.[0] ?? (t.length ? -1 : d), p = (e) => {
+				I = a[e], F = /* @__PURE__ */ Ft(vm());
+				let t = o.find((t) => t > e) ?? a.length;
+				Cm(F, Sm(a.slice(e + 1, t)), A.value), I.blocks = F.blocks;
+			};
+			f < 0 || Tl(a[f].content) !== e.inflight.user || (a[f].display_kind || void 0) !== (e.inflight.display_kind || void 0) ? Oe(e.inflight.user, !1, void 0, {
 				display_kind: e.inflight.display_kind || void 0,
 				display_metadata: e.inflight.display_metadata
-			});
-			else {
-				I = k.value[t], F = /* @__PURE__ */ Ft(vm());
-				let e = Sm(k.value.slice(t + 1));
-				Cm(F, e, A.value), I.blocks = F.blocks;
+			}) : (p(f), u && (k.value = [...a.slice(0, f), I]));
+			let m = (e) => {
+				Oe(t[e], !0), u?.[e + 1] !== void 0 && (p(u[e + 1]), k.value[k.value.length - 1] = I);
+			};
+			if (i) {
+				let e = 0;
+				for (let i = 0; i < t.length; i++) {
+					let t = n[i];
+					t > e && xm(F, {
+						type: "text.snapshot",
+						data: { text: r.slice(e, t).join("") }
+					}), m(i), e = t;
+				}
+				e < r.length && xm(F, {
+					type: "text.snapshot",
+					data: { text: r.slice(e).join("") }
+				});
+			} else {
+				e.inflight.assistant && xm(F, {
+					type: "text.snapshot",
+					data: { text: e.inflight.assistant }
+				});
+				for (let e = 0; e < t.length; e++) m(e);
 			}
-			e.inflight.assistant && !F.blocks.some((e) => e.kind === "text") && xm(F, {
-				type: "text.snapshot",
-				data: { text: e.inflight.assistant }
-			});
-			for (let t of e.inflight.corrections || []) Oe(t, !0);
 			e.inflight.error && (j.value = e.inflight.error), te.value = um(I) === "status" ? dm(I) : e.running ? "Working…" : fm(e.inflight.status), e.running && !e.inflight.error && (j.value = "Earlier progress is outside retained recovery; saved history is authoritative.");
 		}
 		A.value = !!(e.running || e.queued);
