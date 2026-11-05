@@ -720,7 +720,7 @@ export function useApplication() {
   const drawerSwipe = useDrawerSwipe(
     drawer,
     () => sidebar.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * 0.85),
-    () => chatPlane.value?.$el.querySelector(".transcript") || null,
+    () => chatPlane.value?.$el.querySelector("[data-drawer-swipe]") || null,
     (open) => {
       if (open === drawer.value) return;
       if (open) void openDrawer();

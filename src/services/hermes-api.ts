@@ -244,6 +244,14 @@ export const api = {
     return made;
   },
   projectEvents(profile: string, refresh: () => void) {
+    // The pinned Hermes runtime buffers secondary-profile plugin responses.
+    // An indefinite SSE response occupies a hosted-request worker even after
+    // the browser disconnects; repeated mounts can starve ordinary API reads.
+    if (profile && profile !== "default") {
+      refresh();
+      const timer = setInterval(refresh, 5000);
+      return () => clearInterval(timer);
+    }
     const source = new EventSource(
       ROOT + "/project-events?profile=" + encodeURIComponent(profile || "default"),
       { withCredentials: true },

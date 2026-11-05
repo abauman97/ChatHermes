@@ -97,11 +97,11 @@ describe("plugin routing", () => {
 });
 describe("host history", () => {
   it.each([
-    ["", "inbox"],
+    ["", "home"],
     ["#/", "home"],
     ["#/chat/s1?profile=alpha", "chat"],
     ["#/projects", "projects"],
-  ])("opens Inbox by default while preserving explicit destinations: %s", async (hash, name) => {
+  ])("opens Home by default while preserving explicit destinations: %s", async (hash, name) => {
     history.replaceState({ usr: { host: true }, idx: 4, key: "entry" }, "", "/chathermes" + hash);
     const length = history.length;
     const router = createChatHermesRouter();

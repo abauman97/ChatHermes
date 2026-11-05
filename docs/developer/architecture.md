@@ -82,7 +82,7 @@ refs and model setter commands. It exposes no viewer or mutable runtime error.
 `ChatInterface`, `ChatConversation` and `LiveRequest` consume it. Arrays retain their reactive
 identity; do not copy streamed data into snapshots or use module-global UI state.
 
-`ChatInterface` keeps its composer mounted below the default router outlet. Home and chat pages compose `ChatConversation`; other pages replace that route content. The composer key is `[profile, session]`, never busy/loading/page state.
+`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, session]`, never busy/loading/page state.
 Drafts, attachment reads, editing, sizing and focus remain composer-local; gate
 sending independently of editing. Keep standalone composer tests provider-free.
 
@@ -326,7 +326,12 @@ fixed labels for secret/sudo/connection requests and retained terminal failures;
 request prompts, commands and raw errors are not stored. Response/title previews redact configured provider and gateway
 credentials before storage. Previews are bounded to 400 characters.
 
-The Vue Inbox is a shell page with All/Profile and unread filters. The shell polls
+Dashboard entry opens Home with the latest five unread messages across accessible profiles.
+Removing a notification uses its owning profile, leaves the chat unopened, and
+refills the Home preview. The full Inbox retains its All/Profile route filter and
+pagination, with the same removal control.
+
+The Vue Inbox is a shell page showing unread notifications. The shell polls
 a small page every 15 seconds while visible, refreshes on foregrounding and native
 completion/project events, and updates the badge from server counts. Opening an
 item verifies the owning session and waits for navigation/attachment. Every

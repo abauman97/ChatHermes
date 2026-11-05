@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { test, expect } from "./fixtures";
 import { authenticate } from "../docker/prepare-browser.mjs";
 import { sessionFromUrl } from "../visual/login";
@@ -67,7 +68,7 @@ test("global inbox collects closed-page responses across profiles without push a
   await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("profile");
   await expect(inbox.locator(`li[data-session="${sessions.alpha}"]`)).toHaveCount(0);
   await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("all");
-  const alphaItem = inbox.locator(`li[data-session="${sessions.alpha}"] button`);
+  const alphaItem = inbox.locator(`li[data-session="${sessions.alpha}"] .inbox-open`);
   await alphaItem.scrollIntoViewIfNeeded();
   await alphaItem.click();
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.", {
@@ -80,6 +81,120 @@ test("global inbox collects closed-page responses across profiles without push a
   await expect(inbox.locator(`li[data-session="${sessions.alpha}"]`)).toHaveCount(0);
   await expect(inbox.locator(`li[data-session="${sessions.beta}"]`)).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("inbox-read-persistence.png") });
+});
+
+test("Inbox profile filtering remains responsive across repeated reloads", async ({
+  page,
+}, info) => {
+  const origin = new URL(page.url()).origin;
+  const { runtime } = await import("./helpers");
+  const sessions = runtime(
+    `
+import json, sys, time
+sys.path.insert(0, '/opt/data/plugins')
+from hermes_cli.web_server_sessions import _open_session_db_for_profile
+from chathermes.dashboard import inbox, push_store
+result = {}
+for profile in ('alpha', 'beta'):
+    sid = 'inbox-filter-' + profile + '-' + sys.argv[1]
+    db = _open_session_db_for_profile(profile, read_only=False)
+    db.create_session(sid, source='desktop')
+    db.set_session_title(sid, 'Filter regression ' + profile + ' ' + sys.argv[1])
+    identity = db.append_message(sid, 'assistant', 'Saved filter response ' + profile)
+    db.close()
+    inbox.record(push_store, profile, sid, str(identity), 'turn.complete', occurred=time.time(), title='Filter regression ' + profile, preview='Saved filter response ' + profile)
+    result[profile] = sid
+print(json.dumps(result))
+`,
+    randomUUID(),
+  ) as Record<string, string>;
+  const evidence: object[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/plugins/chathermes/inbox")
+      evidence.push({ event: "request", query: Object.fromEntries(url.searchParams) });
+  });
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (url.pathname === "/api/plugins/chathermes/project-events")
+      evidence.push({
+        event: "metadata stream response",
+        profile: url.searchParams.get("profile"),
+        status: response.status(),
+      });
+  });
+  try {
+    for (let visit = 0; visit < 6; visit++) {
+      // More than the pinned runtime's four per-profile hosted-request workers.
+      // Leaving/reloading must release subscriptions, not strand ordinary reads.
+      // Exit the document: a hash-only visit keeps a focused mobile draft's
+      // compact composer, where authenticate's model button is hidden.
+      await page.goto(origin + "/");
+      await authenticate(page, `${origin}/chathermes?profile=alpha#/inbox?profile=alpha`);
+      const inbox = page.getByRole("region", { name: "Inbox", exact: true });
+      for (const profile of ["alpha", "beta"])
+        await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
+      await page.reload();
+      for (const profile of ["alpha", "beta"])
+        await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
+      const started = Date.now();
+      evidence.push({ visit, event: "before selection", hash: new URL(page.url()).hash });
+      const filtered = page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url());
+          return (
+            url.pathname === "/api/plugins/chathermes/inbox" &&
+            url.searchParams.get("scope") === "profile" &&
+            url.searchParams.get("profile") === "alpha" &&
+            url.searchParams.get("unread") === "true"
+          );
+        },
+        { timeout: 10000 },
+      );
+      await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("profile");
+      await expect(page).toHaveURL(/#\/inbox\?profile=alpha&scope=profile$/);
+      evidence.push({
+        visit,
+        event: "selected route",
+        hash: new URL(page.url()).hash,
+        select: await inbox.getByRole("combobox", { name: "Inbox view" }).inputValue(),
+      });
+      const response = await filtered;
+      expect(response.status()).toBe(200);
+      const data = (await response.json()) as InboxPage;
+      evidence.push({
+        visit,
+        event: "filtered response",
+        elapsedMs: Date.now() - started,
+        status: response.status(),
+        profiles: [...new Set(data.items.map((item) => item.profile))],
+      });
+      expect(data.items.some((item) => item.session === sessions.alpha)).toBe(true);
+      expect(data.items.every((item) => item.profile === "alpha")).toBe(true);
+      await expect(inbox.locator(`li[data-session="${sessions.alpha}"]`)).toHaveCount(1);
+      await expect(inbox.locator(`li[data-session="${sessions.beta}"]`)).toHaveCount(0);
+      await expect(inbox.getByRole("combobox", { name: "Inbox view" })).toHaveValue("profile");
+      const composer = page.getByRole("textbox", { name: "Message Hermes" });
+      await composer.fill("Filter draft");
+      await expect(composer).toBeFocused();
+      if (visit === 5) await page.screenshot({ path: info.outputPath("inbox-filtered.png") });
+    }
+  } finally {
+    evidence.push({
+      event: "final UI",
+      hash: new URL(page.url()).hash,
+      rows: await page
+        .locator('[aria-label="Inbox"] li .text-xs span')
+        .allTextContents()
+        .catch(() => null),
+    });
+    const evidencePath = info.outputPath("inbox-filter-evidence.json");
+    await writeFile(evidencePath, JSON.stringify(evidence, null, 2));
+    await info.attach("inbox-filter-evidence", {
+      path: evidencePath,
+      contentType: "application/json",
+    });
+  }
 });
 
 test("background reconciliation collects unobserved profile histories while the plugin is closed", async ({
@@ -250,7 +365,7 @@ for (const [kind, marker, requestText, answer] of [
           .getByRole("region", { name: "Inbox", exact: true })
           .locator(`li[data-session="${session}"]`);
         await expect(row).toHaveCount(1);
-        await row.getByRole("button").click();
+        await row.locator(".inbox-open").click();
       }
       await expect(request()).toBeVisible({ timeout: 90000 });
       const [lookupResponse, deleteResponse] = await Promise.all([lookup, deletion]);
@@ -284,3 +399,90 @@ for (const [kind, marker, requestText, answer] of [
     });
   }
 }
+
+test("Home previews five latest messages and removes messages without opening on Home and Inbox", async ({
+  page,
+}, info) => {
+  const origin = new URL(page.url()).origin;
+  const { runtime } = await import("./helpers");
+  const marker = randomUUID();
+  const seeded = runtime(
+    `
+import json, sys, time
+sys.path.insert(0, '/opt/data/plugins')
+from hermes_cli.web_server_sessions import _open_session_db_for_profile
+from chathermes.dashboard import inbox, push_store
+result = []
+for i in range(7):
+    profile = 'alpha' if i % 2 == 0 else 'beta'
+    sid = 'home-preview-' + sys.argv[1] + '-' + str(i)
+    title = 'Quick message ' + str(i) + ' ' + sys.argv[1]
+    db = _open_session_db_for_profile(profile, read_only=False)
+    db.create_session(sid, source='desktop')
+    db.set_session_title(sid, title)
+    identity = db.append_message(sid, 'assistant', 'Saved quick response ' + str(i))
+    db.close()
+    inbox.record(push_store, profile, sid, str(identity), 'turn.complete', occurred=time.time()+i, title=title, preview='Saved quick response ' + str(i))
+    result.append({'session':sid, 'profile':profile, 'title':title})
+print(json.dumps(list(reversed(result))))
+`,
+    marker,
+  ) as { session: string; profile: string; title: string }[];
+  await authenticate(page, origin + "/chathermes");
+  const home = page.getByRole("region", { name: "Recent inbox messages", exact: true });
+  await expect(home.locator("li")).toHaveCount(5);
+  await expect(home.locator("li").first()).toHaveAttribute("data-session", seeded[0]!.session);
+  expect(
+    await home
+      .locator("li")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-session"))),
+  ).toEqual(seeded.slice(0, 5).map((item) => item.session));
+  await expect(home.getByRole("combobox")).toHaveCount(0);
+  await expect(home.getByRole("button", { name: "Load More" })).toHaveCount(0);
+  const composer = page.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill("Keep this Home draft");
+  await expect(composer).toBeFocused();
+  await composer.blur();
+  await page.screenshot({ path: info.outputPath("home-five-messages.png") });
+  const first = seeded[0]!;
+  const deletion = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname.startsWith("/api/plugins/chathermes/inbox/") &&
+      url.searchParams.get("profile") === first.profile &&
+      response.request().method() === "DELETE"
+    );
+  });
+  await home.getByRole("button", { name: `Remove ${first.title} from inbox`, exact: true }).click();
+  expect((await deletion).status()).toBe(200);
+  await expect(home.locator("li")).toHaveCount(5);
+  await expect(home.locator(`li[data-session="${first.session}"]`)).toHaveCount(0);
+  await expect(home.locator(`li[data-session="${seeded[5]!.session}"]`)).toHaveCount(1);
+  await expect(composer).toHaveValue("Keep this Home draft");
+  await expect(page).toHaveURL(/#\/$/);
+  await page.reload();
+  await expect(home.locator(`li[data-session="${first.session}"]`)).toHaveCount(0);
+  await home.locator(`li[data-session="${seeded[1]!.session}"] .inbox-open`).click();
+  await expect(page.locator(".message.assistant")).toContainText("Saved quick response 5");
+  await expect(page).toHaveURL(new RegExp(`chat/${seeded[1]!.session}\\?profile=beta`));
+  await authenticate(page, origin + "/chathermes#/inbox?profile=alpha");
+  const inbox = page.getByRole("region", { name: "Inbox", exact: true });
+  await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("profile");
+  const target = seeded[2]!;
+  await expect(inbox.locator(`li[data-session="${target.session}"]`)).toBeVisible();
+  await page.screenshot({ path: info.outputPath("inbox-remove-controls.png") });
+  await inbox
+    .getByRole("button", { name: `Remove ${target.title} from inbox`, exact: true })
+    .click();
+  await expect(inbox.locator(`li[data-session="${target.session}"]`)).toHaveCount(0);
+  await expect(page).toHaveURL(/#\/inbox\?/);
+  await page.reload();
+  await expect(inbox.locator(`li[data-session="${target.session}"]`)).toHaveCount(0);
+  const result = await page.request.get("/api/plugins/chathermes/inbox?profile=default&limit=100");
+  const remaining = (await result.json()) as InboxPage;
+  expect(
+    remaining.items.some(
+      (item) => item.session === first.session || item.session === target.session,
+    ),
+  ).toBe(false);
+});

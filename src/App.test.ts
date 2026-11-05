@@ -1612,7 +1612,7 @@ describe("local mobile drawer swipes", () => {
     vi.spyOn(wrapper.get(".sidebar").element, "getBoundingClientRect").mockReturnValue({
       width: 300,
     } as DOMRect);
-    vi.spyOn(wrapper.get(".transcript").element, "getBoundingClientRect").mockReturnValue({
+    vi.spyOn(wrapper.get("[data-drawer-swipe]").element, "getBoundingClientRect").mockReturnValue({
       top: 68,
       bottom: 600,
     } as DOMRect);
@@ -1650,7 +1650,7 @@ describe("local mobile drawer swipes", () => {
   }
 
   it("tracks the finger, snaps by distance, and closes on a left drawer swipe", async () => {
-    const transcript = wrapper.get(".transcript").element;
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     await touch(transcript, "touchstart", 80);
     expect(wrapper.find(".scrim").exists()).toBe(false);
     const move = await touch(transcript, "touchmove", 200, 205, 400);
@@ -1665,8 +1665,8 @@ describe("local mobile drawer swipes", () => {
     expect(opened()).toBe(false);
   });
 
-  it("requires explicit surface opt-in rather than the transcript class", async () => {
-    const transcript = wrapper.get(".transcript").element;
+  it("requires explicit surface opt-in", async () => {
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     expect(transcript.hasAttribute("data-drawer-swipe")).toBe(true);
     transcript.removeAttribute("data-drawer-swipe");
     await swipe(transcript, 80, 250);
@@ -1678,7 +1678,7 @@ describe("local mobile drawer swipes", () => {
   });
 
   it.each(["dashboard entry", "/inbox"])(
-    "opens from the Inbox scroll surface at %s while preserving controls and vertical scrolling",
+    "opens from the Home or Inbox scroll surface at %s while preserving controls and vertical scrolling",
     async (path) => {
       vi.spyOn(api, "inbox").mockResolvedValue({
         items: [
@@ -1708,7 +1708,11 @@ describe("local mobile drawer swipes", () => {
         } as DOMRect);
       } else await wrapper.vm.$router.push(path);
       await flushPromises();
-      const inbox = wrapper.get('[aria-label="Inbox"]');
+      const inbox = wrapper.get(
+        path === "dashboard entry"
+          ? '[aria-label="Recent inbox messages"]'
+          : '[aria-label="Inbox"]',
+      );
       expect(inbox.attributes("data-drawer-swipe")).toBeDefined();
       expect(inbox.classes()).toContain("overflow-y-auto");
       for (const control of inbox.findAll("select, label, button, li button p")) {
@@ -1748,7 +1752,7 @@ describe("local mobile drawer swipes", () => {
   );
 
   it("snaps short slow drags back and accepts a short fast flick", async () => {
-    const transcript = wrapper.get(".transcript").element;
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     await swipe(transcript, 80, 130);
     expect(opened()).toBe(false);
     expect(wrapper.find(".scrim").exists()).toBe(false);
@@ -1761,7 +1765,7 @@ describe("local mobile drawer swipes", () => {
   });
 
   it("abandons vertical, wrong-direction, cancelled, and multitouch contacts", async () => {
-    const transcript = wrapper.get(".transcript").element;
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     await touch(transcript, "touchstart", 80);
     const vertical = await touch(transcript, "touchmove", 85, 250);
     expect(vertical.defaultPrevented).toBe(false);
@@ -1781,7 +1785,7 @@ describe("local mobile drawer swipes", () => {
   });
 
   it("excludes the left 30px, controls, code, composer, header, and other pages", async () => {
-    const transcript = wrapper.get(".transcript").element;
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     await swipe(transcript, 29, 250);
     expect(opened()).toBe(false);
     for (const selector of [".composer", "textarea", ".topbar"]) {
@@ -1832,7 +1836,7 @@ describe("local mobile drawer swipes", () => {
       "matchMedia",
       vi.fn(() => ({ matches: false })),
     );
-    await swipe(wrapper.get(".transcript").element, 80, 250);
+    await swipe(wrapper.get("[data-drawer-swipe]").element, 80, 250);
     expect(opened()).toBe(false);
   });
 
@@ -1849,7 +1853,7 @@ describe("local mobile drawer swipes", () => {
   });
 
   it("discards an expired flick and cancels tracking on navigation or desktop resize", async () => {
-    const transcript = wrapper.get(".transcript").element;
+    const transcript = wrapper.get("[data-drawer-swipe]").element;
     await touch(transcript, "touchstart", 80);
     await touch(transcript, "touchmove", 130, 200, 40);
     await touch(transcript, "touchend", 130, 200, 200);
