@@ -102,9 +102,19 @@ async def pwa_asset(file_path: str, request: Request):
 
 @router.get("/push-service-worker.js")
 async def push_service_worker():
+    import json
+
+    from hermes_cli.web_server_profiles import serving_profile_name
+
     path = Path(__file__).with_name("dist") / "push-service-worker.js"
-    return FileResponse(
-        path,
+    # Native plugin assets are scoped to their owning profile. Only alias the
+    # launch profile: another profile can have an entirely different build.
+    body = path.read_text().replace(
+        '/* __CHATHERMES_ASSET_PROFILE__ */ ""',
+        json.dumps(serving_profile_name()),
+    )
+    return Response(
+        body,
         media_type="application/javascript",
         headers={
             "Service-Worker-Allowed": "/chathermes",

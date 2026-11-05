@@ -3,6 +3,7 @@ import { RouterLink, RouterView, useRoute } from "vue-router";
 import { useApplication } from "./composables/useApplication";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
+import WorkerUpdatePrompt from "./features/notifications/components/WorkerUpdatePrompt.vue";
 import { projectRoot } from "./features/projects/utils/projects";
 const route = useRoute();
 const {
@@ -382,6 +383,7 @@ const {
         </div>
       </header>
       <RouterView name="dialogs" />
+      <WorkerUpdatePrompt />
       <ChatInterface
         :ref="(el) => (chatPlane = el as InstanceType<typeof ChatInterface> | null)"
         @touchstart="drawerSwipe.start"

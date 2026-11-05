@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { notificationUrl, supported, state, sendTest } from "./push";
 
+class ActivatedWorker extends EventTarget {
+  state = "activated";
+}
+
 describe("push support", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("sends explicit tests through the authenticated profile route", async () => {
@@ -36,7 +40,10 @@ describe("push support", () => {
     vi.stubGlobal("window", { isSecureContext: true, PushManager: class {} });
     vi.stubGlobal("navigator", {
       serviceWorker: {
-        register: vi.fn(async () => ({ pushManager: { getSubscription: async () => null } })),
+        register: vi.fn(async () => ({
+          active: new ActivatedWorker(),
+          pushManager: { getSubscription: async () => null },
+        })),
       },
     });
     vi.stubGlobal("Notification", { permission: "default" });
@@ -77,7 +84,9 @@ describe("profile registrations share one browser subscription", () => {
     };
     vi.stubGlobal("window", { isSecureContext: true, PushManager: class {} });
     vi.stubGlobal("navigator", {
-      serviceWorker: { register: vi.fn(async () => ({ pushManager: manager })) },
+      serviceWorker: {
+        register: vi.fn(async () => ({ active: new ActivatedWorker(), pushManager: manager })),
+      },
     });
     vi.stubGlobal("Notification", {
       permission: "granted",
@@ -122,5 +131,67 @@ describe("profile registrations share one browser subscription", () => {
     fetch.mockResolvedValue(new Response("{}", { status: 503 }));
     await expect(push.unsubscribe("beta")).rejects.toThrow("Could not load notification status");
     expect(subscription.unsubscribe).not.toHaveBeenCalled();
+  });
+});
+
+describe("push registration installation lifecycle", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+  function setup() {
+    vi.resetModules();
+    class Worker extends EventTarget {
+      state = "installing";
+      move(state: string) {
+        this.state = state;
+        this.dispatchEvent(new Event("statechange"));
+      }
+    }
+    const worker = new Worker();
+    const registration = { installing: worker, active: null };
+    const register = vi.fn(async () => registration);
+    vi.stubGlobal("window", { isSecureContext: true, PushManager: class {} });
+    vi.stubGlobal("navigator", { serviceWorker: { register } });
+    vi.stubGlobal("Notification", { permission: "granted" });
+    return { worker, registration, register };
+  }
+  it("waits through precaching and installation until PushManager can use the worker", async () => {
+    const h = setup();
+    const push = await import("./push");
+    let ready = false;
+    const pending = push.registration().then(() => {
+      ready = true;
+    });
+    await vi.waitFor(() => expect(h.register).toHaveBeenCalledTimes(1));
+    expect(ready).toBe(false);
+    h.worker.move("installed");
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    h.worker.move("activated");
+    await pending;
+    expect(ready).toBe(true);
+    expect(h.register).toHaveBeenCalledWith("/api/plugins/chathermes/push-service-worker.js", {
+      scope: "/chathermes",
+      updateViaCache: "none",
+    });
+  });
+  it("rejects a failed install and retries registration rather than hanging on ready", async () => {
+    const h = setup();
+    const push = await import("./push");
+    const failed = expect(push.registration()).rejects.toThrow("installation failed");
+    await vi.waitFor(() => expect(h.register).toHaveBeenCalledTimes(1));
+    h.worker.move("redundant");
+    await failed;
+    h.worker.move("activated");
+    expect(await push.registration()).toBe(h.registration);
+    expect(h.register).toHaveBeenCalledTimes(2);
+  });
+  it("continues using the active push worker while an update is waiting", async () => {
+    const h = setup();
+    Object.assign(h.registration, { active: new ActivatedWorker(), waiting: h.worker });
+    const push = await import("./push");
+    expect(await push.registration()).toBe(h.registration);
+    expect(h.worker.state).toBe("installing");
   });
 });

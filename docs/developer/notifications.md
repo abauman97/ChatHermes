@@ -109,3 +109,71 @@ restart. A crash after sending but before recording success can repeat the same
 notification tag. New subscriptions do not receive old completions. Browser
 closure leaves a native server viewer attached while work runs; execution does
 not survive loss of the host/runtime process by virtue of the push outbox.
+
+## Static asset cache and worker updates
+
+`npm run build` discovers the production entry, CSS, JavaScript chunks and shipped
+manifest/icons, writes `dist/precache-manifest.json`, and embeds it in the existing
+push worker. SHA-256 revisions cover each asset's bytes; a deterministic release
+identifier covers the asset manifest and worker source. No caching dependency is
+installed. Keep the generated distribution out of Git.
+
+Installation fetches every required asset with same-origin credentials, bypasses
+HTTP caches and rejects redirects, unsuccessful responses and revision mismatches.
+The install event completes only after every cache write is present. A failed
+installation removes its incomplete release cache and leaves the active worker
+and cache intact. Interrupted installs are removed by the next successful
+activation. Deploy the complete distribution together; an install racing deployment
+fails safely and can retry rather than mixing stable filenames from two builds.
+
+The pinned host loads JavaScript/CSS from `/dashboard-plugins/@<profile>/chathermes/dist/`
+and PWA metadata from `/api/plugins/chathermes/assets/dist/`. The authenticated
+worker route binds the native dashboard serving profile, adding only that profile's
+static asset aliases. Other profiles' plugin URLs remain network-only because they
+may own different plugin copies. An unnamed/custom serving home caches only the
+unscoped asset URLs. No profile list, session, credential or API response is cached.
+
+Updates install into the browser's waiting lifecycle. The mounted plugin detects
+already-waiting and newly installed workers and shows **Update** / **Not now**.
+The popup warns that Update reloads this tab and may interrupt drafts, uploads,
+or work in progress. It does not steal composer focus or block editing. **Not now**
+only dismisses the popup; **Update available** remains available to reopen it.
+There is no activation or reload from dismissal, a timeout, or a controller change.
+
+Only **Update** requests `skipWaiting` from the waiting worker. The requesting tab
+reloads once that exact worker is activated and controls it. Other tabs never
+reload automatically; their reminder still permits a later user-approved reload,
+even after another tab activates the worker. Failed/replaced/timed-out updates
+remain retryable. Unmount removes lifecycle listeners and cancels pending reload
+consent. No client claim or notification permission request is added.
+Closing all controlled windows also permits normal browser activation.
+
+Activation retains older verified caches while plugin windows are open, so another
+tab can still load its older hashed JavaScript/CSS chunks. Stable entry/CSS URLs
+never fall back to another release. A later activation with no plugin windows
+removes older ChatHermes caches, including abandoned installs, without deleting
+other apps' caches. Retained releases can consume storage until that activation or
+browser eviction. A first installation controls pages on their next navigation.
+The plugin registers the same authenticated worker on mount in secure browsers
+with Service Worker support, independently of Push API availability. Push still
+waits for activation before subscription; failed first installs reject and can
+retry. An existing active worker remains usable while an update waits.
+
+Only exact allowlisted same-origin GET asset URLs are served from the current
+release cache, with previously verified hashed chunks also available from retained
+releases for older tabs. Query strings, explicit authorization or native gateway-ticket headers, range requests,
+navigations, dashboard host resources, uploads and dynamic endpoints bypass it.
+After browser cache eviction, network fallback must match the expected revision;
+it never writes runtime responses into the cache. Static assets can be read while
+offline, but dashboard startup, authentication and sessions still need the network.
+This is not offline application support. Browser storage remains subject to eviction.
+
+`precache.test.ts` covers discovery, revisions, cache lifecycle/failures and request
+boundaries. `tests/workflows/precache.spec.ts` exercises the deployed worker in the
+real dashboard on desktop/mobile: failed update, waiting update during streaming,
+draft/focus retention, offline static reads, dismissal, already-waiting detection,
+user-approved reload and independent consent across two tabs. Focused update tests
+cover lifecycle races, failure, timeout and unmount; cache tests cover natural cleanup
+and retention of verified older chunks during forced activation.
+It changes only the isolated fixture container's worker metadata and restores it;
+it does not claim native Home Screen installation or real push delivery coverage.
