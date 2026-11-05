@@ -1715,7 +1715,9 @@ describe("local mobile drawer swipes", () => {
       );
       expect(inbox.attributes("data-drawer-swipe")).toBeDefined();
       expect(inbox.classes()).toContain("overflow-y-auto");
-      for (const control of inbox.findAll("select, label, button, li button p")) {
+      for (const control of inbox.findAll(
+        "select, label, button:not(.inbox-open), button svg path",
+      )) {
         await swipe(control.element, 80, 250);
         expect(opened()).toBe(false);
       }
@@ -1734,6 +1736,8 @@ describe("local mobile drawer swipes", () => {
       );
       await swipe(inbox.element, 80, 250);
       expect(opened()).toBe(false);
+      await swipe(inbox.get(".inbox-open p").element, 80, 250);
+      expect(opened()).toBe(false);
       vi.stubGlobal(
         "matchMedia",
         vi.fn(() => ({ matches: true })),
@@ -1748,8 +1752,60 @@ describe("local mobile drawer swipes", () => {
       expect(opened()).toBe(true);
       await swipe(wrapper.get(".brand").element, 240, 100);
       expect(opened()).toBe(false);
+
+      // Message buttons and their text share the surface gesture, but keep taps.
+      for (const target of inbox.findAll(".inbox-open, .inbox-open p, .inbox-open time")) {
+        await touch(target.element, "touchstart", 80);
+        const vertical = await touch(target.element, "touchmove", 85, 250);
+        expect(vertical.defaultPrevented).toBe(false);
+        await touch(target.element, "touchmove", 250, 260);
+        await touch(target.element, "touchend", 250, 260);
+        expect(opened()).toBe(false);
+        for (const [start, end] of [
+          [240, 80],
+          [29, 250],
+          [80, 130],
+        ]) {
+          await swipe(target.element, start!, end!);
+          expect(opened()).toBe(false);
+        }
+        for (const type of ["touchcancel", "touchmove"]) {
+          await touch(target.element, "touchstart", 80);
+          await touch(target.element, "touchmove", 250);
+          await touch(target.element, type, 250, 200, 100, 2);
+          await touch(target.element, "touchend", 250);
+          expect(opened()).toBe(false);
+        }
+        await touch(target.element, "touchstart", 80);
+        const move = await touch(target.element, "touchmove", 250, 205, 400);
+        expect(move.defaultPrevented).toBe(true);
+        await touch(target.element, "touchend", 250, 205);
+        expect(opened()).toBe(true);
+        const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+        target.element.dispatchEvent(click);
+        await flushPromises();
+        expect(click.defaultPrevented).toBe(true);
+        expect(wrapper.vm.$route.path).toBe(path === "dashboard entry" ? "/" : path);
+        await swipe(wrapper.get(".brand").element, 240, 100);
+        expect(opened()).toBe(false);
+      }
     },
   );
+
+  it("keeps session transcript swipes and interactive control exclusions", async () => {
+    await wrapper.vm.$router.push("/chat/swipe-session?profile=alpha");
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Recent inbox messages"]').exists()).toBe(false);
+    const transcript = wrapper.get(".transcript").element;
+    const button = document.createElement("button");
+    transcript.append(button);
+    await swipe(button, 80, 250);
+    expect(opened()).toBe(false);
+    await swipe(transcript, 80, 250);
+    expect(opened()).toBe(true);
+    await swipe(wrapper.get(".brand").element, 240, 100);
+    expect(opened()).toBe(false);
+  });
 
   it("snaps short slow drags back and accepts a short fast flick", async () => {
     const transcript = wrapper.get("[data-drawer-swipe]").element;

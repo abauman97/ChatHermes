@@ -34,6 +34,12 @@ Desktop/mobile browser tests check focus, bounded scrolling, footer spacing, sho
 viewports and host-setting restoration. These are Chromium viewport tests, not
 proof of native Android or iOS keyboard behavior; device verification is separate.
 
+Mobile drawer opening uses local touch handlers on explicitly opted-in scroll
+surfaces, including Home and Inbox message buttons. Vertical scrolling wins the
+direction lock; other controls remain excluded. Completed horizontal drags use
+the shared drawer thresholds and suppress the following click to avoid opening
+a message accidentally. Ordinary message taps still open their destination.
+
 ## Where code belongs
 
 | Location                              | Ownership                                                                                                       |

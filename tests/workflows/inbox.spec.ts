@@ -439,6 +439,59 @@ print(json.dumps(list(reversed(result))))
   ).toEqual(seeded.slice(0, 5).map((item) => item.session));
   await expect(home.getByRole("combobox")).toHaveCount(0);
   await expect(home.getByRole("button", { name: "Load More" })).toHaveCount(0);
+  const cdp = await page.context().newCDPSession(page);
+  const swipe = async (selector: string, dx: number, dy = 0) => {
+    const target = home.locator(selector).first();
+    await target.scrollIntoViewIfNeeded();
+    const box = (await target.boundingBox())!;
+    const x = box.x + Math.min(45, box.width / 2);
+    const y = box.y + box.height / 2;
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x, y }],
+    });
+    for (let step = 1; step <= 8; step++)
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: x + (dx * step) / 8, y: y + (dy * step) / 8 }],
+      });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  const menu = page.locator(".chathermes-embedded .mobile-menu");
+  const mobile = info.project.name !== "desktop";
+  const viewport = page.viewportSize();
+  if (mobile && viewport) await page.setViewportSize({ ...viewport, height: 600 });
+  try {
+    // Real touch input starts on message text, rather than empty Inbox padding.
+    for (const [dx, dy] of [
+      [5, -60],
+      [-45, 0],
+    ]) {
+      await swipe(".inbox-open p", dx!, dy!);
+      await expect(menu).toHaveAttribute("aria-expanded", "false");
+      await expect(page).toHaveURL(/#\/$/);
+      if (mobile && viewport && dy! < 0)
+        await expect.poll(() => home.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    }
+    // The neighboring remove control must not turn a drag into navigation.
+    await swipe("button[title='Remove from inbox'] svg", 30);
+    await expect(menu).toHaveAttribute("aria-expanded", "false");
+    await expect(home.locator("li")).toHaveCount(5);
+    await swipe(".inbox-open p", 170, 4);
+    await expect(menu).toHaveAttribute("aria-expanded", String(mobile));
+    await expect(home.locator("li")).toHaveCount(5);
+    await expect(page).toHaveURL(/#\/$/);
+    await page.screenshot({
+      animations: "disabled",
+      path: info.outputPath("home-message-touch-swipe.png"),
+    });
+  } finally {
+    await cdp.detach();
+    if (mobile && viewport) await page.setViewportSize(viewport);
+  }
+  // A fresh mount also verifies ordinary clicks after the touch checks.
+  await page.reload();
+  await expect(home.locator("li")).toHaveCount(5);
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
   await composer.fill("Keep this Home draft");
   await expect(composer).toBeFocused();
@@ -453,7 +506,12 @@ print(json.dumps(list(reversed(result))))
       response.request().method() === "DELETE"
     );
   });
-  await home.getByRole("button", { name: `Remove ${first.title} from inbox`, exact: true }).click();
+  const remove = home.getByRole("button", {
+    name: `Remove ${first.title} from inbox`,
+    exact: true,
+  });
+  if (info.project.name === "mobile") await remove.tap();
+  else await remove.click();
   expect((await deletion).status()).toBe(200);
   await expect(home.locator("li")).toHaveCount(5);
   await expect(home.locator(`li[data-session="${first.session}"]`)).toHaveCount(0);
@@ -462,7 +520,9 @@ print(json.dumps(list(reversed(result))))
   await expect(page).toHaveURL(/#\/$/);
   await page.reload();
   await expect(home.locator(`li[data-session="${first.session}"]`)).toHaveCount(0);
-  await home.locator(`li[data-session="${seeded[1]!.session}"] .inbox-open`).click();
+  const message = home.locator(`li[data-session="${seeded[1]!.session}"] .inbox-open`);
+  if (info.project.name === "mobile") await message.tap();
+  else await message.click();
   await expect(page.locator(".message.assistant")).toContainText("Saved quick response 5");
   await expect(page).toHaveURL(new RegExp(`chat/${seeded[1]!.session}\\?profile=beta`));
   await authenticate(page, origin + "/chathermes#/inbox?profile=alpha");
