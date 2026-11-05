@@ -1,4 +1,106 @@
 const APP_URL = "/chathermes";
+// Replaced by the production build; no network-loaded configuration or data.
+const PRECACHE = {"release":"9a7b4558ff1fa2f48b16298c0d44a5e09f5120d92329aeb6f214350f6c0c9d1e","assets":[{"url":"/api/plugins/chathermes/assets/dist/apple-touch-icon.png","revision":"c524550b4303ee7c98358c93bf2b869a807f8c84466f60bac0f4d5e1ba6bda1c"},{"url":"/dashboard-plugins/chathermes/dist/assets/app-CDR5XzVl.js","revision":"6f2b8c1e9e6aca9a869b9a40c7fbef36dba12c646146679c1ba9b94999b7698c"},{"url":"/api/plugins/chathermes/assets/dist/icons/icon-192.png","revision":"c524550b4303ee7c98358c93bf2b869a807f8c84466f60bac0f4d5e1ba6bda1c"},{"url":"/api/plugins/chathermes/assets/dist/icons/icon-512.png","revision":"c3f98539df31124555d18f4d40d20406c5765db39888a80f2da1f5b59fe09fe5"},{"url":"/dashboard-plugins/chathermes/dist/index.js","revision":"95fb903b988e19dcbeb31b9922f16ecb814f1391ca80bbca90f70af825811242"},{"url":"/api/plugins/chathermes/assets/dist/manifest.webmanifest","revision":"ac096a5fc3e3a99c3db695b8d226a0441aaa0b642d8c3690dd91cd7b5104e023"},{"url":"/dashboard-plugins/chathermes/dist/style.css","revision":"2951502c8fe7139f2da1721e7a9715437d038fc9e1f5725a20725fef0086f9ee"}]};
+// The authenticated worker route binds only the dashboard's serving profile.
+// Other profiles can own different plugin copies and must remain network-only.
+const ASSET_PROFILE = /* __CHATHERMES_ASSET_PROFILE__ */ "";
+const ASSETS = PRECACHE
+  ? PRECACHE.assets.flatMap((asset) => {
+      const prefix = "/dashboard-plugins/";
+      return ASSET_PROFILE && asset.url.startsWith(prefix)
+        ? [
+            asset,
+            {
+              ...asset,
+              url:
+                prefix +
+                "@" +
+                encodeURIComponent(ASSET_PROFILE) +
+                "/" +
+                asset.url.slice(prefix.length),
+            },
+          ]
+        : [asset];
+    })
+  : [];
+const CACHE_PREFIX = "chathermes-static-v1-";
+const CACHE_NAME =
+  PRECACHE &&
+  CACHE_PREFIX + PRECACHE.release + (ASSET_PROFILE ? "-" + encodeURIComponent(ASSET_PROFILE) : "");
+
+async function verifiedAsset(asset) {
+  const response = await fetch(new URL(asset.url, self.location.origin), {
+    credentials: "same-origin",
+    cache: "no-store",
+    redirect: "error",
+  });
+  if (response.status !== 200 || response.redirected) throw new Error("Static asset unavailable");
+  const bytes = await response.clone().arrayBuffer();
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  if (hash !== asset.revision) throw new Error("Static asset release mismatch");
+  return response;
+}
+
+async function installAssets() {
+  if (!PRECACHE) return;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    for (const asset of ASSETS) {
+      await cache.put(new URL(asset.url, self.location.origin), await verifiedAsset(asset));
+    }
+    for (const asset of ASSETS) {
+      if (!(await cache.match(new URL(asset.url, self.location.origin))))
+        throw new Error("Static asset cache incomplete");
+    }
+  } catch (error) {
+    await caches.delete(CACHE_NAME);
+    throw error;
+  }
+}
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (!PRECACHE || request.method !== "GET" || request.mode === "navigate") return;
+  if (
+    request.headers.has("range") ||
+    request.headers.has("authorization") ||
+    request.headers.has("x-hermes-gateway-ticket")
+  )
+    return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || url.search) return;
+  const asset = ASSETS.find((asset) => asset.url === url.pathname);
+  // Open tabs may still import an older release's hashed chunks after another
+  // tab approves activation. Only previously verified immutable chunks qualify;
+  // stable entry/CSS URLs must never fall back to another release.
+  const immutable = ASSETS.some((entry) => {
+    const directory = entry.url.slice(0, entry.url.lastIndexOf("/") + 1);
+    return (
+      directory.endsWith("/dist/assets/") &&
+      url.pathname.startsWith(directory) &&
+      /^[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(url.pathname.slice(directory.length))
+    );
+  });
+  if (!asset && !immutable) return;
+  event.respondWith(
+    (async () => {
+      if (!asset) {
+        for (const name of await caches.keys()) {
+          if (!name.startsWith(CACHE_PREFIX)) continue;
+          const response = await (await caches.open(name)).match(request);
+          if (response) return response;
+        }
+        return fetch(request);
+      }
+      const cache = await caches.open(CACHE_NAME);
+      // Never fall back to another release's stable entry/CSS. A cache eviction
+      // may use the network only if it still serves these exact build bytes.
+      return (await cache.match(request)) || verifiedAsset(asset);
+    })(),
+  );
+});
 
 // Never cache WindowClient URLs or session state: both can outlive SPA routes.
 function currentSession(client) {
@@ -158,6 +260,19 @@ function enqueue(work) {
   return result;
 }
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "chathermes.update.activate") {
+    // Only a same-origin plugin window can request user-approved activation.
+    // No claim or broadcast navigation: each tab decides when to reload.
+    if (!event.source?.id) return;
+    try {
+      const url = new URL(event.source.url);
+      if (url.origin !== self.location.origin || url.pathname !== APP_URL) return;
+    } catch {
+      return;
+    }
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   if (event.data?.type !== "chathermes.session" || !event.source?.id) return;
   event.waitUntil(
     enqueue(async () => {
@@ -166,8 +281,34 @@ self.addEventListener("message", (event) => {
   );
 });
 
-self.addEventListener("install", (event) => event.waitUntil(self.skipWaiting()));
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+// Installation always waits; only the explicit message above skips waiting.
+self.addEventListener("install", (event) => event.waitUntil(installAssets()));
+self.addEventListener("activate", (event) =>
+  event.waitUntil(
+    (async () => {
+      if (!PRECACHE) return;
+      // Forced activation can leave other tabs running older code. Preserve
+      // their verified chunks until a later activation with no plugin windows.
+      if (
+        (await windowClients()).some((client) => {
+          try {
+            const url = new URL(client.url);
+            return url.origin === self.location.origin && url.pathname === APP_URL;
+          } catch {
+            return false;
+          }
+        })
+      )
+        return;
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+          .map((name) => caches.delete(name)),
+      );
+    })(),
+  ),
+);
 self.addEventListener("push", (event) => {
   let data;
   try {

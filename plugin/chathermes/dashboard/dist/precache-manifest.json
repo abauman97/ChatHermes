@@ -1,0 +1,33 @@
+{
+  "release": "9a7b4558ff1fa2f48b16298c0d44a5e09f5120d92329aeb6f214350f6c0c9d1e",
+  "assets": [
+    {
+      "url": "/api/plugins/chathermes/assets/dist/apple-touch-icon.png",
+      "revision": "c524550b4303ee7c98358c93bf2b869a807f8c84466f60bac0f4d5e1ba6bda1c"
+    },
+    {
+      "url": "/dashboard-plugins/chathermes/dist/assets/app-CDR5XzVl.js",
+      "revision": "6f2b8c1e9e6aca9a869b9a40c7fbef36dba12c646146679c1ba9b94999b7698c"
+    },
+    {
+      "url": "/api/plugins/chathermes/assets/dist/icons/icon-192.png",
+      "revision": "c524550b4303ee7c98358c93bf2b869a807f8c84466f60bac0f4d5e1ba6bda1c"
+    },
+    {
+      "url": "/api/plugins/chathermes/assets/dist/icons/icon-512.png",
+      "revision": "c3f98539df31124555d18f4d40d20406c5765db39888a80f2da1f5b59fe09fe5"
+    },
+    {
+      "url": "/dashboard-plugins/chathermes/dist/index.js",
+      "revision": "95fb903b988e19dcbeb31b9922f16ecb814f1391ca80bbca90f70af825811242"
+    },
+    {
+      "url": "/api/plugins/chathermes/assets/dist/manifest.webmanifest",
+      "revision": "ac096a5fc3e3a99c3db695b8d226a0441aaa0b642d8c3690dd91cd7b5104e023"
+    },
+    {
+      "url": "/dashboard-plugins/chathermes/dist/style.css",
+      "revision": "2951502c8fe7139f2da1721e7a9715437d038fc9e1f5725a20725fef0086f9ee"
+    }
+  ]
+}

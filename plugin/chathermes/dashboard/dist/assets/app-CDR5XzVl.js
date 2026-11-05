@@ -9258,28 +9258,42 @@ var Hm = "/api/plugins/chathermes", Um;
 function Wm() {
 	return typeof window < "u" && window.isSecureContext && typeof navigator < "u" && "serviceWorker" in navigator && "PushManager" in window && typeof Notification < "u";
 }
-async function Gm() {
+async function Gm(e) {
+	let t = e.active || e.installing || e.waiting;
+	if (!t) throw Error("Notification service worker is unavailable.");
+	await new Promise((e, n) => {
+		let r = () => {
+			(t.state === "activated" || t.state === "redundant") && (t.removeEventListener("statechange", r), t.state === "activated" ? e() : n(/* @__PURE__ */ Error("Notification service worker installation failed.")));
+		};
+		t.addEventListener("statechange", r), r();
+	});
+}
+async function Km() {
 	if (!Wm()) throw Error("Notifications require a secure browser with Push API support.");
+	return qm();
+}
+async function qm() {
+	if (!window.isSecureContext || !("serviceWorker" in navigator)) throw Error("Service workers require a secure browser.");
 	return Um ||= navigator.serviceWorker.register("/api/plugins/chathermes/push-service-worker.js", {
 		scope: "/chathermes",
 		updateViaCache: "none"
-	}).catch((e) => {
+	}).then(async (e) => (await Gm(e), e)).catch((e) => {
 		throw Um = void 0, e;
 	}), Um;
 }
-function Km(e) {
+function Jm(e) {
 	let t = e.replace(/-/g, "+").replace(/_/g, "/"), n = atob(t + "=".repeat((4 - t.length % 4) % 4));
 	return Uint8Array.from(n, (e) => e.charCodeAt(0));
 }
-async function qm() {
+async function Ym() {
 	let e = await fetch(Hm + "/push/config", { credentials: "same-origin" });
 	if (!e.ok) throw Error("Push configuration unavailable");
 	return e.json();
 }
-async function Jm() {
-	return (await Gm()).pushManager.getSubscription();
+async function Xm() {
+	return (await Km()).pushManager.getSubscription();
 }
-async function Ym(e, t) {
+async function Zm(e, t) {
 	let n = await fetch(Hm + "/push/status" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
 		credentials: "same-origin",
@@ -9289,7 +9303,7 @@ async function Ym(e, t) {
 	if (!n.ok) throw Error("Could not load notification status for this profile.");
 	return n.json();
 }
-async function Xm(e = "") {
+async function Qm(e = "") {
 	if (!Wm()) return {
 		supported: !1,
 		permission: "unsupported",
@@ -9298,7 +9312,7 @@ async function Xm(e = "") {
 		error: "Notifications require HTTPS and a supported browser."
 	};
 	try {
-		let [t, n] = await Promise.all([Jm(), qm()]), r = t ? await Ym(e, t) : null;
+		let [t, n] = await Promise.all([Xm(), Ym()]), r = t ? await Zm(e, t) : null;
 		return {
 			supported: !0,
 			permission: Notification.permission,
@@ -9316,15 +9330,15 @@ async function Xm(e = "") {
 		};
 	}
 }
-async function Zm(e) {
+async function $m(e) {
 	if (!Wm()) throw Error("Notifications require HTTPS and a supported browser.");
 	let t = await Notification.requestPermission();
 	if (t !== "granted") throw Error(t === "denied" ? "Notification permission is blocked in browser settings." : "Notification permission was not granted.");
-	let n = await Gm(), r = await qm();
+	let n = await Km(), r = await Ym();
 	if (!r.available || !r.vapid_public_key) throw Error("Push notifications are unavailable on this server.");
 	let i = await n.pushManager.subscribe({
 		userVisibleOnly: !0,
-		applicationServerKey: Km(r.vapid_public_key)
+		applicationServerKey: Jm(r.vapid_public_key)
 	});
 	if (!(await fetch(Hm + "/push/subscriptions" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
@@ -9336,16 +9350,16 @@ async function Zm(e) {
 		})
 	})).ok) throw Error("Could not save this notification subscription.");
 }
-async function Qm(e) {
-	let t = await Jm();
+async function eh(e) {
+	let t = await Xm();
 	if (!t) return;
-	let n = await Ym(e, t);
+	let n = await Zm(e, t);
 	if (n.enabled && n.id && !(await fetch(Hm + "/push/subscriptions/" + encodeURIComponent(n.id) + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "DELETE",
 		credentials: "same-origin"
 	})).ok) throw Error("Could not disable notifications for this profile.");
 }
-async function $m(e) {
+async function th(e) {
 	if (!(await fetch(Hm + "/push/test" + (e ? "?profile=" + encodeURIComponent(e) : ""), {
 		method: "POST",
 		credentials: "same-origin"
@@ -9353,7 +9367,7 @@ async function $m(e) {
 }
 //#endregion
 //#region src/features/notifications/services/push-client.ts
-function eh(e, t, n = document.visibilityState) {
+function nh(e, t, n = document.visibilityState) {
 	return {
 		type: "chathermes.session",
 		url: t,
@@ -9368,8 +9382,8 @@ function eh(e, t, n = document.visibilityState) {
 		connected: e.chat && !!e.session && e.connected
 	};
 }
-function th(e, t, n) {
-	let r = !0, i = null, a = () => eh(t(), n()), o = () => {
+function rh(e, t, n) {
+	let r = !0, i = null, a = () => nh(t(), n()), o = () => {
 		r && (e.controller || i)?.postMessage(a());
 	}, s = (e) => {
 		r && e.data?.type === "chathermes.session.query" && e.ports[0]?.postMessage(a());
@@ -9390,51 +9404,51 @@ function th(e, t, n) {
 }
 //#endregion
 //#region src/features/chat/context.ts
-var nh = Symbol("live chat");
-function rh(e) {
-	Nn(nh, e);
+var ih = Symbol("live chat");
+function ah(e) {
+	Nn(ih, e);
 }
-function ih() {
-	let e = Pn(nh);
+function oh() {
+	let e = Pn(ih);
 	if (!e) throw Error("Live chat context is missing");
 	return e;
 }
-var ah = Symbol("conversation focus");
+var sh = Symbol("conversation focus");
 //#endregion
 //#region src/features/chat/utils/context-usage.ts
-function oh(e) {
+function ch(e) {
 	return typeof e == "number" && Number.isFinite(e) && e >= 0 ? e : null;
 }
-function sh(e) {
-	let t = oh(e?.context_percent);
+function lh(e) {
+	let t = ch(e?.context_percent);
 	return t !== null && t <= 100 ? t : null;
 }
 //#endregion
 //#region src/features/chat/components/ContextUsagePopover.vue?vue&type=script&setup=true&lang.ts
-var ch = {
+var uh = {
 	role: "dialog",
 	"aria-label": "Context usage",
 	class: "context-panel rounded-2xl border border-[#424242] bg-[#212121] p-3 text-sm text-white shadow-xl"
-}, lh = { class: "flex items-center justify-between gap-3" }, uh = { class: "mt-1 break-all" }, dh = { class: "text-[#b4b4b4]" }, fh = {
+}, dh = { class: "flex items-center justify-between gap-3" }, fh = { class: "mt-1 break-all" }, ph = { class: "text-[#b4b4b4]" }, mh = {
 	key: 0,
 	class: "mt-2 text-[#b4b4b4]"
-}, ph = {
+}, hh = {
 	key: 1,
 	class: "text-amber-200"
-}, mh = {
+}, gh = {
 	key: 2,
 	class: "text-[#b4b4b4]"
-}, hh = {
+}, _h = {
 	key: 3,
 	class: "mt-2 text-[#b4b4b4]",
 	role: "status"
-}, gh = {
+}, vh = {
 	class: "context-breakdown-bar mt-2 flex h-2 overflow-hidden rounded-full bg-[#424242]",
 	"aria-hidden": "true"
-}, _h = { class: "mt-2 space-y-1" }, vh = { class: "flex min-w-0 items-center gap-2" }, yh = { class: "shrink-0" }, bh = {
+}, yh = { class: "mt-2 space-y-1" }, bh = { class: "flex min-w-0 items-center gap-2" }, xh = { class: "shrink-0" }, Sh = {
 	key: 5,
 	class: "mt-2 text-[#b4b4b4]"
-}, xh = /* @__PURE__ */ V({
+}, Ch = /* @__PURE__ */ V({
 	__name: "ContextUsagePopover",
 	props: {
 		usage: {},
@@ -9453,51 +9467,51 @@ var ch = {
 			mcp: "#f472b6",
 			subagent_definitions: "#22d3ee",
 			conversation: "#818cf8"
-		}, r = X(() => (t.breakdown?.categories || []).filter((e) => e && typeof e.label == "string" && oh(e.tokens) !== null).map((e) => ({
+		}, r = X(() => (t.breakdown?.categories || []).filter((e) => e && typeof e.label == "string" && ch(e.tokens) !== null).map((e) => ({
 			...e,
 			color: n[e.id] || "#a3a3a3"
-		}))), i = X(() => r.value.reduce((e, t) => e + t.tokens, 0)), a = X(() => sh(t.usage) === null ? t.breakdown : t.usage), o = X(() => sh(a.value)), s = (e) => oh(e)?.toLocaleString() ?? "—", c = X(() => a.value?.context_estimated || ["local_estimate", "provider_usage_plus_estimate"].includes(a.value?.context_source || ""));
-		return (t, n) => (W(), G("section", ch, [
-			q("div", lh, [n[1] ||= q("strong", null, "Context usage", -1), q("button", {
+		}))), i = X(() => r.value.reduce((e, t) => e + t.tokens, 0)), a = X(() => lh(t.usage) === null ? t.breakdown : t.usage), o = X(() => lh(a.value)), s = (e) => ch(e)?.toLocaleString() ?? "—", c = X(() => a.value?.context_estimated || ["local_estimate", "provider_usage_plus_estimate"].includes(a.value?.context_source || ""));
+		return (t, n) => (W(), G("section", uh, [
+			q("div", dh, [n[1] ||= q("strong", null, "Context usage", -1), q("button", {
 				type: "button",
 				"aria-label": "Close context usage",
 				class: "px-2 text-base",
 				onClick: n[0] ||= (e) => t.$emit("close")
 			}, " × ")]),
-			q("p", uh, L(e.usage?.model || e.breakdown?.model || e.model || "Current model"), 1),
-			q("p", dh, L(s(a.value?.context_used)) + " / " + L(s(a.value?.context_max)) + " tokens · " + L(o.value === null ? "Unknown" : `${Math.round(o.value)}%`), 1),
-			o.value === null ? (W(), G("p", fh, "Context usage unavailable")) : Y("v-if", !0),
-			c.value ? (W(), G("p", ph, "Estimated usage")) : Y("v-if", !0),
-			z(oh)(e.usage?.compressions) === null ? Y("v-if", !0) : (W(), G("p", mh, L(e.usage?.compressions) + " compressions ", 1)),
-			e.loading ? (W(), G("p", hh, "Loading context breakdown…")) : r.value.length ? (W(), G(U, { key: 4 }, [
+			q("p", fh, L(e.usage?.model || e.breakdown?.model || e.model || "Current model"), 1),
+			q("p", ph, L(s(a.value?.context_used)) + " / " + L(s(a.value?.context_max)) + " tokens · " + L(o.value === null ? "Unknown" : `${Math.round(o.value)}%`), 1),
+			o.value === null ? (W(), G("p", mh, "Context usage unavailable")) : Y("v-if", !0),
+			c.value ? (W(), G("p", hh, "Estimated usage")) : Y("v-if", !0),
+			z(ch)(e.usage?.compressions) === null ? Y("v-if", !0) : (W(), G("p", gh, L(e.usage?.compressions) + " compressions ", 1)),
+			e.loading ? (W(), G("p", _h, "Loading context breakdown…")) : r.value.length ? (W(), G(U, { key: 4 }, [
 				n[2] ||= q("p", { class: "mt-3 text-[#b4b4b4]" }, "Estimated breakdown", -1),
-				q("div", gh, [(W(!0), G(U, null, H(r.value, (e, t) => (W(), G("span", {
+				q("div", vh, [(W(!0), G(U, null, H(r.value, (e, t) => (W(), G("span", {
 					key: `${e.id}-${t}`,
 					style: oe({
 						width: i.value > 0 ? `${e.tokens / i.value * 100}%` : "0%",
 						backgroundColor: e.color
 					})
 				}, null, 4))), 128))]),
-				q("dl", _h, [(W(!0), G(U, null, H(r.value, (e, t) => (W(), G("div", {
+				q("dl", yh, [(W(!0), G(U, null, H(r.value, (e, t) => (W(), G("div", {
 					key: `${e.id}-${t}`,
 					class: "flex items-center justify-between gap-3"
-				}, [q("dt", vh, [q("span", {
+				}, [q("dt", bh, [q("span", {
 					class: "size-2 shrink-0 rounded-full",
 					style: oe({ backgroundColor: e.color }),
 					"aria-hidden": "true"
-				}, null, 4), J(L(e.label), 1)]), q("dd", yh, L(s(e.tokens)) + " tokens", 1)]))), 128))])
-			], 64)) : (W(), G("p", bh, " Context breakdown unavailable until the agent has initialized. "))
+				}, null, 4), J(L(e.label), 1)]), q("dd", xh, L(s(e.tokens)) + " tokens", 1)]))), 128))])
+			], 64)) : (W(), G("p", Sh, " Context breakdown unavailable until the agent has initialized. "))
 		]));
 	}
-}), Sh = [
+}), wh = [
 	"aria-label",
 	"aria-expanded",
 	"aria-controls"
-], Ch = {
+], Th = {
 	viewBox: "0 0 30 30",
 	class: "absolute inset-0 size-full -rotate-90",
 	"aria-hidden": "true"
-}, wh = ["stroke-dasharray"], Th = /* @__PURE__ */ V({
+}, Eh = ["stroke-dasharray"], Dh = /* @__PURE__ */ V({
 	__name: "ContextUsageIndicator",
 	props: {
 		usage: {},
@@ -9509,7 +9523,7 @@ var ch = {
 	},
 	emits: ["open"],
 	setup(e, { emit: t }) {
-		let n = e, r = t, i = /* @__PURE__ */ R(), a = /* @__PURE__ */ R(), o = /* @__PURE__ */ R(!1), s = /* @__PURE__ */ R(!1), c = /* @__PURE__ */ R(360), l = qn(), u, d, f = X(() => sh(n.usage)), p = X(() => f.value === null ? "text-[#a3a3a3]" : f.value >= 90 ? "text-red-200" : f.value >= 75 ? "text-amber-200" : "text-emerald-200");
+		let n = e, r = t, i = /* @__PURE__ */ R(), a = /* @__PURE__ */ R(), o = /* @__PURE__ */ R(!1), s = /* @__PURE__ */ R(!1), c = /* @__PURE__ */ R(360), l = qn(), u, d, f = X(() => lh(n.usage)), p = X(() => f.value === null ? "text-[#a3a3a3]" : f.value >= 90 ? "text-red-200" : f.value >= 75 ? "text-amber-200" : "text-emerald-200");
 		function m() {
 			let e = i.value?.closest(".composer")?.getBoundingClientRect().top ?? 0, t = Math.max(window.visualViewport?.offsetTop ?? 0, i.value?.closest(".chat-interface")?.getBoundingClientRect().top ?? 0);
 			c.value = Math.max(0, Math.min(360, e - t - 16));
@@ -9567,7 +9581,7 @@ var ch = {
 			"aria-controls": z(l),
 			onClick: b,
 			onPointerenter: v
-		}, [(W(), G("svg", Ch, [n[0] ||= q("circle", {
+		}, [(W(), G("svg", Th, [n[0] ||= q("circle", {
 			cx: "15",
 			cy: "15",
 			r: "13",
@@ -9584,7 +9598,7 @@ var ch = {
 			"stroke-width": "2",
 			pathLength: "100",
 			"stroke-dasharray": `${f.value} 100`
-		}, null, 8, wh))])), q("span", null, L(f.value === null ? "—" : `${Math.round(f.value)}%`), 1)], 42, Sh), o.value ? (W(), K(xh, {
+		}, null, 8, Eh))])), q("span", null, L(f.value === null ? "—" : `${Math.round(f.value)}%`), 1)], 42, wh), o.value ? (W(), K(Ch, {
 			key: 0,
 			id: z(l),
 			class: "absolute bottom-full right-0 z-30 mb-2 w-full max-w-[340px] overflow-y-auto overscroll-contain",
@@ -9603,7 +9617,7 @@ var ch = {
 			"model"
 		])) : Y("v-if", !0)], 544)), [[Ia, e.visible ?? e.active]]);
 	}
-}), Eh = [
+}), Oh = [
 	"none",
 	"minimal",
 	"low",
@@ -9612,41 +9626,41 @@ var ch = {
 	"xhigh",
 	"max",
 	"ultra"
-], Dh = {
+], kh = {
 	key: 0,
 	class: "flex flex-wrap gap-2 px-2 pb-2"
-}, Oh = ["src", "alt"], kh = { class: "truncate" }, Ah = [
+}, Ah = ["src", "alt"], jh = { class: "truncate" }, Mh = [
 	"disabled",
 	"onClick",
 	"aria-label"
-], jh = ["aria-label", "onClick"], Mh = {
+], Nh = ["aria-label", "onClick"], Ph = {
 	key: 1,
 	class: "px-2 pb-2 text-sm text-[#d4d4d4]",
 	role: "status"
-}, Nh = {
+}, Fh = {
 	key: 2,
 	class: "px-2 text-sm text-red-300",
 	role: "alert"
-}, Ph = {
+}, Ih = {
 	key: 3,
 	class: "px-2 text-sm text-red-300",
 	role: "alert"
-}, Fh = { class: "composer-body" }, Ih = ["placeholder"], Lh = { class: "composer-controls flex items-center gap-3" }, Rh = ["aria-expanded", "disabled"], zh = { class: "composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]" }, Bh = [
+}, Lh = { class: "composer-body" }, Rh = ["placeholder"], zh = { class: "composer-controls flex items-center gap-3" }, Bh = ["aria-expanded", "disabled"], Vh = { class: "composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]" }, Hh = [
 	"aria-expanded",
 	"aria-controls",
 	"disabled"
-], Vh = { class: "truncate" }, Hh = [
+], Uh = { class: "truncate" }, Wh = [
 	"type",
 	"disabled",
 	"aria-label",
 	"title"
-], Uh = {
+], Gh = {
 	key: 0,
 	viewBox: "0 0 24 24",
 	class: "size-5",
 	fill: "currentColor",
 	"aria-hidden": "true"
-}, Wh = {
+}, Kh = {
 	key: 1,
 	viewBox: "0 0 24 24",
 	fill: "none",
@@ -9656,22 +9670,22 @@ var ch = {
 	"stroke-linejoin": "round",
 	class: "size-5",
 	"aria-hidden": "true"
-}, Gh = ["id", "aria-label"], Kh = { class: "flex shrink-0 items-center gap-2 border-b border-[#424242] p-2" }, qh = { class: "min-w-0 flex-1 truncate" }, Jh = {
+}, qh = ["id", "aria-label"], Jh = { class: "flex shrink-0 items-center gap-2 border-b border-[#424242] p-2" }, Yh = { class: "min-w-0 flex-1 truncate" }, Xh = {
 	key: 0,
 	class: "flex shrink-0 items-center justify-between gap-3 border-b border-[#424242] px-3 py-2"
-}, Yh = ["value", "disabled"], Xh = ["value"], Zh = { class: "min-h-0 overflow-y-auto overscroll-contain" }, Qh = ["data-provider", "onClick"], $h = { class: "min-w-0 flex-1 truncate" }, eg = {
+}, Zh = ["value", "disabled"], Qh = ["value"], $h = { class: "min-h-0 overflow-y-auto overscroll-contain" }, eg = ["data-provider", "onClick"], tg = { class: "min-w-0 flex-1 truncate" }, ng = {
 	key: 0,
 	class: "text-sm text-[#a3a3a3]"
-}, tg = ["data-model", "onClick"], ng = { class: "min-w-0 flex-1 break-all" }, rg = {
+}, rg = ["data-model", "onClick"], ig = { class: "min-w-0 flex-1 break-all" }, ag = {
 	key: 0,
 	"aria-label": "Selected"
-}, ig = {
+}, og = {
 	key: 0,
 	class: "px-3 py-3 text-[#a3a3a3]"
-}, ag = {
+}, sg = {
 	key: 5,
 	class: "absolute bottom-full left-0 mb-2 grid min-w-48 gap-1 rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base shadow-xl"
-}, og = /* @__PURE__ */ V({
+}, cg = /* @__PURE__ */ V({
 	__name: "ChatComposer",
 	props: {
 		profile: {},
@@ -9891,7 +9905,7 @@ var ch = {
 			class: "composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]",
 			onSubmit: Oo(I, ["prevent"])
 		}, [
-			c.value.length ? (W(), G("div", Dh, [(W(!0), G(U, null, H(c.value, (e, t) => (W(), G("div", {
+			c.value.length ? (W(), G("div", kh, [(W(!0), G(U, null, H(c.value, (e, t) => (W(), G("div", {
 				key: t,
 				class: "flex max-w-full items-center gap-2 rounded-xl bg-[#424242] p-2 text-sm"
 			}, [
@@ -9900,8 +9914,8 @@ var ch = {
 					src: e.data,
 					alt: e.name,
 					class: "size-12 rounded-lg object-cover"
-				}, null, 8, Oh)) : Y("v-if", !0),
-				q("span", kh, L(e.name), 1),
+				}, null, 8, Ah)) : Y("v-if", !0),
+				q("span", jh, L(e.name), 1),
 				e.uploadError ? (W(), G("button", {
 					key: 1,
 					type: "button",
@@ -9909,22 +9923,22 @@ var ch = {
 					disabled: u.value,
 					onClick: (t) => ge(e),
 					"aria-label": `Retry upload ${e.name}`
-				}, " Retry upload", 8, Ah)) : Y("v-if", !0),
+				}, " Retry upload", 8, Mh)) : Y("v-if", !0),
 				q("button", {
 					type: "button",
 					"aria-label": `Remove ${e.name}`,
 					onMousedown: y,
 					onClick: (e) => c.value.splice(t, 1)
-				}, " × ", 40, jh)
+				}, " × ", 40, Nh)
 			]))), 128))])) : Y("v-if", !0),
-			o.value ? (W(), G("p", Mh, [J(L(o.value === "goal" ? "Goal mode" : "Plan mode") + " · next message ", 1), q("button", {
+			o.value ? (W(), G("p", Ph, [J(L(o.value === "goal" ? "Goal mode" : "Plan mode") + " · next message ", 1), q("button", {
 				type: "button",
 				class: "ml-2 underline",
 				onClick: n[0] ||= (e) => o.value = null
 			}, "Turn off")])) : Y("v-if", !0),
-			A.value ? (W(), G("p", Nh, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
-			l.value ? (W(), G("p", Ph, L(l.value), 1)) : Y("v-if", !0),
-			q("div", Fh, [
+			A.value ? (W(), G("p", Fh, " Image sending is unavailable for this native capability. Remove the image to send text or files. ")) : Y("v-if", !0),
+			l.value ? (W(), G("p", Ih, L(l.value), 1)) : Y("v-if", !0),
+			q("div", Lh, [
 				n[17] ||= q("label", {
 					class: "sr-only",
 					for: "prompt"
@@ -9943,7 +9957,7 @@ var ch = {
 					onKeydown: F,
 					onCompositionstart: n[2] ||= (e) => g.value = !0,
 					onCompositionend: n[3] ||= (e) => g.value = !1
-				}, null, 40, Ih), [[vo, a.value]]),
+				}, null, 40, Rh), [[vo, a.value]]),
 				q("input", {
 					ref_key: "files",
 					ref: d,
@@ -9963,7 +9977,7 @@ var ch = {
 					"aria-label": "Take a photo",
 					onChange: ve
 				}, null, 544),
-				q("div", Lh, [
+				q("div", zh, [
 					B(q("button", {
 						class: "attach-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#424242] p-0 text-white disabled:opacity-55",
 						type: "button",
@@ -9981,9 +9995,9 @@ var ch = {
 						"stroke-linecap": "round",
 						class: "size-5",
 						"aria-hidden": "true"
-					}, [q("path", { d: "M12 5v14M5 12h14" })], -1)]], 8, Rh), [[Ia, !M.value]]),
-					q("p", zh, L(u.value ? "Preparing attachments…" : e.reason || ""), 1),
-					e.sessionId ? (W(), K(Th, {
+					}, [q("path", { d: "M12 5v14M5 12h14" })], -1)]], 8, Bh), [[Ia, !M.value]]),
+					q("p", Vh, L(u.value ? "Preparing attachments…" : e.reason || ""), 1),
+					e.sessionId ? (W(), K(Dh, {
 						key: e.sessionId,
 						visible: !M.value && !w.value && !s.value,
 						active: !h.value && !w.value && !s.value,
@@ -10011,14 +10025,14 @@ var ch = {
 						"aria-controls": z(k),
 						disabled: ee.value,
 						onClick: oe
-					}, [q("span", Vh, L(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[14] ||= q("svg", {
+					}, [q("span", Uh, L(e.modelsLoading ? "Loading models…" : e.model || e.defaultModel || "Default"), 1), n[14] ||= q("svg", {
 						viewBox: "0 0 24 24",
 						fill: "none",
 						stroke: "currentColor",
 						"stroke-width": "2",
 						class: "size-4 shrink-0",
 						"aria-hidden": "true"
-					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, Bh), [[Ia, !M.value]]),
+					}, [q("path", { d: "m6 9 6 6 6-6" })], -1)], 8, Hh), [[Ia, !M.value]]),
 					q("button", {
 						class: "send-button grid size-[30px] shrink-0 place-items-center rounded-full bg-[#2563eb] p-0 text-white transition-colors hover:bg-[#3b82f6] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#60a5fa] disabled:cursor-not-allowed disabled:opacity-55",
 						type: e.sending && !a.value.trim() ? "button" : "submit",
@@ -10027,13 +10041,13 @@ var ch = {
 						title: e.sending ? a.value.trim() ? "Guide this run" : "Stop response" : "Send message",
 						onMousedown: y,
 						onClick: n[6] ||= (t) => e.sending ? a.value.trim() ? I() : e.stoppable && i("stop") : I()
-					}, [e.sending && !a.value.trim() ? (W(), G("svg", Uh, [...n[15] ||= [q("rect", {
+					}, [e.sending && !a.value.trim() ? (W(), G("svg", Gh, [...n[15] ||= [q("rect", {
 						x: "6",
 						y: "6",
 						width: "12",
 						height: "12",
 						rx: "2"
-					}, null, -1)]])) : (W(), G("svg", Wh, [...n[16] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, Hh)
+					}, null, -1)]])) : (W(), G("svg", Kh, [...n[16] ||= [q("path", { d: "M12 19V5m-6 6 6-6 6 6" }, null, -1)]]))], 40, Wh)
 				])
 			]),
 			w.value ? (W(), G("div", {
@@ -10046,7 +10060,7 @@ var ch = {
 				"aria-label": T.value === null ? "Choose provider" : ne.value,
 				class: "model-panel absolute bottom-full right-0 z-20 mb-2 flex max-h-[min(60vh,420px)] w-full max-w-sm flex-col rounded-2xl border border-[#424242] bg-[#212121] p-2 text-base text-white shadow-xl"
 			}, [
-				q("div", Kh, [
+				q("div", Jh, [
 					T.value === null ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
@@ -10061,7 +10075,7 @@ var ch = {
 						class: "size-5",
 						"aria-hidden": "true"
 					}, [q("path", { d: "m15 18-6-6 6-6" })], -1)]])),
-					q("h2", qh, L(T.value === null ? "Choose provider" : ne.value), 1),
+					q("h2", Yh, L(T.value === null ? "Choose provider" : ne.value), 1),
 					q("button", {
 						type: "button",
 						"aria-label": "Close model picker",
@@ -10069,23 +10083,23 @@ var ch = {
 						onClick: P
 					}, " × ")
 				]),
-				re.value ? (W(), G("label", Jh, [n[20] ||= q("span", null, "Reasoning effort", -1), q("select", {
+				re.value ? (W(), G("label", Xh, [n[20] ||= q("span", null, "Reasoning effort", -1), q("select", {
 					"aria-label": "Reasoning effort",
 					class: "min-w-0 rounded-lg bg-[#303030] px-2 py-1 text-base text-white",
 					value: e.reasoningEffort || "",
 					disabled: ee.value,
 					onChange: n[7] ||= (e) => i("update:reasoningEffort", e.target.value)
-				}, [n[19] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, H(z(Eh), (e) => (W(), G("option", {
+				}, [n[19] ||= q("option", { value: "" }, "Model default", -1), (W(!0), G(U, null, H(z(Oh), (e) => (W(), G("option", {
 					key: e,
 					value: e
-				}, L(e === "xhigh" ? "XHigh" : e[0].toUpperCase() + e.slice(1)), 9, Xh))), 128))], 40, Yh)])) : Y("v-if", !0),
-				q("div", Zh, [T.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, H(e.providers, (e) => (W(), G("button", {
+				}, L(e === "xhigh" ? "XHigh" : e[0].toUpperCase() + e.slice(1)), 9, Qh))), 128))], 40, Zh)])) : Y("v-if", !0),
+				q("div", $h, [T.value === null ? (W(), G(U, { key: 0 }, [(W(!0), G(U, null, H(e.providers, (e) => (W(), G("button", {
 					key: e.slug,
 					type: "button",
 					class: "provider-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": e.slug,
 					onClick: (t) => se(e.slug)
-				}, [q("span", $h, L(e.name), 1), e.is_current ? (W(), G("span", eg, "Current")) : Y("v-if", !0)], 8, Qh))), 128)), q("button", {
+				}, [q("span", tg, L(e.name), 1), e.is_current ? (W(), G("span", ng, "Current")) : Y("v-if", !0)], 8, eg))), 128)), q("button", {
 					type: "button",
 					class: "provider-option w-full rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-provider": "",
@@ -10096,9 +10110,9 @@ var ch = {
 					class: "model-option flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-[#424242]",
 					"data-model": t,
 					onClick: (e) => le(t)
-				}, [q("span", ng, L(t), 1), (e.provider || "") === T.value && t === (e.model || e.defaultModel) ? (W(), G("span", rg, "✓")) : Y("v-if", !0)], 8, tg))), 128)), ie.value.length ? Y("v-if", !0) : (W(), G("p", ig, "No models available"))], 64))])
-			], 8, Gh)) : Y("v-if", !0),
-			s.value ? (W(), G("div", ag, [
+				}, [q("span", ig, L(t), 1), (e.provider || "") === T.value && t === (e.model || e.defaultModel) ? (W(), G("span", ag, "✓")) : Y("v-if", !0)], 8, rg))), 128)), ie.value.length ? Y("v-if", !0) : (W(), G("p", og, "No models available"))], 64))])
+			], 8, qh)) : Y("v-if", !0),
+			s.value ? (W(), G("div", sg, [
 				q("button", {
 					type: "button",
 					class: "rounded-xl px-3 py-3 text-left hover:bg-[#303030]",
@@ -10128,23 +10142,23 @@ var ch = {
 			])) : Y("v-if", !0)
 		], 544));
 	}
-}), sg = { class: "chat-interface relative flex min-h-0 flex-1 flex-col overflow-hidden" }, cg = {
+}), lg = { class: "chat-interface relative flex min-h-0 flex-1 flex-col overflow-hidden" }, ug = {
 	key: 0,
 	class: "pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-3xl border-2 border-dashed border-[#a3a3a3] bg-[#212121]/95 text-lg",
 	role: "status"
-}, lg = { class: "chat-content flex min-h-0 flex-1 flex-col overflow-hidden" }, ug = {
+}, dg = { class: "chat-content flex min-h-0 flex-1 flex-col overflow-hidden" }, fg = {
 	key: 0,
 	class: "notice bg-[#303030] px-5 py-3 text-sm text-white dark:bg-[#303030] dark:text-white",
 	role: "status"
-}, dg = {
+}, pg = {
 	key: 1,
 	class: "notice px-5 py-3 text-sm text-[#b4b4b4]",
 	role: "status"
-}, fg = {
+}, mg = {
 	key: 2,
 	class: "notice error bg-[#402b2b] px-5 py-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]",
 	role: "alert"
-}, pg = { class: "composer-dock shrink-0" }, mg = /* @__PURE__ */ V({
+}, hg = { class: "composer-dock shrink-0" }, gg = /* @__PURE__ */ V({
 	__name: "ChatInterface",
 	props: {
 		showChat: { type: Boolean },
@@ -10152,7 +10166,7 @@ var ch = {
 	},
 	setup(e) {
 		let t = e, n = /* @__PURE__ */ R(), r = /* @__PURE__ */ R();
-		Nn(ah, r);
+		Nn(sh, r);
 		let i = !1;
 		function a() {
 			i = !0, r.value ? r.value.focusLatestMessage() : n.value?.blurInput();
@@ -10197,17 +10211,17 @@ var ch = {
 		}), dr(() => {
 			document.removeEventListener("dragenter", u), document.removeEventListener("dragover", d), document.removeEventListener("dragleave", f), document.removeEventListener("drop", p);
 		});
-		let { view: m, scope: h, composer: g, actions: _ } = ih(), { profile: v, session: y, offline: b, canStream: x, reasoningEffort: S, models: C, providers: w, modelsLoading: T, model: E, provider: D, defaultModel: O, suggestedPrompt: k } = h, { busy: A, active: ee, reconnect: j, error: te, unavailable: M, connection: N } = m;
-		return (t, r) => (W(), G("div", sg, [
-			c.value && e.showChat ? (W(), G("div", cg, " Drop files to attach ")) : Y("v-if", !0),
-			q("div", lg, [
-				z(b) ? (W(), G("div", ug, " You are offline. Messages cannot be loaded or sent. ")) : Y("v-if", !0),
-				e.showChat && z(j) ? (W(), G("div", dg, [J(L(z(N) === "reconnecting" ? "Reconnecting…" : "Session is read-only until reconnected.") + " ", 1), z(x) && z(N) === "stale" && !z(b) ? (W(), G("button", {
+		let { view: m, scope: h, composer: g, actions: _ } = oh(), { profile: v, session: y, offline: b, canStream: x, reasoningEffort: S, models: C, providers: w, modelsLoading: T, model: E, provider: D, defaultModel: O, suggestedPrompt: k } = h, { busy: A, active: ee, reconnect: j, error: te, unavailable: M, connection: N } = m;
+		return (t, r) => (W(), G("div", lg, [
+			c.value && e.showChat ? (W(), G("div", ug, " Drop files to attach ")) : Y("v-if", !0),
+			q("div", dg, [
+				z(b) ? (W(), G("div", fg, " You are offline. Messages cannot be loaded or sent. ")) : Y("v-if", !0),
+				e.showChat && z(j) ? (W(), G("div", pg, [J(L(z(N) === "reconnecting" ? "Reconnecting…" : "Session is read-only until reconnected.") + " ", 1), z(x) && z(N) === "stale" && !z(b) ? (W(), G("button", {
 					key: 0,
 					class: "ml-3 underline",
 					onClick: r[0] ||= (...e) => z(_).retry && z(_).retry(...e)
 				}, " Reconnect ")) : Y("v-if", !0)])) : Y("v-if", !0),
-				e.showChat && z(te) ? (W(), G("div", fg, [
+				e.showChat && z(te) ? (W(), G("div", mg, [
 					J(L(z(te)) + " ", 1),
 					z(y) ? (W(), G("button", {
 						key: 0,
@@ -10222,7 +10236,7 @@ var ch = {
 				])) : Y("v-if", !0),
 				yr(t.$slots, "default")
 			]),
-			q("div", pg, [B((W(), K(og, {
+			q("div", hg, [B((W(), K(cg, {
 				ref_key: "picker",
 				ref: n,
 				profile: z(v),
@@ -10278,16 +10292,16 @@ var ch = {
 			])), [[Ia, !e.hideComposer]])])
 		]));
 	}
-}), hg = [
+}), _g = [
 	"once",
 	"session",
 	"always",
 	"deny"
 ];
-function gg(e) {
+function vg(e) {
 	if (!e) return;
 	let { id: t, method: n, params: r } = e;
-	return n === "approval" && (r.choices === void 0 || Array.isArray(r.choices) && r.choices.every((e) => hg.includes(e))) ? {
+	return n === "approval" && (r.choices === void 0 || Array.isArray(r.choices) && r.choices.every((e) => _g.includes(e))) ? {
 		kind: "approval",
 		id: t,
 		params: {
@@ -10312,16 +10326,16 @@ function gg(e) {
 }
 //#endregion
 //#region src/features/chat/composables/useChatController.ts
-function _g(e, t) {
+function yg(e, t) {
 	return `Attached ${e.type.startsWith("image/") ? "image" : "file"} ${e.name.replace(/[\r\n]/g, " ")}: ${t}\nMEDIA:"${t}"`;
 }
-function vg(e, t) {
+function bg(e, t) {
 	let { profile: n, session: r, messages: i, chatLoading: a, chatError: o, canStream: s, projectView: c, composerBlocked: l, selectedProject: u, creating: d, offline: f, models: p, providers: m, modelsLoading: h, model: g, provider: _, defaultModel: v, suggestedPrompt: y } = t, b = /* @__PURE__ */ R(/* @__PURE__ */ new Map()), x = /* @__PURE__ */ R(/* @__PURE__ */ new Map()), S = () => JSON.stringify([n.value || "default", r.value]), C = X(() => {
 		let t = e.settings.value;
 		return t?.profile === n.value && t.session === r.value && t.generation === e.generationRef.value ? t.info : void 0;
 	}), w = X(() => {
 		let e = C.value?.reasoning_effort;
-		return b.value.get(S()) ?? (Eh.includes(e) ? e : "");
+		return b.value.get(S()) ?? (Oh.includes(e) ? e : "");
 	}), T = X(() => x.value.get(S())?.model ?? (r.value ? C.value?.model || "" : g.value)), E = X(() => x.value.get(S())?.provider ?? (r.value && C.value?.provider || _.value)), D = /* @__PURE__ */ R(!1), O = X(() => D.value || !s.value || N.value || j.value || te.value || ne.value || f.value || !r.value);
 	async function k(i) {
 		if (O.value) return;
@@ -10353,7 +10367,7 @@ function vg(e, t) {
 			text: i
 		}, ...a.flatMap((e) => [{
 			type: "text",
-			text: e.path ? _g(e, e.path) : "📎 " + e.name
+			text: e.path ? yg(e, e.path) : "📎 " + e.name
 		}, ...e.type.startsWith("image/") ? [{
 			type: "image_url",
 			image_url: { url: e.data }
@@ -10369,7 +10383,7 @@ function vg(e, t) {
 					if (_ !== t.generation()) throw Error("Session changed before submission");
 					e.push({
 						type: "text",
-						text: _g(n, r.path)
+						text: yg(n, r.path)
 					}), n.type.startsWith("image/") && e.push({
 						type: "image_url",
 						image_url: { url: n.data }
@@ -10412,7 +10426,7 @@ function vg(e, t) {
 	}
 	let ce = X(() => {
 		let t = e.approval.value;
-		return t && typeof t.request_id == "string" && typeof t.kind == "string" ? gg({
+		return t && typeof t.request_id == "string" && typeof t.kind == "string" ? vg({
 			id: t.request_id,
 			method: t.kind,
 			params: t
@@ -10504,8 +10518,8 @@ function vg(e, t) {
 }
 //#endregion
 //#region src/composables/useDrawerSwipe.ts
-var yg = "button:not([data-drawer-swipe]), a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
-function bg(e, t, n, r) {
+var xg = "button:not([data-drawer-swipe]), a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
+function Sg(e, t, n, r) {
 	let i = /* @__PURE__ */ R(null), a, o = 0, s = 0, c = 0, l = 0, u = () => window.matchMedia("(max-width: 700px)").matches;
 	function d() {
 		a = void 0, i.value = null;
@@ -10514,7 +10528,7 @@ function bg(e, t, n, r) {
 	function f(r) {
 		if (d(), !u() || r.touches.length !== 1) return;
 		let i = r.touches[0], l = r.target;
-		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(yg)) && (e.value || l.closest("[data-drawer-swipe]"))) {
+		if (!(i.clientX < 30 || !(l instanceof Element) || l.closest(xg)) && (e.value || l.closest("[data-drawer-swipe]"))) {
 			if (l.closest(".scrim")) {
 				let e = n()?.getBoundingClientRect();
 				if (!e || i.clientY < e.top || i.clientY > e.bottom) return;
@@ -10570,16 +10584,16 @@ function bg(e, t, n, r) {
 }
 //#endregion
 //#region src/features/settings/composables/useWakeLock.ts
-var xg = "chathermes.keep-screen-awake";
-function Sg() {
+var Cg = "chathermes.keep-screen-awake";
+function wg() {
 	try {
-		return localStorage.getItem(xg) === "true";
+		return localStorage.getItem(Cg) === "true";
 	} catch {
 		return !1;
 	}
 }
-function Cg() {
-	let e = /* @__PURE__ */ R(Sg()), t = /* @__PURE__ */ R(!1), n = !1, r = !0, i = null, a = null, o = 0, s = null;
+function Tg() {
+	let e = /* @__PURE__ */ R(wg()), t = /* @__PURE__ */ R(!1), n = !1, r = !0, i = null, a = null, o = 0, s = null;
 	function c() {
 		return n && r && e.value && document.visibilityState === "visible";
 	}
@@ -10614,7 +10628,7 @@ function Cg() {
 	function f(t) {
 		e.value = t;
 		try {
-			localStorage.setItem(xg, String(t));
+			localStorage.setItem(Cg, String(t));
 		} catch {}
 		t ? d() : u();
 	}
@@ -10639,82 +10653,82 @@ function Cg() {
 }
 //#endregion
 //#region src/features/inbox/context.ts
-var wg = Symbol("inbox");
-function Tg(e) {
-	Nn(wg, e);
+var Eg = Symbol("inbox");
+function Dg(e) {
+	Nn(Eg, e);
 }
-function Eg() {
-	let e = Pn(wg);
+function Og() {
+	let e = Pn(Eg);
 	if (!e) throw Error("inbox context is missing");
 	return e;
 }
 //#endregion
 //#region src/features/artifacts/context.ts
-var Dg = Symbol("artifacts");
-function Og(e) {
-	Nn(Dg, e);
+var kg = Symbol("artifacts");
+function Ag(e) {
+	Nn(kg, e);
 }
-function kg() {
-	let e = Pn(Dg);
+function jg() {
+	let e = Pn(kg);
 	if (!e) throw Error("artifacts context is missing");
 	return e;
 }
 //#endregion
 //#region src/features/settings/context.ts
-var Ag = Symbol("settings");
-function jg(e) {
-	Nn(Ag, e);
+var Mg = Symbol("settings");
+function Ng(e) {
+	Nn(Mg, e);
 }
-function Mg() {
-	let e = Pn(Ag);
+function Pg() {
+	let e = Pn(Mg);
 	if (!e) throw Error("settings context is missing");
 	return e;
 }
 //#endregion
 //#region src/features/projects/context.ts
-var Ng = Symbol("projects");
-function Pg(e) {
+var Fg = Symbol("projects");
+function Ig(e) {
 	let t = kc(), n = /* @__PURE__ */ R();
 	Ln(() => t.fullPath, () => {
 		n.value = void 0;
-	}), Nn(Ng, {
+	}), Nn(Fg, {
 		...e,
 		projectConfirmation: n
 	});
 }
-function Fg() {
-	let e = Pn(Ng);
+function Lg() {
+	let e = Pn(Fg);
 	if (!e) throw Error("projects context is missing");
 	return e;
 }
 //#endregion
 //#region src/features/scheduled/composables/useScheduledHistory.ts
-var Ig = Symbol("scheduled");
-function Lg(e) {
+var Rg = Symbol("scheduled");
+function zg(e) {
 	let t = {
 		...e,
 		current: /* @__PURE__ */ Jt()
 	};
-	return Nn(Ig, t), t;
+	return Nn(Rg, t), t;
 }
-function Rg() {
-	let e = Pn(Ig);
+function Bg() {
+	let e = Pn(Rg);
 	if (!e) throw Error("Scheduled context is missing");
 	return e;
 }
-function zg(e) {
+function Vg(e) {
 	return e.state === "completed" || e.state === "error" ? "completed" : e.state === "paused" || e.enabled === !1 ? "paused" : "active";
 }
-function Bg(e) {
+function Hg(e) {
 	return e > 0 ? (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString() : "Run date unavailable";
 }
-function Vg(e) {
+function Ug(e) {
 	if (!e) return "Never run";
 	let t = new Date(e);
 	return Number.isNaN(t.getTime()) ? "Last run date unavailable" : "Last run: " + t.toLocaleString();
 }
-function Hg(e) {
-	let t = Rg(), n = kc(), r = /* @__PURE__ */ R(!1), i = /* @__PURE__ */ R(""), a = /* @__PURE__ */ R(), o, s = Promise.resolve(), c = "", l = !1, u = () => JSON.stringify([
+function Wg(e) {
+	let t = Bg(), n = kc(), r = /* @__PURE__ */ R(!1), i = /* @__PURE__ */ R(""), a = /* @__PURE__ */ R(), o, s = Promise.resolve(), c = "", l = !1, u = () => JSON.stringify([
 		t.profile.value,
 		n.params.jobId,
 		n.params.runId
@@ -10753,12 +10767,12 @@ function Hg(e) {
 		l = !0, o?.abort(), t.current.value === f && (t.current.value = void 0);
 	}), f;
 }
-async function Ug(e, t, n) {
+async function Gg(e, t, n) {
 	let r = (await Q.scheduled(e, n)).jobs.find((e) => e.id === t);
 	if (!r) throw Error("Job unavailable");
 	return r;
 }
-function Wg(e) {
+function Kg(e) {
 	let t = e?.messages.slice().reverse().find((e) => e.role === "assistant" && Tl(e.content).trim()), n = t ? Tl(t.content) : e?.output;
 	return n ? [{
 		role: "assistant",
@@ -10767,7 +10781,7 @@ function Wg(e) {
 }
 //#endregion
 //#region src/composables/useApplication.ts
-function Gg() {
+function qg() {
 	let e = Pn(Lc, void 0), t, n = Oc(), r = kc(), i = X(() => r.meta.chat === !0), a = X(() => r.meta.composer === "project"), o = X(() => !i.value && !a.value), s = X(() => r.name === "settings"), c = X(() => r.meta.section === "scheduled"), l = !1, u = !1, d = Promise.resolve(), f = Promise.resolve(), p = "", m;
 	async function h(e, t = !1, r = !1) {
 		m?.abort(), p = r ? n.resolve(e).fullPath : "", r || (k.value = !1), Tt(!1), await n[t ? "replace" : "push"](e), await f, p = "";
@@ -10825,7 +10839,7 @@ function Gg() {
 	}), Ke = Vm(() => {
 		Le(), nt(), zt();
 	}, Ce, we, Vt);
-	rh(vg(Ke, {
+	ah(bg(Ke, {
 		profile: _,
 		session: v,
 		messages: b,
@@ -10853,7 +10867,7 @@ function Gg() {
 			await gt(e), Le(), nt();
 		}
 	}));
-	let qe = Cg(), Je = Jc(E), Ye = Lg({
+	let qe = Tg(), Je = Jc(E), Ye = zg({
 		profile: _,
 		offline: E,
 		creating: M,
@@ -11079,7 +11093,7 @@ function Gg() {
 	async function yt() {
 		k.value = !0, await yn(), oe.value?.focus();
 	}
-	let bt = /* @__PURE__ */ R(null), xt = /* @__PURE__ */ R(null), St = bg(k, () => bt.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * .85), () => xt.value?.$el.querySelector("[data-drawer-swipe]") || null, (e) => {
+	let bt = /* @__PURE__ */ R(null), xt = /* @__PURE__ */ R(null), St = Sg(k, () => bt.value?.getBoundingClientRect().width || Math.min(300, window.innerWidth * .85), () => xt.value?.$el.querySelector("[data-drawer-swipe]") || null, (e) => {
 		e !== k.value && (e ? yt() : vt());
 	});
 	async function Ct() {
@@ -11100,7 +11114,7 @@ function Gg() {
 	async function Ot() {
 		let e = _.value, t = ++_e;
 		he.value = !0;
-		let n = await Xm(e);
+		let n = await Qm(e);
 		t === _e && e === _.value && (pe.value = n, he.value = !1);
 	}
 	Ln(_, () => {
@@ -11114,7 +11128,7 @@ function Gg() {
 		let e = _.value;
 		me.value = !0, ge.value = "";
 		try {
-			pe.value.subscribed ? await Qm(e) : await Zm(e), await Ot();
+			pe.value.subscribed ? await eh(e) : await $m(e), await Ot();
 		} catch (t) {
 			e === _.value && (ge.value = t instanceof Error ? t.message : "Could not update notifications."), await Ot();
 		} finally {
@@ -11126,7 +11140,7 @@ function Gg() {
 		let e = _.value;
 		me.value = !0, ge.value = "";
 		try {
-			await $m(e), e === _.value && (ge.value = "Test notification scheduled.");
+			await th(e), e === _.value && (ge.value = "Test notification scheduled.");
 		} catch {
 			e === _.value && (ge.value = "Could not send a test notification.");
 		} finally {
@@ -11230,23 +11244,23 @@ function Gg() {
 		await Vt(e.profile, e.session);
 	}
 	return cr(async () => {
-		zt(), It = setInterval(() => void zt(), 15e3), "serviceWorker" in navigator && (jt = th(navigator.serviceWorker, () => Mt.value, () => location.href)), Q.profiles().then((e) => {
+		zt(), It = setInterval(() => void zt(), 15e3), "serviceWorker" in navigator && (jt = rh(navigator.serviceWorker, () => Mt.value, () => location.href)), Q.profiles().then((e) => {
 			A.value = e.profiles || [];
 		}).catch(() => {
 			D.value = "Could not load profiles";
 		}), Ot(), !e && "serviceWorker" in navigator && navigator.serviceWorker.addEventListener("message", Nt), ie.value = !!P.value?.closest(".chathermes-embedded"), document.addEventListener("visibilitychange", ft), addEventListener("online", mt), addEventListener("offline", mt), addEventListener("keydown", Dt), document.addEventListener("click", Et), await n.isReady(), l = !0, f = _t(n.currentRoute.value), e && l && (t = e.connect(Nt)), await f;
 	}), fr(() => {
 		clearInterval(It), Lt?.abort(), l = !1, t?.(), n.options.history.destroy(), jt?.stop(), jt = void 0, I++, document.removeEventListener("visibilitychange", ft), "serviceWorker" in navigator && navigator.serviceWorker.removeEventListener("message", Nt), Qe(), removeEventListener("online", mt), removeEventListener("offline", mt), removeEventListener("keydown", Dt), document.removeEventListener("click", Et);
-	}), Tg({
+	}), Dg({
 		profile: _,
 		inboxRevision: Ft,
 		openInboxItem: Ht,
 		refreshInbox: zt
-	}), Og({
+	}), Ag({
 		profile: _,
 		projects: Oe,
 		recentSession: $e
-	}), jg({
+	}), Ng({
 		kanban: Je,
 		profile: _,
 		profiles: A,
@@ -11259,7 +11273,7 @@ function Gg() {
 		togglePush: kt,
 		testPush: At,
 		closeSettings: Ct
-	}), Pg({
+	}), Ig({
 		profile: _,
 		projectId: De,
 		selectedProject: ke,
@@ -11330,38 +11344,38 @@ function Gg() {
 }
 //#endregion
 //#region src/features/sessions/components/SessionSidebar.vue?vue&type=script&setup=true&lang.ts
-var Kg = {
+var Jg = {
 	key: 0,
 	class: "notice error rounded-lg bg-[#402b2b] p-3 text-sm text-[#fecaca] dark:bg-[#402b2b] dark:text-[#fecaca]",
 	role: "alert"
-}, qg = {
+}, Yg = {
 	key: 1,
 	class: "muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]"
-}, Jg = {
+}, Xg = {
 	key: 2,
 	class: "muted text-sm leading-relaxed text-[#a3a3a3] dark:text-[#a3a3a3]"
-}, Yg = {
+}, Zg = {
 	key: 3,
 	"aria-label": "Sessions",
 	class: "session-list grid min-h-0 flex-1 auto-rows-max gap-0.5 overflow-y-auto"
-}, Xg = ["aria-label"], Zg = { class: "session-head mt-4 mb-1 px-2.5 text-xs font-semibold text-[#a3a3a3]" }, Qg = [
+}, Qg = ["aria-label"], $g = { class: "session-head mt-4 mb-1 px-2.5 text-xs font-semibold text-[#a3a3a3]" }, e_ = [
 	"aria-label",
 	"disabled",
 	"onClick"
-], $g = ["aria-current", "onClick"], e_ = { class: "truncate" }, t_ = ["title"], n_ = [
+], t_ = ["aria-current", "onClick"], n_ = { class: "truncate" }, r_ = ["title"], i_ = [
 	"aria-label",
 	"disabled",
 	"onClick"
-], r_ = ["disabled"], i_ = ["aria-label"], a_ = {
+], a_ = ["disabled"], o_ = ["aria-label"], s_ = {
 	key: 0,
 	class: "grid gap-1"
-}, o_ = ["disabled"], s_ = ["value"], c_ = {
+}, c_ = ["disabled"], l_ = ["value"], u_ = {
 	key: 0,
 	class: "text-sm text-[#a3a3a3]"
-}, l_ = ["disabled"], u_ = {
+}, d_ = ["disabled"], f_ = {
 	key: 2,
 	class: "grid gap-3 p-1"
-}, d_ = ["disabled"], f_ = /* @__PURE__ */ V({
+}, p_ = ["disabled"], m_ = /* @__PURE__ */ V({
 	__name: "SessionSidebar",
 	props: {
 		sessions: {},
@@ -11451,14 +11465,14 @@ var Kg = {
 			m.value && r("delete", m.value.id), b();
 		}
 		return (t, n) => (W(), G(U, null, [
-			e.error ? (W(), G("p", Kg, [J(L(e.error) + " ", 1), q("button", {
+			e.error ? (W(), G("p", Jg, [J(L(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[0] ||= (e) => r("retry")
 			}, "Retry")])) : Y("v-if", !0),
-			e.loading && !e.sessions.length ? (W(), G("p", qg, " Loading sessions… ")) : e.sessions.length ? (W(), G("nav", Yg, [(W(!0), G(U, null, H(a.value, (t) => (W(), G("section", {
+			e.loading && !e.sessions.length ? (W(), G("p", Yg, " Loading sessions… ")) : e.sessions.length ? (W(), G("nav", Zg, [(W(!0), G(U, null, H(a.value, (t) => (W(), G("section", {
 				key: t.label,
 				"aria-label": t.label
-			}, [q("h2", Zg, L(t.label), 1), (W(!0), G(U, null, H(t.sessions, (t) => (W(), G("div", {
+			}, [q("h2", $g, L(t.label), 1), (W(!0), G(U, null, H(t.sessions, (t) => (W(), G("div", {
 				key: t.id,
 				class: de(["session-row flex items-center rounded-lg hover:bg-[#303030] dark:hover:bg-[#303030]", e.selected === t.id ? "active bg-[#303030] dark:bg-[#303030]" : ""])
 			}, [l.value === t.id ? (W(), G(U, { key: 0 }, [B(q("input", {
@@ -11490,29 +11504,29 @@ var Kg = {
 					cx: "12",
 					cy: "12",
 					r: "9"
-				}), q("path", { d: "m8 12 3 3 5-6" })], -1)]], 8, Qg)) : Y("v-if", !0),
+				}), q("path", { d: "m8 12 3 3 5-6" })], -1)]], 8, e_)) : Y("v-if", !0),
 				q("button", {
 					class: "session-select grid min-h-[44px] min-w-0 flex-1 gap-0 px-2.5 py-1.5 text-left text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 					"aria-current": e.selected === t.id ? "page" : void 0,
 					onClick: (e) => r("select", t.id)
-				}, [q("span", e_, L(t.title || "Untitled session"), 1), q("span", {
+				}, [q("span", n_, L(t.title || "Untitled session"), 1), q("span", {
 					class: "truncate text-xs leading-4 text-[#a3a3a3] dark:text-[#a3a3a3]",
 					title: c(t)
-				}, L(c(t)), 9, t_)], 8, $g),
+				}, L(c(t)), 9, r_)], 8, t_),
 				q("button", {
 					class: "icon-button rounded-md px-2 py-1 text-xl text-white hover:bg-[#424242] focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 					"aria-label": `Options for ${t.title || "Untitled session"}`,
 					"aria-haspopup": "dialog",
 					disabled: e.busy,
 					onClick: (e) => y(t, e)
-				}, " ⋮ ", 8, n_)
-			], 64))], 2))), 128))], 8, Xg))), 128))])) : (W(), G("p", Jg, " No conversations yet. ")),
+				}, " ⋮ ", 8, i_)
+			], 64))], 2))), 128))], 8, Qg))), 128))])) : (W(), G("p", Xg, " No conversations yet. ")),
 			e.hasMore ? (W(), G("button", {
 				key: 4,
 				class: "load-more self-start rounded-md px-2.5 py-1.5 text-xs text-[#a3a3a3] hover:bg-[#303030] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4] disabled:cursor-not-allowed disabled:opacity-55",
 				disabled: e.loading,
 				onClick: n[3] ||= (e) => r("more")
-			}, L(e.loading ? "Loading…" : "Load more"), 9, r_)) : Y("v-if", !0),
+			}, L(e.loading ? "Loading…" : "Load more"), 9, a_)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "popup",
 				ref: p,
@@ -11520,12 +11534,12 @@ var Kg = {
 				style: oe(_.value),
 				"aria-label": h.value === "menu" ? "Session options" : h.value === "project" ? "Add to project" : "Delete conversation",
 				onClick: n[7] ||= (e) => e.target === e.currentTarget && b()
-			}, [h.value === "menu" ? (W(), G("div", a_, [
+			}, [h.value === "menu" ? (W(), G("div", s_, [
 				q("button", {
 					class: "rounded-lg px-3 py-2 text-left hover:bg-[#303030]",
 					disabled: e.busy || m.value && e.trackingPending?.has(m.value.id),
 					onClick: o
-				}, L(m.value && i.value.get(m.value.id)?.status === "open" ? "Mark settled" : "Make active"), 9, o_),
+				}, L(m.value && i.value.get(m.value.id)?.status === "open" ? "Mark settled" : "Make active"), 9, c_),
 				q("button", {
 					class: "rounded-lg px-3 py-2 text-left hover:bg-[#303030]",
 					onClick: x
@@ -11560,18 +11574,18 @@ var Kg = {
 				}, "Choose project", -1), (W(!0), G(U, null, H(v.value, (e) => (W(), G("option", {
 					key: e.id,
 					value: e.id
-				}, L(e.label), 9, s_))), 128))], 512), [[xo, g.value]]),
-				v.value.length ? Y("v-if", !0) : (W(), G("p", c_, "No projects available.")),
+				}, L(e.label), 9, l_))), 128))], 512), [[xo, g.value]]),
+				v.value.length ? Y("v-if", !0) : (W(), G("p", u_, "No projects available.")),
 				q("button", {
 					class: "rounded-lg bg-[#303030] px-3 py-2 disabled:opacity-55",
 					disabled: !g.value || e.busy
-				}, " Add ", 8, l_),
+				}, " Add ", 8, d_),
 				q("button", {
 					type: "button",
 					class: "rounded-lg px-3 py-2 hover:bg-[#303030]",
 					onClick: b
 				}, " Cancel ")
-			], 32)) : (W(), G("div", u_, [
+			], 32)) : (W(), G("div", f_, [
 				n[11] ||= q("p", null, "Delete this conversation? This cannot be undone.", -1),
 				q("button", {
 					class: "rounded-lg px-3 py-2 hover:bg-[#303030]",
@@ -11582,21 +11596,132 @@ var Kg = {
 					class: "rounded-lg bg-[#402b2b] px-3 py-2 text-[#fecaca]",
 					disabled: e.busy,
 					onClick: w
-				}, " Delete conversation ", 8, d_)
-			]))], 12, i_)
+				}, " Delete conversation ", 8, p_)
+			]))], 12, o_)
 		], 64));
 	}
-}), p_ = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white" }, m_ = { class: "brand mb-3 shrink-0 flex items-center gap-2 px-2 text-xl font-semibold" }, h_ = ["aria-label"], g_ = { class: "sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]" }, __ = { class: "drawer-account flex min-w-0 items-center gap-2" }, v_ = ["value"], y_ = ["value"], b_ = ["value"], x_ = ["disabled"], S_ = ["aria-current"], C_ = { class: "main-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" }, w_ = { class: "topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8" }, T_ = ["aria-expanded"], E_ = { class: "min-w-0 flex-1" }, D_ = { class: "header-title truncate text-base font-medium" }, O_ = {
+});
+//#endregion
+//#region src/features/notifications/services/workerUpdates.ts
+function h_(e, t, n, r, i = t.controller) {
+	let a = null, o = null, s = !1, c = !1, l, u = "", d = /* @__PURE__ */ new Set(), f = (e = !1) => {
+		s || n({
+			available: !!a,
+			busy: !!o,
+			error: u
+		}, e);
+	}, p = () => {
+		clearTimeout(l), o = null;
+	}, m = () => {
+		if (s || c) return;
+		if (o?.state === "activated" && t.controller === o) {
+			c = !0, p(), r();
+			return;
+		}
+		o?.state === "redundant" && (p(), u = "This update was replaced. Please try again when the next update is ready.");
+		let n = e.waiting, l = i && t.controller !== i ? t.controller : null, d = n || l || (i && e.active !== i ? e.active : null) || (a?.state === "activating" || a?.state === "activated" ? a : null), m = !!d && d !== a;
+		a = d, a && h(a), f(m);
+	};
+	function h(e) {
+		d.has(e) || (d.add(e), e.addEventListener("statechange", m));
+	}
+	let g = () => {
+		e.installing && h(e.installing), m();
+	};
+	return e.addEventListener("updatefound", g), t.addEventListener("controllerchange", m), g(), {
+		update() {
+			if (s || o || c) return;
+			m();
+			let e = a;
+			if (e) {
+				o = e, u = "", l = setTimeout(() => {
+					p(), u = "The update did not finish. You can keep working and try Update again.", f();
+				}, 2e4), f();
+				try {
+					e.state === "installed" && e.postMessage({ type: "chathermes.update.activate" }), m();
+				} catch {
+					p(), u = "Could not activate the update. Please try again.", f();
+				}
+			}
+		},
+		dispose() {
+			s = !0, p(), e.removeEventListener("updatefound", g), t.removeEventListener("controllerchange", m);
+			for (let e of d) e.removeEventListener("statechange", m);
+		}
+	};
+}
+//#endregion
+//#region src/features/notifications/components/WorkerUpdatePrompt.vue?vue&type=script&setup=true&lang.ts
+var g_ = {
+	key: 0,
+	class: "fixed top-20 right-4 z-40 max-h-[calc(100dvh-6rem)] max-w-[calc(100%-2rem)] overflow-y-auto"
+}, __ = {
+	key: 0,
+	role: "alert",
+	class: "mt-2"
+}, v_ = { class: "mt-4 flex justify-end gap-2" }, y_ = ["disabled"], b_ = ["disabled"], x_ = /* @__PURE__ */ V({
+	__name: "WorkerUpdatePrompt",
+	setup(e) {
+		let t = /* @__PURE__ */ R({
+			available: !1,
+			busy: !1,
+			error: ""
+		}), n = /* @__PURE__ */ R(!1), r = !0, i;
+		return cr(async () => {
+			let e = navigator.serviceWorker?.controller;
+			try {
+				let a = await qm();
+				if (!r) return;
+				i = h_(a, navigator.serviceWorker, (e, r) => {
+					t.value = e, r && (n.value = !0), e.available || (n.value = !1);
+				}, () => location.reload(), e);
+			} catch {}
+		}), dr(() => {
+			r = !1, i?.dispose();
+		}), (e, r) => t.value.available ? (W(), G("div", g_, [n.value ? (W(), G("section", {
+			key: 0,
+			role: "dialog",
+			"aria-modal": "false",
+			"aria-labelledby": "worker-update-title",
+			"aria-describedby": "worker-update-warning",
+			class: "w-80 max-w-full rounded-2xl border border-[#424242] bg-[#212121] p-4 text-base text-white shadow-xl",
+			onKeydown: r[2] ||= Ao(Oo((e) => n.value = !1, ["stop"]), ["esc"])
+		}, [
+			r[4] ||= q("h2", {
+				id: "worker-update-title",
+				class: "font-medium"
+			}, "ChatHermes update available", -1),
+			r[5] ||= q("p", {
+				id: "worker-update-warning",
+				class: "mt-2 text-[#b4b4b4]"
+			}, " Update reloads this tab and may interrupt drafts, uploads, or work in progress. Other tabs will not reload automatically. ", -1),
+			t.value.error ? (W(), G("p", __, L(t.value.error), 1)) : Y("v-if", !0),
+			q("div", v_, [q("button", {
+				class: "rounded-xl px-3 py-2 hover:bg-[#424242] disabled:opacity-55",
+				disabled: t.value.busy,
+				onClick: r[0] ||= (e) => n.value = !1
+			}, " Not now ", 8, y_), q("button", {
+				class: "rounded-xl bg-white px-3 py-2 text-black disabled:opacity-55",
+				disabled: t.value.busy,
+				onClick: r[1] ||= (e) => z(i)?.update()
+			}, L(t.value.busy ? "Updating…" : "Update"), 9, b_)])
+		], 32)) : (W(), G("button", {
+			key: 1,
+			class: "rounded-xl border border-[#424242] bg-[#212121] px-4 py-2 text-base text-white shadow-xl",
+			onClick: r[3] ||= (e) => n.value = !0
+		}, " Update available "))])) : Y("v-if", !0);
+	}
+}), S_ = { class: "app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white" }, C_ = { class: "brand mb-3 shrink-0 flex items-center gap-2 px-2 text-xl font-semibold" }, w_ = ["aria-label"], T_ = { class: "sidebar-foot relative shrink-0 mt-auto grid gap-2 border-t border-[#303030] px-2 pt-4 text-xs text-[#a3a3a3] dark:border-[#303030] dark:text-[#a3a3a3]" }, E_ = { class: "drawer-account flex min-w-0 items-center gap-2" }, D_ = ["value"], O_ = ["value"], k_ = ["value"], A_ = ["disabled"], j_ = ["aria-current"], M_ = { class: "main-panel flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden" }, N_ = { class: "topbar flex h-[68px] shrink-0 items-center gap-3 px-[18px] min-[701px]:px-8" }, P_ = ["aria-expanded"], F_ = { class: "min-w-0 flex-1" }, I_ = { class: "header-title truncate text-base font-medium" }, L_ = {
 	key: 0,
 	class: "header-project-subtitle truncate text-xs text-[#a3a3a3]"
-}, k_ = { class: "topbar-profile sr-only" }, A_ = ["aria-expanded"], j_ = {
+}, R_ = { class: "topbar-profile sr-only" }, z_ = ["aria-expanded"], B_ = {
 	class: "truncate px-3 py-2 text-xs text-[#a3a3a3]",
 	role: "presentation"
-}, M_ = ["disabled"], N_ = /* @__PURE__ */ V({
+}, V_ = ["disabled"], H_ = /* @__PURE__ */ V({
 	__name: "App",
 	setup(e) {
-		let t = kc(), { profile: n, session: r, sessions: i, projects: a, selectedProject: o, projectId: s, offline: c, creating: l, profiles: u, loading: d, error: f, hasMore: p, tracking: m, trackingPending: h, sessionBusy: g, drawer: _, embedded: v, menuButton: y, closeButton: b, screenMenuButton: x, screenMenuWrap: S, screenMenu: C, sidebar: w, chatPlane: T, drawerSwipe: E, kanban: D, settingsButton: O, inboxUnread: k, settingsPage: A, projectView: ee, recentSession: j, chooseProfile: te, createSession: M, trackSession: N, newChat: ne, loadSessions: re, manageSession: ie, rename: ae, exitPlugin: P, showSettings: se, openDrawer: ce, closeDrawer: le, closeScreenMenu: ue, screenLink: fe } = Gg();
-		return (e, F) => (W(), G("div", p_, [
+		let t = kc(), { profile: n, session: r, sessions: i, projects: a, selectedProject: o, projectId: s, offline: c, creating: l, profiles: u, loading: d, error: f, hasMore: p, tracking: m, trackingPending: h, sessionBusy: g, drawer: _, embedded: v, menuButton: y, closeButton: b, screenMenuButton: x, screenMenuWrap: S, screenMenu: C, sidebar: w, chatPlane: T, drawerSwipe: E, kanban: D, settingsButton: O, inboxUnread: k, settingsPage: A, projectView: ee, recentSession: j, chooseProfile: te, createSession: M, trackSession: N, newChat: ne, loadSessions: re, manageSession: ie, rename: ae, exitPlugin: P, showSettings: se, openDrawer: ce, closeDrawer: le, closeScreenMenu: ue, screenLink: fe } = qg();
+		return (e, F) => (W(), G("div", S_, [
 			q("aside", {
 				ref: (e) => w.value = e,
 				class: de(["sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-0.5 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white", z(_) ? "translate-x-0" : "-translate-x-full"]),
@@ -11608,7 +11733,7 @@ var Kg = {
 				onClickCapture: F[19] ||= (...e) => z(E).click && z(E).click(...e),
 				"aria-label": "Navigation"
 			}, [
-				q("div", m_, [
+				q("div", C_, [
 					F[32] ||= q("span", { class: "min-w-0 truncate" }, "ChatHermes", -1),
 					z(v) ? (W(), G("button", {
 						key: 0,
@@ -11651,7 +11776,7 @@ var Kg = {
 							key: 0,
 							class: "ml-auto rounded-full bg-[#424242] px-2 text-sm leading-[1.5]",
 							"aria-label": `${z(k)} unread notifications`
-						}, L(z(k)), 9, h_)) : Y("v-if", !0)
+						}, L(z(k)), 9, w_)) : Y("v-if", !0)
 					]),
 					_: 1
 				}, 8, ["aria-current", "to"]),
@@ -11732,7 +11857,7 @@ var Kg = {
 					}), q("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), q("span", null, "Kanban", -1)]]),
 					_: 1
 				}, 8, ["aria-current", "to"])) : Y("v-if", !0),
-				(W(), K(f_, {
+				(W(), K(m_, {
 					heading: "Recents",
 					sessions: z(i),
 					tracking: z(m),
@@ -11768,9 +11893,9 @@ var Kg = {
 					"onCreate",
 					"onRename"
 				])),
-				q("div", g_, [
+				q("div", T_, [
 					F[42] ||= q("label", { for: "profile-field" }, "Profile", -1),
-					q("div", __, [
+					q("div", E_, [
 						q("select", {
 							id: "profile-field",
 							class: "profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white",
@@ -11781,12 +11906,12 @@ var Kg = {
 							z(n) && !z(u).some((e) => e.name === z(n)) ? (W(), G("option", {
 								key: 0,
 								value: z(n)
-							}, L(z(n)), 9, y_)) : Y("v-if", !0),
+							}, L(z(n)), 9, O_)) : Y("v-if", !0),
 							(W(!0), G(U, null, H(z(u), (e) => (W(), G("option", {
 								key: e.name,
 								value: e.name
-							}, L(e.name), 9, b_))), 128))
-						], 40, v_),
+							}, L(e.name), 9, k_))), 128))
+						], 40, D_),
 						q("button", {
 							class: "drawer-chat grid size-11 shrink-0 place-items-center rounded-lg bg-[#2563eb] text-white hover:bg-[#1d4ed8] focus-visible:outline-3 focus-visible:outline-[#b4b4b4] disabled:opacity-55",
 							"aria-label": "New chat",
@@ -11800,7 +11925,7 @@ var Kg = {
 							stroke: "currentColor",
 							"stroke-width": "1.5",
 							"aria-hidden": "true"
-						}, [q("path", { d: "M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8M16 3l5 5M10 14l1-5 7-7 5 5-7 7Z" })], -1)]], 8, x_),
+						}, [q("path", { d: "M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8M16 3l5 5M10 14l1-5 7-7 5 5-7 7Z" })], -1)]], 8, A_),
 						q("button", {
 							ref: (e) => O.value = e,
 							class: "drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]",
@@ -11818,7 +11943,7 @@ var Kg = {
 							cx: "12",
 							cy: "12",
 							r: "3"
-						})], -1)]], 8, S_)
+						})], -1)]], 8, j_)
 					]),
 					q("span", null, [q("span", { class: de(["status-dot mr-2 inline-block size-2 rounded-full", z(c) ? "disconnected bg-[#dcae6e]" : "bg-[#94c9a5]"]) }, null, 2), J(L(z(c) ? "Offline · read only" : "Connected through dashboard"), 1)])
 				])
@@ -11834,8 +11959,8 @@ var Kg = {
 				onClickCapture: F[24] ||= (...e) => z(E).click && z(E).click(...e),
 				onClick: F[25] ||= (...e) => z(le) && z(le)(...e)
 			}, null, 36)) : Y("v-if", !0),
-			q("main", C_, [
-				q("header", w_, [
+			q("main", M_, [
+				q("header", N_, [
 					q("button", {
 						ref: (e) => y.value = e,
 						class: "mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]",
@@ -11849,9 +11974,9 @@ var Kg = {
 						stroke: "currentColor",
 						"stroke-width": "1.5",
 						"aria-hidden": "true"
-					}, [q("path", { d: "M3 6h18M3 13h12" })], -1)]], 8, T_),
-					q("div", E_, [q("h1", D_, L(z(t).meta.title || z(i).find((e) => e.id === z(r))?.title || (z(r) ? "Conversation" : z(o)?.label || "ChatHermes")), 1), !z(A) && z(s) && z(r) && z(o) ? (W(), G("p", O_, L(z(o).label), 1)) : Y("v-if", !0)]),
-					q("span", k_, L(z(n) || "Current profile"), 1),
+					}, [q("path", { d: "M3 6h18M3 13h12" })], -1)]], 8, P_),
+					q("div", F_, [q("h1", I_, L(z(t).meta.title || z(i).find((e) => e.id === z(r))?.title || (z(r) ? "Conversation" : z(o)?.label || "ChatHermes")), 1), !z(A) && z(s) && z(r) && z(o) ? (W(), G("p", L_, L(z(o).label), 1)) : Y("v-if", !0)]),
+					q("span", R_, L(z(n) || "Current profile"), 1),
 					z(A) ? Y("v-if", !0) : (W(), G("div", {
 						key: 0,
 						ref: (e) => S.value = e,
@@ -11865,14 +11990,14 @@ var Kg = {
 						"aria-expanded": z(C),
 						"aria-controls": "screen-menu",
 						onClick: F[27] ||= (e) => C.value = !z(C)
-					}, " ··· ", 8, A_), B(q("div", {
+					}, " ··· ", 8, z_), B(q("div", {
 						id: "screen-menu",
 						class: "screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl",
 						role: "menu",
 						"aria-label": "Screen options",
 						onClick: F[29] ||= (e) => z(ue)()
 					}, [
-						q("span", j_, L(z(n) || "Current profile"), 1),
+						q("span", B_, L(z(n) || "Current profile"), 1),
 						q("button", {
 							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
 							role: "menuitem",
@@ -11880,12 +12005,13 @@ var Kg = {
 							onClick: F[28] ||= (e) => {
 								z(ee) ? z(M)() : z(ne)(), z(ue)();
 							}
-						}, " New chat ", 8, M_),
+						}, " New chat ", 8, V_),
 						qi(z(Ec), { name: "actions" })
 					], 512), [[Ia, z(C)]])], 544))
 				]),
 				qi(z(Ec), { name: "dialogs" }),
-				qi(mg, {
+				qi(x_),
+				qi(gg, {
 					ref: (e) => T.value = e,
 					onTouchstart: z(E).start,
 					onTouchmove: z(E).move,
@@ -11916,7 +12042,7 @@ var Kg = {
 });
 //#endregion
 //#region src/features/kanban/useBoard.ts
-function P_(e, t, n, r) {
+function U_(e, t, n, r) {
 	let i = /* @__PURE__ */ R(), a = /* @__PURE__ */ R(), o = /* @__PURE__ */ R(), s = /* @__PURE__ */ R(""), c = /* @__PURE__ */ R(""), l = /* @__PURE__ */ R(!1), u = /* @__PURE__ */ R(document.visibilityState === "visible"), d = () => {
 		u.value = document.visibilityState === "visible";
 	};
@@ -12022,10 +12148,10 @@ function P_(e, t, n, r) {
 }
 //#endregion
 //#region src/features/kanban/TaskForm.vue?vue&type=script&setup=true&lang.ts
-var F_ = { key: 0 }, I_ = ["value"], L_ = {
+var W_ = { key: 0 }, G_ = ["value"], K_ = {
 	key: 1,
 	class: "kanban-inline"
-}, R_ = ["value"], z_ = { class: "kanban-toolbar" }, B_ = ["disabled"], V_ = ["disabled"], H_ = /* @__PURE__ */ V({
+}, q_ = ["value"], J_ = { class: "kanban-toolbar" }, Y_ = ["disabled"], X_ = ["disabled"], Z_ = /* @__PURE__ */ V({
 	__name: "TaskForm",
 	props: {
 		task: {},
@@ -12076,14 +12202,14 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				void 0,
 				{ number: !0 }
 			]])]),
-			e.task ? Y("v-if", !0) : (W(), G("label", F_, [n[13] ||= J("Assignee", -1), B(q("select", {
+			e.task ? Y("v-if", !0) : (W(), G("label", W_, [n[13] ||= J("Assignee", -1), B(q("select", {
 				"onUpdate:modelValue": n[3] ||= (e) => s.value = e,
 				"aria-label": "Task assignee"
 			}, [n[12] ||= q("option", { value: "" }, "Unassigned", -1), (W(!0), G(U, null, H(e.assignees, (e) => (W(), G("option", {
 				key: e,
 				value: e
-			}, L(e), 9, I_))), 128))], 512), [[xo, s.value]])])),
-			e.task ? Y("v-if", !0) : (W(), G("label", L_, [B(q("input", {
+			}, L(e), 9, G_))), 128))], 512), [[xo, s.value]])])),
+			e.task ? Y("v-if", !0) : (W(), G("label", K_, [B(q("input", {
 				"onUpdate:modelValue": n[4] ||= (e) => d.value = e,
 				type: "checkbox"
 			}, null, 512), [[yo, d.value]]), n[14] ||= J("Start in triage", -1)])),
@@ -12113,47 +12239,47 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				], (e) => q("option", {
 					key: e,
 					value: e
-				}, L(e), 9, R_)), 64))], 512), [[xo, u.value]])])
+				}, L(e), 9, q_)), 64))], 512), [[xo, u.value]])])
 			]),
-			q("div", z_, [q("button", {
+			q("div", J_, [q("button", {
 				disabled: e.busy || !i.value.trim(),
 				type: "submit"
-			}, L(e.task ? "Save task" : "Create task"), 9, B_), q("button", {
+			}, L(e.task ? "Save task" : "Create task"), 9, Y_), q("button", {
 				type: "button",
 				disabled: e.busy,
 				onClick: n[8] ||= (e) => r("cancel")
-			}, "Cancel", 8, V_)])
+			}, "Cancel", 8, X_)])
 		], 32));
 	}
-}), U_ = {
+}), Q_ = {
 	class: "kanban-detail",
 	"aria-label": "Task details"
-}, W_ = { class: "kanban-toolbar" }, G_ = { class: "kanban-muted" }, K_ = { key: 0 }, q_ = { key: 1 }, J_ = {
+}, $_ = { class: "kanban-toolbar" }, ev = { class: "kanban-muted" }, tv = { key: 0 }, nv = { key: 1 }, rv = {
 	key: 2,
 	class: "kanban-muted"
-}, Y_ = { key: 0 }, X_ = { class: "kanban-prose" }, Z_ = ["disabled"], Q_ = { class: "kanban-toolbar" }, $_ = ["value", "disabled"], ev = ["value"], tv = ["value"], nv = ["disabled"], rv = ["disabled"], iv = ["value"], av = ["disabled"], ov = { key: 5 }, sv = { class: "kanban-prose" }, cv = { class: "kanban-prose" }, lv = { open: "" }, uv = {
+}, iv = { key: 0 }, av = { class: "kanban-prose" }, ov = ["disabled"], sv = { class: "kanban-toolbar" }, cv = ["value", "disabled"], lv = ["value"], uv = ["value"], dv = ["disabled"], fv = ["disabled"], pv = ["value"], mv = ["disabled"], hv = { key: 5 }, gv = { class: "kanban-prose" }, _v = { class: "kanban-prose" }, vv = { open: "" }, yv = {
 	key: 0,
 	class: "kanban-muted"
-}, dv = ["onClick"], fv = { open: "" }, pv = { class: "kanban-muted" }, mv = { class: "kanban-prose" }, hv = ["disabled"], gv = {
+}, bv = ["onClick"], xv = { open: "" }, Sv = { class: "kanban-muted" }, Cv = { class: "kanban-prose" }, wv = ["disabled"], Tv = {
 	key: 6,
 	open: ""
-}, _v = ["href"], vv = { class: "kanban-muted" }, yv = [
+}, Ev = ["href"], Dv = { class: "kanban-muted" }, Ov = [
 	"disabled",
 	"aria-label",
 	"onClick"
-], bv = { class: "kanban-upload" }, xv = ["disabled"], Sv = {
+], kv = { class: "kanban-upload" }, Av = ["disabled"], jv = {
 	key: 0,
 	class: "kanban-muted"
-}, Cv = { class: "kanban-prose" }, wv = {
+}, Mv = { class: "kanban-prose" }, Nv = {
 	key: 0,
 	class: "kanban-prose"
-}, Tv = {
+}, Pv = {
 	key: 0,
 	class: "kanban-muted"
-}, Ev = {
+}, Fv = {
 	key: 0,
 	class: "kanban-muted"
-}, Dv = ["disabled"], Ov = /* @__PURE__ */ V({
+}, Iv = ["disabled"], Lv = /* @__PURE__ */ V({
 	__name: "TaskDetail",
 	props: {
 		board: {},
@@ -12201,8 +12327,8 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 		function m(e) {
 			return (/* @__PURE__ */ new Date(e * 1e3)).toLocaleString();
 		}
-		return (t, n) => (W(), G("section", U_, [
-			q("div", W_, [q("h2", {
+		return (t, n) => (W(), G("section", Q_, [
+			q("div", $_, [q("h2", {
 				ref_key: "heading",
 				ref: i,
 				tabindex: "-1",
@@ -12211,11 +12337,11 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				"aria-label": "Close task details",
 				onClick: n[0] ||= (e) => r("close")
 			}, "Close")]),
-			q("p", G_, L(e.detail.task.id) + " · " + L(e.detail.task.status) + " · Priority " + L(e.detail.task.priority ?? 0), 1),
-			e.detail.task.progress ? (W(), G("p", K_, L(e.detail.task.progress.done) + "/" + L(e.detail.task.progress.total) + " subtasks complete ", 1)) : Y("v-if", !0),
-			e.detail.task.block_kind ? (W(), G("p", q_, "Block reason: " + L(e.detail.task.block_kind), 1)) : Y("v-if", !0),
-			e.detail.task.worker_pid ? (W(), G("p", J_, [J(" Worker " + L(e.detail.task.worker_pid), 1), e.detail.task.last_heartbeat_at ? (W(), G("span", Y_, " · Heartbeat " + L(m(e.detail.task.last_heartbeat_at)), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
-			a.value ? (W(), K(H_, {
+			q("p", ev, L(e.detail.task.id) + " · " + L(e.detail.task.status) + " · Priority " + L(e.detail.task.priority ?? 0), 1),
+			e.detail.task.progress ? (W(), G("p", tv, L(e.detail.task.progress.done) + "/" + L(e.detail.task.progress.total) + " subtasks complete ", 1)) : Y("v-if", !0),
+			e.detail.task.block_kind ? (W(), G("p", nv, "Block reason: " + L(e.detail.task.block_kind), 1)) : Y("v-if", !0),
+			e.detail.task.worker_pid ? (W(), G("p", rv, [J(" Worker " + L(e.detail.task.worker_pid), 1), e.detail.task.last_heartbeat_at ? (W(), G("span", iv, " · Heartbeat " + L(m(e.detail.task.last_heartbeat_at)), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
+			a.value ? (W(), K(Z_, {
 				key: 3,
 				task: e.detail.task,
 				assignees: e.assignees,
@@ -12226,30 +12352,30 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				"task",
 				"assignees",
 				"busy"
-			])) : (W(), G(U, { key: 4 }, [q("p", X_, L(e.detail.task.body || "No description."), 1), q("button", {
+			])) : (W(), G(U, { key: 4 }, [q("p", av, L(e.detail.task.body || "No description."), 1), q("button", {
 				disabled: e.busy,
 				onClick: n[2] ||= (e) => a.value = !0
-			}, "Edit task", 8, Z_)], 64)),
-			q("div", Q_, [
+			}, "Edit task", 8, ov)], 64)),
+			q("div", sv, [
 				q("label", null, [n[11] ||= J("Move task", -1), q("select", {
 					"aria-label": "Move task",
 					value: e.detail.task.status,
 					disabled: e.busy || !e.workflow,
 					onChange: n[3] ||= (e) => u("", "PATCH", { status: e.target.value })
-				}, [q("option", { value: e.detail.task.status }, L(e.detail.task.status), 9, ev), (W(!0), G(U, null, H(e.workflow?.columns.filter((t) => t.drag_target && e.workflow?.manual[e.detail.task.status]?.includes(t.key)), (e) => (W(), G("option", {
+				}, [q("option", { value: e.detail.task.status }, L(e.detail.task.status), 9, lv), (W(!0), G(U, null, H(e.workflow?.columns.filter((t) => t.drag_target && e.workflow?.manual[e.detail.task.status]?.includes(t.key)), (e) => (W(), G("option", {
 					key: e.key,
 					value: e.key
-				}, L(e.label), 9, tv))), 128))], 40, $_)]),
+				}, L(e.label), 9, uv))), 128))], 40, cv)]),
 				e.detail.task.status === "archived" ? Y("v-if", !0) : (W(), G("button", {
 					key: 0,
 					disabled: e.busy,
 					onClick: n[4] ||= (e) => u("", "PATCH", { status: "archived" })
-				}, " Archive task ", 8, nv)),
+				}, " Archive task ", 8, dv)),
 				e.detail.task.status === "running" ? (W(), G("button", {
 					key: 1,
 					disabled: e.busy,
 					onClick: n[5] ||= (e) => u("/reclaim", "POST", {})
-				}, " Reclaim worker ", 8, rv)) : Y("v-if", !0)
+				}, " Reclaim worker ", 8, fv)) : Y("v-if", !0)
 			]),
 			q("form", {
 				class: "kanban-toolbar",
@@ -12264,30 +12390,30 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				}, [n[12] ||= q("option", { value: "" }, "Unassigned", -1), (W(!0), G(U, null, H(Array.from(new Set([...e.assignees, e.detail.task.assignee || ""].filter(Boolean))), (e) => (W(), G("option", {
 					key: e,
 					value: e
-				}, L(e), 9, iv))), 128))], 512), [[xo, s.value]])]),
-				q("button", { disabled: e.busy }, "Reassign task", 8, av),
+				}, L(e), 9, pv))), 128))], 512), [[xo, s.value]])]),
+				q("button", { disabled: e.busy }, "Reassign task", 8, mv),
 				n[14] ||= q("p", { class: "kanban-muted" }, "Reassigning releases any active worker claim.", -1)
 			], 32),
-			e.detail.task.latest_summary || e.detail.task.result ? (W(), G("details", ov, [
+			e.detail.task.latest_summary || e.detail.task.result ? (W(), G("details", hv, [
 				n[15] ||= q("summary", null, "Result and latest summary", -1),
-				q("p", sv, L(e.detail.task.latest_summary), 1),
-				q("p", cv, L(e.detail.task.result), 1)
+				q("p", gv, L(e.detail.task.latest_summary), 1),
+				q("p", _v, L(e.detail.task.result), 1)
 			])) : Y("v-if", !0),
-			q("details", lv, [n[16] ||= q("summary", null, "Dependencies and linked tasks", -1), (W(), G(U, null, H(["parents", "children"], (t) => q("div", { key: t }, [
+			q("details", vv, [n[16] ||= q("summary", null, "Dependencies and linked tasks", -1), (W(), G(U, null, H(["parents", "children"], (t) => q("div", { key: t }, [
 				q("h3", null, L(t === "parents" ? "Depends on" : "Children"), 1),
-				e.detail.links[t].length ? Y("v-if", !0) : (W(), G("p", uv, "None")),
+				e.detail.links[t].length ? Y("v-if", !0) : (W(), G("p", yv, "None")),
 				(W(!0), G(U, null, H(e.detail.links[t], (t) => (W(), G("button", {
 					key: t,
 					class: "kanban-link",
 					onClick: (e) => r("select", t)
-				}, L(e.detail.link_tasks?.find((e) => e.id === t)?.title || t) + " · " + L(e.detail.link_tasks?.find((e) => e.id === t)?.status), 9, dv))), 128))
+				}, L(e.detail.link_tasks?.find((e) => e.id === t)?.title || t) + " · " + L(e.detail.link_tasks?.find((e) => e.id === t)?.status), 9, bv))), 128))
 			])), 64))]),
-			q("details", fv, [
+			q("details", xv, [
 				q("summary", null, "Comments (" + L(e.detail.comments.length) + ")", 1),
 				(W(!0), G(U, null, H(e.detail.comments, (e) => (W(), G("article", {
 					key: e.id,
 					class: "kanban-comment"
-				}, [q("p", pv, L(e.author) + " · " + L(m(e.created_at)), 1), q("p", mv, L(e.body), 1)]))), 128)),
+				}, [q("p", Sv, L(e.author) + " · " + L(m(e.created_at)), 1), q("p", Cv, L(e.body), 1)]))), 128)),
 				q("form", {
 					class: "kanban-form",
 					onSubmit: Oo(f, ["prevent"])
@@ -12296,9 +12422,9 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					"aria-label": "New task comment",
 					required: "",
 					rows: "3"
-				}, null, 512), [[vo, o.value]])]), q("button", { disabled: e.busy || !o.value.trim() }, "Add comment", 8, hv)], 32)
+				}, null, 512), [[vo, o.value]])]), q("button", { disabled: e.busy || !o.value.trim() }, "Add comment", 8, wv)], 32)
 			]),
-			e.detail.attachments == null ? Y("v-if", !0) : (W(), G("details", gv, [
+			e.detail.attachments == null ? Y("v-if", !0) : (W(), G("details", Tv, [
 				q("summary", null, "Attachments (" + L(e.detail.attachments.length) + ")", 1),
 				(W(!0), G(U, null, H(e.detail.attachments, (t) => (W(), G("div", {
 					key: t.id,
@@ -12309,34 +12435,34 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 						href: z(Bc)("/attachments/" + encodeURIComponent(t.id), e.board),
 						target: "_blank",
 						rel: "noopener"
-					}, L(t.filename), 9, _v),
-					q("span", vv, L(t.size ?? 0) + " bytes", 1),
+					}, L(t.filename), 9, Ev),
+					q("span", Dv, L(t.size ?? 0) + " bytes", 1),
 					q("button", {
 						disabled: e.busy,
 						"aria-label": "Remove attachment " + t.filename,
 						onClick: (e) => r("operation", "/attachments/" + encodeURIComponent(t.id), "DELETE", void 0, !1)
-					}, " Remove ", 8, yv)
+					}, " Remove ", 8, Ov)
 				]))), 128)),
-				q("label", bv, [n[18] ||= J("Attach file", -1), q("input", {
+				q("label", kv, [n[18] ||= J("Attach file", -1), q("input", {
 					type: "file",
 					"aria-label": "Task attachment",
 					disabled: e.busy,
 					onChange: p
-				}, null, 40, xv)])
+				}, null, 40, Av)])
 			])),
 			q("details", null, [
 				q("summary", null, "Run history (" + L(e.detail.runs.length) + ")", 1),
-				e.detail.runs.length ? Y("v-if", !0) : (W(), G("p", Sv, "No runs yet.")),
+				e.detail.runs.length ? Y("v-if", !0) : (W(), G("p", jv, "No runs yet.")),
 				(W(!0), G(U, null, H(e.detail.runs, (e) => (W(), G("article", {
 					key: e.id,
 					class: "kanban-comment"
 				}, [
 					q("h3", null, "Run " + L(e.id) + " · " + L(e.profile) + " · " + L(e.outcome || e.status), 1),
-					q("p", Cv, L(e.summary), 1),
-					e.error ? (W(), G("p", wv, L(e.error), 1)) : Y("v-if", !0)
+					q("p", Mv, L(e.summary), 1),
+					e.error ? (W(), G("p", Nv, L(e.error), 1)) : Y("v-if", !0)
 				]))), 128))
 			]),
-			q("details", null, [n[19] ||= q("summary", null, "Worker log", -1), e.log?.exists ? (W(), G(U, { key: 1 }, [e.log.truncated ? (W(), G("p", Ev, "Showing the last 16 KiB.")) : Y("v-if", !0), q("pre", null, L(e.log.content), 1)], 64)) : (W(), G("p", Tv, "No worker log yet."))]),
+			q("details", null, [n[19] ||= q("summary", null, "Worker log", -1), e.log?.exists ? (W(), G(U, { key: 1 }, [e.log.truncated ? (W(), G("p", Fv, "Showing the last 16 KiB.")) : Y("v-if", !0), q("pre", null, L(e.log.content), 1)], 64)) : (W(), G("p", Pv, "No worker log yet."))]),
 			q("details", null, [q("summary", null, "Activity (" + L(e.detail.events.length) + ")", 1), (W(!0), G(U, null, H(e.detail.events, (e) => (W(), G("p", {
 				key: e.id,
 				class: "kanban-muted"
@@ -12348,52 +12474,52 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					key: 1,
 					disabled: e.busy,
 					onClick: n[10] ||= (e) => u("", "DELETE", void 0)
-				}, " Confirm delete task ", 8, Dv)) : (W(), G("button", {
+				}, " Confirm delete task ", 8, Iv)) : (W(), G("button", {
 					key: 0,
 					onClick: n[9] ||= (e) => c.value = !0
 				}, "Delete task…"))
 			])
 		]));
 	}
-}), kv = {
+}), Rv = {
 	key: 0,
 	class: "kanban-empty"
-}, Av = ["disabled"], jv = { class: "kanban-toolbar" }, Mv = ["value"], Nv = ["disabled", "aria-expanded"], Pv = {
+}, zv = ["disabled"], Bv = { class: "kanban-toolbar" }, Vv = ["value"], Hv = ["disabled", "aria-expanded"], Uv = {
 	key: 1,
 	role: "alert",
 	class: "kanban-error"
-}, Fv = {
+}, Wv = {
 	key: 2,
 	role: "status",
 	class: "kanban-muted"
-}, Iv = {
+}, Gv = {
 	key: 3,
 	class: "kanban-muted"
-}, Lv = { key: 0 }, Rv = { class: "kanban-toolbar" }, zv = ["disabled"], Bv = ["disabled"], Vv = ["disabled"], Hv = ["disabled"], Uv = {
+}, Kv = { key: 0 }, qv = { class: "kanban-toolbar" }, Jv = ["disabled"], Yv = ["disabled"], Xv = ["disabled"], Zv = ["disabled"], Qv = {
 	key: 5,
 	role: "status"
-}, Wv = {
+}, $v = {
 	key: 6,
 	class: "kanban-empty"
-}, Gv = {
+}, ey = {
 	class: "kanban-columns",
 	"aria-label": "Board columns"
-}, Kv = ["aria-label", "onDrop"], qv = { class: "kanban-muted" }, Jv = {
+}, ty = ["aria-label", "onDrop"], ny = { class: "kanban-muted" }, ry = {
 	key: 0,
 	class: "kanban-muted"
-}, Yv = [
+}, iy = [
 	"data-task-id",
 	"draggable",
 	"onDragstart",
 	"onClick"
-], Xv = { class: "kanban-muted" }, Zv = { key: 0 }, Qv = { key: 1 }, $v = { key: 2 }, ey = {
+], ay = { class: "kanban-muted" }, oy = { key: 0 }, sy = { key: 1 }, cy = { key: 2 }, ly = {
 	key: 3,
 	class: "kanban-card-summary"
-}, ty = {
+}, uy = {
 	key: 1,
 	class: "kanban-detail",
 	"aria-label": "Task details"
-}, ny = /* @__PURE__ */ V({
+}, dy = /* @__PURE__ */ V({
 	__name: "KanbanPage",
 	setup(e) {
 		let t = Yc(), n = kc(), r = /* @__PURE__ */ R();
@@ -12401,7 +12527,7 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			let e = w.value;
 			w.value = "", await yn(), Array.from(r.value?.querySelectorAll(".kanban-card") || []).find((t) => t.dataset.taskId === e)?.focus();
 		}
-		let a = /* @__PURE__ */ R([]), o = /* @__PURE__ */ R(""), s = /* @__PURE__ */ R(!1), c = /* @__PURE__ */ R(), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(""), f = /* @__PURE__ */ R(!1), p = /* @__PURE__ */ R(!1), m = /* @__PURE__ */ R(""), h = /* @__PURE__ */ R(""), g = /* @__PURE__ */ R(""), _ = /* @__PURE__ */ R(""), v = /* @__PURE__ */ R(""), y = /* @__PURE__ */ R(!1), b = P_(o, t.visible, s, () => {
+		let a = /* @__PURE__ */ R([]), o = /* @__PURE__ */ R(""), s = /* @__PURE__ */ R(!1), c = /* @__PURE__ */ R(), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(""), f = /* @__PURE__ */ R(!1), p = /* @__PURE__ */ R(!1), m = /* @__PURE__ */ R(""), h = /* @__PURE__ */ R(""), g = /* @__PURE__ */ R(""), _ = /* @__PURE__ */ R(""), v = /* @__PURE__ */ R(""), y = /* @__PURE__ */ R(!1), b = U_(o, t.visible, s, () => {
 			t.check();
 		}), { snapshot: x, detail: S, log: C, taskId: w, error: T, loading: E } = b, D = X(() => a.value.find((e) => e.slug === o.value)), O = !1, k = 0;
 		fr(() => {
@@ -12593,35 +12719,35 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			class: "kanban-page page-content",
 			"aria-label": "Kanban viewer"
 		}, [z(t).visible.value ? (W(), G(U, { key: 1 }, [
-			q("div", jv, [q("label", null, [n[11] ||= J("Board", -1), B(q("select", {
+			q("div", Bv, [q("label", null, [n[11] ||= J("Board", -1), B(q("select", {
 				"onUpdate:modelValue": n[1] ||= (e) => o.value = e,
 				"aria-label": "Kanban board"
 			}, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("option", {
 				key: e.slug,
 				value: e.slug
-			}, L(e.name || e.slug), 9, Mv))), 128))], 512), [[xo, o.value]])]), q("button", {
+			}, L(e.name || e.slug), 9, Vv))), 128))], 512), [[xo, o.value]])]), q("button", {
 				class: "kanban-new-task",
 				disabled: f.value || !o.value || p.value,
 				"aria-expanded": p.value,
 				onClick: te
-			}, " New task ", 8, Nv)]),
-			p.value ? (W(), K(H_, {
+			}, " New task ", 8, Hv)]),
+			p.value ? (W(), K(Z_, {
 				key: o.value,
 				assignees: z(x)?.assignees || [],
 				busy: f.value,
 				onSave: ie,
 				onCancel: M
 			}, null, 8, ["assignees", "busy"])) : Y("v-if", !0),
-			l.value || u.value || z(T) ? (W(), G("p", Pv, L(u.value || l.value || z(T)), 1)) : Y("v-if", !0),
-			d.value ? (W(), G("p", Fv, L(d.value), 1)) : Y("v-if", !0),
-			c.value ? Y("v-if", !0) : (W(), G("p", Iv, " Manual movement is unavailable until the Hermes workflow API responds. ")),
+			l.value || u.value || z(T) ? (W(), G("p", Uv, L(u.value || l.value || z(T)), 1)) : Y("v-if", !0),
+			d.value ? (W(), G("p", Wv, L(d.value), 1)) : Y("v-if", !0),
+			c.value ? Y("v-if", !0) : (W(), G("p", Gv, " Manual movement is unavailable until the Hermes workflow API responds. ")),
 			m.value ? (W(), G("form", {
 				key: 4,
 				class: "kanban-form kanban-board-editor",
 				"aria-label": "Board settings",
 				onSubmit: Oo(oe, ["prevent"])
 			}, [
-				m.value === "create" ? (W(), G("label", Lv, [n[12] ||= J("Board slug", -1), B(q("input", {
+				m.value === "create" ? (W(), G("label", Kv, [n[12] ||= J("Board slug", -1), B(q("input", {
 					"onUpdate:modelValue": n[2] ||= (e) => h.value = e,
 					required: "",
 					"aria-label": "Board slug"
@@ -12638,37 +12764,37 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					"onUpdate:modelValue": n[5] ||= (e) => v.value = e,
 					"aria-label": "Board default directory"
 				}, null, 512), [[vo, v.value]])]),
-				q("div", Rv, [
-					q("button", { disabled: f.value }, "Save board", 8, zv),
+				q("div", qv, [
+					q("button", { disabled: f.value }, "Save board", 8, Jv),
 					q("button", {
 						type: "button",
 						disabled: f.value,
 						onClick: n[6] ||= (e) => m.value = ""
-					}, "Cancel", 8, Bv),
+					}, "Cancel", 8, Yv),
 					m.value === "edit" && o.value !== "default" && !y.value ? (W(), G("button", {
 						key: 0,
 						type: "button",
 						disabled: f.value,
 						onClick: n[7] ||= (e) => y.value = !0
-					}, " Archive board…", 8, Vv)) : Y("v-if", !0),
+					}, " Archive board…", 8, Xv)) : Y("v-if", !0),
 					y.value ? (W(), G("button", {
 						key: 1,
 						type: "button",
 						disabled: f.value,
 						onClick: se
-					}, " Confirm archive board ", 8, Hv)) : Y("v-if", !0)
+					}, " Confirm archive board ", 8, Zv)) : Y("v-if", !0)
 				])
 			], 32)) : Y("v-if", !0),
-			z(E) ? (W(), G("p", Uv, "Loading board…")) : !a.value.length && !l.value ? (W(), G("p", Wv, " No boards available. Create a board to get started. ")) : Y("v-if", !0),
-			q("div", { class: de(["kanban-workspace", { "has-detail": z(w) }]) }, [q("div", Gv, [(W(!0), G(U, null, H(z(x)?.columns, (e) => (W(), G("section", {
+			z(E) ? (W(), G("p", Qv, "Loading board…")) : !a.value.length && !l.value ? (W(), G("p", $v, " No boards available. Create a board to get started. ")) : Y("v-if", !0),
+			q("div", { class: de(["kanban-workspace", { "has-detail": z(w) }]) }, [q("div", ey, [(W(!0), G(U, null, H(z(x)?.columns, (e) => (W(), G("section", {
 				key: e.name,
 				class: de(["kanban-column", { "kanban-column-empty": !e.tasks.length }]),
 				"aria-label": e.name + " tasks",
 				onDragover: n[8] ||= Oo(() => {}, ["prevent"]),
 				onDrop: Oo((t) => ue(t, e.name), ["prevent"])
 			}, [
-				q("h2", null, [J(L(c.value?.columns.find((t) => t.key === e.name)?.label || e.name) + " ", 1), q("span", qv, L(e.tasks.length), 1)]),
-				e.tasks.length ? Y("v-if", !0) : (W(), G("p", Jv, "No tasks")),
+				q("h2", null, [J(L(c.value?.columns.find((t) => t.key === e.name)?.label || e.name) + " ", 1), q("span", ny, L(e.tasks.length), 1)]),
+				e.tasks.length ? Y("v-if", !0) : (W(), G("p", ry, "No tasks")),
 				(W(!0), G(U, null, H(e.tasks, (e) => (W(), G("button", {
 					key: e.id,
 					class: de(["kanban-card", { selected: z(w) === e.id }]),
@@ -12678,13 +12804,13 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					onClick: (t) => w.value = e.id
 				}, [
 					q("strong", null, L(e.title), 1),
-					q("span", Xv, L(e.status) + " · " + L(e.assignee || "Unassigned") + " · Priority " + L(e.priority ?? 0), 1),
-					e.progress ? (W(), G("span", Zv, L(e.progress.done) + "/" + L(e.progress.total) + " subtasks", 1)) : Y("v-if", !0),
-					e.comment_count ? (W(), G("span", Qv, L(e.comment_count) + " comments", 1)) : Y("v-if", !0),
-					e.warnings?.count ? (W(), G("span", $v, L(e.warnings.count) + " warnings", 1)) : Y("v-if", !0),
-					e.latest_summary ? (W(), G("span", ey, L(e.latest_summary), 1)) : Y("v-if", !0)
-				], 42, Yv))), 128))
-			], 42, Kv))), 128))]), z(S) ? (W(), K(Ov, {
+					q("span", ay, L(e.status) + " · " + L(e.assignee || "Unassigned") + " · Priority " + L(e.priority ?? 0), 1),
+					e.progress ? (W(), G("span", oy, L(e.progress.done) + "/" + L(e.progress.total) + " subtasks", 1)) : Y("v-if", !0),
+					e.comment_count ? (W(), G("span", sy, L(e.comment_count) + " comments", 1)) : Y("v-if", !0),
+					e.warnings?.count ? (W(), G("span", cy, L(e.warnings.count) + " warnings", 1)) : Y("v-if", !0),
+					e.latest_summary ? (W(), G("span", ly, L(e.latest_summary), 1)) : Y("v-if", !0)
+				], 42, iy))), 128))
+			], 42, ty))), 128))]), z(S) ? (W(), K(Lv, {
 				key: o.value + ":" + z(S).task.id,
 				board: o.value,
 				detail: z(S),
@@ -12703,18 +12829,18 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				"workflow",
 				"assignees",
 				"busy"
-			])) : z(w) ? (W(), G("section", ty, [q("button", { onClick: n[10] ||= (e) => w.value = "" }, "Close task details"), q("p", null, L(z(T) ? "Task details are unavailable. Refresh or select another task." : "Loading task…"), 1)])) : Y("v-if", !0)], 2)
-		], 64)) : (W(), G("div", kv, [q("p", null, L(z(t).enabled.value ? "Hermes Kanban is unavailable. Your chats remain available." : "Enable Kanban Viewer in global Settings to view boards."), 1), q("button", {
+			])) : z(w) ? (W(), G("section", uy, [q("button", { onClick: n[10] ||= (e) => w.value = "" }, "Close task details"), q("p", null, L(z(T) ? "Task details are unavailable. Refresh or select another task." : "Loading task…"), 1)])) : Y("v-if", !0)], 2)
+		], 64)) : (W(), G("div", Rv, [q("p", null, L(z(t).enabled.value ? "Hermes Kanban is unavailable. Your chats remain available." : "Enable Kanban Viewer in global Settings to view boards."), 1), q("button", {
 			disabled: z(t).checking.value,
 			onClick: n[0] ||= (e) => z(t).check()
-		}, " Recheck availability ", 8, Av)]))], 512));
+		}, " Recheck availability ", 8, zv)]))], 512));
 	}
-}), ry = [
+}), fy = [
 	"role",
 	"aria-checked",
 	"disabled",
 	"onClick"
-], iy = /* @__PURE__ */ V({
+], py = /* @__PURE__ */ V({
 	__name: "KanbanActions",
 	setup(e) {
 		let t = Yc();
@@ -12724,12 +12850,12 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			"aria-checked": e.checked,
 			disabled: e.disabled,
 			onClick: (t) => e.run()
-		}, L(e.label), 9, ry))), 128)) : Y("v-if", !0);
+		}, L(e.label), 9, fy))), 128)) : Y("v-if", !0);
 	}
-}), ay = /* @__PURE__ */ V({
+}), my = /* @__PURE__ */ V({
 	__name: "InboxActions",
 	setup(e) {
-		let { refreshInbox: t, inboxRevision: n } = Eg();
+		let { refreshInbox: t, inboxRevision: n } = Og();
 		return (e, r) => (W(), G("button", {
 			role: "menuitem",
 			class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
@@ -12740,14 +12866,14 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			}
 		}, " Refresh inbox "));
 	}
-}), oy = { id: "project-confirmation-text" }, sy = {
+}), hy = { id: "project-confirmation-text" }, gy = {
 	key: 0,
 	role: "alert",
 	class: "project-error"
-}, cy = { class: "project-actions" }, ly = ["disabled"], uy = ["disabled"], dy = /* @__PURE__ */ V({
+}, _y = { class: "project-actions" }, vy = ["disabled"], yy = ["disabled"], by = /* @__PURE__ */ V({
 	__name: "ProjectConfirmation",
 	setup(e) {
-		let { projectConfirmation: t, selectedProject: n, projectBusy: r, offline: i, manageError: a, manageProject: o, projectId: s } = Fg(), c = /* @__PURE__ */ R();
+		let { projectConfirmation: t, selectedProject: n, projectBusy: r, offline: i, manageError: a, manageProject: o, projectId: s } = Lg(), c = /* @__PURE__ */ R();
 		Ln(t, async () => {
 			await yn(), c.value?.focus();
 		});
@@ -12765,43 +12891,43 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			"aria-labelledby": "project-confirmation-text",
 			onKeydown: o[0] ||= Ao(Oo((e) => !z(r) && l(), ["stop", "prevent"]), ["esc"])
 		}, [
-			q("p", oy, L(z(t) === "delete" ? `Delete ${z(n).label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${z(n).label}? You can restore it from Archived projects.`), 1),
-			z(a) ? (W(), G("p", sy, L(z(a)), 1)) : Y("v-if", !0),
-			q("div", cy, [q("button", {
+			q("p", hy, L(z(t) === "delete" ? `Delete ${z(n).label}? This permanently removes the project and its folder associations. Files and chats will be kept.` : `Archive ${z(n).label}? You can restore it from Archived projects.`), 1),
+			z(a) ? (W(), G("p", gy, L(z(a)), 1)) : Y("v-if", !0),
+			q("div", _y, [q("button", {
 				ref_key: "projectConfirmCancel",
 				ref: c,
 				class: "project-button",
 				disabled: z(r),
 				onClick: l
-			}, " Cancel", 8, ly), q("button", {
+			}, " Cancel", 8, vy), q("button", {
 				class: "project-button project-danger",
 				disabled: z(r) || z(i),
 				onClick: u
-			}, L(z(t) === "delete" ? "Delete project permanently" : "Confirm archive"), 9, uy)])
+			}, L(z(t) === "delete" ? "Delete project permanently" : "Confirm archive"), 9, yy)])
 		], 32)) : Y("v-if", !0);
 	}
-}), fy = ["aria-label"], py = { class: "mx-auto max-w-3xl" }, my = {
+}), xy = ["aria-label"], Sy = { class: "mx-auto max-w-3xl" }, Cy = {
 	key: 0,
 	class: "mb-3 px-2 text-sm text-[#b4b4b4]"
-}, hy = {
+}, wy = {
 	key: 1,
 	class: "mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm"
-}, gy = { class: "flex items-center gap-2" }, _y = { value: "profile" }, vy = {
+}, Ty = { class: "flex items-center gap-2" }, Ey = { value: "profile" }, Dy = {
 	key: 2,
 	role: "alert",
 	class: "mb-4 text-red-200"
-}, yy = {
+}, Oy = {
 	key: 3,
 	role: "status",
 	class: "text-[#b4b4b4]"
-}, by = {
+}, ky = {
 	key: 4,
 	class: "text-[#b4b4b4]"
-}, xy = { class: "divide-y divide-[#363636]" }, Sy = ["data-session"], Cy = ["disabled", "onClick"], wy = { class: "min-w-0 truncate font-medium" }, Ty = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Ey = { class: "flex items-center gap-2 text-xs text-[#777]" }, Dy = ["datetime"], Oy = [
+}, Ay = { class: "divide-y divide-[#363636]" }, jy = ["data-session"], My = ["disabled", "onClick"], Ny = { class: "min-w-0 truncate font-medium" }, Py = { class: "line-clamp-1 break-words text-sm text-[#b4b4b4]" }, Fy = { class: "flex items-center gap-2 text-xs text-[#777]" }, Iy = ["datetime"], Ly = [
 	"aria-label",
 	"disabled",
 	"onClick"
-], ky = ["disabled"], Ay = /* @__PURE__ */ V({
+], Ry = ["disabled"], zy = /* @__PURE__ */ V({
 	__name: "InboxList",
 	props: {
 		preview: { type: Boolean },
@@ -12869,15 +12995,15 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			"data-drawer-swipe": "",
 			"aria-label": e.preview ? "Recent inbox messages" : "Inbox",
 			class: "min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
-		}, [q("div", py, [
-			e.preview ? (W(), G("h2", my, "Recent messages")) : (W(), G("div", hy, [q("label", gy, [n[3] ||= J("View ", -1), B(q("select", {
+		}, [q("div", Sy, [
+			e.preview ? (W(), G("h2", Cy, "Recent messages")) : (W(), G("div", wy, [q("label", Ty, [n[3] ||= J("View ", -1), B(q("select", {
 				"onUpdate:modelValue": n[0] ||= (e) => i.value = e,
 				"aria-label": "Inbox view",
 				class: "rounded-lg bg-[#303030] px-2 py-1 text-base"
-			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", _y, "Profile: " + L(e.profile || "default"), 1)], 512), [[xo, i.value]])])])),
-			u.value ? (W(), G("p", vy, L(u.value), 1)) : Y("v-if", !0),
-			s.value && !a.value.length ? (W(), G("p", yy, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", by, "No unread notifications.")),
-			q("ol", xy, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("li", {
+			}, [n[2] ||= q("option", { value: "all" }, "All profiles", -1), q("option", Ey, "Profile: " + L(e.profile || "default"), 1)], 512), [[xo, i.value]])])])),
+			u.value ? (W(), G("p", Dy, L(u.value), 1)) : Y("v-if", !0),
+			s.value && !a.value.length ? (W(), G("p", Oy, "Loading inbox…")) : a.value.length ? Y("v-if", !0) : (W(), G("p", ky, "No unread notifications.")),
+			q("ol", Ay, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("li", {
 				key: e.id,
 				"data-session": e.session,
 				class: "flex items-center gap-1"
@@ -12887,10 +13013,10 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				disabled: !!c.value || !!l.value,
 				onClick: (t) => p(e)
 			}, [
-				q("p", wy, L(e.title || "Untitled chat"), 1),
-				q("p", Ty, L(e.preview), 1),
-				q("div", Ey, [q("span", null, L(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, L((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Dy)])
-			], 8, Cy), q("button", {
+				q("p", Ny, L(e.title || "Untitled chat"), 1),
+				q("p", Py, L(e.preview), 1),
+				q("div", Fy, [q("span", null, L(e.profile), 1), q("time", { datetime: (/* @__PURE__ */ new Date(e.occurred * 1e3)).toISOString() }, L((/* @__PURE__ */ new Date(e.occurred * 1e3)).toLocaleString()), 9, Iy)])
+			], 8, My), q("button", {
 				class: "flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[#a3a3a3] hover:bg-[#424242] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 				"aria-label": `Remove ${e.title || "Untitled chat"} from inbox`,
 				title: "Remove from inbox",
@@ -12907,20 +13033,20 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				cx: "12",
 				cy: "12",
 				r: "9"
-			}), q("path", { d: "m8 12 3 3 5-6" })], -1)]], 8, Oy)], 8, Sy))), 128))]),
+			}), q("path", { d: "m8 12 3 3 5-6" })], -1)]], 8, Ly)], 8, jy))), 128))]),
 			o.value ? (W(), G("button", {
 				key: 5,
 				class: "my-5 min-h-11 rounded-full border border-[#555] px-5",
 				disabled: s.value,
 				onClick: n[1] ||= (e) => f(!0)
-			}, " Load More ", 8, ky)) : Y("v-if", !0)
-		])], 8, fy));
+			}, " Load More ", 8, Ry)) : Y("v-if", !0)
+		])], 8, xy));
 	}
-}), jy = /* @__PURE__ */ V({
+}), By = /* @__PURE__ */ V({
 	__name: "HomePage",
 	setup(e) {
-		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = Eg();
-		return (e, a) => (W(), K(Ay, {
+		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = Og();
+		return (e, a) => (W(), K(zy, {
 			preview: "",
 			scope: "all",
 			profile: z(t),
@@ -12934,24 +13060,24 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			"onRefresh"
 		]));
 	}
-}), My = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", Ny = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Py = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Fy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Iy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Ly = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", Ry = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", zy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", By = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", Vy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", Hy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Uy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", Wy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Gy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", Ky = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", qy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", Jy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", Yy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", Xy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", Zy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", Qy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", $y = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", eb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", tb = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", nb = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", rb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", ib = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, ab = ["aria-label"], ob = ["src", "alt"], sb = { class: "flex min-w-0 items-center gap-3 p-3" }, cb = ["src"], lb = { class: "min-w-0 flex-1" }, ub = ["aria-label"], db = {
+}), Vy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fff}.st1{fill:%23bababa}%3c/style%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st1'%20d='M0%2094V2C0%20.9.9%200%202%200h48c.6%200%201.1.2%201.5.7l20%2022.3c.3.4.5.8.5%201.3V94c0%201.1-.9%202-2%202H2c-1.1%200-2-.9-2-2zm68-68.9L49.1%204H4v88h64V25.1z'/%3e%3cpath%20class='st1'%20d='M48%2026V4c0-1.1.9-2%202-2s2%20.9%202%202v20h16c1.1%200%202%20.9%202%202s-.9%202-2%202H50c-1.1%200-2-.9-2-2z'/%3e%3c/svg%3e", Hy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2372a536}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2s1.2%204.4%203.2%204.4c1%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm10.7%200c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201L36%2010.1c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.5-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%2372a536'%20stroke='%2372a536'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Uy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.5-34.9c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4zm7.2%2010.6c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8zm8.7-10.3H32l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3L36%206.4h3.5l-3.9%2014.3h-3.3L28.4%206.4z'%20fill='%23fff'/%3e%3cpath%20d='M14%2054h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58m-44%205.9h8.5m3.3%200h8.5m3.4%200h8.5m3.3%200H58'%20fill='none'%20stroke='%231f7244'%20stroke-width='3'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Wy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2H6.6V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zM24.1%206.1c3.8%200%205.9%203.1%205.9%207.3%200%204.2-2.1%207.5-5.9%207.5s-5.8-3.2-5.8-7.5c0-4.1%202.1-7.3%205.8-7.3zm0%2011.7c1.7%200%202.5-1.8%202.5-4.3s-.8-4.2-2.5-4.2-2.5%201.7-2.5%204.2.8%204.3%202.5%204.3zM38%206.1c1.3%200%202.6.4%203.6%201.2l-1.4%202.8c-.4-.5-1.3-.9-2.1-.9-2.1%200-3.2%201.9-3.2%204.2%200%202.3%201.2%204.4%203.2%204.4%201%200%201.7-.5%202.3-1l1.4%202.8c-.9.7-2%201.3-3.9%201.3-4%200-6.3-3.1-6.3-7.4-.1-4.2%202.3-7.4%206.4-7.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Gy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231a75ce}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.4-34.6h3.3c2.9%200%204.7%202.6%204.7%207.1s-1.8%207.2-4.7%207.2H6.4V6.4zm3.3%2011.4c1.3%200%202.1-1.5%202.1-4.3S11%209.3%209.7%209.3H9v8.5h.7zM20%206.1c3%200%204.7%203.1%204.7%207.3%200%204.2-1.7%207.5-4.7%207.5s-4.7-3.2-4.7-7.5c0-4.1%201.7-7.3%204.7-7.3zm0%2011.7c1.4%200%202-1.8%202-4.3s-.6-4.2-2-4.2-2%201.7-2%204.2.6%204.3%202%204.3zM30.7%206.1c1%200%202.1.4%202.9%201.2l-1.1%202.8c-.3-.5-1-.9-1.7-.9-1.7%200-2.6%201.9-2.6%204.2%200%202.3.9%204.4%202.5%204.4.8%200%201.3-.5%201.8-1l1.1%202.8c-.7.7-1.6%201.3-3.2%201.3-3.2%200-5-3.1-5-7.4.1-4.2%202-7.4%205.3-7.4zm5.9%207.5l-2.8-7.2h2.9l.9%202.9c.3.9.4%201.8.4%201.8s.2-.9.5-1.8l.9-2.9h2.9l-2.8%207.2%202.7%207.1h-2.8l-.9-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.4%201.7l-.9%203h-2.8l2.7-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M19.5%2067.1l-4.8-14.8c-.2-.6-.3-.8-.4-.8-.1-.1-.2-.1-.3-.2l-1.7-.5-.1-2.1h9l.2%202.1-1.7.5v.2c0%20.2.1.6.3%201l1.8%205.7%203.2-9.5%202.4-.1%202.9%209.5%202-5.7c.1-.4.3-.8.3-1v-.1l-1.5-.4-.1-2.2h7l.2%202.1-1.9.6c-.1%200-.2.1-.3.1%200%20.1-.2.2-.3.7l-5.3%2014.7-2.5.2-2.7-9.1-3.2%208.9-2.5.2z'/%3e%3cpath%20d='M42.4%2048.6H60v2.8H42.4zm0%207.4H60v2.8H42.4zm0%207.7H60v2.8H42.4zM13%2071.5h47v2.8H13zm0%207.6h47v2.8H13z'%20fill='%231a75ce'%20stroke='%231a75ce'%20stroke-width='.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Ky = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm6.4-34.9c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.1-4.5%202.6-7.6%206.5-7.6zm7.2%2012.4l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1h4.3v2.9h-8.9v-2.2z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", qy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23d75b26}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h2.8v5.8H12V6.4h2.8v14.3H12V15H9.2v5.7H6.5V6.4zm12%202.9h-2.7V6.4h8.1v2.9h-2.7v11.4h-2.8V9.3zm6.9-2.9h3.1l1.1%206c.2.9.4%202.4.4%202.4s.2-1.5.4-2.4l1.1-6h3.1l.8%2014.3h-2.6l-.3-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.7%204.1h-2.7l-.7-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.3%206.4h-2.6l.9-14.3zm11.5%200h2.8v11.4h3.7v2.9H37V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2075c-.5%200-1.1-.2-1.5-.6L13.6%2066c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-7%206.9%206.9%206.9c.8.8.8%202.1%200%203-.4.4-.9.6-1.4.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2074.3c-.4.5-.9.7-1.5.7zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3%201.1.4%201.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23d75b26'%20stroke='%23d75b26'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Jy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23307ac6}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm-.3-25.7H9v1.1c0%201.5.4%201.6.7%201.6.5%200%20.7-.3.7-1.6v-7H7.7v-3h6v9.9c0%203.3-2%204.6-4%204.6-2.1%200-4-1.4-4-4.6v-1zM18%2016.7c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4s.8-.6%201.2-1c.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2s-1-1.2-1.2-2-.3-2.1-.3-4c0-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202%20.4%202.1.4%204c0%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'%20fill='%23307ac6'%20stroke='%23307ac6'%20stroke-miterlimit='10'/%3e%3c/svg%3e", Yy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}.st1{fill:%23fff}.st2{fill:%23999;stroke:%23999;stroke-width:.5;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20class='st1'%20d='M6%2041h60v49H6V41z'/%3e%3cpath%20class='st2'%20d='M16.4%2067.5v-4.1c.9-.1%201.6-.2%202-.4.4-.2.8-.6%201.2-1%20.4-.5.5-1.1.7-1.9.1-.6.2-1.5.2-2.8%200-2.2.1-3.7.4-4.6.2-.8.6-1.6%201.2-2%20.5-.5%201.4-.9%202.5-1.2.7-.2%201.9-.4%203.5-.4h.9V53c-1.3%200-2.2.1-2.6.3s-.6.4-.9.6c-.2.3-.3.7-.3%201.5s-.1%202-.2%204.1c-.1%201.2-.2%202-.4%202.8-.3.6-.6%201.2-1%201.8-.4.4-1%20.9-1.8%201.4.7.4%201.3.8%201.8%201.3s.8%201.2%201.1%201.9c.3.7.4%201.8.4%203%20.1%201.9.1%203.1.1%203.6%200%20.7.1%201.2.3%201.6.2.4.5.5.9.6.4.2%201.2.3%202.6.3v4.1h-1c-1.6%200-2.9-.1-3.7-.4-.9-.3-1.6-.6-2.2-1.2-.6-.6-1-1.2-1.2-2-.2-.8-.3-2.1-.3-4%200-2-.1-3.5-.3-4.1-.3-.9-.7-1.6-1.2-2-.7-.5-1.5-.7-2.7-.7zm39.1%200c-.9.1-1.6.2-2%20.4-.4.2-.8.6-1.2%201-.4.5-.5%201.1-.7%201.9-.1.6-.2%201.5-.2%202.8%200%202.2-.1%203.7-.4%204.6-.2.9-.6%201.6-1.2%202-.5.5-1.4.9-2.5%201.2-.7.2-1.9.4-3.5.4h-1v-4.1c1.3%200%202.1-.1%202.6-.3s.7-.4.9-.6c.2-.3.3-.7.3-1.5%200-.6.1-2%20.2-4%20.1-1.2.3-2.1.5-2.8.3-.7.6-1.3%201.1-1.9.4-.5%201-.9%201.7-1.3-.9-.6-1.6-1.1-2-1.6-.5-.7-1-1.8-1.2-2.8-.2-.8-.3-2.6-.3-5.2%200-.8-.1-1.4-.3-1.8-.2-.3-.4-.5-.8-.6-.2-.3-1-.3-2.5-.3v-4h1c1.6%200%202.9.1%203.7.4.9.3%201.6.6%202.2%201.2s1%201.2%201.2%202c.2.8.4%202.1.4%204%200%202%20.1%203.4.3%204.1.3.9.7%201.6%201.2%201.9.5.4%201.4.6%202.5.6.1.1%200%204.3%200%204.3z'/%3e%3cpath%20class='st1'%20d='M5.8%2015.7H8v.9c0%201.9.6%202.1%201.1%202.1.6%200%201.1-.4%201.1-2.1V8.7H7.8V6.5h4.6v10c0%203.2-1.6%204.4-3.3%204.4s-3.3-1.2-3.3-4.4v-.8zm9%201.8c.6.7%201.4%201.2%202.2%201.2%201%200%201.6-.7%201.6-1.8%200-2.6-4.5-2.5-4.5-6.6%200-2.3%201.4-4%203.8-4%201%200%202%20.3%202.8.9L20%209.4c-.5-.4-1.3-.8-2-.8-1.1%200-1.6.8-1.6%201.7%200%202.6%204.5%202.4%204.5%206.5%200%202.2-1.3%204.1-3.7%204.1-1.2%200-2.4-.5-3.3-1.4l.9-2zM27.1%206.2c3.2%200%205.1%203%205.1%207.3s-2%207.4-5.1%207.4c-3.2%200-5.1-3.1-5.1-7.4%200-4.2%202-7.3%205.1-7.3zm0%2012.4c1.8%200%202.9-2%202.9-5.1%200-3-1.1-4.9-2.9-4.9s-2.9%201.9-2.9%204.9c0%203.1%201.1%205.1%202.9%205.1zM34%206.5h2.3l3.3%208c.3.9.6%202.2.6%202.2h.1s-.1-1.3-.1-2.2v-8h2.1v14.2H40l-3.3-8.1c-.3-.9-.6-2.2-.6-2.2H36s.1%201.3.1%202.2v8H34V6.5z'/%3e%3cpath%20class='st2'%20d='M44.1%2067.1c-.7-.3-1.2-.9-1.2-1.6s.5-1.4%201.2-1.6c.3-.1.4-.3.3-.5-.3-.8-.5-1.6-1-2.2-.1-.3-.4-.3-.6-.2s-.5.3-.8.3c-1%200-1.7-.8-1.7-1.7%200-.3.1-.6.3-.8.1-.3%200-.4-.2-.6-.7-.4-1.5-.7-2.2-1-.3-.1-.4.1-.5.3-.3.7-.9%201.2-1.6%201.2s-1.4-.5-1.6-1.2c-.1-.3-.3-.4-.5-.3-.8.3-1.6.5-2.2%201-.3.1-.3.4-.2.6.2.3.3.5.3.8%200%201-.8%201.7-1.7%201.7-.3%200-.6-.1-.8-.3-.3-.1-.4%200-.6.2-.4.7-.7%201.5-1%202.2-.1.3.1.4.3.5.7.3%201.2.9%201.2%201.6s-.5%201.4-1.2%201.6c-.3.1-.4.3-.3.5.3.8.5%201.6%201%202.2.1.3.4.3.6.2.3-.2.5-.3.8-.3%201%200%201.7.8%201.7%201.7%200%20.3-.1.6-.3.8-.1.3%200%20.4.2.6.7.4%201.5.7%202.2%201%20.2%200%20.4-.1.4-.3.3-.7.9-1.2%201.6-1.2s1.4.5%201.6%201.2c.1.3.3.4.5.3.8-.3%201.6-.5%202.2-1%20.3-.1.3-.4.2-.6-.1-.3-.3-.5-.3-.8%200-1%20.8-1.7%201.7-1.7.3%200%20.6.1.8.3.3.1.4%200%20.6-.2.4-.7.7-1.5%201-2.2.2-.1.1-.4-.2-.5zm-8.3%201c-1.5%200-2.7-1.2-2.7-2.7%200-1.5%201.2-2.7%202.7-2.7s2.7%201.2%202.7%202.7c.1%201.5-1.2%202.7-2.7%202.7z'/%3e%3c/svg%3e", Xy = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm14.6%200h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2H25v8.5h.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13.5%2076.4V54.6h6.4l6.4%208%206.4-8h6.4v21.8h-6.4V63.9l-6.4%208-6.4-8v12.5h-6.4zm38.4%200l-9.6-10.6h6.4V54.6h6.4v11.2h6.4l-9.6%2010.6z'/%3e%3c/svg%3e", Zy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm8.7%203.6c.4.4%201.1.7%201.7.7.9%200%201.6-.4%201.6-1.6%200-1-.7-1.5-2.3-1.5h-.9l-.7-1.8%202-2.5c.5-.6.9-1%20.9-1s-.4.1-1.1.1h-2.3v-3h7.2V9l-2.6%203.1c2%20.5%203.1%202.1%203.1%204.1%200%202.4-1.4%204.8-4.7%204.8-1.3%200-2.5-.4-3.5-1.3l1.6-2.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", Qy = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23f60}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM7.1%206.4h3.6l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6H18l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H11l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l.9-14.3zm15.1%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm6.8%201.8l3.7-8.8h4.2v8.1H42v3h-1.2v3.2h-3.2v-3.2h-4.7v-2.3zm4.7-.7v-3.4c0-.8.1-1.3.1-1.3s-.1.6-.3%201.2L36%2014.5h1.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M13%2083.1h46V47.9H13v35.2zm8.9-2.7h-5.5v-3.9h5.5v3.9zm16.9%200h-5.5v-3.9h5.5v3.9zm11.3-30.1h5.5v4h-5.5v-4zm0%2026.1h5.5v3.9h-5.5v-3.9zm-8.5-26.1H47v3.9h-5.5v-3.9zm0%2026.1H47v3.9h-5.5l.1-3.9zm-8.4-26.1h5.5v3.9h-5.5v-3.9zm-.8%209.7l7.2%204.1c1.3.8%201.3%202%200%202.8L32.4%2071c-1.3.8-2.4.1-2.4-1.4v-8.3c0-1.4%201.1-2.1%202.4-1.3zm-7.7-9.7h5.4v3.9h-5.4v-3.9zm0%2026.1h5.4v3.9h-5.4v-3.9zm-8.3-26.1h5.5v4h-5.5v-4z'/%3e%3c/svg%3e", $y = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23c11e07}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.2c3.7%200%205.9%202.6%205.9%207.1s-2.2%207.2-5.9%207.2h-4.2V6.4zm4.1%2011.4c1.7%200%202.6-1.5%202.6-4.3s-1-4.2-2.6-4.2h-.8v8.5h.8zm9.1-11.4h7.1v2.9h-3.8v3.1H38v2.9h-3.1v5.4h-3.3V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M33.5%2046.538c-2.3%200-4.1%201.9-4.1%204.1%200%202.8%201.6%206.3%203.2%209.6-1.3%204-2.7%208.3-4.6%2011.9-3.8%201.5-7.2%202.6-9.2%204.3l-.1.1c-.7.8-1.2%201.8-1.2%202.9%200%202.3%201.9%204.1%204.1%204.1%201.1%200%202.2-.4%202.9-1.2%200%200%20.1%200%20.1-.1%201.5-1.8%203.3-5.1%204.9-8%203.6-1.4%207.5-2.9%2011.1-3.8%202.7%202.2%206.6%203.6%209.8%203.6%202.3%200%204.1-1.9%204.1-4.1%200-2.3-1.9-4.1-4.1-4.1-2.6%200-6.3.9-9.1%201.9-2.3-2.2-4.4-4.9-6-7.8%201.1-3.4%202.4-6.7%202.4-9.3-.1-2.3-1.9-4.1-4.2-4.1zm0%202.4c.9%200%201.6.7%201.6%201.6%200%201.2-.7%203.5-1.4%205.9-1-2.4-1.9-4.7-1.9-5.9.1-.8.8-1.6%201.7-1.6zm.7%2014.1c1.2%202%202.7%203.8%204.3%205.4-2.4.7-4.8%201.5-7.2%202.4%201.2-2.5%202.1-5.2%202.9-7.8zm16.2%205.3c.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6-1.9%200-4.5-.8-6.6-2%202.4-.6%205.1-1.2%206.6-1.2zm-24.5%207.3c-1.2%202.1-2.3%204-3.1%205-.3.3-.6.4-1.1.4-.9%200-1.6-.7-1.6-1.6%200-.4.2-.9.4-1.1.9-.8%203-1.7%205.4-2.7z'%20fill='%23c11e07'%20stroke='%23c11e07'%20stroke-width='.75'%20stroke-miterlimit='10'/%3e%3c/svg%3e", eb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm7.9-7h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7zm10-4.1h-3.1V6.4h9.6v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", tb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0,.st2{fill:%23f57e00}.st2{stroke:%23f57e00;stroke-miterlimit:10}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm.5-34.6h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205H9.5v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zm5.7-7h4.1c2.4%200%203.9%202%203.9%204.9%200%202.9-1.6%205-3.9%205h-1.1v4.4h-3V6.4zm3.5%207c.9%200%201.5-.9%201.5-2.1s-.6-2-1.4-2h-.6v4.1h.5zM27%209.3h-2.8V6.4h8.6v2.9H30v11.4h-3V9.3zm9%204.3l-3.1-7.2h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.1-.9-.3-1.7-.3-1.7s-.2.8-.5%201.7l-1%203H33l3-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st2'%20d='M53%2047.7H19c-1.7%200-3.1%201.4-3.1%203.1v21.8c0%201.7%201.4%203.1%203.1%203.1h14.2L31.8%2081h-1.6c-.7%200-1.2.5-1.2%201.2s.5%201.2%201.2%201.2h11.5c.7%200%201.2-.5%201.2-1.2s-.5-1.2-1.2-1.2H40l-1.4-5.4H53c1.7%200%203.1-1.4%203.1-3.1V50.8c0-1.7-1.4-3.1-3.1-3.1zm.3%2025.1H18.7V50.6h34.5l.1%2022.2z'/%3e%3cpath%20class='st2'%20d='M27.6%2063.9h2.8v5.6h-2.8zm4.7-1.8h2.8v7.4h-2.8zm4.6-1.9h2.8v9.3h-2.8zm4.6-1.8h2.8v11.1h-2.8zm-.2-4.1L36.4%2057l-3.6-1.2-6.1%203.3.9%201%205.4-2.8%203.6%201.2%205.6-3.1.9%201%202.1-3.5-4.8.3z'/%3e%3c/svg%3e", nb = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm.6-34.6h4.5c2.6%200%204.4%202%204.4%204.9s-1.7%205-4.4%205H9.9v4.4H6.6V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.6v4.1h.6zm10%201.4l-3.6-8.4h3.6l1.1%203.4c.3%201%20.5%202.1.5%202.1h.1s.2-1.1.5-2.1l1.1-3.4h3.6l-3.6%208.4v5.9h-3.3v-5.9z'%20fill='%23fff'/%3e%3cpath%20d='M34.5%2083.4c-4.4-.1-7.2-1.5-7.9-3.8l-.1-.3v-4.5c0-5.2%200-5.3.3-6.1.5-1.5%201.7-2.5%203.5-2.9l.4-.1h5.1c3.7%200%205.2%200%205.4-.1%201.1-.2%201.7-.4%202.3-.9.8-.6%201.4-1.6%201.6-2.6.2-.8.2-.7.2-3.5v-2.5h3.6l.4.1c1.9.6%203.3%202.3%203.9%205.1.2%201.1.2%201.1.2%203.8%200%202.6%200%202.6-.2%203.5-.2.8-.4%201.6-.8%202.3-.7%201.4-1.8%202.4-3.1%202.8-.8.3-.1.2-7.5.3h-6.7v1.2h8.8v4.6c-.1.3-.1.6-.4%201s-.8.9-1.1%201.2c-1.2.8-3%201.3-5.4%201.4h-2.5zm6.1-2.8c.8-.1%201.5-1%201.3-1.8-.1-.7-.6-1.2-1.3-1.3-1.1-.1-2%20.8-1.8%201.8.1.8.8%201.3%201.6%201.3h.2zm-19-6.5c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%23fed142'/%3e%3cpath%20d='M21.6%2074.1c-1-.2-2-.8-2.7-1.7-1.3-1.6-2-4.4-1.9-7.8.1-2.1.4-3.7%201.1-5.1.8-1.8%202.1-2.7%203.8-3.1.4-.1.4-.1%206.9-.1h6.6c.1%200%20.1-.1.1-.6v-.6h-8.8v-2.3c0-2.5%200-2.5.2-3%20.8-1.6%203-2.6%206.5-2.9.3%200%20.9-.1%201.6-.1%203.9-.1%206.8.6%208.3%202l.5.5c.2.3.5.8.6%201.3l.1.3v4.8c0%204.4%200%204.8-.1%205.1-.1.4-.3%201-.4%201.3-.6%201.1-1.6%201.8-2.9%202.2-.8.2-.5.2-6.1.3-5.6%200-5.3%200-6.1.2-1.6.4-2.7%201.6-3.1%203.3-.2.8-.2.7-.2%203.5v2.6h-1.7c-1.7%200-2.2%200-2.3-.1zM31%2052.7c.6-.3%201.1-1.1.9-1.7s-.6-1.1-1.1-1.3c-.9-.3-1.9.3-2%201.3-.1.8.3%201.6%201.1%201.8.1.1.3.1.6.1.2-.1.2-.1.5-.2z'%20fill='%233571a3'/%3e%3c/svg%3e", rb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23fea500}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm1.3-24.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8zM16%206.4h3.6l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.7-8.1h3.5l-3.9%2014.3h-3.3L16%206.4zm19.1-.3c1.4%200%202.9.4%203.9%201.3l-1.4%202.8c-.6-.6-1.4-.9-2.3-.9-2.2%200-3.2%201.9-3.2%204.2%200%202.6%201.2%204.3%202.9%204.3.6%200%201.3-.2%201.7-.6v-1.7h-1.5v-2.9h4.3v8.1h-2.6v-.9c-.5.7-1.6%201.2-2.7%201.2-2.8%200-5.6-2.7-5.6-7.3.2-4.5%202.6-7.6%206.5-7.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M27.1%2060.2L18%2079.4l1.7%201.7L31%2069.8c-.4-.9-.3-2%20.5-2.8%201-1%202.5-1%203.5%200s1%202.5%200%203.5c-.7.7-1.9.9-2.8.5L20.9%2082.3l1.7%201.7%2019.2-9.1L46%2063.4%2038.6%2056l-11.5%204.2zm26.3-2.3L44%2048.5c-.8-.8-2-.8-2.8%200L39%2050.7c-.8.8-.8%202%200%202.8l9.4%209.4c.8.8%202%20.8%202.8%200l2.2-2.2c.8-.8.8-2%200-2.8z'/%3e%3c/svg%3e", ib = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234d1b9b}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm10.5-2.9H23l3.6%2014.3h-3.3l-.6-3h-3l-.6%203h-3.3l3.6-14.3zm2.8%208.6l-.6-2.8c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.8h2zm6.9-8.6h4.5c.6%200%201.3.1%201.9.4%201.4.6%202.4%202.1%202.4%204%200%201.7-.8%203.3-2%204%200%200%20.2.2.5.9l2.3%205h-3.6l-2-4.8h-.8v4.8H29V6.4zM33%2013c.9%200%201.6-.7%201.6-1.9%200-.7-.2-1.2-.6-1.5-.3-.2-.6-.3-.9-.3h-.7V13h.6z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M43.6%2068.3l-7.3-3.4L51%2058l7.3%203.4-7.3%203.5-7.4%203.4zM51%2051.2l-7.3-3.4-7.3%203.4L51%2058.1l7.3-3.4-7.3-3.5zM28.9%2061.4L21.6%2058l-7.3%203.4L29%2068.3l7.3-3.4-7.4-3.5zm0-6.8l7.3-3.4-7.3-3.4-14.7%206.9%207.3%203.4%207.4-3.5zM51%2066.9l-6.6%203-.8.4-.8-.4-6.6-3-6.6%203-.8.4-.8-.4-6.6-3v10.7l14.7%207.7L51%2077.6V66.9z'/%3e%3c/svg%3e", ab = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%234065aa}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm9.9%207.4c.6.6%201.4%201.2%202.3%201.2s1.3-.6%201.3-1.2c0-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.5-.4-1.4-.9-2.2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.6-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M37.9%2055.1v-7.6H33c-.1.3-.2.6-.2%201-.1.2-.1.3-.1.5-.5%202.8-2%204.8-4.5%205.9-.7.3-1.4.4-2.1.3v6.1h3.6c.1%208.6.1%2013.1.1%2013.3v.5c.5%203.8%202.4%206%205.9%206.9%201.4.4%202.9.6%204.5.6%202-.1%203.9-.4%205.8-1v-7.2c-1.1.3-2.1.6-3%20.9-1.7.5-3.2.2-4.4-1-.1-.2-.3-.4-.3-.6-.2-.9-.3-1.9-.3-2.8v-9.6h7.8v-6.1h-7.9v-.1z'/%3e%3c/svg%3e", ob = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM8.9%209.3H5.7V6.4h9.6v2.9h-3.2v11.4H8.9V9.3zm11.5%204.3L17%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1H24l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203h-3.5l3.3-7.1zm12.1-4.3h-3.1V6.4H39v2.9h-3.2v11.4h-3.3V9.3z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14.6%2077.2h42.8v6.2H14.6zm0-14.8h42.8v6.2H14.6zm0-15h42.8v6.2H14.6z'/%3e%3c/svg%3e", sb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23039}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zM5.6%206.4h3.1l1.1%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.2-8.9h2.9l1.2%208.9c.1.7.1%201.6.1%201.6h.1s0-.9.1-1.6l1.1-8.9h3.1l-2.4%2014.3H14l-1.1-7.2c-.1-.9-.2-1.7-.2-1.7h-.1s0%20.8-.1%201.7l-1%207.2H8L5.6%206.4zm18.3%200h3.4l3.4%2014.3h-3.1l-.6-3h-2.9l-.6%203h-3.1l3.5-14.3zm2.6%208.6l-.5-2.9c-.2-.9-.4-2.5-.4-2.5h-.1s-.2%201.5-.4%202.5l-.5%202.9h1.9zm4.3-8.6h3.4l1.6%208.1c.2.9.3%202.3.3%202.3h.1s.2-1.4.3-2.3l1.6-8.1h3.3l-3.7%2014.3h-3.2L30.8%206.4z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M47%2066c-3.1-1.2-6.7.3-8%203.4-1.2%203.1.3%206.7%203.4%208%20.6.3%201.3.4%202%20.4%203.5.1%206.4-2.6%206.4-6V47.9c-.2%200-.3.1-.5.1-6.8%201.9-13.5%203.9-20.3%205.8-.6.2-.6.5-.6%201v16.8c-.5-.2-.7-.3-1.1-.4-2.5-.9-4.7-.4-6.5%201.4-1.8%201.7-2.3%204.3-1.3%206.6%201.3%203.1%204.9%204.6%208%203.4%202.3-1%203.8-3.2%203.8-5.7V61.3c0-.7.2-.9.9-1.1%203.3-.9%206.6-1.9%2010-2.8L48%2056v10.4c-.5-.2-.7-.3-1-.4z'/%3e%3c/svg%3e", cb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm9.8-7.2h3.3v11.4h4.3v2.9h-7.6V6.4zm11%2010.3c.6.6%201.4%201.2%202.3%201.2.9%200%201.3-.6%201.3-1.2%200-2-4.8-2.1-4.8-6.2%200-2.4%201.7-4.3%204.5-4.3%201.2%200%202.4.3%203.4%201l-1.2%202.9c-.3-.5-1.3-.9-2-.9-.9%200-1.3.6-1.3%201.2%200%202.1%204.8%202%204.8%206.1%200%202.3-1.5%204.4-4.4%204.4-1.4%200-2.9-.5-4-1.4l1.4-2.8z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", lb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%231f7244}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.6-27.4L5.5%206.4h3.3l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9H15l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203H5.6l3-7.1zm8-7.2h3v11.4h3.9v2.9h-6.8V6.4zm9%2010.3c.5.6%201.3%201.2%202.1%201.2s1.2-.6%201.2-1.2c0-2-4.3-2.1-4.3-6.2%200-2.4%201.5-4.3%204.1-4.3%201.1%200%202.2.3%203.1%201l-1.1%202.9c-.4-.4-1.3-.9-1.9-.9-.8%200-1.2.6-1.2%201.2%200%202.1%204.3%202%204.3%206.1%200%202.3-1.3%204.4-4%204.4-1.3%200-2.6-.5-3.6-1.4l1.3-2.8zm10.2-3.1l-3.1-7.2H36l1%202.9c.3.9.5%201.8.5%201.8s.2-.9.5-1.8l1-2.9h3.2l-3.1%207.2%203%207.1h-3.2l-1-3c-.3-.9-.5-1.7-.5-1.7s-.2.8-.5%201.7l-1%203h-3.2l3.1-7.1z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M46.8%2049.2H59v8.1H46.8zm0%2012.5H59v8.1H46.8zm0%2012.4H59v8.1H46.8zm-16.5%200h12.2v8.1H30.3zm-16.5%200H26v8.1H13.8zm27.1-4.8l-8-10.1%207.3-9.2H33l-3.8%205-3.5-5h-7.5l7.4%209.4-7.8%209.9h7.3l4.1-5.5%204.1%205.5z'/%3e%3c/svg%3e", ub = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23666}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6V41zm3-27.4L5.5%206.4h3.6l1.1%202.9.6%201.8s.2-.9.6-1.8l1.2-2.9h3.6l-3.4%207.2%203.3%207.1h-3.5l-1.1-3c-.4-.9-.6-1.7-.6-1.7s-.2.8-.6%201.7l-1.1%203H5.7L9%2013.6zm10.3-7.2H23l1.3%206c.2.9.4%202.4.4%202.4h.1s.2-1.5.4-2.4l1.3-6h3.6l.9%2014.3h-3l-.4-6.4c-.1-1.1%200-2.4%200-2.4h-.1s-.2%201.5-.4%202.4l-.9%204.1H23l-.9-4.1c-.2-.9-.4-2.4-.4-2.4h-.1s.1%201.3%200%202.4l-.4%206.4h-3l1.1-14.3zm15.1%200h3.3v11.4H42v2.9h-7.6V6.4z'%20fill='%23fff'/%3e%3cpath%20d='M23.5%2076c-.5%200-1.1-.2-1.5-.6L13.6%2067c-.8-.8-.8-2.1%200-3l8.4-8.4c.8-.8%202.1-.8%203%200%20.8.8.8%202.1%200%203l-6.9%206.9%206.9%206.9c.8.8.8%202.1%200%203-.5.4-1%20.6-1.5.6zm25%200c-.5%200-1.1-.2-1.5-.6-.8-.8-.8-2.1%200-3l6.9-6.9-6.9-6.9c-.8-.8-.8-2.1%200-3%20.8-.8%202.1-.8%203%200l8.4%208.4c.8.8.8%202.1%200%203L50%2075.4c-.4.4-.9.6-1.5.6zm-16.7%204.1c-.2%200-.4%200-.7-.1-1.1-.4-1.7-1.5-1.3-2.6l8.4-25.1c.4-1.1%201.5-1.7%202.6-1.3s1.7%201.5%201.3%202.6l-8.4%2025.1c-.2.9-1%201.4-1.9%201.4z'%20fill='%23666'%20stroke='%23666'%20stroke-width='1.5'%20stroke-miterlimit='10'/%3e%3c/svg%3e", db = "data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%23999}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm2.9-26.2L5.5%206.5H8l1.5%204.2c.3.9.5%201.9.5%201.9s.2-1%20.5-1.9L12%206.5h2.5l-3.4%208.3v5.9H8.9v-5.9zm8.4-8.3h2.5l3.5%2014.2H21l-.9-3.7h-3.2l-.8%203.7h-2.3l3.5-14.2zm2.4%208.5l-.8-3.8c-.2-.8-.4-2.2-.4-2.2h-.1s-.2%201.4-.4%202.2l-.8%203.8h2.5zm5.2-8.5h2.5l1.8%206.9c.2.9.4%202.2.4%202.2h.1s.2-1.3.4-2.2l1.8-6.9h2.5l.8%2014.2h-2.1l-.4-7.9c-.1-.9%200-2.2%200-2.2h-.1s-.2%201.4-.4%202.3l-1.4%205.4h-2.2l-1.4-5.4c-.2-.8-.4-2.3-.4-2.3h-.1s.1%201.3%200%202.2l-.4%207.9h-2.1l.7-14.2zm12.3%200h2.3v12h4.3v2.2h-6.5V6.5z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M14%2048.9h37v4.3H14zm7%209.6h37v4.3H21zm-7%209.6h37v4.3H14zm7%209.6h37V82H21z'/%3e%3c/svg%3e", fb = "data:image/svg+xml,%3csvg%20id='Layer_1'%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2072%2096'%3e%3cstyle%3e.st0{fill:%2390c}%3c/style%3e%3cpath%20class='st0'%20d='M0%202v92c0%201.1.9%202%202%202h68c1.1%200%202-.9%202-2V28H50c-1.1%200-2-.9-2-2V0H2C.9%200%200%20.9%200%202z'/%3e%3cpath%20class='st0'%20d='M71.9%2024c-.1-.4-.2-.7-.4-1L52%201.2V24h19.9z'/%3e%3cpath%20d='M6%2041h60v49H6zm0-22.5l4.2-7.9c.5-.9.8-1.3.8-1.3s-.3.1-.8.1h-4v-3h8.7v2.2l-4.2%208c-.5.9-.8%201.3-.8%201.3s.3-.1.8-.1H15v2.9H6v-2.2zM18.1%206.4h3.3v14.3h-3.3V6.4zm7%200h4.5c2.6%200%204.4%202%204.4%204.9%200%202.9-1.7%205-4.4%205h-1.2v4.4h-3.3V6.4zm3.9%207c1%200%201.6-.9%201.6-2.1s-.7-2-1.6-2h-.7v4.1h.7z'%20fill='%23fff'/%3e%3cpath%20class='st0'%20d='M51.1%2057.5h-5.7v-5.7l5.7%205.7zm-15.3-5.7v20.7h15.4V58.9H44v-7.1h-8.2zm2.4-5.4h-17v4h6.7l-4.2%203.3v3.5l6.2-4.8v-1.9h21.6v-1.6l-13.3-2.5zm-8.3%208.7l-6.2%204.8v3.5l6.2-4.8v-3.5zm-6.3%2014.4l6.2-4.8v-3.5L23.6%2066v3.5zm6.3%201.4v-3.5l-6.2%204.8V74h-2.5v4H25v2.8h-2.2c-.4-.7-1.1-1.2-2-1.2-1.3%200-2.3%201-2.3%202.3%200%201.3%201%202.3%202.3%202.3.9%200%201.6-.5%202-1.2H25v2.1h3.4V83h2.2c.4.7%201.1%201.2%202%201.2%201.3%200%202.3-1%202.3-2.3%200-1.3-1-2.3-2.3-2.3-.9%200-1.6.5-2%201.2h-2.2V78h9.7l13.3-2.4V74H25.7l4.2-3.1z'/%3e%3c/svg%3e", pb = { class: "artifact-card my-2 w-full max-w-md overflow-hidden rounded-2xl border border-[#424242] bg-[#292929]" }, mb = ["aria-label"], hb = ["src", "alt"], gb = { class: "flex min-w-0 items-center gap-3 p-3" }, _b = ["src"], vb = { class: "min-w-0 flex-1" }, yb = ["aria-label"], bb = {
 	key: 1,
 	class: "block truncate text-sm font-medium"
-}, fb = { class: "block text-xs text-[#b4b4b4]" }, pb = [
+}, xb = { class: "block text-xs text-[#b4b4b4]" }, Sb = [
 	"href",
 	"download",
 	"aria-label"
-], mb = { class: "mb-4 flex items-center gap-3" }, hb = { class: "min-w-0 flex-1 break-words" }, gb = ["href", "download"], _b = {
+], Cb = { class: "mb-4 flex items-center gap-3" }, wb = { class: "min-w-0 flex-1 break-words" }, Tb = ["href", "download"], Eb = {
 	key: 0,
 	role: "status"
-}, vb = {
+}, Db = {
 	key: 1,
 	role: "alert",
 	class: "text-red-200"
-}, yb = {
+}, Ob = {
 	key: 2,
 	class: "max-h-[70dvh] overflow-auto whitespace-pre-wrap break-words text-sm"
-}, bb = ["src", "alt"], xb = ["src", "title"], Sb = ["src"], Cb = ["src"], wb = /* @__PURE__ */ V({
+}, kb = ["src", "alt"], Ab = ["src", "title"], jb = ["src"], Mb = ["src"], Nb = /* @__PURE__ */ V({
 	__name: "ArtifactCard",
 	props: {
 		file: {},
@@ -12960,32 +13086,32 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = e, r = t, i = /* #__PURE__ */ Object.assign({
-			"../../../assets/file-icons/blank.svg": My,
-			"../../../assets/file-icons/css.svg": Ny,
-			"../../../assets/file-icons/csv.svg": Py,
-			"../../../assets/file-icons/doc.svg": Fy,
-			"../../../assets/file-icons/docx.svg": Iy,
-			"../../../assets/file-icons/gz.svg": Ly,
-			"../../../assets/file-icons/html.svg": Ry,
-			"../../../assets/file-icons/js.svg": zy,
-			"../../../assets/file-icons/json.svg": By,
-			"../../../assets/file-icons/md.svg": Vy,
-			"../../../assets/file-icons/mp3.svg": Hy,
-			"../../../assets/file-icons/mp4.svg": Uy,
-			"../../../assets/file-icons/pdf.svg": Wy,
-			"../../../assets/file-icons/ppt.svg": Gy,
-			"../../../assets/file-icons/pptx.svg": Ky,
-			"../../../assets/file-icons/py.svg": qy,
-			"../../../assets/file-icons/svg.svg": Jy,
-			"../../../assets/file-icons/tar.svg": Yy,
-			"../../../assets/file-icons/ts.svg": Xy,
-			"../../../assets/file-icons/txt.svg": Zy,
-			"../../../assets/file-icons/wav.svg": Qy,
-			"../../../assets/file-icons/xls.svg": $y,
-			"../../../assets/file-icons/xlsx.svg": eb,
-			"../../../assets/file-icons/xml.svg": tb,
-			"../../../assets/file-icons/yaml.svg": nb,
-			"../../../assets/file-icons/zip.svg": rb
+			"../../../assets/file-icons/blank.svg": Vy,
+			"../../../assets/file-icons/css.svg": Hy,
+			"../../../assets/file-icons/csv.svg": Uy,
+			"../../../assets/file-icons/doc.svg": Wy,
+			"../../../assets/file-icons/docx.svg": Gy,
+			"../../../assets/file-icons/gz.svg": Ky,
+			"../../../assets/file-icons/html.svg": qy,
+			"../../../assets/file-icons/js.svg": Jy,
+			"../../../assets/file-icons/json.svg": Yy,
+			"../../../assets/file-icons/md.svg": Xy,
+			"../../../assets/file-icons/mp3.svg": Zy,
+			"../../../assets/file-icons/mp4.svg": Qy,
+			"../../../assets/file-icons/pdf.svg": $y,
+			"../../../assets/file-icons/ppt.svg": eb,
+			"../../../assets/file-icons/pptx.svg": tb,
+			"../../../assets/file-icons/py.svg": nb,
+			"../../../assets/file-icons/svg.svg": rb,
+			"../../../assets/file-icons/tar.svg": ib,
+			"../../../assets/file-icons/ts.svg": ab,
+			"../../../assets/file-icons/txt.svg": ob,
+			"../../../assets/file-icons/wav.svg": sb,
+			"../../../assets/file-icons/xls.svg": cb,
+			"../../../assets/file-icons/xlsx.svg": lb,
+			"../../../assets/file-icons/xml.svg": ub,
+			"../../../assets/file-icons/yaml.svg": db,
+			"../../../assets/file-icons/zip.svg": fb
 		}), a = X(() => i[`../../../assets/file-icons/${em(n.file.name)}.svg`] || i["../../../assets/file-icons/blank.svg"]), o = X(() => nm(n.file)), s = /* @__PURE__ */ R(), c = /* @__PURE__ */ R(""), l = /* @__PURE__ */ R(""), u = /* @__PURE__ */ R(""), d = /* @__PURE__ */ R(!1), f = /* @__PURE__ */ R(!1), p;
 		function m() {
 			p?.abort(), c.value.startsWith("blob:") && URL.revokeObjectURL(c.value), c.value = "", l.value = "";
@@ -13065,7 +13191,7 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 			} catch {
 				i.signal.aborted || (f.value = !0);
 			}
-		}, { immediate: !0 }), (t, n) => (W(), G("div", ib, [
+		}, { immediate: !0 }), (t, n) => (W(), G("div", pb, [
 			o.value === "image" && g.value && !f.value ? (W(), G("button", {
 				key: 0,
 				type: "button",
@@ -13078,21 +13204,21 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				class: "max-h-72 w-full object-contain",
 				onLoad: n[0] ||= (e) => r("imageLoad"),
 				onError: n[1] ||= (e) => f.value = !0
-			}, null, 40, ob)], 8, ab)) : Y("v-if", !0),
-			q("div", sb, [
+			}, null, 40, hb)], 8, mb)) : Y("v-if", !0),
+			q("div", gb, [
 				o.value !== "image" || f.value ? (W(), G("img", {
 					key: 0,
 					src: a.value,
 					alt: "",
 					class: "size-10 shrink-0"
-				}, null, 8, cb)) : Y("v-if", !0),
-				q("div", lb, [o.value ? (W(), G("button", {
+				}, null, 8, _b)) : Y("v-if", !0),
+				q("div", vb, [o.value ? (W(), G("button", {
 					key: 0,
 					type: "button",
 					class: "block w-full truncate text-left text-sm font-medium hover:underline",
 					"aria-label": `Preview ${e.file.name}`,
 					onClick: h
-				}, L(e.file.name), 9, ub)) : (W(), G("span", db, L(e.file.name), 1)), q("span", fb, [J(L(z(em)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + L(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
+				}, L(e.file.name), 9, yb)) : (W(), G("span", bb, L(e.file.name), 1)), q("span", xb, [J(L(z(em)(e.file.name).toUpperCase() || "FILE"), 1), e.file.size === void 0 ? Y("v-if", !0) : (W(), G(U, { key: 0 }, [J(" · " + L(e.file.size < 1024 ? `${e.file.size} B` : e.file.size < 1048576 ? `${(e.file.size / 1024).toFixed(1)} KB` : `${(e.file.size / 1048576).toFixed(1)} MB`), 1)], 64))])]),
 				q("a", {
 					href: z(rm)(e.file, e.profile, !0),
 					download: e.file.name,
@@ -13105,7 +13231,7 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					stroke: "currentColor",
 					"stroke-width": "1.5",
 					"aria-hidden": "true"
-				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, pb)
+				}, [q("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" })], -1)]], 8, Sb)
 			]),
 			yr(t.$slots, "footer"),
 			q("dialog", {
@@ -13114,13 +13240,13 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 				class: "artifact-preview fixed m-auto max-h-[90dvh] w-[min(900px,94vw)] overflow-auto rounded-2xl border border-[#424242] bg-[#212121] p-4 text-white backdrop:bg-black/80",
 				onClose: m,
 				onClick: n[3] ||= (e) => e.target === s.value && s.value?.close()
-			}, [q("div", mb, [
-				q("h2", hb, L(e.file.name), 1),
+			}, [q("div", Cb, [
+				q("h2", wb, L(e.file.name), 1),
 				q("a", {
 					href: z(rm)(e.file, e.profile, !0),
 					download: e.file.name,
 					class: "text-sm underline"
-				}, "Download", 8, gb),
+				}, "Download", 8, Tb),
 				q("button", {
 					type: "button",
 					autofocus: "",
@@ -13128,41 +13254,41 @@ var F_ = { key: 0 }, I_ = ["value"], L_ = {
 					"aria-label": "Close preview",
 					onClick: n[2] ||= (e) => s.value?.close()
 				}, " ✕ ")
-			]), d.value ? (W(), G("p", _b, "Loading preview…")) : u.value ? (W(), G("p", vb, L(u.value), 1)) : o.value === "text" ? (W(), G("pre", yb, L(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
+			]), d.value ? (W(), G("p", Eb, "Loading preview…")) : u.value ? (W(), G("p", Db, L(u.value), 1)) : o.value === "text" ? (W(), G("pre", Ob, L(l.value), 1)) : o.value === "image" && c.value ? (W(), G("img", {
 				key: 3,
 				src: c.value,
 				alt: e.file.name,
 				class: "max-h-[70dvh] w-full object-contain"
-			}, null, 8, bb)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
+			}, null, 8, kb)) : o.value === "pdf" && c.value ? (W(), G("iframe", {
 				key: 4,
 				src: c.value,
 				title: e.file.name,
 				class: "h-[70dvh] w-full bg-white"
-			}, null, 8, xb)) : o.value === "video" && c.value ? (W(), G("video", {
+			}, null, 8, Ab)) : o.value === "video" && c.value ? (W(), G("video", {
 				key: 5,
 				src: c.value,
 				controls: "",
 				class: "max-h-[70dvh] w-full"
-			}, null, 8, Sb)) : o.value === "audio" && c.value ? (W(), G("audio", {
+			}, null, 8, jb)) : o.value === "audio" && c.value ? (W(), G("audio", {
 				key: 6,
 				src: c.value,
 				controls: "",
 				class: "w-full"
-			}, null, 8, Cb)) : Y("v-if", !0)], 544)
+			}, null, 8, Mb)) : Y("v-if", !0)], 544)
 		]));
 	}
-}), Tb = new Up({
+}), Pb = new Up({
 	html: !1,
 	breaks: !0,
 	linkify: !0
 });
-Tb.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
-function Eb(e) {
-	return Tb.render(e);
+Pb.renderer.rules.link_open = (e, t, n, r, i) => (e[t].attrSet("target", "_blank"), e[t].attrSet("rel", "noopener noreferrer"), i.renderToken(e, t, n));
+function Fb(e) {
+	return Pb.render(e);
 }
 //#endregion
 //#region src/features/chat/components/UserMessage.vue?vue&type=script&setup=true&lang.ts
-var Db = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, Ob = ["innerHTML"], kb = /* @__PURE__ */ V({
+var Ib = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px-5 py-3 min-[701px]:max-w-[85%]" }, Lb = ["innerHTML"], Rb = /* @__PURE__ */ V({
 	__name: "UserMessage",
 	props: {
 		message: {},
@@ -13172,10 +13298,10 @@ var Db = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 	emits: ["imageLoad"],
 	setup(e, { emit: t }) {
 		let n = t;
-		return (t, r) => (W(), G("article", Db, [q("div", {
+		return (t, r) => (W(), G("article", Ib, [q("div", {
 			class: "message-content markdown-content break-words text-base leading-7",
-			innerHTML: z(Eb)(z(lm)(z(Tl)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
-		}, null, 8, Ob), (W(!0), G(U, null, H(z(um)(e.message), (t) => (W(), K(wb, {
+			innerHTML: z(Fb)(z(lm)(z(Tl)(e.message.content)).text.replace(/\[screenshot\]/g, "📷 Attached image"))
+		}, null, 8, Lb), (W(!0), G(U, null, H(z(um)(e.message), (t) => (W(), K(Nb, {
 			key: t.path,
 			file: {
 				...t,
@@ -13188,7 +13314,7 @@ var Db = { class: "message user self-end max-w-[90%] rounded-3xl bg-[#303030] px
 });
 //#endregion
 //#region src/features/chat/utils/activity-runs.ts
-function Ab(e) {
+function zb(e) {
 	let t = [], n;
 	for (let r of e) (r.kind !== "text" && r.kind !== "thinking" || r.content.trim()) && (r.kind === "text" ? t.push({
 		id: r.id,
@@ -13203,28 +13329,28 @@ function Ab(e) {
 }
 //#endregion
 //#region src/features/chat/utils/activity-labels.ts
-var jb = (e) => [
+var Bb = (e) => [
 	"terminal",
 	"execute_code",
 	"python"
 ].includes(e.toolName || "");
-function Mb(e) {
+function Vb(e) {
 	try {
 		return JSON.parse(e.content) || {};
 	} catch {
 		return {};
 	}
 }
-function Nb(e) {
-	let t = Mb(e), n = t.command ?? t.code;
+function Hb(e) {
+	let t = Vb(e), n = t.command ?? t.code;
 	return typeof n == "string" && n.trim().split("\n")[0] || "";
 }
-function Pb(e, t) {
-	if (jb(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${Nb(e) || "command"}`;
+function Ub(e, t) {
+	if (Bb(e)) return `${t ? "Running" : e.state === "completed" ? "Ran" : "Command"} ${Hb(e) || "command"}`;
 	let n = (e.toolName || "tool").replace(/_/g, " ");
 	return /^(used|using) tool$/i.test(e.title) ? `${t ? "Using" : e.state === "completed" ? "Used" : "Tool:"} ${n}` : e.title || n;
 }
-var Fb = {
+var Wb = {
 	explore: {
 		past: "Explored",
 		present: "Exploring",
@@ -13266,9 +13392,9 @@ var Fb = {
 		nouns: ["tool", "tools"]
 	}
 };
-function Ib(e) {
+function Gb(e) {
 	let t = e.toolName || "";
-	return jb(e) ? "run" : [
+	return Bb(e) ? "run" : [
 		"read_file",
 		"list_files",
 		"search_files",
@@ -13276,9 +13402,9 @@ function Ib(e) {
 		"search"
 	].includes(t) ? "explore" : ["web_search", "session_search_recall"].includes(t) ? "search" : t === "web_extract" ? "read" : t === "browser_navigate" ? "browse" : t.startsWith("browser_") ? "interact" : t === "vision_analyze" ? "analyze" : "other";
 }
-function Lb(e, t) {
-	let n = Mb(e);
-	if (t === "run") return Nb(e);
+function Kb(e, t) {
+	let n = Vb(e);
+	if (t === "run") return Hb(e);
 	if (t === "other" || t === "interact") return "";
 	if (t === "search") {
 		let e = n.query ?? n.search_term;
@@ -13295,15 +13421,15 @@ function Lb(e, t) {
 	let r = n.path ?? n.file ?? n.filepath;
 	return typeof r == "string" && r.split(/[\\/]/).at(-1) || "";
 }
-function Rb(e, t) {
-	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? Ib(n) : void 0, i = [];
-	for (let t of Object.keys(Fb)) {
-		let n = e.filter((e) => Ib(e) === t);
+function qb(e, t) {
+	let n = t ? e.find((e) => !e.complete) ?? e.at(-1) : void 0, r = n ? Gb(n) : void 0, i = [];
+	for (let t of Object.keys(Wb)) {
+		let n = e.filter((e) => Gb(e) === t);
 		if (!n.length) continue;
-		let a = Fb[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
-			let r = Mb(n).urls;
+		let a = Wb[t], o = t === r, s = n.every((e) => e.state === "completed"), c = n.reduce((e, n) => {
+			let r = Vb(n).urls;
 			return e + (t === "read" && Array.isArray(r) && r.length ? r.length : 1);
-		}, 0), l = c === 1 && (o || t !== "run") ? Lb(n[0], t) : "", u = o ? a.present : s ? a.past : "";
+		}, 0), l = c === 1 && (o || t !== "run") ? Kb(n[0], t) : "", u = o ? a.present : s ? a.past : "";
 		i.push([u, l || `${c} ${a.nouns[c === 1 ? 0 : 1]}`].filter(Boolean).join(" "));
 	}
 	let a = e.filter((e) => e.state === "failed").length;
@@ -13311,33 +13437,33 @@ function Rb(e, t) {
 }
 //#endregion
 //#region src/components/ActivityRow.vue?vue&type=script&setup=true&lang.ts
-var zb = ["open"], Bb = {
+var Jb = ["open"], Yb = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, Vb = {
+}, Xb = {
 	key: 1,
 	"aria-hidden": "true"
-}, Hb = ["title"], Ub = {
+}, Zb = ["title"], Qb = {
 	key: 2,
 	class: "activity-meta"
-}, Wb = {
+}, $b = {
 	key: 3,
 	class: "activity-meta"
-}, Gb = {
+}, ex = {
 	key: 4,
 	class: "activity-meta"
-}, Kb = {
+}, tx = {
 	key: 5,
 	class: "activity-meta"
-}, qb = {
+}, nx = {
 	key: 6,
 	class: "activity-meta"
-}, Jb = {
+}, rx = {
 	key: 1,
 	class: "ml-6 py-1 text-sm",
 	role: "status"
-}, Yb = /* @__PURE__ */ V({
+}, ix = /* @__PURE__ */ V({
 	__name: "ActivityRow",
 	props: {
 		activity: {},
@@ -13369,7 +13495,7 @@ var zb = ["open"], Bb = {
 		}, { immediate: !0 }), dr(() => {
 			d && clearInterval(d);
 		});
-		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : Pb(t.activity, n.value));
+		let f = X(() => t.activity.duration ?? (n.value && t.activity.startedAt !== void 0 ? Math.max(0, (u.value - t.activity.startedAt) / 1e3) : void 0)), p = X(() => t.activity.kind === "thinking" ? n.value ? "Thinking…" : "Thought" : Ub(t.activity, n.value));
 		function m(e) {
 			let t = e.target.open;
 			t !== o.value && (a.value = t);
@@ -13383,14 +13509,14 @@ var zb = ["open"], Bb = {
 			open: o.value,
 			onToggle: m
 		}, [q("summary", { onClick: c[0] ||= Oo((e) => a.value = !o.value, ["prevent"]) }, [
-			z(jb)(e.activity) ? (W(), G("span", Bb, "›_")) : Y("v-if", !0),
-			i.value ? (W(), G("span", Vb, "!")) : Y("v-if", !0),
+			z(Bb)(e.activity) ? (W(), G("span", Yb, "›_")) : Y("v-if", !0),
+			i.value ? (W(), G("span", Xb, "!")) : Y("v-if", !0),
 			q("span", {
 				class: de(["activity-label", { "working-shimmer": n.value }]),
 				title: p.value
-			}, L(p.value), 11, Hb),
-			r.value === "failed" ? (W(), G("span", Ub, " · Failed")) : r.value === "interrupted" ? (W(), G("span", Wb, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", Gb, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", Kb, " · " + L(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
-			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", qb, " · " + L(f.value.toFixed(1)) + "s", 1)),
+			}, L(p.value), 11, Zb),
+			r.value === "failed" ? (W(), G("span", Qb, " · Failed")) : r.value === "interrupted" ? (W(), G("span", $b, " · Interrupted")) : r.value === "unknown" ? (W(), G("span", ex, " · Result unavailable")) : n.value && e.activity.kind === "tool" ? (W(), G("span", tx, " · " + L(r.value === "pending" ? "Waiting…" : "Running…"), 1)) : Y("v-if", !0),
+			f.value === void 0 ? Y("v-if", !0) : (W(), G("span", nx, " · " + L(f.value.toFixed(1)) + "s", 1)),
 			q("span", {
 				class: de(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
@@ -13404,20 +13530,20 @@ var zb = ["open"], Bb = {
 			e.activity.toolName,
 			e.activity.content,
 			e.activity.output
-		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", Jb, "Working…")) : Y("v-if", !0)], 42, zb));
+		].filter(Boolean).join("\n\n")), 545)) : n.value ? (W(), G("p", rx, "Working…")) : Y("v-if", !0)], 42, Jb));
 	}
-}), Xb = {
+}), ax = {
 	class: "turn-work",
 	"aria-label": "Assistant activity"
-}, Zb = ["aria-expanded", "aria-controls"], Qb = {
+}, ox = ["aria-expanded", "aria-controls"], sx = {
 	key: 0,
 	class: "activity-command-icon",
 	"aria-hidden": "true"
-}, $b = ["title"], ex = {
+}, cx = ["title"], lx = {
 	key: 1,
 	class: "sr-only",
 	role: "status"
-}, tx = ["id"], nx = /* @__PURE__ */ V({
+}, ux = ["id"], dx = /* @__PURE__ */ V({
 	__name: "TurnWork",
 	props: {
 		activities: {},
@@ -13427,38 +13553,38 @@ var zb = ["open"], Bb = {
 	setup(e) {
 		let t = e, n = /* @__PURE__ */ R(null), r = qn(), i = (e) => !e.complete && (t.working || !!e.delegated), a = X(() => t.activities.filter((e) => !i(e))), o = X(() => n.value ?? !1), s = X(() => t.approvalPending ? "Waiting for approval" : t.activities.length && [
 			a.value.some((e) => e.kind === "thinking") ? "Thought" : "",
-			Rb(a.value.filter((e) => e.kind === "tool"), !1),
+			qb(a.value.filter((e) => e.kind === "tool"), !1),
 			...["interrupted", "unknown"].flatMap((e) => {
 				let t = a.value.filter((t) => e === "unknown" ? t.state === e || !t.complete : t.state === e && t.complete).length;
 				return t ? [`${t} ${e === "unknown" ? "results unavailable" : e}`] : [];
 			})
 		].filter(Boolean).join(", ") || "Working…");
-		return (t, a) => (W(), G("section", Xb, [q("button", {
+		return (t, a) => (W(), G("section", ax, [q("button", {
 			type: "button",
 			class: "work-summary",
 			"aria-expanded": o.value,
 			"aria-controls": z(r),
 			onClick: a[0] ||= (e) => n.value = !o.value
 		}, [
-			e.activities.some(z(jb)) ? (W(), G("span", Qb, "›_")) : Y("v-if", !0),
+			e.activities.some(z(Bb)) ? (W(), G("span", sx, "›_")) : Y("v-if", !0),
 			q("span", {
 				class: de(["activity-label", { "working-shimmer": e.working && !e.activities.length && !e.approvalPending }]),
 				title: s.value
-			}, L(s.value), 11, $b),
+			}, L(s.value), 11, cx),
 			q("span", {
 				class: de(["work-chevron", { expanded: o.value }]),
 				"aria-hidden": "true"
 			}, "›", 2),
-			e.approvalPending ? (W(), G("span", ex, "Waiting for approval")) : Y("v-if", !0)
-		], 8, Zb), q("div", {
+			e.approvalPending ? (W(), G("span", lx, "Waiting for approval")) : Y("v-if", !0)
+		], 8, ox), q("div", {
 			id: z(r),
 			class: "work-timeline"
-		}, [(W(!0), G(U, null, H(e.activities, (n) => (W(), G(U, { key: n.id }, [B(q("div", { class: de({ "current-activity": i(n) }) }, [qi(Yb, {
+		}, [(W(!0), G(U, null, H(e.activities, (n) => (W(), G(U, { key: n.id }, [B(q("div", { class: de({ "current-activity": i(n) }) }, [qi(ix, {
 			activity: n,
 			"turn-complete": !e.working
-		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, o.value || i(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 8, tx)]));
+		}, null, 8, ["activity", "turn-complete"])], 2), [[Ia, o.value || i(n)]]), yr(t.$slots, "result", { activity: n })], 64))), 128))], 8, ux)]));
 	}
-}), rx = { class: "message assistant w-full self-start" }, ix = ["innerHTML"], ax = /* @__PURE__ */ V({
+}), fx = { class: "message assistant w-full self-start" }, px = ["innerHTML"], mx = /* @__PURE__ */ V({
 	__name: "AssistantTextBlock",
 	props: {
 		block: {},
@@ -13480,12 +13606,12 @@ var zb = ["open"], Bb = {
 			}
 			return [...e.values()];
 		}), a = t;
-		return (t, n) => (W(), G("article", rx, [
+		return (t, n) => (W(), G("article", fx, [
 			q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: z(Eb)(r.value.text)
-			}, null, 8, ix),
-			(W(!0), G(U, null, H(i.value, (t) => (W(), K(wb, {
+				innerHTML: z(Fb)(r.value.text)
+			}, null, 8, px),
+			(W(!0), G(U, null, H(i.value, (t) => (W(), K(Nb, {
 				key: t.path,
 				file: {
 					...t,
@@ -13494,7 +13620,7 @@ var zb = ["open"], Bb = {
 				profile: e.profile,
 				onImageLoad: n[0] ||= (e) => a("imageLoad")
 			}, null, 8, ["file", "profile"]))), 128)),
-			(W(!0), G(U, null, H(e.block.images, (t) => (W(), K(wb, {
+			(W(!0), G(U, null, H(e.block.images, (t) => (W(), K(Nb, {
 				key: t,
 				file: {
 					path: t,
@@ -13507,13 +13633,13 @@ var zb = ["open"], Bb = {
 			}, null, 8, ["file", "profile"]))), 128))
 		]));
 	}
-}), ox = { class: "assistant-turn grid min-w-0 gap-1" }, sx = {
+}), hx = { class: "assistant-turn grid min-w-0 gap-1" }, gx = {
 	key: 1,
 	class: "response-actions flex items-center gap-1 text-[#a3a3a3]"
-}, cx = ["disabled"], lx = {
+}, _x = ["disabled"], vx = {
 	role: "status",
 	class: "text-xs"
-}, ux = /* @__PURE__ */ V({
+}, yx = /* @__PURE__ */ V({
 	__name: "AssistantTurn",
 	props: {
 		entry: {},
@@ -13581,7 +13707,7 @@ var zb = ["open"], Bb = {
 				n && e.add(n);
 			}));
 			return t;
-		}), c = X(() => Ab(n.entry.blocks)), l = X(() => {
+		}), c = X(() => zb(n.entry.blocks)), l = X(() => {
 			let e = new Set(o.value), t = /* @__PURE__ */ new Map();
 			for (let r of n.entry.blocks) r.kind === "tool" && t.set(r.id, cm(r).filter((t) => !e.has(t.path) && (e.add(t.path), !0)));
 			return t;
@@ -13593,14 +13719,14 @@ var zb = ["open"], Bb = {
 				f.value = "Could not copy. Select the response text to copy it.";
 			}
 		}
-		return (t, n) => (W(), G("div", ox, [
-			(W(!0), G(U, null, H(c.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(nx, {
+		return (t, n) => (W(), G("div", hx, [
+			(W(!0), G(U, null, H(c.value, (t) => (W(), G(U, { key: t.id }, [t.kind === "tools" ? (W(), K(dx, {
 				key: 0,
 				activities: t.activities,
 				working: !!e.entry.working,
 				"approval-pending": e.entry.approvalPending
 			}, {
-				result: jn(({ activity: t }) => [(W(!0), G(U, null, H(u(t), (t) => (W(), K(wb, {
+				result: jn(({ activity: t }) => [(W(!0), G(U, null, H(u(t), (t) => (W(), K(Nb, {
 					key: t.path,
 					file: {
 						...t,
@@ -13614,7 +13740,7 @@ var zb = ["open"], Bb = {
 				"activities",
 				"working",
 				"approval-pending"
-			])) : (W(), K(ax, {
+			])) : (W(), K(mx, {
 				key: 1,
 				block: t.block,
 				"excluded-paths": s.value.get(t.block.id),
@@ -13629,14 +13755,14 @@ var zb = ["open"], Bb = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.entry.working && !c.value.some((e) => e.kind === "tools") ? (W(), K(nx, {
+			e.entry.working && !c.value.some((e) => e.kind === "tools") ? (W(), K(dx, {
 				key: 0,
 				activities: [],
 				working: !0,
 				"approval-pending": e.entry.approvalPending
 			}, null, 8, ["approval-pending"])) : Y("v-if", !0),
 			yr(t.$slots, "request"),
-			!e.entry.working && p.value.trim() ? (W(), G("div", sx, [
+			!e.entry.working && p.value.trim() ? (W(), G("div", gx, [
 				q("button", {
 					type: "button",
 					"aria-label": "Copy response",
@@ -13667,48 +13793,48 @@ var zb = ["open"], Bb = {
 					class: "flex size-9 items-center justify-center rounded-lg hover:bg-[#303030] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white",
 					onPointerdown: n[3] ||= Oo(() => {}, ["prevent"]),
 					onClick: n[4] ||= (t) => d("branch", e.entry.responseId)
-				}, [...n[6] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, cx)) : Y("v-if", !0),
-				q("span", lx, L(f.value), 1)
+				}, [...n[6] ||= [Zi("<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" class=\"size-4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><circle cx=\"6\" cy=\"5\" r=\"2\"></circle><circle cx=\"6\" cy=\"19\" r=\"2\"></circle><circle cx=\"18\" cy=\"5\" r=\"2\"></circle><path d=\"M6 7v10m0-4h5a7 7 0 0 0 7-6\"></path></svg>", 1)]], 40, _x)) : Y("v-if", !0),
+				q("span", vx, L(f.value), 1)
 			])) : Y("v-if", !0)
 		]));
 	}
-}), dx = { class: "relative flex min-h-0 w-full flex-1" }, fx = {
+}), bx = { class: "relative flex min-h-0 w-full flex-1" }, xx = {
 	key: 0,
 	class: "text-center text-sm text-[#a3a3a3]"
-}, px = ["disabled"], mx = {
+}, Sx = ["disabled"], Cx = {
 	key: 0,
 	role: "status"
-}, hx = {
+}, wx = {
 	key: 1,
 	class: "muted text-sm text-[#a3a3a3]"
-}, gx = {
+}, Tx = {
 	key: 2,
 	class: "empty-state mx-auto flex w-full max-w-[760px] flex-1 flex-col"
-}, _x = {
+}, Ex = {
 	key: 0,
 	"data-compaction": "",
 	class: "flex items-center gap-3 text-xs text-[#a3a3a3]",
 	role: "separator",
 	"aria-label": "Context compacted"
-}, vx = {
+}, Dx = {
 	key: 2,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, yx = { class: "system-notices" }, bx = { class: "cursor-pointer select-none" }, xx = { class: "mt-2 whitespace-pre-wrap break-words" }, Sx = {
+}, Ox = { class: "system-notices" }, kx = { class: "cursor-pointer select-none" }, Ax = { class: "mt-2 whitespace-pre-wrap break-words" }, jx = {
 	key: 3,
 	class: "assistant-turn",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, Cx = {
+}, Mx = {
 	key: 4,
 	class: "text-sm text-[#a3a3a3]",
 	role: "status"
-}, wx = {
+}, Nx = {
 	key: 6,
 	class: "message assistant w-full self-start",
 	"data-chat-message": "",
 	tabindex: "-1"
-}, Tx = ["innerHTML"], Ex = /* @__PURE__ */ V({
+}, Px = ["innerHTML"], Fx = /* @__PURE__ */ V({
 	__name: "ChatTranscript",
 	props: {
 		hasEarlier: { type: Boolean },
@@ -13813,7 +13939,7 @@ var zb = ["open"], Bb = {
 		}, {
 			deep: !0,
 			flush: "post"
-		}), (t, n) => (W(), G("div", dx, [q("div", {
+		}), (t, n) => (W(), G("div", bx, [q("div", {
 			ref_key: "transcript",
 			ref: s,
 			"data-drawer-swipe": "",
@@ -13830,18 +13956,18 @@ var zb = ["open"], Bb = {
 			ref: c,
 			class: "flex min-h-full shrink-0 flex-col gap-7"
 		}, [
-			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", fx, [q("button", {
+			e.hasEarlier || e.loadingEarlier || e.earlierError ? (W(), G("div", xx, [q("button", {
 				type: "button",
 				disabled: e.loadingEarlier,
 				class: "rounded-full px-4 py-2 hover:bg-[#303030] disabled:opacity-60",
 				onClick: y
-			}, L(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, px), e.earlierError ? (W(), G("p", mx, L(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
-			e.loading ? (W(), G("div", hx, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", gx, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
-			(W(!0), G(U, null, H(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", _x, [...n[2] ||= [
+			}, L(e.loadingEarlier ? "Loading earlier messages…" : "Show earlier messages"), 9, Sx), e.earlierError ? (W(), G("p", Cx, L(e.earlierError), 1)) : Y("v-if", !0)])) : Y("v-if", !0),
+			e.loading ? (W(), G("div", wx, "Loading conversation…")) : !a.value.length && !e.draft && !e.thinking ? (W(), G("div", Tx, [...n[1] ||= [q("div", { class: "m-auto text-center" }, [q("h2", { class: "text-2xl font-medium" }, "What can I help with?"), q("p", { class: "mt-3 text-sm text-[#a3a3a3]" }, " Ask Hermes a question or continue a conversation. ")], -1)]])) : Y("v-if", !0),
+			(W(!0), G(U, null, H(o.value, (r) => (W(), G(U, { key: r.key }, [r.kind === "compaction" ? (W(), G("div", Ex, [...n[2] ||= [
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1),
 				q("span", null, "Context compacted", -1),
 				q("span", { class: "h-px flex-1 bg-[#383838]" }, null, -1)
-			]])) : r.kind === "user" ? (W(), K(kb, {
+			]])) : r.kind === "user" ? (W(), K(Rb, {
 				key: 1,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -13853,7 +13979,7 @@ var zb = ["open"], Bb = {
 				"message",
 				"profile",
 				"session-id"
-			])) : r.kind === "status" ? (W(), G("div", vx, [q("details", yx, [q("summary", bx, L(r.text), 1), q("p", xx, L(r.content), 1)])])) : (W(), K(ux, {
+			])) : r.kind === "status" ? (W(), G("div", Dx, [q("details", Ox, [q("summary", kx, L(r.text), 1), q("p", Ax, L(r.content), 1)])])) : (W(), K(yx, {
 				key: 3,
 				"data-chat-message": "",
 				tabindex: "-1",
@@ -13876,17 +14002,17 @@ var zb = ["open"], Bb = {
 				"profile",
 				"session-id"
 			]))], 64))), 128)),
-			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", Sx, [qi(nx, {
+			e.working && !o.value.some((e) => e.kind === "turn" && e.working) ? (W(), G("div", jx, [qi(dx, {
 				activities: e.progress,
 				working: !0,
 				"approval-pending": e.approvalPending
 			}, null, 8, ["activities", "approval-pending"])])) : Y("v-if", !0),
-			e.statusLabel && !e.working ? (W(), G("div", Cx, L(e.statusLabel), 1)) : Y("v-if", !0),
+			e.statusLabel && !e.working ? (W(), G("div", Mx, L(e.statusLabel), 1)) : Y("v-if", !0),
 			o.value.some((e) => e.kind === "turn" && e.working) ? Y("v-if", !0) : yr(t.$slots, "request", {}, void 0, void 0, 5),
-			e.draft && !e.blocks?.length ? (W(), G("article", wx, [q("div", {
+			e.draft && !e.blocks?.length ? (W(), G("article", Nx, [q("div", {
 				class: "message-content markdown-content break-words text-base leading-7",
-				innerHTML: z(Eb)(e.draft)
-			}, null, 8, Tx)])) : Y("v-if", !0)
+				innerHTML: z(Fb)(e.draft)
+			}, null, 8, Px)])) : Y("v-if", !0)
 		], 512)], 544), !u.value && !e.home && !e.loading ? (W(), G("button", {
 			key: 0,
 			type: "button",
@@ -13903,10 +14029,10 @@ var zb = ["open"], Bb = {
 			"stroke-width": "2"
 		}, [q("path", { d: "M12 5v14m-7-7 7 7 7-7" })], -1)]])) : Y("v-if", !0)]));
 	}
-}), Dx = {
+}), Ix = {
 	key: 0,
 	class: "approval-choices grid grid-cols-1 gap-2 my-3"
-}, Ox = ["disabled", "onClick"], kx = /* @__PURE__ */ V({
+}, Lx = ["disabled", "onClick"], Rx = /* @__PURE__ */ V({
 	__name: "ApprovalRequest",
 	props: {
 		request: {},
@@ -13926,18 +14052,18 @@ var zb = ["open"], Bb = {
 				}
 			}
 		}
-		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", Dx, [(W(!0), G(U, null, H(e.request.params.choices, (t) => (W(), G("button", {
+		return (t, i) => (W(), G(U, null, [q("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (W(), G("div", Ix, [(W(!0), G(U, null, H(e.request.params.choices, (t) => (W(), G("button", {
 			key: t,
 			class: de(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
 			disabled: e.disabled || n.value,
 			onMousedown: i[0] ||= Oo(() => {}, ["prevent"]),
 			onClick: (e) => r(t)
-		}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, Ox))), 128))])) : Y("v-if", !0)], 64));
+		}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, Lx))), 128))])) : Y("v-if", !0)], 64));
 	}
-}), Ax = { class: "clarification-card" }, jx = ["disabled"], Mx = {
+}), zx = { class: "clarification-card" }, Bx = ["disabled"], Vx = {
 	key: 0,
 	class: "clarification-choices"
-}, Nx = ["aria-pressed", "onClick"], Px = { class: "clarification-other" }, Fx = ["onUpdate:modelValue", "aria-label"], Ix = ["disabled"], Lx = /*#__PURE__*/ ((e, t) => {
+}, Hx = ["aria-pressed", "onClick"], Ux = { class: "clarification-other" }, Wx = ["onUpdate:modelValue", "aria-label"], Gx = ["disabled"], Kx = /*#__PURE__*/ ((e, t) => {
 	let n = e.__vccOpts || e;
 	for (let [e, r] of t) n[e] = r;
 	return n;
@@ -13969,28 +14095,28 @@ var zb = ["open"], Bb = {
 		function c() {
 			!n.disabled && Object.keys(o()).length && r("answer", o());
 		}
-		return (t, n) => (W(), G("div", Ax, [(W(!0), G(U, null, H(e.questions, (t) => (W(), G("form", {
+		return (t, n) => (W(), G("div", zx, [(W(!0), G(U, null, H(e.questions, (t) => (W(), G("form", {
 			key: t.qid,
 			onSubmit: Oo(c, ["prevent"])
 		}, [q("fieldset", { disabled: e.disabled }, [
 			q("legend", null, L(t.question), 1),
-			t.choices?.length ? (W(), G("div", Mx, [(W(!0), G(U, null, H(t.choices, (e) => (W(), G("button", {
+			t.choices?.length ? (W(), G("div", Vx, [(W(!0), G(U, null, H(t.choices, (e) => (W(), G("button", {
 				key: e,
 				type: "button",
 				"aria-pressed": t.multi_select ? i.value[t.qid]?.includes(e) ?? !1 : void 0,
 				onClick: (n) => s(t, e)
-			}, L(e), 9, Nx))), 128))])) : Y("v-if", !0),
-			q("div", Px, [B(q("input", {
+			}, L(e), 9, Hx))), 128))])) : Y("v-if", !0),
+			q("div", Ux, [B(q("input", {
 				"onUpdate:modelValue": (e) => a.value[t.qid] = e,
 				placeholder: "Other response",
 				"aria-label": t.question + " — Other response"
-			}, null, 8, Fx), [[vo, a.value[t.qid]]]), q("button", {
+			}, null, 8, Wx), [[vo, a.value[t.qid]]]), q("button", {
 				type: "submit",
 				disabled: e.disabled || !Object.keys(o()).length
-			}, "Send", 8, Ix)])
-		], 8, jx)], 32))), 128))]));
+			}, "Send", 8, Gx)])
+		], 8, Bx)], 32))), 128))]));
 	}
-}), [["__scopeId", "data-v-4672d460"]]), Rx = /* @__PURE__ */ V({
+}), [["__scopeId", "data-v-4672d460"]]), qx = /* @__PURE__ */ V({
 	__name: "ClarificationRequest",
 	props: {
 		request: {},
@@ -14009,13 +14135,13 @@ var zb = ["open"], Bb = {
 				}
 			}
 		}
-		return (t, i) => (W(), K(Lx, {
+		return (t, i) => (W(), K(Kx, {
 			questions: e.request.params.questions,
 			disabled: e.disabled || n.value,
 			onAnswer: r
 		}, null, 8, ["questions", "disabled"]));
 	}
-}), zx = { class: "block my-3" }, Bx = ["aria-label", "disabled"], Vx = ["disabled"], Hx = /* @__PURE__ */ V({
+}), Jx = { class: "block my-3" }, Yx = ["aria-label", "disabled"], Xx = ["disabled"], Zx = /* @__PURE__ */ V({
 	__name: "SecretRequest",
 	props: {
 		request: {},
@@ -14034,23 +14160,23 @@ var zb = ["open"], Bb = {
 				r.value = !1;
 			}
 		}
-		return (t, a) => (W(), G(U, null, [q("p", null, L(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", zx, [J(L(e.request.params.env_var) + " ", 1), B(q("input", {
+		return (t, a) => (W(), G(U, null, [q("p", null, L(e.request.params.prompt), 1), q("form", { onSubmit: Oo(i, ["prevent"]) }, [q("label", Jx, [J(L(e.request.params.env_var) + " ", 1), B(q("input", {
 			"onUpdate:modelValue": a[0] ||= (e) => n.value = e,
 			type: "password",
 			autocomplete: "off",
 			"aria-label": e.request.params.prompt || "Secret",
 			disabled: e.disabled || r.value,
 			class: "block w-full rounded-lg bg-[#303030] p-2 text-base"
-		}, null, 8, Bx), [[vo, n.value]])]), q("button", {
+		}, null, 8, Yx), [[vo, n.value]])]), q("button", {
 			type: "submit",
 			disabled: e.disabled || r.value || !n.value,
 			class: "rounded-lg bg-[#303030] p-2 text-base"
-		}, " Submit secret ", 8, Vx)], 32)], 64));
+		}, " Submit secret ", 8, Xx)], 32)], 64));
 	}
-}), Ux = { key: 3 }, Wx = /* @__PURE__ */ V({
+}), Qx = { key: 3 }, $x = /* @__PURE__ */ V({
 	__name: "LiveRequest",
 	setup(e) {
-		let { view: t, scope: n, actions: r } = ih(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
+		let { view: t, scope: n, actions: r } = oh(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
 		return (e, t) => z(i) ? (W(), G("div", {
 			key: JSON.stringify([
 				z(s),
@@ -14059,7 +14185,7 @@ var zb = ["open"], Bb = {
 			]),
 			class: "notice px-5 py-3 text-sm",
 			role: "status"
-		}, [z(i).kind === "approval" ? (W(), K(kx, {
+		}, [z(i).kind === "approval" ? (W(), K(Rx, {
 			key: 0,
 			request: z(i),
 			disabled: z(a),
@@ -14070,7 +14196,7 @@ var zb = ["open"], Bb = {
 			"disabled",
 			"active",
 			"answer"
-		])) : z(i).kind === "clarify" ? (W(), K(Rx, {
+		])) : z(i).kind === "clarify" ? (W(), K(qx, {
 			key: 1,
 			request: z(i),
 			disabled: z(a),
@@ -14079,7 +14205,7 @@ var zb = ["open"], Bb = {
 			"request",
 			"disabled",
 			"answer"
-		])) : z(i).kind === "secret" ? (W(), K(Hx, {
+		])) : z(i).kind === "secret" ? (W(), K(Zx, {
 			key: 2,
 			request: z(i),
 			disabled: z(a),
@@ -14088,17 +14214,17 @@ var zb = ["open"], Bb = {
 			"request",
 			"disabled",
 			"answer"
-		])) : (W(), G("p", Ux, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
+		])) : (W(), G("p", Qx, "This request cannot be displayed. Open it in Hermes."))])) : Y("v-if", !0);
 	}
-}), Gx = /* @__PURE__ */ V({
+}), eS = /* @__PURE__ */ V({
 	__name: "ChatConversation",
 	setup(e) {
-		let { view: t, scope: n, actions: r } = ih(), { profile: i, session: a } = n, { messages: o, loading: s, busy: c, approvalPending: l, status: u } = t, d = /* @__PURE__ */ R(), f = Pn(ah);
+		let { view: t, scope: n, actions: r } = oh(), { profile: i, session: a } = n, { messages: o, loading: s, busy: c, approvalPending: l, status: u } = t, d = /* @__PURE__ */ R(), f = Pn(sh);
 		return cr(() => {
 			f && (f.value = d.value);
 		}), dr(() => {
 			f && f.value === d.value && (f.value = void 0);
-		}), (e, n) => (W(), K(Ex, {
+		}), (e, n) => (W(), K(Fx, {
 			ref_key: "transcript",
 			ref: d,
 			profile: z(i),
@@ -14120,7 +14246,7 @@ var zb = ["open"], Bb = {
 			"response-targets": z(t).responseTargets.value,
 			onBranch: z(r).branch
 		}, {
-			request: jn(() => [qi(Wx)]),
+			request: jn(() => [qi($x)]),
 			_: 1
 		}, 8, [
 			"profile",
@@ -14141,15 +14267,15 @@ var zb = ["open"], Bb = {
 			"onBranch"
 		]));
 	}
-}), Kx = /* @__PURE__ */ V({
+}), tS = /* @__PURE__ */ V({
 	__name: "ChatPage",
 	setup(e) {
-		return (e, t) => (W(), K(Gx));
+		return (e, t) => (W(), K(eS));
 	}
-}), qx = /* @__PURE__ */ V({
+}), nS = /* @__PURE__ */ V({
 	__name: "InboxPage",
 	setup(e) {
-		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = Eg(), a = kc(), o = Oc(), s = X({
+		let { profile: t, inboxRevision: n, openInboxItem: r, refreshInbox: i } = Og(), a = kc(), o = Oc(), s = X({
 			get: () => a.query.scope === "profile" ? "profile" : "all",
 			set: (e) => {
 				o.replace({ query: {
@@ -14158,7 +14284,7 @@ var zb = ["open"], Bb = {
 				} });
 			}
 		});
-		return (e, a) => (W(), K(Ay, {
+		return (e, a) => (W(), K(zy, {
 			scope: s.value,
 			"onUpdate:scope": a[0] ||= (e) => s.value = e,
 			profile: z(t),
@@ -14173,24 +14299,24 @@ var zb = ["open"], Bb = {
 			"onRefresh"
 		]));
 	}
-}), Jx = {
+}), rS = {
 	class: "min-h-0 flex-1 overflow-y-auto px-5 py-6",
 	"aria-label": "Artifacts"
-}, Yx = { class: "mx-auto max-w-[1100px]" }, Xx = { class: "mb-5 flex items-center justify-between" }, Zx = ["disabled"], Qx = {
+}, iS = { class: "mx-auto max-w-[1100px]" }, aS = { class: "mb-5 flex items-center justify-between" }, oS = ["disabled"], sS = {
 	key: 0,
 	role: "status",
 	class: "text-sm text-[#b4b4b4]"
-}, $x = {
+}, cS = {
 	key: 1,
 	role: "alert",
 	class: "mb-4 text-sm text-red-200"
-}, eS = {
+}, lS = {
 	key: 2,
 	class: "text-sm text-[#b4b4b4]"
-}, tS = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, nS = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, rS = {
+}, uS = { class: "grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] items-start gap-4 [&>.artifact-card]:my-0" }, dS = { class: "border-t border-[#424242] px-3 py-2 text-xs text-[#b4b4b4]" }, fS = {
 	key: 0,
 	class: "mb-1 block truncate"
-}, iS = { class: "flex min-w-0 items-center gap-3" }, aS = { class: "shrink-0" }, oS = ["title", "onClick"], sS = ["aria-label", "onClick"], cS = ["disabled"], lS = { key: 0 }, uS = { class: "mb-3 break-words" }, dS = { class: "flex justify-end gap-4" }, fS = ["disabled"], pS = ["disabled"], mS = /* @__PURE__ */ V({
+}, pS = { class: "flex min-w-0 items-center gap-3" }, mS = { class: "shrink-0" }, hS = ["title", "onClick"], gS = ["aria-label", "onClick"], _S = ["disabled"], vS = { key: 0 }, yS = { class: "mb-3 break-words" }, bS = { class: "flex justify-end gap-4" }, xS = ["disabled"], SS = ["disabled"], CS = /* @__PURE__ */ V({
 	__name: "ArtifactBrowser",
 	props: {
 		profile: {},
@@ -14244,35 +14370,35 @@ var zb = ["open"], Bb = {
 				c.value = !1;
 			}
 		}
-		return Ln([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), dr(() => d?.abort()), (t, n) => (W(), G("section", Jx, [q("div", Yx, [
-			q("div", Xx, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
+		return Ln([() => n.profile, () => n.project?.id], () => f(), { immediate: !0 }), dr(() => d?.abort()), (t, n) => (W(), G("section", rS, [q("div", iS, [
+			q("div", aS, [n[5] ||= q("h2", { class: "text-xl font-medium" }, "Artifacts", -1), q("button", {
 				class: "text-sm underline",
 				disabled: a.value,
 				onClick: n[0] ||= (e) => f()
-			}, "Refresh", 8, Zx)]),
-			a.value ? (W(), G("p", Qx, "Loading artifacts…")) : Y("v-if", !0),
-			o.value ? (W(), G("p", $x, L(o.value), 1)) : Y("v-if", !0),
-			!a.value && !i.value.length ? (W(), G("p", eS, "No artifacts found.")) : Y("v-if", !0),
-			q("div", tS, [(W(!0), G(U, null, H(i.value, (t) => (W(), K(wb, {
+			}, "Refresh", 8, oS)]),
+			a.value ? (W(), G("p", sS, "Loading artifacts…")) : Y("v-if", !0),
+			o.value ? (W(), G("p", cS, L(o.value), 1)) : Y("v-if", !0),
+			!a.value && !i.value.length ? (W(), G("p", lS, "No artifacts found.")) : Y("v-if", !0),
+			q("div", uS, [(W(!0), G(U, null, H(i.value, (t) => (W(), K(Nb, {
 				key: `${t.sessionId}:${t.path}`,
 				file: t,
 				profile: e.profile
 			}, {
-				footer: jn(() => [q("div", nS, [t.projectTitle ? (W(), G("span", rS, L(t.projectTitle), 1)) : Y("v-if", !0), q("div", iS, [
-					q("span", aS, L(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
+				footer: jn(() => [q("div", dS, [t.projectTitle ? (W(), G("span", fS, L(t.projectTitle), 1)) : Y("v-if", !0), q("div", pS, [
+					q("span", mS, L(t.direction === "uploaded" ? "Uploaded" : "Generated"), 1),
 					q("button", {
 						type: "button",
 						class: "min-w-0 flex-1 truncate py-2 text-left underline",
 						title: t.sessionTitle,
 						onClick: (e) => r("openSession", t.sessionId)
-					}, L(t.sessionTitle), 9, oS),
+					}, L(t.sessionTitle), 9, hS),
 					/^(https?:|data:)|^\/api\/plugins\/chathermes\/artifact-images\//.test(t.path) ? Y("v-if", !0) : (W(), G("button", {
 						key: 0,
 						type: "button",
 						class: "shrink-0 py-2 hover:text-white",
 						"aria-label": `Delete ${t.name}`,
 						onClick: (e) => s.value = t
-					}, " Delete ", 8, sS))
+					}, " Delete ", 8, gS))
 				])])]),
 				_: 2
 			}, 1032, ["file", "profile"]))), 128))]),
@@ -14282,7 +14408,7 @@ var zb = ["open"], Bb = {
 				class: "my-6 rounded-full border border-[#555] px-5 py-2 text-sm",
 				disabled: a.value,
 				onClick: n[1] ||= (e) => f(!0)
-			}, L(a.value ? "Loading…" : "Load More"), 9, cS)) : Y("v-if", !0),
+			}, L(a.value ? "Loading…" : "Load More"), 9, _S)) : Y("v-if", !0),
 			q("dialog", {
 				ref_key: "confirmation",
 				ref: l,
@@ -14290,25 +14416,25 @@ var zb = ["open"], Bb = {
 				"aria-label": "Delete artifact",
 				onCancel: n[3] ||= (e) => c.value && e.preventDefault(),
 				onClose: n[4] ||= (e) => s.value = void 0
-			}, [s.value ? (W(), G("div", lS, [
-				q("h3", uS, "Delete " + L(s.value.name) + " from Hermes?", 1),
+			}, [s.value ? (W(), G("div", vS, [
+				q("h3", yS, "Delete " + L(s.value.name) + " from Hermes?", 1),
 				n[6] ||= q("p", { class: "mb-5 text-sm text-[#b4b4b4]" }, " This removes the server file. References in conversation history remain. ", -1),
-				q("div", dS, [q("button", {
+				q("div", bS, [q("button", {
 					autofocus: "",
 					disabled: c.value,
 					onClick: n[2] ||= (e) => s.value = void 0
-				}, "Cancel", 8, fS), q("button", {
+				}, "Cancel", 8, xS), q("button", {
 					disabled: c.value,
 					onClick: p
-				}, L(c.value ? "Deleting…" : "Delete file"), 9, pS)])
+				}, L(c.value ? "Deleting…" : "Delete file"), 9, SS)])
 			])) : Y("v-if", !0)], 544)
 		])]));
 	}
-}), hS = /* @__PURE__ */ V({
+}), wS = /* @__PURE__ */ V({
 	__name: "ArtifactsPage",
 	setup(e) {
-		let { profile: t, projects: n, recentSession: r } = kg();
-		return (e, i) => (W(), K(mS, {
+		let { profile: t, projects: n, recentSession: r } = jg();
+		return (e, i) => (W(), K(CS, {
 			profile: z(t),
 			projects: z(n),
 			onOpenSession: z(r)
@@ -14318,27 +14444,27 @@ var zb = ["open"], Bb = {
 			"onOpenSession"
 		]));
 	}
-}), gS = {
+}), TS = {
 	class: "projects-page page-content",
 	"aria-label": "Projects"
-}, _S = { class: "page-heading" }, vS = ["disabled"], yS = {
+}, ES = { class: "page-heading" }, DS = ["disabled"], OS = {
 	key: 0,
 	class: "project-muted"
-}, bS = { class: "project-actions" }, xS = ["disabled"], SS = ["disabled"], CS = {
+}, kS = { class: "project-actions" }, AS = ["disabled"], jS = ["disabled"], MS = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, wS = {
+}, NS = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, TS = {
+}, PS = {
 	key: 4,
 	class: "project-muted"
-}, ES = {
+}, FS = {
 	class: "project-list",
 	"aria-label": "Project list"
-}, DS = ["aria-label", "onClick"], OS = /* @__PURE__ */ V({
+}, IS = ["aria-label", "onClick"], LS = /* @__PURE__ */ V({
 	__name: "ProjectList",
 	props: {
 		projects: {},
@@ -14361,14 +14487,14 @@ var zb = ["open"], Bb = {
 				...s.value.trim() ? { primary_path: s.value.trim() } : {}
 			});
 		}
-		return (t, n) => (W(), G("section", gS, [
-			q("div", _S, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
+		return (t, n) => (W(), G("section", TS, [
+			q("div", ES, [n[5] ||= q("h2", null, "Projects", -1), e.archived ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: n[0] ||= (e) => a.value = !a.value
-			}, " New project ", 8, vS))]),
-			e.archived ? (W(), G("p", yS, "Archived projects")) : Y("v-if", !0),
+			}, " New project ", 8, DS))]),
+			e.archived ? (W(), G("p", OS, "Archived projects")) : Y("v-if", !0),
 			a.value && !e.archived ? (W(), G("form", {
 				key: 1,
 				class: "project-form",
@@ -14384,22 +14510,22 @@ var zb = ["open"], Bb = {
 					"onUpdate:modelValue": n[2] ||= (e) => s.value = e,
 					placeholder: "/path/on/hermes/server"
 				}, null, 512), [[vo, s.value]])]),
-				q("div", bS, [q("button", {
+				q("div", kS, [q("button", {
 					class: "project-button",
 					disabled: e.busy || e.offline || !o.value.trim()
-				}, " Create project", 8, xS), q("button", {
+				}, " Create project", 8, AS), q("button", {
 					type: "button",
 					class: "project-button",
 					disabled: e.busy,
 					onClick: n[3] ||= (e) => a.value = !1
-				}, " Cancel ", 8, SS)])
+				}, " Cancel ", 8, jS)])
 			], 32)) : Y("v-if", !0),
-			e.error ? (W(), G("p", CS, [J(L(e.error) + " ", 1), q("button", {
+			e.error ? (W(), G("p", MS, [J(L(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[4] ||= (e) => r("retry")
 			}, "Retry Projects")])) : Y("v-if", !0),
-			e.loading ? (W(), G("p", wS, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", TS, L(e.archived ? "No archived projects." : "No projects yet."), 1)),
-			q("nav", ES, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
+			e.loading ? (W(), G("p", NS, "Loading Projects…")) : i.value.length ? Y("v-if", !0) : (W(), G("p", PS, L(e.archived ? "No archived projects." : "No projects yet."), 1)),
+			q("nav", FS, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				"aria-label": e.label,
 				onClick: (t) => r("select", e.id)
@@ -14415,14 +14541,14 @@ var zb = ["open"], Bb = {
 				}, [q("path", { d: "M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11H3Z" })], -1),
 				q("span", null, [q("strong", null, L(e.label), 1), q("small", null, L(e.archived ? "Archived" : e.isAuto ? "Discovered workspace" : `${e.sessionCount} ${e.sessionCount === 1 ? "chat" : "chats"}`), 1)]),
 				n[9] ||= q("span", { "aria-hidden": "true" }, "›", -1)
-			], 8, DS))), 128))])
+			], 8, IS))), 128))])
 		]));
 	}
-}), kS = /* @__PURE__ */ V({
+}), RS = /* @__PURE__ */ V({
 	__name: "ProjectsPage",
 	setup(e) {
-		let { projects: t, projectsLoading: n, projectsError: r, manageError: i, projectBusy: a, offline: o, chooseProject: s, loadProjects: c, manageProject: l } = Fg(), u = kc(), d = X(() => u.query.archived === "1");
-		return (e, u) => (W(), K(OS, {
+		let { projects: t, projectsLoading: n, projectsError: r, manageError: i, projectBusy: a, offline: o, chooseProject: s, loadProjects: c, manageProject: l } = Lg(), u = kc(), d = X(() => u.query.archived === "1");
+		return (e, u) => (W(), K(LS, {
 			projects: z(t),
 			archived: d.value,
 			loading: z(n),
@@ -14444,77 +14570,77 @@ var zb = ["open"], Bb = {
 			"onManage"
 		]));
 	}
-}), AS = {
+}), zS = {
 	class: "project-home min-h-0 flex-1 overflow-y-auto px-6 py-6 min-[701px]:px-10",
 	"aria-label": "Selected Project"
-}, jS = { class: "project-home-content" }, MS = {
+}, BS = { class: "project-home-content" }, VS = {
 	key: 0,
 	role: "status"
-}, NS = {
+}, HS = {
 	key: 1,
 	class: "mb-4 text-[#fecaca]",
 	role: "alert"
-}, PS = {
+}, US = {
 	class: "mb-5 flex gap-5 text-sm",
 	"aria-label": "Project view"
-}, FS = ["aria-pressed"], IS = ["aria-pressed"], LS = /* @__PURE__ */ V({
+}, WS = ["aria-pressed"], GS = ["aria-pressed"], KS = /* @__PURE__ */ V({
 	__name: "ProjectLayout",
 	setup(e) {
-		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i, showProjects: a } = Fg(), o = kc(), s = Oc();
-		return (e, c) => (W(), G("section", AS, [q("div", jS, [
+		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i, showProjects: a } = Lg(), o = kc(), s = Oc();
+		return (e, c) => (W(), G("section", zS, [q("div", BS, [
 			q("button", {
 				class: "project-back",
 				onClick: c[0] ||= (e) => z(a)(!!z(t)?.archived)
 			}, " ← Projects "),
-			z(n) ? (W(), G("p", MS, "Loading Project…")) : Y("v-if", !0),
-			z(r) ? (W(), G("p", NS, [J(L(z(r)) + " ", 1), q("button", {
+			z(n) ? (W(), G("p", VS, "Loading Project…")) : Y("v-if", !0),
+			z(r) ? (W(), G("p", HS, [J(L(z(r)) + " ", 1), q("button", {
 				class: "underline",
 				onClick: c[1] ||= (...e) => z(i) && z(i)(...e)
 			}, "Retry Project")])) : Y("v-if", !0),
-			z(t) ? (W(), G(U, { key: 2 }, [q("nav", PS, [q("button", {
+			z(t) ? (W(), G(U, { key: 2 }, [q("nav", US, [q("button", {
 				"aria-pressed": z(o).name === "project",
 				onClick: c[2] ||= (e) => z(s).push({
 					name: "project",
 					params: z(o).params,
 					query: z(o).query
 				})
-			}, " Sessions / Chat ", 8, FS), q("button", {
+			}, " Sessions / Chat ", 8, WS), q("button", {
 				"aria-pressed": z(o).name === "project-artifacts",
 				onClick: c[3] ||= (e) => z(s).push({
 					name: "project-artifacts",
 					params: z(o).params,
 					query: z(o).query
 				})
-			}, " Artifacts ", 8, IS)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
+			}, " Artifacts ", 8, GS)]), yr(e.$slots, "default")], 64)) : Y("v-if", !0)
 		])]));
 	}
-}), RS = {
+}), qS = {
 	key: 0,
 	class: "project-muted"
-}, zS = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, BS = {
+}, JS = { class: "mb-4 break-all text-sm text-[#a3a3a3]" }, YS = {
 	key: 1,
 	class: "text-sm text-[#b4b4b4]"
-}, VS = {
+}, XS = {
 	class: "project-chat-list",
 	"aria-label": "Project chats"
-}, HS = ["aria-label", "onClick"], US = { class: "project-chat-title" }, WS = {
+}, ZS = ["aria-label", "onClick"], QS = { class: "project-chat-title" }, $S = {
 	key: 0,
 	class: "project-chat-preview"
-}, GS = /* @__PURE__ */ V({
+}, eC = /* @__PURE__ */ V({
 	__name: "ProjectHomePage",
 	setup(e) {
-		let { selectedProject: t, visibleSessions: n, chooseSession: r, chooseProject: i } = Fg();
-		return (e, a) => (W(), K(LS, null, {
+		let { selectedProject: t, visibleSessions: n, chooseSession: r, chooseProject: i } = Lg();
+		return (e, a) => (W(), K(KS, null, {
 			default: jn(() => [z(t) ? (W(), G(U, { key: 0 }, [
-				z(t).archived ? (W(), G("p", RS, "Archived project")) : Y("v-if", !0),
-				q("p", zS, L(z(El)(z(t)) ? "Workspace: " + z(El)(z(t)) : z(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
-				z(n).length ? Y("v-if", !0) : (W(), G("p", BS, "No conversations yet.")),
-				q("nav", VS, [(W(!0), G(U, null, H(z(n), (e) => (W(), G("button", {
+				z(t).archived ? (W(), G("p", qS, "Archived project")) : Y("v-if", !0),
+				q("p", JS, L(z(El)(z(t)) ? "Workspace: " + z(El)(z(t)) : z(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
+				z(n).length ? Y("v-if", !0) : (W(), G("p", YS, "No conversations yet.")),
+				q("nav", XS, [(W(!0), G(U, null, H(z(n), (e) => (W(), G("button", {
 					key: e.id,
 					class: "project-chat-row",
 					"aria-label": e.title || "Untitled session",
 					onClick: (t) => z(r)(e.id)
-				}, [q("span", US, L(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", WS, L(e.preview), 1)) : Y("v-if", !0)], 8, HS))), 128))]),
+				}, [q("span", QS, L(e.title || "Untitled session"), 1), e.preview?.trim() ? (W(), G("span", $S, L(e.preview), 1)) : Y("v-if", !0)], 8, ZS))), 128))]),
 				q("button", {
 					class: "project-back mt-5",
 					onClick: a[0] ||= (e) => z(i)("")
@@ -14523,12 +14649,12 @@ var zb = ["open"], Bb = {
 			_: 1
 		}));
 	}
-}), KS = /* @__PURE__ */ V({
+}), tC = /* @__PURE__ */ V({
 	__name: "ProjectArtifactsPage",
 	setup(e) {
-		let { selectedProject: t, profile: n, visibleSessions: r, recentSession: i } = Fg();
-		return (e, a) => (W(), K(LS, null, {
-			default: jn(() => [z(t) ? (W(), K(mS, {
+		let { selectedProject: t, profile: n, visibleSessions: r, recentSession: i } = Lg();
+		return (e, a) => (W(), K(KS, null, {
+			default: jn(() => [z(t) ? (W(), K(CS, {
 				key: 0,
 				project: z(t),
 				profile: z(n),
@@ -14543,25 +14669,25 @@ var zb = ["open"], Bb = {
 			_: 1
 		}));
 	}
-}), qS = {
+}), nC = {
 	key: 0,
 	class: "project-settings"
-}, JS = ["disabled"], YS = {
+}, rC = ["disabled"], iC = {
 	key: 0,
 	class: "project-error",
 	role: "alert"
-}, XS = {
+}, aC = {
 	key: 1,
 	class: "project-muted",
 	role: "status"
-}, ZS = ["disabled"], QS = { class: "project-field-row" }, $S = ["disabled"], eC = {
+}, oC = ["disabled"], sC = { class: "project-field-row" }, cC = ["disabled"], lC = {
 	key: 2,
 	class: "project-muted"
-}, tC = { class: "project-folders" }, nC = { class: "folder-path" }, rC = { key: 0 }, iC = { key: 1 }, aC = { class: "project-actions" }, oC = ["disabled", "onClick"], sC = [
+}, uC = { class: "project-folders" }, dC = { class: "folder-path" }, fC = { key: 0 }, pC = { key: 1 }, mC = { class: "project-actions" }, hC = ["disabled", "onClick"], gC = [
 	"disabled",
 	"aria-label",
 	"onClick"
-], cC = ["disabled"], lC = { class: "project-checkbox" }, uC = ["disabled"], dC = { id: "project-confirm-text" }, fC = { class: "project-actions" }, pC = ["disabled"], mC = ["disabled"], hC = /* @__PURE__ */ V({
+], _C = ["disabled"], vC = { class: "project-checkbox" }, yC = ["disabled"], bC = { id: "project-confirm-text" }, xC = { class: "project-actions" }, SC = ["disabled"], CC = ["disabled"], wC = /* @__PURE__ */ V({
 	__name: "ProjectSettings",
 	props: {
 		project: {},
@@ -14597,22 +14723,22 @@ var zb = ["open"], Bb = {
 			let e = f.value;
 			e && h(e.action, e.fields);
 		}
-		return (t, n) => e.project.isAuto ? (W(), G("div", qS, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
+		return (t, n) => e.project.isAuto ? (W(), G("div", nC, [n[12] ||= q("p", { class: "project-muted" }, " Save this discovered workspace as a project to manage its name and folders. ", -1), q("button", {
 			class: "project-button",
 			disabled: e.busy || e.offline,
 			onClick: n[0] ||= (t) => r("manage", "create", {
 				name: e.project.label,
 				primary_path: e.project.path || e.project.repos.find((e) => e.path)?.path || ""
 			})
-		}, " Save project ", 8, JS)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
+		}, " Save project ", 8, rC)])) : e.project.isNoProject ? Y("v-if", !0) : (W(), G("div", {
 			key: 1,
 			ref_key: "settings",
 			ref: m,
 			tabindex: "-1",
 			class: "project-settings"
 		}, [
-			e.error ? (W(), G("p", YS, L(e.error), 1)) : Y("v-if", !0),
-			e.busy ? (W(), G("p", XS, "Saving project…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", iC, L(e.error), 1)) : Y("v-if", !0),
+			e.busy ? (W(), G("p", aC, "Saving project…")) : Y("v-if", !0),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[6] ||= Oo((e) => h("update", {
@@ -14633,7 +14759,7 @@ var zb = ["open"], Bb = {
 					maxlength: "4096",
 					rows: "2"
 				}, null, 512), [[vo, a.value]])]),
-				q("div", QS, [q("label", null, [n[15] ||= J("Icon", -1), B(q("input", {
+				q("div", sC, [q("label", null, [n[15] ||= J("Icon", -1), B(q("input", {
 					"onUpdate:modelValue": n[3] ||= (e) => o.value = e,
 					maxlength: "64"
 				}, null, 512), [[vo, o.value]])]), q("label", null, [n[16] ||= J("Color", -1), B(q("input", {
@@ -14648,26 +14774,26 @@ var zb = ["open"], Bb = {
 				q("button", {
 					class: "project-button",
 					disabled: !i.value.trim()
-				}, "Save changes", 8, $S)
-			], 8, ZS)], 32),
+				}, "Save changes", 8, cC)
+			], 8, oC)], 32),
 			n[21] ||= q("h3", null, "Folders", -1),
 			n[22] ||= q("p", { class: "project-muted" }, " The primary folder is used for new chats. Existing chats keep their workspace. ", -1),
-			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", eC, "No folders configured.")),
-			q("ul", tC, [(W(!0), G(U, null, H(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", nC, [
+			e.project.folders?.length ? Y("v-if", !0) : (W(), G("p", lC, "No folders configured.")),
+			q("ul", uC, [(W(!0), G(U, null, H(e.project.folders, (t) => (W(), G("li", { key: t.path }, [q("span", dC, [
 				J(L(t.label || t.path), 1),
-				t.label ? (W(), G("small", rC, L(t.path), 1)) : Y("v-if", !0),
-				t.is_primary ? (W(), G("small", iC, "Primary folder")) : Y("v-if", !0)
-			]), q("div", aC, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
+				t.label ? (W(), G("small", fC, L(t.path), 1)) : Y("v-if", !0),
+				t.is_primary ? (W(), G("small", pC, "Primary folder")) : Y("v-if", !0)
+			]), q("div", mC, [t.is_primary ? Y("v-if", !0) : (W(), G("button", {
 				key: 0,
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				onClick: (e) => h("set_primary", { path: t.path })
-			}, " Make primary", 8, oC)), q("button", {
+			}, " Make primary", 8, hC)), q("button", {
 				class: "project-button",
 				disabled: e.busy || e.offline,
 				"aria-label": `Remove folder ${t.path}`,
 				onClick: (e) => g("remove_folder", { path: t.path }, `Remove ${t.path} from this project? The folder and existing chats will be kept.`)
-			}, " Remove ", 8, sC)])]))), 128))]),
+			}, " Remove ", 8, gC)])]))), 128))]),
 			q("form", {
 				class: "project-form",
 				onSubmit: n[10] ||= Oo((e) => h("add_folder", {
@@ -14686,15 +14812,15 @@ var zb = ["open"], Bb = {
 					"onUpdate:modelValue": n[8] ||= (e) => u.value = e,
 					maxlength: "160"
 				}, null, 512), [[vo, u.value]])]),
-				q("label", lC, [B(q("input", {
+				q("label", vC, [B(q("input", {
 					"onUpdate:modelValue": n[9] ||= (e) => d.value = e,
 					type: "checkbox"
 				}, null, 512), [[yo, d.value]]), n[20] ||= J(" Use as primary folder", -1)]),
 				q("button", {
 					class: "project-button",
 					disabled: !l.value.trim()
-				}, "Add folder", 8, uC)
-			], 8, cC)], 32),
+				}, "Add folder", 8, yC)
+			], 8, _C)], 32),
 			f.value ? (W(), G("div", {
 				key: 3,
 				class: "project-confirmation",
@@ -14702,41 +14828,41 @@ var zb = ["open"], Bb = {
 				"aria-modal": "false",
 				"aria-labelledby": "project-confirm-text",
 				onKeydown: n[11] ||= Ao(Oo((t) => !e.busy && _(), ["prevent"]), ["esc"])
-			}, [q("p", dC, L(f.value.text), 1), q("div", fC, [q("button", {
+			}, [q("p", bC, L(f.value.text), 1), q("div", xC, [q("button", {
 				ref_key: "cancelButton",
 				ref: p,
 				class: "project-button",
 				disabled: e.busy,
 				onClick: _
-			}, " Cancel", 8, pC), q("button", {
+			}, " Cancel", 8, SC), q("button", {
 				class: "project-button project-danger",
 				disabled: e.busy || e.offline,
 				onClick: v
-			}, " Confirm removal ", 8, mC)])], 32)) : Y("v-if", !0)
+			}, " Confirm removal ", 8, CC)])], 32)) : Y("v-if", !0)
 		], 512));
 	}
-}), gC = {
+}), TC = {
 	class: "page-content project-editor",
 	"aria-label": "Edit project"
-}, _C = {
+}, EC = {
 	key: 0,
 	role: "status"
-}, vC = {
+}, DC = {
 	key: 1,
 	role: "alert"
-}, yC = /* @__PURE__ */ V({
+}, OC = /* @__PURE__ */ V({
 	__name: "ProjectSettingsPage",
 	setup(e) {
-		let { profile: t, projectId: n, selectedProject: r, projectBusy: i, offline: a, manageError: o, manageProject: s, chooseProject: c, projectLoading: l, projectError: u, loadProject: d } = Fg();
-		return (e, f) => (W(), G("section", gC, [
+		let { profile: t, projectId: n, selectedProject: r, projectBusy: i, offline: a, manageError: o, manageProject: s, chooseProject: c, projectLoading: l, projectError: u, loadProject: d } = Lg();
+		return (e, f) => (W(), G("section", TC, [
 			q("button", {
 				class: "project-back",
 				onClick: f[0] ||= (e) => z(c)(z(n))
 			}, " ← " + L(z(r)?.label || "Project"), 1),
 			f[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit project", -1),
-			z(l) ? (W(), G("p", _C, "Loading Project…")) : Y("v-if", !0),
-			z(u) ? (W(), G("p", vC, [J(L(z(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => z(d) && z(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			z(r) ? (W(), K(hC, {
+			z(l) ? (W(), G("p", EC, "Loading Project…")) : Y("v-if", !0),
+			z(u) ? (W(), G("p", DC, [J(L(z(u)) + " ", 1), q("button", { onClick: f[1] ||= (...e) => z(d) && z(d)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			z(r) ? (W(), K(wC, {
 				key: JSON.stringify([z(t), z(r).id]),
 				project: z(r),
 				busy: z(i),
@@ -14752,18 +14878,18 @@ var zb = ["open"], Bb = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), bC = {
+}), kC = {
 	key: 0,
 	role: "status"
-}, xC = {
+}, AC = {
 	key: 1,
 	role: "alert",
 	class: "project-error"
-}, SC = ["disabled"], CC = { key: 2 }, wC = { class: "project-muted" }, TC = ["disabled"], EC = {
+}, jC = ["disabled"], MC = { key: 2 }, NC = { class: "project-muted" }, PC = ["disabled"], FC = {
 	key: 3,
 	role: "status",
 	class: "project-muted"
-}, DC = ["disabled"], OC = /* @__PURE__ */ V({
+}, IC = ["disabled"], LC = /* @__PURE__ */ V({
 	__name: "ProjectInstructions",
 	props: {
 		profile: {},
@@ -14808,52 +14934,52 @@ var zb = ["open"], Bb = {
 			onSubmit: Oo(p, ["prevent"])
 		}, [
 			i[3] ||= q("p", { class: "project-muted" }, "Custom instructions guide Hermes when it works in this project.", -1),
-			a.value ? (W(), G("p", bC, "Loading instructions…")) : Y("v-if", !0),
-			s.value ? (W(), G("p", xC, [J(L(s.value) + " ", 1), q("button", {
+			a.value ? (W(), G("p", kC, "Loading instructions…")) : Y("v-if", !0),
+			s.value ? (W(), G("p", AC, [J(L(s.value) + " ", 1), q("button", {
 				type: "button",
 				class: "underline",
 				disabled: a.value || o.value || e.offline,
 				onClick: f
-			}, " Reload instructions ", 8, SC)])) : Y("v-if", !0),
-			l.value ? (W(), G("label", CC, [
+			}, " Reload instructions ", 8, jC)])) : Y("v-if", !0),
+			l.value ? (W(), G("label", MC, [
 				i[2] ||= J("Instructions ", -1),
-				q("span", wC, L(r.value), 1),
+				q("span", NC, L(r.value), 1),
 				B(q("textarea", {
 					"onUpdate:modelValue": i[0] ||= (e) => n.value = e,
 					rows: "14",
 					disabled: a.value || o.value,
 					onInput: i[1] ||= (e) => c.value = !1
-				}, null, 40, TC), [[vo, n.value]])
+				}, null, 40, PC), [[vo, n.value]])
 			])) : Y("v-if", !0),
-			c.value ? (W(), G("p", EC, "Instructions saved.")) : Y("v-if", !0),
+			c.value ? (W(), G("p", FC, "Instructions saved.")) : Y("v-if", !0),
 			q("button", {
 				class: "project-button justify-self-start",
 				disabled: !l.value || a.value || o.value || e.offline
-			}, L(o.value ? "Saving…" : "Save instructions"), 9, DC)
+			}, L(o.value ? "Saving…" : "Save instructions"), 9, IC)
 		], 32));
 	}
-}), kC = {
+}), RC = {
 	class: "page-content project-editor",
 	"aria-label": "Edit Instructions"
-}, AC = {
+}, zC = {
 	key: 0,
 	role: "status"
-}, jC = {
+}, BC = {
 	key: 1,
 	role: "alert"
-}, MC = /* @__PURE__ */ V({
+}, VC = /* @__PURE__ */ V({
 	__name: "ProjectInstructionsPage",
 	setup(e) {
-		let { profile: t, projectId: n, selectedProject: r, offline: i, chooseProject: a, projectLoading: o, projectError: s, loadProject: c } = Fg();
-		return (e, l) => (W(), G("section", kC, [
+		let { profile: t, projectId: n, selectedProject: r, offline: i, chooseProject: a, projectLoading: o, projectError: s, loadProject: c } = Lg();
+		return (e, l) => (W(), G("section", RC, [
 			q("button", {
 				class: "project-back",
 				onClick: l[0] ||= (e) => z(a)(z(n))
 			}, " ← " + L(z(r)?.label || "Project"), 1),
 			l[2] ||= q("h2", { class: "text-2xl font-semibold" }, "Edit Instructions", -1),
-			z(o) ? (W(), G("p", AC, "Loading Project…")) : Y("v-if", !0),
-			z(s) ? (W(), G("p", jC, [J(L(z(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => z(c) && z(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
-			z(r) ? (W(), K(OC, {
+			z(o) ? (W(), G("p", zC, "Loading Project…")) : Y("v-if", !0),
+			z(s) ? (W(), G("p", BC, [J(L(z(s)) + " ", 1), q("button", { onClick: l[1] ||= (...e) => z(c) && z(c)(...e) }, "Retry Project")])) : Y("v-if", !0),
+			z(r) ? (W(), K(LC, {
 				key: JSON.stringify([z(t), z(r).id]),
 				profile: z(t),
 				"project-id": z(r).id,
@@ -14865,18 +14991,18 @@ var zb = ["open"], Bb = {
 			])) : Y("v-if", !0)
 		]));
 	}
-}), NC = { class: "scheduled-heading" }, PC = { class: "scheduled-heading-content" }, FC = { class: "page-heading" }, IC = {
+}), HC = { class: "scheduled-heading" }, UC = { class: "scheduled-heading-content" }, WC = { class: "page-heading" }, GC = {
 	key: 0,
 	class: "project-muted"
-}, LC = {
+}, KC = {
 	key: 1,
 	role: "status",
 	class: "project-muted"
-}, RC = {
+}, qC = {
 	key: 2,
 	role: "alert",
 	class: "project-error"
-}, zC = /* @__PURE__ */ V({
+}, JC = /* @__PURE__ */ V({
 	__name: "ScheduledHeading",
 	props: {
 		title: {},
@@ -14886,27 +15012,27 @@ var zb = ["open"], Bb = {
 	},
 	emits: ["retry"],
 	setup(e) {
-		return (t, n) => (W(), G("div", NC, [q("div", PC, [
-			q("div", FC, [q("h2", null, L(e.title || "Scheduled"), 1)]),
+		return (t, n) => (W(), G("div", HC, [q("div", UC, [
+			q("div", WC, [q("h2", null, L(e.title || "Scheduled"), 1)]),
 			yr(t.$slots, "default"),
-			e.subtitle ? (W(), G("p", IC, L(e.subtitle), 1)) : Y("v-if", !0),
-			e.loading ? (W(), G("p", LC, "Loading scheduled history…")) : Y("v-if", !0),
-			e.error ? (W(), G("p", RC, [J(L(e.error) + " ", 1), q("button", {
+			e.subtitle ? (W(), G("p", GC, L(e.subtitle), 1)) : Y("v-if", !0),
+			e.loading ? (W(), G("p", KC, "Loading scheduled history…")) : Y("v-if", !0),
+			e.error ? (W(), G("p", qC, [J(L(e.error) + " ", 1), q("button", {
 				class: "underline",
 				onClick: n[0] ||= (e) => t.$emit("retry")
 			}, "Retry")])) : Y("v-if", !0)
 		])]));
 	}
-}), BC = {
+}), YC = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, VC = { class: "scheduled-filter" }, HC = { class: "scheduled-content" }, UC = {
+}, XC = { class: "scheduled-filter" }, ZC = { class: "scheduled-content" }, QC = {
 	key: 0,
 	class: "project-muted"
-}, WC = {
+}, $C = {
 	class: "scheduled-list",
 	"aria-label": "Scheduled jobs"
-}, GC = ["onClick"], KC = /* @__PURE__ */ V({
+}, ew = ["onClick"], tw = /* @__PURE__ */ V({
 	__name: "ScheduledListPage",
 	setup(e) {
 		let t = kc(), n = Oc(), r = /* @__PURE__ */ R([]), i = X({
@@ -14917,18 +15043,18 @@ var zb = ["open"], Bb = {
 					status: e
 				} });
 			}
-		}), a = X(() => r.value.filter((e) => zg(e) === i.value)), { loading: o, error: s, retry: c } = Hg(async (e, t) => {
+		}), a = X(() => r.value.filter((e) => Vg(e) === i.value)), { loading: o, error: s, retry: c } = Wg(async (e, t) => {
 			r.value = [];
 			let n = await Q.scheduled(t, e);
 			if (!Array.isArray(n.jobs)) throw Error("Invalid jobs");
 			e.aborted || (r.value = n.jobs);
 		});
-		return (e, r) => (W(), G("section", BC, [qi(zC, {
+		return (e, r) => (W(), G("section", YC, [qi(JC, {
 			loading: z(o),
 			error: z(s),
 			onRetry: z(c)
 		}, {
-			default: jn(() => [q("label", VC, [r[2] ||= J("Show ", -1), B(q("select", {
+			default: jn(() => [q("label", XC, [r[2] ||= J("Show ", -1), B(q("select", {
 				"onUpdate:modelValue": r[0] ||= (e) => i.value = e,
 				"aria-label": "Job status"
 			}, [...r[1] ||= [
@@ -14941,7 +15067,7 @@ var zb = ["open"], Bb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", HC, [!z(o) && !z(s) && !a.value.length ? (W(), G("p", UC, " No " + L(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", WC, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("button", {
+		]), q("div", ZC, [!z(o) && !z(s) && !a.value.length ? (W(), G("p", QC, " No " + L(i.value) + " scheduled jobs. ", 1)) : Y("v-if", !0), q("nav", $C, [(W(!0), G(U, null, H(a.value, (e) => (W(), G("button", {
 			key: e.id,
 			class: "scheduled-job-row",
 			onClick: (r) => z(n).push({
@@ -14952,26 +15078,26 @@ var zb = ["open"], Bb = {
 		}, [q("span", null, [
 			q("strong", null, L(e.name || e.id), 1),
 			q("small", null, L(e.schedule_display || "Scheduled job"), 1),
-			q("small", null, L(z(Vg)(e.last_run_at)), 1)
-		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, GC))), 128))])])]));
+			q("small", null, L(z(Ug)(e.last_run_at)), 1)
+		]), r[3] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, ew))), 128))])])]));
 	}
-}), qC = {
+}), nw = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, JC = { class: "scheduled-content" }, YC = {
+}, rw = { class: "scheduled-content" }, iw = {
 	key: 0,
 	class: "project-muted"
-}, XC = {
+}, aw = {
 	class: "scheduled-list",
 	"aria-label": "Job runs"
-}, ZC = ["onClick"], QC = ["disabled"], $C = /* @__PURE__ */ V({
+}, ow = ["onClick"], sw = ["disabled"], cw = /* @__PURE__ */ V({
 	__name: "ScheduledJobPage",
 	setup(e) {
-		let t = kc(), n = Oc(), r = /* @__PURE__ */ R(), i = /* @__PURE__ */ R([]), a = /* @__PURE__ */ R(!1), o = /* @__PURE__ */ R(0), s = !1, { loading: c, error: l, retry: u } = Hg(async (e, t, n) => {
+		let t = kc(), n = Oc(), r = /* @__PURE__ */ R(), i = /* @__PURE__ */ R([]), a = /* @__PURE__ */ R(!1), o = /* @__PURE__ */ R(0), s = !1, { loading: c, error: l, retry: u } = Wg(async (e, t, n) => {
 			let c = s;
 			if (s = !1, !c) {
 				r.value = void 0, i.value = [], o.value = 0, a.value = !1;
-				let s = await Ug(t, n, e);
+				let s = await Gg(t, n, e);
 				if (e.aborted) return;
 				r.value = s;
 			}
@@ -14981,7 +15107,7 @@ var zb = ["open"], Bb = {
 		function d() {
 			s = !0, u();
 		}
-		return (e, o) => (W(), G("section", qC, [qi(zC, {
+		return (e, o) => (W(), G("section", nw, [qi(JC, {
 			title: r.value?.name || r.value?.id,
 			subtitle: "Run history · newest first",
 			loading: z(c),
@@ -14992,9 +15118,9 @@ var zb = ["open"], Bb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), q("div", JC, [
-			!z(c) && !z(l) && !i.value.length ? (W(), G("p", YC, "No runs yet.")) : Y("v-if", !0),
-			q("nav", XC, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
+		]), q("div", rw, [
+			!z(c) && !z(l) && !i.value.length ? (W(), G("p", iw, "No runs yet.")) : Y("v-if", !0),
+			q("nav", aw, [(W(!0), G(U, null, H(i.value, (e) => (W(), G("button", {
 				key: e.id,
 				onClick: (r) => z(n).push({
 					name: "scheduled-run",
@@ -15005,41 +15131,41 @@ var zb = ["open"], Bb = {
 					query: z(t).query
 				})
 			}, [q("span", null, [
-				q("strong", null, L(z(Bg)(e.started_at)), 1),
+				q("strong", null, L(z(Hg)(e.started_at)), 1),
 				q("small", null, L(e.title || "Job run"), 1),
 				q("small", null, L(e.end_reason || (e.source === "cron_output" ? "Saved output" : e.ended_at ? "Finished" : "In progress")), 1)
-			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, ZC))), 128))]),
+			]), o[0] ||= q("span", { "aria-hidden": "true" }, "›", -1)], 8, ow))), 128))]),
 			a.value ? (W(), G("button", {
 				key: 1,
 				class: "project-button",
 				disabled: z(c),
 				onClick: d
-			}, " Load older runs ", 8, QC)) : Y("v-if", !0)
+			}, " Load older runs ", 8, sw)) : Y("v-if", !0)
 		])]));
 	}
-}), ew = {
+}), lw = {
 	class: "scheduled-page min-h-0 flex flex-1 flex-col",
 	"aria-label": "Scheduled"
-}, tw = {
+}, uw = {
 	key: 1,
 	class: "scheduled-content"
-}, nw = {
+}, dw = {
 	key: 0,
 	class: "project-muted"
-}, rw = /* @__PURE__ */ V({
+}, fw = /* @__PURE__ */ V({
 	__name: "ScheduledRunPage",
 	setup(e) {
-		let t = kc(), n = /* @__PURE__ */ R(), r = /* @__PURE__ */ R(), i = Hg(async (e, t, a, o) => {
+		let t = kc(), n = /* @__PURE__ */ R(), r = /* @__PURE__ */ R(), i = Wg(async (e, t, a, o) => {
 			n.value = void 0, r.value = void 0;
-			let s = await Ug(t, a, e);
+			let s = await Gg(t, a, e);
 			if (e.aborted) return;
 			n.value = s;
 			let c = await Q.scheduledOutput(t, a, o, e);
 			e.aborted || (r.value = c, i.sessionId.value = c.session_id);
-		}), { loading: a, error: o, retry: s } = i, c = X(() => Wg(r.value));
-		return (e, i) => (W(), G("section", ew, [qi(zC, {
+		}), { loading: a, error: o, retry: s } = i, c = X(() => Kg(r.value));
+		return (e, i) => (W(), G("section", lw, [qi(JC, {
 			title: n.value?.name || n.value?.id,
-			subtitle: r.value ? z(Bg)(r.value.started_at || 0) : void 0,
+			subtitle: r.value ? z(Hg)(r.value.started_at || 0) : void 0,
 			loading: z(a),
 			error: z(o),
 			onRetry: z(s)
@@ -15049,63 +15175,63 @@ var zb = ["open"], Bb = {
 			"loading",
 			"error",
 			"onRetry"
-		]), c.value.length ? (W(), K(Ex, {
+		]), c.value.length ? (W(), K(Fx, {
 			key: String(z(t).params.runId),
 			"follow-initially": !1,
 			messages: c.value,
 			draft: "",
 			loading: !1,
 			progress: []
-		}, null, 8, ["messages"])) : (W(), G("div", tw, [r.value ? (W(), G("p", nw, "No output was saved for this run.")) : Y("v-if", !0)]))]));
+		}, null, 8, ["messages"])) : (W(), G("div", uw, [r.value ? (W(), G("p", dw, "No output was saved for this run.")) : Y("v-if", !0)]))]));
 	}
-}), iw = {
+}), pw = {
 	class: "settings-page page-content",
 	"aria-label": "Settings"
-}, aw = { class: "settings-content" }, ow = { class: "settings-heading" }, sw = {
+}, mw = { class: "settings-content" }, hw = { class: "settings-heading" }, gw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-profile-heading"
-}, cw = { class: "settings-row" }, lw = ["value"], uw = ["value"], dw = ["value"], fw = {
+}, _w = { class: "settings-row" }, vw = ["value"], yw = ["value"], bw = ["value"], xw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-app-heading"
-}, pw = { class: "settings-row settings-notifications" }, mw = { class: "wake-lock-setting" }, hw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, gw = ["checked"], _w = {
+}, Sw = { class: "settings-row settings-notifications" }, Cw = { class: "wake-lock-setting" }, ww = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, Tw = ["checked"], Ew = {
 	key: 0,
 	class: "mt-1 text-sm"
-}, vw = {
+}, Dw = {
 	key: 0,
 	class: "settings-row settings-notifications"
-}, yw = { class: "kanban-setting" }, bw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, xw = ["checked", "disabled"], Sw = {
+}, Ow = { class: "kanban-setting" }, kw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, Aw = ["checked", "disabled"], jw = {
 	id: "kanban-description",
 	role: "status"
-}, Cw = ["disabled"], ww = {
+}, Mw = ["disabled"], Nw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-notifications-heading"
-}, Tw = { class: "settings-row settings-notifications" }, Ew = {
+}, Pw = { class: "settings-row settings-notifications" }, Fw = {
 	class: "push-setting",
 	"aria-labelledby": "notifications-heading"
-}, Dw = {
+}, Iw = {
 	id: "notifications-heading",
 	class: "text-sm font-medium text-white"
-}, Ow = ["disabled"], kw = ["disabled"], Aw = {
+}, Lw = ["disabled"], Rw = ["disabled"], zw = {
 	key: 1,
 	class: "mt-1 text-sm text-[#dcae6e]",
 	role: "status"
-}, jw = {
+}, Bw = {
 	key: 2,
 	class: "mt-1 text-sm"
-}, Mw = {
+}, Vw = {
 	key: 3,
 	class: "mt-1 text-sm",
 	role: "status"
-}, Nw = {
+}, Hw = {
 	key: 4,
 	class: "mt-1 text-sm"
-}, Pw = {
+}, Uw = {
 	key: 5,
 	class: "mt-1 text-sm"
-}, Fw = {
+}, Ww = {
 	key: 6,
 	class: "mt-1 text-sm"
-}, Iw = /* @__PURE__ */ V({
+}, Gw = /* @__PURE__ */ V({
 	__name: "SettingsPanel",
 	props: {
 		kanban: {},
@@ -15127,8 +15253,8 @@ var zb = ["open"], Bb = {
 	],
 	setup(e, { emit: t }) {
 		let n = t, r = /* @__PURE__ */ R();
-		return cr(() => r.value?.focus()), (t, i) => (W(), G("section", iw, [q("div", aw, [
-			q("div", ow, [q("h2", {
+		return cr(() => r.value?.focus()), (t, i) => (W(), G("section", pw, [q("div", mw, [
+			q("div", hw, [q("h2", {
 				ref_key: "heading",
 				ref: r,
 				tabindex: "-1",
@@ -15142,7 +15268,7 @@ var zb = ["open"], Bb = {
 				id: "settings-profile-heading",
 				class: "settings-section-title"
 			}, "Profile", -1),
-			q("div", sw, [q("div", cw, [i[8] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
+			q("div", gw, [q("div", _w, [i[8] ||= Zi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), q("select", {
 				id: "settings-profile",
 				value: e.profile,
 				onChange: i[1] ||= (e) => n("profile", e.target.value)
@@ -15151,17 +15277,17 @@ var zb = ["open"], Bb = {
 				e.profile && !e.profiles.some((t) => t.name === e.profile) ? (W(), G("option", {
 					key: 0,
 					value: e.profile
-				}, L(e.profile), 9, uw)) : Y("v-if", !0),
+				}, L(e.profile), 9, yw)) : Y("v-if", !0),
 				(W(!0), G(U, null, H(e.profiles, (e) => (W(), G("option", {
 					key: e.name,
 					value: e.name
-				}, L(e.name), 9, dw))), 128))
-			], 40, lw)])]),
+				}, L(e.name), 9, bw))), 128))
+			], 40, vw)])]),
 			i[16] ||= q("h3", {
 				id: "settings-app-heading",
 				class: "settings-section-title"
 			}, "Global settings", -1),
-			q("div", fw, [q("div", pw, [i[11] ||= q("svg", {
+			q("div", xw, [q("div", Sw, [i[11] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -15174,19 +15300,19 @@ var zb = ["open"], Bb = {
 				width: "14",
 				height: "18",
 				rx: "2"
-			}), q("path", { d: "M9 17h6" })], -1), q("div", mw, [
+			}), q("path", { d: "M9 17h6" })], -1), q("div", Cw, [
 				i[10] ||= q("h3", {
 					id: "wake-lock-heading",
 					class: "text-sm font-medium text-white"
 				}, "Keep Screen Awake", -1),
-				q("label", hw, [q("input", {
+				q("label", ww, [q("input", {
 					type: "checkbox",
 					"aria-labelledby": "wake-lock-heading",
 					checked: e.keepScreenAwake,
 					onChange: i[2] ||= (e) => n("toggleWakeLock", e.target.checked)
-				}, null, 40, gw), i[9] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
-				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", _w, " Screen wake lock is unavailable in this browser. "))
-			])]), e.kanban ? (W(), G("div", vw, [i[13] ||= q("svg", {
+				}, null, 40, Tw), i[9] ||= J(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
+				e.wakeLockAvailable ? Y("v-if", !0) : (W(), G("p", Ew, " Screen wake lock is unavailable in this browser. "))
+			])]), e.kanban ? (W(), G("div", Dw, [i[13] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -15199,58 +15325,58 @@ var zb = ["open"], Bb = {
 				width: "18",
 				height: "18",
 				rx: "2"
-			}), q("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), q("div", yw, [
+			}), q("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), q("div", Ow, [
 				i[12] ||= q("h3", {
 					id: "kanban-heading",
 					class: "text-sm font-semibold text-white"
 				}, "Kanban Viewer", -1),
-				q("label", bw, [q("input", {
+				q("label", kw, [q("input", {
 					type: "checkbox",
 					"aria-labelledby": "kanban-heading",
 					"aria-describedby": "kanban-description",
 					checked: e.kanban.enabled.value,
 					disabled: !e.kanban.available.value || e.kanban.checking.value,
 					onChange: i[3] ||= (t) => e.kanban.setEnabled(t.target.checked)
-				}, null, 40, xw), q("span", Sw, L(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
+				}, null, 40, Aw), q("span", jw, L(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
 				q("button", {
 					class: "min-h-[44px] underline",
 					disabled: e.kanban.checking.value,
 					onClick: i[4] ||= (t) => e.kanban.check()
-				}, " Recheck availability ", 8, Cw)
+				}, " Recheck availability ", 8, Mw)
 			])])) : Y("v-if", !0)]),
 			i[17] ||= q("h3", {
 				id: "settings-notifications-heading",
 				class: "settings-section-title"
 			}, "Notifications", -1),
-			q("div", ww, [q("div", Tw, [i[14] ||= q("svg", {
+			q("div", Nw, [q("div", Pw, [i[14] ||= q("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
 				stroke: "currentColor",
 				"stroke-width": "1.5",
 				"aria-hidden": "true"
-			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", Ew, [
-				q("h3", Dw, " Notifications for " + L(e.profile || "default"), 1),
+			}, [q("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), q("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), q("div", Fw, [
+				q("h3", Iw, " Notifications for " + L(e.profile || "default"), 1),
 				q("button", {
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.supported || !e.pushState.subscribed && !e.pushState.available,
 					onClick: i[5] ||= (e) => n("togglePush")
-				}, L(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, Ow),
+				}, L(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, Lw),
 				e.pushState.subscribed ? (W(), G("button", {
 					key: 0,
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.available,
 					onClick: i[6] ||= (e) => n("testPush")
-				}, " Send test ", 8, kw)) : Y("v-if", !0),
-				e.pushState.error || e.pushMessage ? (W(), G("p", Aw, L(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", jw, " Notifications enabled for " + L(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", Mw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", Pw, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", Fw, " Notifications disabled for " + L(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", Nw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
+				}, " Send test ", 8, Rw)) : Y("v-if", !0),
+				e.pushState.error || e.pushMessage ? (W(), G("p", zw, L(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (W(), G("p", Bw, " Notifications enabled for " + L(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (W(), G("p", Vw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (W(), G("p", Uw, " Allow notifications in browser settings to enable them. ")) : (W(), G("p", Ww, " Notifications disabled for " + L(e.profile || "default") + " on this device. ", 1)) : (W(), G("p", Hw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
 			])])])
 		])]));
 	}
-}), Lw = /* @__PURE__ */ V({
+}), Kw = /* @__PURE__ */ V({
 	__name: "SettingsPage",
 	setup(e) {
-		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, kanban: c, chooseProfile: l, togglePush: u, testPush: d, closeSettings: f } = Mg();
-		return (e, p) => (W(), K(Iw, {
+		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, kanban: c, chooseProfile: l, togglePush: u, testPush: d, closeSettings: f } = Pg();
+		return (e, p) => (W(), K(Gw, {
 			kanban: z(c),
 			profile: z(t),
 			profiles: z(n),
@@ -15282,9 +15408,9 @@ var zb = ["open"], Bb = {
 			"onClose"
 		]));
 	}
-}), Rw = "chathermes";
-function zw() {
-	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/", i = r(), a = () => window.history.state?.[Rw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), qw = "chathermes";
+function Jw() {
+	let e = [], t = !1, n = !1, r = () => Ic(window.location.href) || "/", i = r(), a = () => window.history.state?.[qw], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -15293,7 +15419,7 @@ function zw() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[Rw] = {
+		}, a[qw] = {
 			current: e,
 			position: o,
 			state: s
@@ -15335,10 +15461,10 @@ function zw() {
 }
 //#endregion
 //#region src/features/projects/components/ProjectActions.vue?vue&type=script&setup=true&lang.ts
-var Bw = ["disabled"], Vw = ["disabled"], Hw = ["disabled"], Uw = ["disabled"], Ww = ["disabled"], Gw = /* @__PURE__ */ V({
+var Yw = ["disabled"], Xw = ["disabled"], Zw = ["disabled"], Qw = ["disabled"], $w = ["disabled"], eT = /* @__PURE__ */ V({
 	__name: "ProjectActions",
 	setup(e) {
-		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = Fg(), u = kc(), d = Oc();
+		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = Lg(), u = kc(), d = Oc();
 		function f(e) {
 			return d.push({
 				name: e === "edit" ? "project-settings" : "project-instructions",
@@ -15359,7 +15485,7 @@ var Bw = ["disabled"], Vw = ["disabled"], Hw = ["disabled"], Uw = ["disabled"], 
 				role: "menuitem",
 				disabled: z(a) || z(c) || !z(t) || z(t).archived || !z(El)(z(t)),
 				onClick: n[0] ||= (e) => z(s)()
-			}, " New Project Chat ", 8, Bw)) : Y("v-if", !0),
+			}, " New Project Chat ", 8, Yw)) : Y("v-if", !0),
 			q("button", {
 				role: "menuitem",
 				onClick: n[1] ||= (e) => f("edit")
@@ -15368,7 +15494,7 @@ var Bw = ["disabled"], Vw = ["disabled"], Hw = ["disabled"], Uw = ["disabled"], 
 				role: "menuitem",
 				disabled: z(a) || !z(El)(z(t)),
 				onClick: n[2] ||= (e) => f("instructions")
-			}, " Edit Instructions ", 8, Vw),
+			}, " Edit Instructions ", 8, Xw),
 			z(t).isAuto ? Y("v-if", !0) : (W(), G(U, { key: 1 }, [z(t).archived ? (W(), G("button", {
 				key: 0,
 				role: "menuitem",
@@ -15377,70 +15503,70 @@ var Bw = ["disabled"], Vw = ["disabled"], Hw = ["disabled"], Uw = ["disabled"], 
 					id: z(r),
 					restore: !0
 				})
-			}, " Restore project ", 8, Hw)) : (W(), G("button", {
+			}, " Restore project ", 8, Zw)) : (W(), G("button", {
 				key: 1,
 				role: "menuitem",
 				disabled: z(i) || z(a),
 				onClick: n[4] ||= (e) => p("archive")
-			}, " Archive project ", 8, Uw)), q("button", {
+			}, " Archive project ", 8, Qw)), q("button", {
 				class: "project-danger",
 				role: "menuitem",
 				disabled: z(i) || z(a),
 				onClick: n[5] ||= (e) => p("delete")
-			}, " Delete project ", 8, Ww)], 64))
+			}, " Delete project ", 8, $w)], 64))
 		], 64)) : Y("v-if", !0);
 	}
-}), Kw = ["aria-checked"], qw = ["aria-checked"], Jw = /* @__PURE__ */ V({
+}), tT = ["aria-checked"], nT = ["aria-checked"], rT = /* @__PURE__ */ V({
 	__name: "ProjectsActions",
 	setup(e) {
-		let t = kc(), n = X(() => t.query.archived === "1"), { showProjects: r } = Fg();
+		let t = kc(), n = X(() => t.query.archived === "1"), { showProjects: r } = Lg();
 		return (e, t) => (W(), G(U, null, [q("button", {
 			role: "menuitemradio",
 			"aria-checked": !n.value,
 			onClick: t[0] ||= (e) => z(r)(!1)
-		}, " Active projects", 8, Kw), q("button", {
+		}, " Active projects", 8, tT), q("button", {
 			role: "menuitemradio",
 			"aria-checked": n.value,
 			onClick: t[1] ||= (e) => z(r)(!0)
-		}, " Archived projects ", 8, qw)], 64));
+		}, " Archived projects ", 8, nT)], 64));
 	}
-}), Yw = ["disabled"], Xw = ["disabled"], Zw = /* @__PURE__ */ V({
+}), iT = ["disabled"], aT = ["disabled"], oT = /* @__PURE__ */ V({
 	__name: "ScheduledActions",
 	setup(e) {
-		let { current: t, offline: n, creating: r, recentSession: i } = Rg();
+		let { current: t, offline: n, creating: r, recentSession: i } = Bg();
 		return (e, a) => (W(), G(U, null, [q("button", {
 			role: "menuitem",
 			"data-test": "refresh-scheduled",
 			disabled: !z(t) || z(t).loading.value,
 			onClick: a[0] ||= (e) => z(t)?.retry()
-		}, " Refresh", 8, Yw), z(t)?.sessionId.value ? (W(), G("button", {
+		}, " Refresh", 8, iT), z(t)?.sessionId.value ? (W(), G("button", {
 			key: 0,
 			role: "menuitem",
 			"data-test": "resume-scheduled-session",
 			disabled: z(n) || z(r) || z(t).loading.value,
 			onClick: a[1] ||= (e) => z(i)(z(t).sessionId.value)
-		}, " Resume Session ", 8, Xw)) : Y("v-if", !0)], 64));
+		}, " Resume Session ", 8, aT)) : Y("v-if", !0)], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function Qw(e = zw(), t) {
+function sT(e = Jw(), t) {
 	let n = Dc({
 		history: e,
 		routes: [
 			{
 				path: "/",
 				name: "home",
-				components: { default: jy },
+				components: { default: By },
 				meta: { chat: !0 }
 			},
 			{
 				path: "/chat/:sessionId",
 				name: "chat",
 				components: {
-					default: Kx,
-					actions: Gw,
-					dialogs: dy
+					default: tS,
+					actions: eT,
+					dialogs: by
 				},
 				meta: { chat: !0 }
 			},
@@ -15448,15 +15574,15 @@ function Qw(e = zw(), t) {
 				path: "/inbox",
 				name: "inbox",
 				components: {
-					default: qx,
-					actions: ay
+					default: nS,
+					actions: my
 				},
 				meta: { title: "Inbox" }
 			},
 			{
 				path: "/artifacts",
 				name: "artifacts",
-				components: { default: hS },
+				components: { default: wS },
 				meta: {
 					title: "Artifacts",
 					hideComposer: !0
@@ -15466,8 +15592,8 @@ function Qw(e = zw(), t) {
 				path: "/projects",
 				name: "projects",
 				components: {
-					default: kS,
-					actions: Jw
+					default: RS,
+					actions: rT
 				},
 				meta: {
 					title: "Projects",
@@ -15478,9 +15604,9 @@ function Qw(e = zw(), t) {
 				path: "/projects/:projectId",
 				name: "project",
 				components: {
-					default: GS,
-					actions: Gw,
-					dialogs: dy
+					default: eC,
+					actions: eT,
+					dialogs: by
 				},
 				meta: {
 					section: "projects",
@@ -15491,9 +15617,9 @@ function Qw(e = zw(), t) {
 				path: "/projects/:projectId/artifacts",
 				name: "project-artifacts",
 				components: {
-					default: KS,
-					actions: Gw,
-					dialogs: dy
+					default: tC,
+					actions: eT,
+					dialogs: by
 				},
 				meta: {
 					section: "projects",
@@ -15504,9 +15630,9 @@ function Qw(e = zw(), t) {
 				path: "/projects/:projectId/settings",
 				name: "project-settings",
 				components: {
-					default: yC,
-					actions: Gw,
-					dialogs: dy
+					default: OC,
+					actions: eT,
+					dialogs: by
 				},
 				meta: { section: "projects" }
 			},
@@ -15514,9 +15640,9 @@ function Qw(e = zw(), t) {
 				path: "/projects/:projectId/instructions",
 				name: "project-instructions",
 				components: {
-					default: MC,
-					actions: Gw,
-					dialogs: dy
+					default: VC,
+					actions: eT,
+					dialogs: by
 				},
 				meta: { section: "projects" }
 			},
@@ -15524,8 +15650,8 @@ function Qw(e = zw(), t) {
 				path: "/scheduled",
 				name: "scheduled",
 				components: {
-					default: KC,
-					actions: Zw
+					default: tw,
+					actions: oT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15536,8 +15662,8 @@ function Qw(e = zw(), t) {
 				path: "/scheduled/:jobId",
 				name: "scheduled-job",
 				components: {
-					default: $C,
-					actions: Zw
+					default: cw,
+					actions: oT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15548,8 +15674,8 @@ function Qw(e = zw(), t) {
 				path: "/scheduled/:jobId/:runId",
 				name: "scheduled-run",
 				components: {
-					default: rw,
-					actions: Zw
+					default: fw,
+					actions: oT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15559,7 +15685,7 @@ function Qw(e = zw(), t) {
 			{
 				path: "/settings",
 				name: "settings",
-				components: { default: Lw },
+				components: { default: Kw },
 				meta: {
 					title: "Settings",
 					hideComposer: !0
@@ -15569,8 +15695,8 @@ function Qw(e = zw(), t) {
 				path: "/kanban",
 				name: "kanban",
 				components: {
-					default: ny,
-					actions: iy
+					default: dy,
+					actions: py
 				},
 				meta: {
 					title: "Kanban",
@@ -15600,9 +15726,9 @@ function Qw(e = zw(), t) {
 }
 //#endregion
 //#region src/main.ts
-function $w(e, t) {
-	let n = Po(N_).use(Qw(void 0, e));
+function cT(e, t) {
+	let n = Po(H_).use(sT(void 0, e));
 	return t && n.provide(Lc, t), n;
 }
 //#endregion
-export { N_ as App, $w as createChatHermesApp };
+export { H_ as App, cT as createChatHermesApp };
