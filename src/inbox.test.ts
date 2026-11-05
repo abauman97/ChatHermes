@@ -78,11 +78,11 @@ async function open() {
   await flushPromises();
   return wrapper;
 }
-it("opens Inbox from the dashboard with compact sidebar navigation and a focusable composer", async () => {
+it("opens Home from the dashboard with compact sidebar navigation and a focusable composer", async () => {
   history.replaceState({}, "", "/chathermes");
   const wrapper = await open();
-  expect(wrapper.vm.$route.name).toBe("inbox");
-  expect(wrapper.get(".inbox-nav").attributes("aria-current")).toBe("page");
+  expect(wrapper.vm.$route.name).toBe("home");
+  expect(wrapper.find('[aria-label="Inbox view"]').exists()).toBe(false);
   expect(wrapper.text()).toContain("Alpha response");
   expect(wrapper.get(".sidebar").classes()).toContain("gap-0.5");
   for (const nav of [".inbox-nav", ".projects-nav", ".scheduled-nav", ".artifacts-nav"]) {
@@ -295,6 +295,32 @@ it("shows global notifications and badge, filters profile, and keeps composer fo
   expect(region.text()).toContain("No unread notifications");
   wrapper.unmount();
 });
+it("carries the Inbox select through the route and list prop to scoped reads, including reload", async () => {
+  history.replaceState({}, "", "/chathermes?profile=alpha#/inbox?profile=alpha");
+  let wrapper = await open();
+  const region = wrapper.get('[aria-label="Inbox"]');
+  expect(region.text()).toContain("Beta chat");
+  await region.get("select").setValue("profile");
+  await flushPromises();
+  expect(wrapper.vm.$route.query).toMatchObject({ profile: "alpha", scope: "profile" });
+  expect(api.inbox).toHaveBeenCalledWith(
+    "alpha",
+    expect.objectContaining({ scope: "profile", unread: true }),
+    expect.any(AbortSignal),
+  );
+  expect(region.text()).toContain("Alpha response");
+  expect(region.text()).not.toContain("Beta chat");
+  wrapper.unmount();
+  wrapper = await open();
+  const reloaded = wrapper.get('[aria-label="Inbox"]');
+  expect((reloaded.get("select").element as HTMLSelectElement).value).toBe("profile");
+  expect(reloaded.text()).toContain("Alpha response");
+  expect(reloaded.text()).not.toContain("Beta chat");
+  await reloaded.get("select").setValue("all");
+  await flushPromises();
+  expect(reloaded.text()).toContain("Beta chat");
+  wrapper.unmount();
+});
 it("navigates to the owning profile and deletes only after successful native attachment", async () => {
   const factory = nativeSession.useNativeSession;
   const attached = vi.fn();
@@ -312,7 +338,7 @@ it("navigates to the owning profile and deletes only after successful native att
     return { read: true };
   });
   const wrapper = await open();
-  await wrapper.get('[aria-label="Inbox"]').findAll("li button")[1]!.trigger("click");
+  await wrapper.get('[aria-label="Inbox"]').findAll("li .inbox-open")[1]!.trigger("click");
   await flushPromises();
   await flushPromises();
   expect(location.hash).toContain("/chat/same?profile=beta");
@@ -323,7 +349,7 @@ it("keeps unavailable chats unread and shows a retryable error", async () => {
   vi.spyOn(api, "session").mockRejectedValue(new Error("unavailable"));
   const removed = vi.spyOn(api, "deleteInboxItem");
   const wrapper = await open();
-  await wrapper.get('[aria-label="Inbox"]').findAll("li button")[0]!.trigger("click");
+  await wrapper.get('[aria-label="Inbox"]').findAll("li .inbox-open")[0]!.trigger("click");
   await flushPromises();
   expect(wrapper.get('[role="alert"]').text()).toContain("remains unread");
   expect(removed).not.toHaveBeenCalled();
@@ -405,5 +431,159 @@ it("keeps a worker notification unread when no persisted task can be resolved", 
   expect(wrapper.vm.$route.name).toBe("inbox");
   expect(wrapper.get('[role="alert"]').text()).toContain("remains unread");
   expect(deletion).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+it("shows only five recent global messages on Home and refills after removal without opening", async () => {
+  const recent = Array.from({ length: 7 }, (_, index) => ({
+    ...items[index % 2]!,
+    id: 10 + index,
+    session: `recent-${index}`,
+    title: `Recent ${index}`,
+    occurred: 1000 - index,
+  }));
+  vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}) => ({
+    items: recent.slice(0, options.limit || 50),
+    unread: recent.length,
+    byProfile: {},
+    nextCursor: recent.length > (options.limit || 50) ? "next" : null,
+    revision: String(recent.length),
+  }));
+  const deleted = vi.spyOn(api, "deleteInboxItem").mockImplementation(async (profile, id) => {
+    expect(profile).toBe("alpha");
+    recent.splice(
+      recent.findIndex((item) => item.id === id),
+      1,
+    );
+    return { deleted: true };
+  });
+  const session = vi.spyOn(api, "session");
+  history.replaceState({}, "", "/chathermes");
+  const wrapper = await open();
+  const region = wrapper.get('[aria-label="Recent inbox messages"]');
+  expect(region.findAll("li")).toHaveLength(5);
+  expect(region.findAll(".inbox-open").map((row) => row.text())).toEqual(
+    recent.slice(0, 5).map((item) => expect.stringContaining(item.title)),
+  );
+  expect(region.find("select").exists()).toBe(false);
+  expect(region.text()).not.toContain("Load More");
+  expect(wrapper.find('[data-test="refresh-inbox"]').exists()).toBe(false);
+  expect(api.inbox).toHaveBeenCalledWith(
+    "",
+    expect.objectContaining({ scope: "all", limit: 5, unread: true }),
+    expect.any(AbortSignal),
+  );
+  expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+  await region.get('[aria-label="Remove Recent 0 from inbox"]').trigger("click");
+  await flushPromises();
+  expect(deleted).toHaveBeenCalledExactlyOnceWith("alpha", 10);
+  expect(session).not.toHaveBeenCalled();
+  expect(wrapper.vm.$route.name).toBe("home");
+  expect(region.findAll("li")).toHaveLength(5);
+  expect(region.text()).not.toContain("Recent 0");
+  expect(region.text()).toContain("Recent 5");
+  expect(wrapper.get(".inbox-nav").text()).toContain("6");
+  wrapper.unmount();
+});
+
+it("removes a full-Inbox message through its owning profile and retains failures for retry", async () => {
+  const deleted = vi
+    .spyOn(api, "deleteInboxItem")
+    .mockRejectedValueOnce(new Error("private failure detail"))
+    .mockImplementation(async () => {
+      vi.mocked(api.inbox).mockResolvedValue({
+        items: [items[0]!],
+        unread: 1,
+        byProfile: { alpha: 1 },
+        nextCursor: null,
+        revision: "removed",
+      });
+      return { deleted: true };
+    });
+  const session = vi.spyOn(api, "session");
+  const wrapper = await open();
+  const region = wrapper.get('[aria-label="Inbox"]');
+  await region.get('[aria-label="Remove Beta chat from inbox"]').trigger("click");
+  await flushPromises();
+  expect(region.get('[role="alert"]').text()).toBe(
+    "Could not remove this notification. Try again.",
+  );
+  expect(region.findAll("li")).toHaveLength(2);
+  await region.get('[aria-label="Remove Beta chat from inbox"]').trigger("click");
+  await flushPromises();
+  expect(deleted.mock.calls).toEqual([
+    ["beta", 2],
+    ["beta", 2],
+  ]);
+  expect(session).not.toHaveBeenCalled();
+  expect(wrapper.vm.$route.name).toBe("inbox");
+  expect(region.findAll("li")).toHaveLength(1);
+  expect(region.find('[role="alert"]').exists()).toBe(false);
+  expect(wrapper.get(".inbox-nav").text()).toContain("1");
+  wrapper.unmount();
+});
+
+it("guards duplicate removal and ignores a late failure after changing Inbox scope", async () => {
+  let fail!: (error: Error) => void;
+  const deleted = vi.spyOn(api, "deleteInboxItem").mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  history.replaceState({}, "", "/chathermes#/inbox?profile=beta");
+  const wrapper = await open();
+  const region = wrapper.get('[aria-label="Inbox"]');
+  const remove = region.get('[aria-label="Remove Alpha chat from inbox"]');
+  await remove.trigger("click");
+  expect(remove.attributes("disabled")).toBeDefined();
+  expect(region.get(".inbox-open").attributes("disabled")).toBeDefined();
+  await remove.trigger("click");
+  expect(deleted).toHaveBeenCalledExactlyOnceWith("alpha", 1);
+  await region.get("select").setValue("profile");
+  await flushPromises();
+  fail(new Error("obsolete error"));
+  await flushPromises();
+  expect(region.find('[role="alert"]').exists()).toBe(false);
+  expect(region.text()).not.toContain("Alpha chat");
+  expect(region.text()).toContain("Beta chat");
+  expect(region.get(".inbox-open").attributes("disabled")).toBeUndefined();
+  wrapper.unmount();
+});
+
+it("keeps empty Home available for a new draft without Inbox controls", async () => {
+  vi.mocked(api.inbox).mockResolvedValue({ items: [], unread: 0, byProfile: {}, nextCursor: null });
+  history.replaceState({}, "", "/chathermes#/");
+  const wrapper = await open();
+  expect(wrapper.get('[aria-label="Recent inbox messages"]').text()).toContain(
+    "No unread notifications.",
+  );
+  expect(wrapper.find('[aria-label="Inbox view"]').exists()).toBe(false);
+  await wrapper.get("textarea").setValue("New draft");
+  expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("New draft");
+  expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined();
+  wrapper.unmount();
+});
+
+it("does not reload a retired Home preview when removal finishes after navigation", async () => {
+  let finish!: () => void;
+  vi.spyOn(api, "deleteInboxItem").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = () => resolve({ deleted: true });
+      }),
+  );
+  history.replaceState({}, "", "/chathermes#/");
+  const wrapper = await open();
+  await wrapper.get('[aria-label="Remove Alpha chat from inbox"]').trigger("click");
+  await wrapper.vm.$router.push("/projects");
+  await flushPromises();
+  const previewReads = () =>
+    vi.mocked(api.inbox).mock.calls.filter(([, options]) => options?.limit === 5).length;
+  const before = previewReads();
+  finish();
+  await flushPromises();
+  expect(previewReads()).toBe(before);
+  expect(wrapper.vm.$route.name).toBe("projects");
   wrapper.unmount();
 });

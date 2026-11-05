@@ -12,6 +12,19 @@ Saved chats open at their latest messages. Scroll toward the top to load older h
 
 Thinking and tool disclosures show the activity Hermes provides. Details stay collapsed by default, even while active. Expand a disclosure to inspect streaming or completed work. Approvals and clarification requests appear in the conversation; respond there to continue.
 
+## Home and Inbox
+
+ChatHermes opens Home with the latest five unread messages across accessible
+profiles. Open a message to visit its chat or linked Kanban task. Use the
+check-circle beside a message to remove the notification without opening it; Home
+refills the preview with the next unread message. Removing a notification leaves
+the conversation and any pending request available.
+
+Open **Inbox** for the full unread list. Choose **All profiles** or the current
+profile in **Inbox view**, and use **Load More** for older notifications. You can
+also remove notifications here. The composer remains available for drafting on
+Home and Inbox.
+
 ## Active and recent chats
 
 New chats created in ChatHermes start **Open** and appear in **Active**, newest

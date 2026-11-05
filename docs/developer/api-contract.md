@@ -190,6 +190,13 @@ errors, and reflected gateway Bearer keys are redacted from RPC frames.
 | `GET /project-events`                   | Native change-watcher transport                                                     | SSE refresh on session/Project changes, initial connect and reconnect                                 |
 | `GET /workspace/sessions/{id}/messages` | `session.resume`                                                                    | Unpersisted draft fallback; stored ID, no cwd override; compact transcript projected to Message shape |
 
+Secondary-profile plugin IPC in the pinned Hermes runtime buffers responses, so
+an indefinite `/project-events` SSE can retain a hosted-request worker after the
+browser disconnects. The browser instead refreshes Projects and Inbox through
+existing authenticated reads immediately and every five seconds for secondary
+profiles. Profile changes and plugin disposal clear that timer and abort obsolete
+reads. The default profile retains its EventSource subscription.
+
 RPC drafts return a `stored_session_id` distinct from their runtime `session_id`;
 URLs always use the durable ID. Empty drafts are native live sessions, with no DB
 row until their first prompt. Project changes never send `session.cwd.set`,

@@ -3,12 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/hermes-api";
 import type { InboxItem } from "../inbox";
 const props = defineProps<{
+  preview?: boolean;
   profile: string;
   revision: number;
   scope: "all" | "profile";
   openItem: (item: InboxItem) => Promise<void>;
 }>();
-const emit = defineEmits<{ "update:scope": [value: "all" | "profile"] }>();
+const emit = defineEmits<{ "update:scope": [value: "all" | "profile"]; refresh: [] }>();
 const scope = computed({
   get: () => props.scope,
   set: (value: "all" | "profile") => emit("update:scope", value),
@@ -17,6 +18,7 @@ const items = ref<InboxItem[]>([]),
   cursor = ref<string | null>(null);
 const loading = ref(false),
   opening = ref<number>(),
+  removing = ref<number>(),
   error = ref("");
 let controller: AbortController | undefined;
 async function load(more = false) {
@@ -30,6 +32,7 @@ async function load(more = false) {
       {
         scope: scope.value,
         unread: true,
+        limit: props.preview ? 5 : undefined,
         cursor: more ? cursor.value || undefined : undefined,
       },
       current.signal,
@@ -39,7 +42,8 @@ async function load(more = false) {
     items.value = combined.filter(
       (item, index) => combined.findIndex((other) => other.id === item.id) === index,
     );
-    cursor.value = result.nextCursor;
+    if (props.preview) items.value = items.value.slice(0, 5);
+    cursor.value = props.preview ? null : result.nextCursor;
   } catch {
     if (!current.signal.aborted) error.value = "Could not load inbox. Try refreshing.";
   } finally {
@@ -47,7 +51,7 @@ async function load(more = false) {
   }
 }
 async function open(item: InboxItem) {
-  if (opening.value) return;
+  if (opening.value || removing.value) return;
   opening.value = item.id;
   error.value = "";
   try {
@@ -58,8 +62,27 @@ async function open(item: InboxItem) {
     opening.value = undefined;
   }
 }
+async function remove(item: InboxItem) {
+  if (opening.value || removing.value) return;
+  const current = controller;
+  removing.value = item.id;
+  error.value = "";
+  try {
+    await api.deleteInboxItem(item.profile, item.id);
+    if (controller === current && !current?.signal.aborted) {
+      items.value = items.value.filter((other) => other.id !== item.id);
+      if (props.preview) await load();
+    }
+    emit("refresh");
+  } catch {
+    if (controller === current && !current?.signal.aborted)
+      error.value = "Could not remove this notification. Try again.";
+  } finally {
+    removing.value = undefined;
+  }
+}
 watch(
-  () => [props.profile, props.revision, scope.value],
+  () => [props.profile, props.revision, scope.value, props.preview],
   () => void load(),
   { immediate: true },
 );
@@ -68,11 +91,13 @@ onBeforeUnmount(() => controller?.abort());
 <template>
   <section
     data-drawer-swipe
-    aria-label="Inbox"
+    :aria-label="preview ? 'Recent inbox messages' : 'Inbox'"
     class="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5"
   >
     <div class="mx-auto max-w-3xl">
+      <h2 v-if="preview" class="mb-3 px-2 text-sm text-[#b4b4b4]">Recent messages</h2>
       <div
+        v-else
         class="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-sm"
       >
         <label class="flex items-center gap-2"
@@ -80,7 +105,7 @@ onBeforeUnmount(() => controller?.abort());
           <select
             v-model="scope"
             aria-label="Inbox view"
-            class="rounded-lg bg-[#303030] px-2 py-1 text-sm"
+            class="rounded-lg bg-[#303030] px-2 py-1 text-base"
           >
             <option value="all">All profiles</option>
             <option value="profile">Profile: {{ profile || "default" }}</option>
@@ -91,10 +116,15 @@ onBeforeUnmount(() => controller?.abort());
       <p v-if="loading && !items.length" role="status" class="text-[#b4b4b4]">Loading inbox…</p>
       <p v-else-if="!items.length" class="text-[#b4b4b4]">No unread notifications.</p>
       <ol class="divide-y divide-[#363636]">
-        <li v-for="item in items" :key="item.id" :data-session="item.session">
+        <li
+          v-for="item in items"
+          :key="item.id"
+          :data-session="item.session"
+          class="flex items-center gap-1"
+        >
           <button
-            class="grid w-full gap-1 rounded-lg px-2 py-2 text-left hover:bg-[#292929]"
-            :disabled="!!opening"
+            class="inbox-open grid min-w-0 flex-1 gap-1 rounded-lg px-2 py-2 text-left hover:bg-[#292929]"
+            :disabled="!!opening || !!removing"
             @click="open(item)"
           >
             <p class="min-w-0 truncate font-medium">{{ item.title || "Untitled chat" }}</p>
@@ -105,6 +135,25 @@ onBeforeUnmount(() => controller?.abort());
                 new Date(item.occurred * 1000).toLocaleString()
               }}</time>
             </div>
+          </button>
+          <button
+            class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-[#a3a3a3] hover:bg-[#424242] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]"
+            :aria-label="`Remove ${item.title || 'Untitled chat'} from inbox`"
+            title="Remove from inbox"
+            :disabled="!!opening || !!removing"
+            @click="remove(item)"
+          >
+            <svg
+              class="size-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="m8 12 3 3 5-6" />
+            </svg>
           </button>
         </li>
       </ol>

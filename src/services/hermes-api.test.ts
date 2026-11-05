@@ -2,9 +2,51 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { api, ApiError, messageText } from "./hermes-api";
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 describe("dashboard plugin Hermes client", () => {
+  it.each(["alpha", "beta"])(
+    "refreshes metadata for hosted profile %s without an unsupported indefinite stream and stops on disposal",
+    (profile) => {
+      vi.useFakeTimers();
+      const eventSource = vi.fn(function () {
+        return { addEventListener: vi.fn(), close: vi.fn() };
+      });
+      vi.stubGlobal("EventSource", eventSource);
+      const refresh = vi.fn();
+      const close = api.projectEvents(profile, refresh);
+      expect(eventSource).not.toHaveBeenCalled();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(4999);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(10000);
+      expect(refresh).toHaveBeenCalledTimes(4);
+      close();
+      const calls = refresh.mock.calls.length;
+      vi.advanceTimersByTime(30000);
+      expect(refresh).toHaveBeenCalledTimes(calls);
+    },
+  );
+  it.each(["", "default"])("keeps live metadata events for launch profile %s", (profile) => {
+    const listen = vi.fn(),
+      close = vi.fn();
+    const eventSource = vi.fn(function () {
+      return { addEventListener: listen, close };
+    });
+    vi.stubGlobal("EventSource", eventSource);
+    const refresh = vi.fn();
+    const dispose = api.projectEvents(profile, refresh);
+    expect(eventSource).toHaveBeenCalledWith(
+      "/api/plugins/chathermes/project-events?profile=default",
+      { withCredentials: true },
+    );
+    expect(listen).toHaveBeenCalledWith("refresh", refresh);
+    dispose();
+    expect(close).toHaveBeenCalledOnce();
+  });
   it.each(["", "default", "alpha", "beta"])(
     "routes global Inbox through default and keeps profile operations scoped from %s",
     async (profile) => {
