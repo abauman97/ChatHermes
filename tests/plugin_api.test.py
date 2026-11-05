@@ -2022,13 +2022,14 @@ async def test_workspace_draft_history_remains_available(app, rpc):
     ]
 
 
+@pytest.mark.parametrize("native_response", [False, True])
 @run_async
-async def test_native_artifact_file_routes(app, monkeypatch):
+async def test_native_artifact_file_routes(app, monkeypatch, native_response):
     import sys
     from types import ModuleType
 
     from fastapi import HTTPException
-    from fastapi.responses import Response
+    from fastapi.responses import JSONResponse, Response
 
     files = ModuleType("hermes_cli.web_routers.files")
     seen = []
@@ -2036,8 +2037,11 @@ async def test_native_artifact_file_routes(app, monkeypatch):
     async def preview(path, request, profile=None, session_id=None):
         seen.append(("preview", path, profile, session_id))
         if path == "/secret":
+            if native_response:
+                return JSONResponse({"detail": KEY}, status_code=403)
             raise HTTPException(403, KEY)
-        return {"dataUrl": "data:text/plain;base64,aGk="}
+        result = {"dataUrl": "data:text/plain;base64,aGk="}
+        return JSONResponse(result) if native_response else result
 
     async def download(path, request, profile=None, session_id=None):
         seen.append(("download", path, profile, session_id))
@@ -2080,12 +2084,15 @@ async def test_native_artifact_file_routes(app, monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("synchronous", [False, True])
 @run_async
 async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(
-    app, monkeypatch, tmp_path
+    app, monkeypatch, tmp_path, synchronous
 ):
     monkeypatch.setattr(plugin._push_store_module, "_path", lambda: tmp_path / "push.json")
     import sys
+    from contextvars import ContextVar
+    from threading import get_ident
     from types import ModuleType, SimpleNamespace
 
     from fastapi import HTTPException
@@ -2093,18 +2100,47 @@ async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(
 
     files = ModuleType("hermes_cli.web_routers.files")
     deleted = []
+    request_thread = get_ident()
+    scope = ContextVar[str | None]("deletion_profile", default=None)
+    scope.set("work")
+    store = plugin._artifact_store
+    state = plugin._push_store_module
+    paths = ["/opt/data/report.txt", "/denied", "/failed", "/sensitive"]
+    rows = [
+        {
+            "path": path,
+            "name": path.rsplit("/", 1)[-1],
+            "type": "text/plain",
+            "direction": "generated",
+        }
+        for path in paths
+    ]
+    for profile, session in [("work", "stored-1"), ("work", "stored-2"), ("other", "stored-1")]:
+        store.replace_session(state, profile, {"id": session}, "before", rows)
 
     async def download(path, request, profile=None, session_id=None):
         if path == "/sensitive":
             raise HTTPException(403, KEY)
         return Response(b"")
 
-    async def remove(payload, request):
+    def remove(payload, request):
         assert payload.recursive is False
+        assert scope.get() == "work"
+        assert (get_ident() != request_thread) is synchronous
+        if payload.path == "/denied":
+            raise HTTPException(403, KEY)
+        if payload.path == "/failed":
+            raise OSError(KEY)
         deleted.append((payload.path, request.query_params["profile"]))
+        return {"ok": True, "path": payload.path}
+
+    async def async_remove(payload, request):
+        return remove(payload, request)
 
     monkeypatch.setattr(files, "fs_download", download, raising=False)
-    monkeypatch.setattr(files, "delete_managed_file", remove, raising=False)
+    monkeypatch.setattr(
+        files, "delete_managed_file", remove if synchronous else async_remove, raising=False
+    )
     monkeypatch.setattr(files, "_fs_backend", lambda profile: None, raising=False)
     package = ModuleType("hermes_cli.web_routers")
     monkeypatch.setattr(package, "files", files, raising=False)
@@ -2120,6 +2156,17 @@ async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(
         response = await client.delete("/api/plugins/chathermes/files", params=query)
         assert response.status_code == 200 and response.json() == {"ok": True}
         assert deleted == [("/opt/data/report.txt", "work")]
+        assert {file["path"] for file in store.page(state, "work")["files"]} == set(paths[1:])
+        assert len(store.page(state, "other")["files"]) == 4
+        # Replaying unchanged history cannot resurrect either session's card.
+        for session in ["stored-1", "stored-2"]:
+            store.replace_session(state, "work", {"id": session}, "after", rows)
+        assert {file["path"] for file in store.page(state, "work")["files"]} == set(paths[1:])
+        for path, status in [("/denied", 403), ("/failed", 503)]:
+            response = await client.delete(
+                "/api/plugins/chathermes/files", params={**query, "path": path}
+            )
+            assert response.status_code == status and KEY not in response.text
         response = await client.delete(
             "/api/plugins/chathermes/files", params={**query, "path": "/sensitive"}
         )
@@ -2128,6 +2175,7 @@ async def test_artifact_deletion_uses_native_policy_and_refuses_remote_files(
         response = await client.delete("/api/plugins/chathermes/files", params=query)
         assert response.status_code == 501
         assert len(deleted) == 1
+        assert {file["path"] for file in store.page(state, "work")["files"]} == set(paths[1:])
 
 
 def test_native_general_file_refs_are_profile_bound_and_refuse_symlinks(monkeypatch, tmp_path):
@@ -3362,3 +3410,174 @@ async def test_transcript_route_preserves_real_desktop_ids_and_profile_isolation
         assert [row["id"] for row in response.json()["data"]] == [user, answer]
         assert response.json()["pagination"]["order"] == "latest"
         assert (await client.get(route + "&profile=beta")).status_code == 404
+
+
+@run_async
+async def test_automatic_artifacts_use_native_canonical_security_and_indexing(
+    app, monkeypatch, tmp_path
+):
+    from urllib.parse import parse_qs, urlsplit
+
+    from fastapi import HTTPException
+    from hermes_cli import web_server_files as policy
+    from hermes_cli.web_routers import files
+
+    # Keep real canonicalization, sensitive-file and managed-root checks. Only
+    # profile/session lookup is replaced with an isolated runtime prerequisite.
+    runtime_home = tmp_path / "runtime"
+    runtime_home.mkdir()
+    monkeypatch.setenv("HOME", str(runtime_home))
+    monkeypatch.setattr(files, "_fs_backend", lambda profile: None)
+    monkeypatch.setattr(files, "_fs_profile_home", lambda profile: runtime_home)
+    monkeypatch.setattr(
+        policy,
+        "_managed_files_policy",
+        lambda request, create_root=False: policy.ManagedFilesPolicy(
+            runtime_home, runtime_home, False
+        ),
+    )
+    calls = []
+
+    async def resolve(path, profile, session_id):
+        calls.append((path, profile, session_id))
+        if profile != "alpha" or session_id != "session":
+            raise HTTPException(404, KEY)
+        return policy._fs_path(path)
+
+    monkeypatch.setattr(files, "_fs_download_path", resolve)
+    report = runtime_home / "report.txt"
+    report.write_text("Delivered file contents")
+    (runtime_home / "alias.txt").symlink_to(report)
+    secret = runtime_home / "auth.json"
+    secret.write_text(KEY)
+    (runtime_home / "innocent.json").symlink_to(secret)
+    outside = tmp_path / "outside.txt"
+    outside.write_text(KEY)
+    (runtime_home / "escape.txt").symlink_to(outside)
+    (runtime_home / "source.py").write_text("print('source')")
+    (runtime_home / "source.txt").symlink_to(runtime_home / "source.py")
+    denied = runtime_home / "denied.txt"
+    denied.write_text(KEY)
+    read_bytes = files._fs_read_bytes
+
+    def readable(target, limit=None):
+        if target == denied:
+            raise HTTPException(403, KEY)
+        return read_bytes(target, limit)
+
+    monkeypatch.setattr(files, "_fs_read_bytes", readable)
+    root = "/api/plugins/chathermes/files/download"
+    query = {"profile": "alpha", "session_id": "session"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        for path in ("~/report.txt", str(report), "~/alias.txt"):
+            response = await client.head(root, params={**query, "path": path})
+            assert response.status_code == 200
+            assert response.content == b""
+            assert response.headers["content-type"].startswith("text/plain")
+            assert parse_qs(urlsplit(response.headers["content-location"]).query)["path"] == [
+                str(report)
+            ]
+        assert (
+            await client.get(root, params={**query, "path": "~/report.txt"})
+        ).text == "Delivered file contents"
+        for path in (
+            "~/missing.txt",
+            "~/auth.json",
+            "~/innocent.json",
+            "~/escape.txt",
+            "~/source.py",
+            "~/source.txt",
+            "~/denied.txt",
+            "~/",
+        ):
+            response = await client.head(root, params={**query, "path": path})
+            assert response.status_code >= 400
+            assert KEY not in response.text
+            assert "content-location" not in response.headers
+        denied_scope = await client.head(
+            root, params={**query, "profile": "beta", "path": "~/report.txt"}
+        )
+        assert denied_scope.status_code == 404
+        assert KEY not in denied_scope.text
+
+    source = plugin._artifact_indexer.Source(plugin)
+    extraction = sys.modules[plugin._artifact_indexer.__package__ + ".artifact_extraction"]
+    messages = [
+        {
+            "id": "m",
+            "role": "assistant",
+            "content": "~/report.txt\n~/alias.txt\n~/missing.txt\n~/escape.txt",
+        }
+    ]
+    session = {"id": "session"}
+    parsed = extraction.extract(messages, session)
+
+    async def messages_for(profile, session_id):
+        return messages
+
+    monkeypatch.setattr(source, "messages", messages_for)
+    service = plugin._artifact_indexer.Service(source, plugin._push_store_module)
+    worker = asyncio.create_task(service.worker())
+    try:
+        for _ in range(2):
+            service.enqueue("alpha", session)
+            await asyncio.wait_for(service.queue.join(), timeout=5)
+            indexed = plugin._artifact_store.page(plugin._push_store_module, "alpha")["files"]
+            assert [file["path"] for file in indexed] == [str(report)]
+            assert indexed[0]["messageId"] == "m"
+        assert len(parsed) == 4  # Parsing stays deterministic; validation is runtime-owned.
+        assert ("~/report.txt", "alpha", "session") in calls
+    finally:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+
+
+@run_async
+async def test_automatic_remote_artifacts_probe_the_runtime_without_local_reads(app, monkeypatch):
+    from hermes_cli.web_routers import files
+
+    seen = []
+
+    class Backend:
+        def inspect_file(self, path):
+            seen.append(("inspect", path))
+            return "/remote/reports/report.txt", 100
+
+        def read_bytes(self, path, *, max_bytes, read_limit):
+            seen.append(("read", path, max_bytes, read_limit))
+            return b"x", 100, path
+
+        def stream_file(self, path):
+            seen.append(("stream", path))
+            yield b"HEAD must not stream the remote file"
+
+    backend = Backend()
+    monkeypatch.setattr(
+        files, "_fs_backend", lambda profile: backend if profile == "remote" else None
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.head(
+            "/api/plugins/chathermes/files/download",
+            params={"profile": "remote", "path": "~/reports/report.txt"},
+        )
+        assert response.status_code == 200
+        assert response.content == b""
+        assert "%2Fremote%2Freports%2Freport.txt" in response.headers["content-location"]
+        assert seen[-1] == ("read", "/remote/reports/report.txt", 100, 1)
+        assert not any(call[0] == "stream" for call in seen)
+
+        def denied(*args, **kwargs):
+            raise PermissionError(KEY)
+
+        monkeypatch.setattr(backend, "read_bytes", denied)
+        response = await client.head(
+            "/api/plugins/chathermes/files/download",
+            params={"profile": "remote", "path": "~/reports/report.txt"},
+        )
+        assert response.status_code == 503
+        assert KEY not in response.text
+        assert "content-location" not in response.headers

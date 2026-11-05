@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import ArtifactCard from "../../artifacts/components/ArtifactCard.vue";
-import { textArtifacts, toolArtifacts } from "../../artifacts/artifacts";
+import {
+  automaticPath,
+  fileUrl,
+  textArtifacts,
+  toolArtifacts,
+  type Artifact,
+} from "../../artifacts/artifacts";
 import type { Activity } from "../../../types/hermes";
 import { activityRuns } from "../utils/activity-runs";
 import type { TranscriptEntry } from "../types/chat-ui";
@@ -13,11 +19,106 @@ const props = defineProps<{
   profile?: string;
   sessionId?: string;
 }>();
+const validatedFiles = ref<Record<string, Artifact>>({});
+const candidates = computed(() => {
+  const files = new Map<string, Artifact>();
+  let automatic = false;
+  for (const block of props.entry.blocks) {
+    if (block.kind !== "text") continue;
+    for (const file of textArtifacts(block.content).files) {
+      automatic ||= !!file.automatic;
+      files.set(file.path, file);
+    }
+  }
+  // Canonicalize eligible explicit aliases when a turn also delivers automatic files.
+  return automatic ? [...files.values()].filter((file) => automaticPath(file.path, true)) : [];
+});
+let validatedScope = "";
+watch(
+  () =>
+    JSON.stringify([
+      props.profile,
+      props.sessionId,
+      props.entry.key,
+      candidates.value.map((file) => file.path),
+    ]),
+  async (_, __, cleanup) => {
+    const scope = JSON.stringify([props.profile, props.sessionId, props.entry.key]);
+    const known = scope === validatedScope ? validatedFiles.value : {};
+    validatedScope = scope;
+    validatedFiles.value = Object.fromEntries(
+      candidates.value
+        .filter((file) => known[file.path])
+        .map((file) => [file.path, known[file.path]!]),
+    );
+    const pending = new AbortController();
+    cleanup(() => pending.abort());
+    const results = await Promise.all(
+      candidates.value
+        .filter((file) => !known[file.path])
+        .map(async (file) => {
+          try {
+            const response = await fetch(
+              fileUrl({ ...file, sessionId: props.sessionId }, props.profile, true),
+              {
+                method: "HEAD",
+                credentials: "same-origin",
+                redirect: "error",
+                signal: pending.signal,
+              },
+            );
+            if (!response.ok) return;
+            const location = response.headers.get("Content-Location");
+            if (!location?.startsWith("/api/plugins/chathermes/files/download?")) return;
+            const path = new URLSearchParams(location.split("?")[1]).get("path");
+            if (!path) return;
+            return [
+              file.path,
+              {
+                ...file,
+                path,
+                name: path.split("/").at(-1) || file.name,
+                type: response.headers.get("Content-Type") || file.type,
+              },
+            ] as const;
+          } catch {
+            // Unavailable paths remain readable in the response without a broken card.
+            return;
+          }
+        }),
+    );
+    if (!pending.signal.aborted)
+      validatedFiles.value = {
+        ...validatedFiles.value,
+        ...Object.fromEntries(results.filter((result) => !!result)),
+      };
+  },
+  { immediate: true },
+);
 const textPaths = computed(() =>
   props.entry.blocks.flatMap((block) =>
-    block.kind === "text" ? textArtifacts(block.content).files.map((file) => file.path) : [],
+    block.kind === "text"
+      ? textArtifacts(block.content)
+          .files.filter((file) => !file.automatic || !!validatedFiles.value[file.path])
+          .map((file) => validatedFiles.value[file.path]?.path || file.path)
+      : [],
   ),
 );
+const priorTextPaths = computed(() => {
+  const seen = new Set<string>();
+  const exclusions = new Map<string, string[]>();
+  for (const block of props.entry.blocks) {
+    if (block.kind !== "text") continue;
+    exclusions.set(block.id, [...seen]);
+    textArtifacts(block.content).files.forEach((file) => {
+      if (file.automatic && !validatedFiles.value[file.path]) return;
+      seen.add(file.path);
+      const canonical = validatedFiles.value[file.path]?.path;
+      if (canonical) seen.add(canonical);
+    });
+  }
+  return exclusions;
+});
 const parts = computed(() => activityRuns(props.entry.blocks));
 const filesByTool = computed(() => {
   const seen = new Set(textPaths.value);
@@ -75,6 +176,8 @@ async function copyResponse() {
       <AssistantTextBlock
         v-else
         :block="part.block"
+        :excluded-paths="priorTextPaths.get(part.block.id)"
+        :validated-files="validatedFiles"
         :profile="profile"
         :session-id="sessionId"
         @image-load="emit('imageLoad')"

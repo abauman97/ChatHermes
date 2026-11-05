@@ -139,7 +139,6 @@ describe("explicit artifact delivery", () => {
     "Built /repo/.install-metadata.json /repo/package.json /repo/README.md /repo/dist/index.html",
     "Exported /tmp/report.pdf /tmp/chart.png /tmp/archive.zip /tmp/source.py /tmp/README",
     String.raw`Exported C:\work\report.pdf and \\host\share\report.csv`,
-    "[Report](/tmp/report.pdf) ![Chart](/tmp/chart.png)",
     "[Report](file:///tmp/report.pdf) [Report](sandbox:/tmp/report.pdf)",
     "[Report](#media:%2Ftmp%2Freport.pdf) [broken](#media:%ZZ)",
     "[Page](https://example.test/docs) https://example.test/report.pdf",
@@ -210,13 +209,13 @@ describe("explicit artifact delivery", () => {
     );
   });
 
-  it("requires explicit delivery even for package/cache paths", () => {
+  it("keeps automatic local links separate from tool output and remote links", () => {
     for (const path of [
       "/home/user/.cache/pip/report.txt",
       "https://files.test/packages/ab/package.tar.gz",
       "file:///tmp/package.whl.metadata",
     ]) {
-      expect(textArtifacts(`[Download](${path})`).files).toEqual([]);
+      expect(textArtifacts(`[Download](${path})`).files).toHaveLength(path.startsWith("/") ? 1 : 0);
       expect(tool("terminal", { stdout: `Downloading ${path}` })).toEqual([]);
       expect(textArtifacts(`MEDIA:${path}`).files).toHaveLength(1);
     }
@@ -569,3 +568,8 @@ it.each(deliveryFixtures.labeledDeliveries)(
     expect(textArtifacts(text).text).toBe(remaining);
   },
 );
+
+it.each(deliveryFixtures.automaticDeliveries)("shared automatic delivery: $name", (testCase) => {
+  const message = { role: testCase.role, content: testCase.content } as Message;
+  expect(messageArtifacts(message).map((file) => file.path)).toEqual(testCase.paths);
+});

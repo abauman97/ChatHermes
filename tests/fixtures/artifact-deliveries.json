@@ -82,7 +82,6 @@
     "[Report](MEDIA:javascript:alert%281%29)",
     "[Report](MEDIA:file:///tmp/report.pdf)",
     "<MEDIA:/tmp/report.pdf>",
-    "[Report](/tmp/report.pdf)",
     "[Report](MEDIA:sandbox:/tmp/report.pdf)",
     "[Report](MEDIA:report.pdf)",
     "`Desktop board: MEDIA:/opt/data/profiles/developer/cache/scratch/chathermes-196/tests/visual-output/kanban-Kanban-opt-in-board-d4f03-nd-upstream-synchronization-desktop/kanban-board.png`",
@@ -157,6 +156,329 @@
       "text": "Before the screenshots.\n\nBoard: MEDIA:/tmp/board.png MEDIA:/tmp/board.png\n\nAfter the screenshots.",
       "paths": ["/tmp/board.png"],
       "remaining": "Before the screenshots.\n\nBoard:\n\nAfter the screenshots."
+    }
+  ],
+  "automaticDeliveries": [
+    {
+      "name": "absolute",
+      "role": "assistant",
+      "content": "/home/user/reports/report.pdf",
+      "paths": ["/home/user/reports/report.pdf"]
+    },
+    {
+      "name": "home",
+      "role": "assistant",
+      "content": "~/reports/report.pdf",
+      "paths": ["~/reports/report.pdf"]
+    },
+    {
+      "name": "markdown",
+      "role": "assistant",
+      "content": "Here is [your report](/home/user/report.pdf).",
+      "paths": ["/home/user/report.pdf"]
+    },
+    {
+      "name": "home markdown",
+      "role": "assistant",
+      "content": "[Report](~/reports/report.pdf)",
+      "paths": ["~/reports/report.pdf"]
+    },
+    {
+      "name": "spaced markdown",
+      "role": "assistant",
+      "content": "[Report](</tmp/a report.pdf> \"Download\")",
+      "paths": ["/tmp/a report.pdf"]
+    },
+    {
+      "name": "encoded markdown",
+      "role": "assistant",
+      "content": "[Report](/tmp/a%20report.pdf)",
+      "paths": ["/tmp/a report.pdf"]
+    },
+    {
+      "name": "reference link",
+      "role": "assistant",
+      "content": "[Report][file]\n\n[file]: /tmp/report.pdf",
+      "paths": ["/tmp/report.pdf"]
+    },
+    {
+      "name": "media preserved",
+      "role": "assistant",
+      "content": "MEDIA:/tmp/report.pdf",
+      "paths": ["/tmp/report.pdf"]
+    },
+    {
+      "name": "multiple",
+      "role": "assistant",
+      "content": "/tmp/report.pdf\n~/data.csv",
+      "paths": ["/tmp/report.pdf", "~/data.csv"]
+    },
+    {
+      "name": "duplicates",
+      "role": "assistant",
+      "content": "/tmp/report.pdf\n[Report](/tmp/report.pdf)\nMEDIA:/tmp/report.pdf",
+      "paths": ["/tmp/report.pdf"]
+    },
+    {
+      "name": "fence",
+      "role": "assistant",
+      "content": "```text\n/tmp/report.pdf\n```",
+      "paths": []
+    },
+    {
+      "name": "tilde fence",
+      "role": "assistant",
+      "content": "~~~\n~/data.csv\n~~~",
+      "paths": []
+    },
+    {
+      "name": "incomplete fence",
+      "role": "assistant",
+      "content": "```\n/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "indented code",
+      "role": "assistant",
+      "content": "    /tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "inline code",
+      "role": "assistant",
+      "content": "`/tmp/report.pdf`",
+      "paths": []
+    },
+    {
+      "name": "inline linked code",
+      "role": "assistant",
+      "content": "`[Report](/tmp/report.pdf)`",
+      "paths": []
+    },
+    {
+      "name": "multiline inline",
+      "role": "assistant",
+      "content": "`example\n/tmp/report.pdf\n`",
+      "paths": []
+    },
+    {
+      "name": "blockquote",
+      "role": "assistant",
+      "content": "> /tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "quoted",
+      "role": "assistant",
+      "content": "\"/tmp/report.pdf\"",
+      "paths": []
+    },
+    {
+      "name": "quoted markdown",
+      "role": "assistant",
+      "content": "> [Report](/tmp/report.pdf)",
+      "paths": []
+    },
+    {
+      "name": "list example",
+      "role": "assistant",
+      "content": "- /tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "prose",
+      "role": "assistant",
+      "content": "The file /tmp/report.pdf contains results.",
+      "paths": []
+    },
+    {
+      "name": "label prose",
+      "role": "assistant",
+      "content": "Other path: /tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "context",
+      "role": "assistant",
+      "content": "@file:/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "source",
+      "role": "assistant",
+      "content": "/tmp/script.py",
+      "paths": []
+    },
+    {
+      "name": "log",
+      "role": "assistant",
+      "content": "/tmp/run.log",
+      "paths": []
+    },
+    {
+      "name": "unknown markdown",
+      "role": "assistant",
+      "content": "[File](/tmp/report.exe)",
+      "paths": []
+    },
+    {
+      "name": "url",
+      "role": "assistant",
+      "content": "https://example.test/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "protocol relative",
+      "role": "assistant",
+      "content": "//example.test/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "relative",
+      "role": "assistant",
+      "content": "./report.pdf",
+      "paths": []
+    },
+    {
+      "name": "query",
+      "role": "assistant",
+      "content": "[Report](/tmp/report.pdf?secret=hidden)",
+      "paths": []
+    },
+    {
+      "name": "null",
+      "role": "assistant",
+      "content": "[Report](/tmp/bad%00.pdf)",
+      "paths": []
+    },
+    {
+      "name": "bad unicode",
+      "role": "assistant",
+      "content": "[Report](/tmp/bad%FF.pdf)",
+      "paths": []
+    },
+    {
+      "name": "escaped link",
+      "role": "assistant",
+      "content": "\\[Report](/tmp/report.pdf)",
+      "paths": []
+    },
+    {
+      "name": "html",
+      "role": "assistant",
+      "content": "<pre>\n/tmp/report.pdf\n</pre>",
+      "paths": []
+    },
+    {
+      "name": "untrusted",
+      "role": "assistant",
+      "content": "<untrusted_tool_result>\n\n/tmp/report.pdf\n</untrusted_tool_result>",
+      "paths": []
+    },
+    {
+      "name": "thinking tag",
+      "role": "assistant",
+      "content": "<think>\n\n/tmp/report.pdf\n</think>",
+      "paths": []
+    },
+    {
+      "name": "reasoning tag",
+      "role": "assistant",
+      "content": "<reasoning>\n\n[Report](/tmp/report.pdf)\n</reasoning>",
+      "paths": []
+    },
+    {
+      "name": "user excluded",
+      "role": "user",
+      "content": "/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "system excluded",
+      "role": "system",
+      "content": "/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "tool excluded",
+      "role": "tool",
+      "content": "/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "reasoning excluded",
+      "role": "reasoning",
+      "content": "/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "thinking excluded",
+      "role": "thinking",
+      "content": "/tmp/report.pdf",
+      "paths": []
+    },
+    {
+      "name": "structured reasoning",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "/tmp/private.pdf"
+        },
+        {
+          "type": "text",
+          "text": "/tmp/report.pdf"
+        }
+      ],
+      "paths": ["/tmp/report.pdf"]
+    },
+    {
+      "name": "partial stream",
+      "role": "assistant",
+      "content": "/tmp/report.pd",
+      "paths": []
+    },
+    {
+      "name": "complete stream",
+      "role": "assistant",
+      "content": "/tmp/report.pdf",
+      "paths": ["/tmp/report.pdf"]
+    },
+    {
+      "name": "quoted link",
+      "role": "assistant",
+      "content": "\"[Report](/tmp/report.pdf)\"",
+      "paths": []
+    },
+    {
+      "name": "curly quoted link",
+      "role": "assistant",
+      "content": "“[Report](/tmp/report.pdf)”",
+      "paths": []
+    },
+    {
+      "name": "embedded think",
+      "role": "assistant",
+      "content": "Thinking: <think>\n\n/tmp/report.pdf\n</think>",
+      "paths": []
+    },
+    {
+      "name": "html code",
+      "role": "assistant",
+      "content": "<code>\n\n/tmp/report.pdf\n\n</code>",
+      "paths": []
+    },
+    {
+      "name": "html pre with blanks",
+      "role": "assistant",
+      "content": "<pre>\n\n/tmp/report.pdf\n\n</pre>",
+      "paths": []
+    },
+    {
+      "name": "inline code cannot disable reasoning boundary",
+      "role": "assistant",
+      "content": "Prefix <think> `code`\n\n/tmp/report.pdf\n</think>",
+      "paths": []
     }
   ]
 }

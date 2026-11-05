@@ -20,6 +20,7 @@ dev = [
   "requests",
   "tomli-w",
   "websockets>=17.3",
+  "python-multipart>=0.0.33",
 ]
 
 [tool.uv]

@@ -93,7 +93,6 @@ def test_concurrent_writers_use_one_persistent_database(state):
         "Example MEDIA:/tmp/private.pdf",
         "@file:/tmp/private.pdf",
         "[file](file:///tmp/private.pdf)",
-        "/tmp/private.pdf",
     ],
 )
 def test_rejects_quoted_context_and_implicit_references(text):
@@ -472,3 +471,48 @@ def test_media_markdown_images_are_indexed_as_explicit_delivery(source, path):
 )
 def test_exact_labeled_deliveries(case):
     assert [file["path"] for file in extraction.text_artifacts(case["text"])] == case["paths"]
+
+
+@pytest.mark.parametrize(
+    "case", DELIVERY_FIXTURES["automaticDeliveries"], ids=lambda case: case["name"]
+)
+def test_shared_automatic_delivery_extraction(case):
+    message = {"id": "m", "role": case["role"], "content": case["content"]}
+    files = extraction.extract([message], {"id": "s"})
+    assert [file["path"] for file in files] == case["paths"]
+
+
+def test_reconciliation_upgrades_existing_parser_checkpoints(state):
+    async def scenario():
+        source = Source()
+        # The previous release stored this unversioned modification fingerprint.
+        old_session = {**source.rows[0], "projectId": "p", "projectTitle": "p"}
+        legacy = json.loads(indexer.modification(old_session))[1:]
+        for profile in ("alpha", "beta"):
+            store.replace_session(
+                state, profile, old_session, json.dumps(legacy, separators=(",", ":")), []
+            )
+        service = indexer.Service(source, state)
+        worker = asyncio.create_task(service.worker())
+        try:
+            await service.reconcile()
+            await asyncio.wait_for(service.queue.join(), timeout=5)
+            assert source.reads == 2
+            assert store.page(state, "alpha")["files"]
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_explicit_delivery_keeps_priority_over_earlier_automatic_history_reference():
+    files = extraction.extract(
+        [
+            {"id": "first", "role": "assistant", "content": "/tmp/report.pdf"},
+            {"id": "second", "role": "assistant", "content": "MEDIA:/tmp/report.pdf"},
+        ],
+        {"id": "s"},
+    )
+    assert len(files) == 1
+    assert not files[0].get("automatic")

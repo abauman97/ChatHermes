@@ -30,6 +30,16 @@ For Python edits, use `uv run ruff format .` and `uv run ruff check --fix .`, th
 
 The default pytest suite collects both `test_*.py` and `*.test.py`, including Docker helper tests. `tests/integration/` probes require the isolated image and copied `/opt/plugins-src` path, so run them through the [Docker workflow](../../tests/docker/README.md), not the local default suite. Docker Compose validation skips when the Docker CLI is unavailable; the Android browser helper tests need Node.js. No provider credentials are needed. The `Python quality` GitHub Actions job runs the locked environment, non-modifying Ruff checks, ty, and the default suite against the exact source pin on PRs and main pushes. Repository administrators can require that job in branch protection.
 
+Artifact extraction parity is defined by `tests/fixtures/artifact-deliveries.json`;
+both `src/features/artifacts/artifacts.test.ts` and `tests/artifacts.test.py`
+consume it without filesystem access. Native file security and reconciliation
+contracts in `tests/plugin_api.test.py` separately use the reviewed Hermes file
+router with isolated files and profile/session prerequisites. The root development
+`python-multipart` dependency allows importing that router; it is not a plugin
+runtime dependency. `tests/workflows/automatic-artifacts.spec.ts` exercises live
+streaming, native resume, saved history, preview/download and library indexing in
+the real plugin at desktop and mobile sizes.
+
 Prefer observable user contracts. Retain focused protocol, security, deduplication, and pure-logic tests until replacements pass. See the [coverage migration audit](../../tests/test-audit.md).
 
 ## Real Hermes and browser workflows
