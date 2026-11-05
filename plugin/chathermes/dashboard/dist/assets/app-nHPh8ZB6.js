@@ -10498,7 +10498,7 @@ function gg(e, t) {
 }
 //#endregion
 //#region src/composables/useDrawerSwipe.ts
-var _g = "button, a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
+var _g = "button:not([data-drawer-swipe]), a, input, textarea, select, label, summary, audio, video, [role=\"button\"], [role=\"link\"], [role=\"slider\"], [role=\"checkbox\"], [role=\"switch\"], [role=\"combobox\"], [role=\"textbox\"], [role=\"menuitem\"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable=\"false\"]), .composer, pre, code";
 function vg(e, t, n, r) {
 	let i = /* @__PURE__ */ R(null), a, o = 0, s = 0, c = 0, l = 0, u = () => window.matchMedia("(max-width: 700px)").matches;
 	function d() {
@@ -12876,6 +12876,7 @@ var N_ = { key: 0 }, P_ = ["value"], F_ = {
 				"data-session": e.session,
 				class: "flex items-center gap-1"
 			}, [q("button", {
+				"data-drawer-swipe": "",
 				class: "inbox-open grid min-w-0 flex-1 gap-1 rounded-lg px-2 py-2 text-left hover:bg-[#292929]",
 				disabled: !!c.value || !!l.value,
 				onClick: (t) => p(e)
