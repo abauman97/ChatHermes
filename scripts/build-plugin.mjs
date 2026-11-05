@@ -2,6 +2,7 @@ import { build } from "vite";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
+import { generatePrecache } from "./precache.mjs";
 
 const outDir = "plugin/chathermes/dashboard/dist";
 const appBuild = await build({
@@ -46,6 +47,6 @@ await writeFile(entry, registered);
 // after bundling so a clean distribution actually ships its service worker.
 await mkdir(`${outDir}/icons`, { recursive: true });
 await cp("public/manifest.webmanifest", `${outDir}/manifest.webmanifest`);
-await cp("public/push-service-worker.js", `${outDir}/push-service-worker.js`);
 await cp("public/icons", `${outDir}/icons`, { recursive: true });
 await cp("public/icons/icon-192.png", `${outDir}/apple-touch-icon.png`);
+await generatePrecache(outDir, await readFile("public/push-service-worker.js", "utf8"));

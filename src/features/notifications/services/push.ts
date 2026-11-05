@@ -29,14 +29,41 @@ export function supported(): boolean {
   );
 }
 
+async function activated(registration: ServiceWorkerRegistration): Promise<void> {
+  const worker = registration.active || registration.installing || registration.waiting;
+  if (!worker) throw new Error("Notification service worker is unavailable.");
+  await new Promise<void>((resolve, reject) => {
+    const changed = () => {
+      if (worker.state !== "activated" && worker.state !== "redundant") return;
+      worker.removeEventListener("statechange", changed);
+      if (worker.state === "activated") resolve();
+      else reject(new Error("Notification service worker installation failed."));
+    };
+    worker.addEventListener("statechange", changed);
+    changed();
+  });
+}
+
 export async function registration(): Promise<ServiceWorkerRegistration> {
   if (!supported())
     throw new Error("Notifications require a secure browser with Push API support.");
+  return workerRegistration();
+}
+
+export async function workerRegistration(): Promise<ServiceWorkerRegistration> {
+  if (!window.isSecureContext || !("serviceWorker" in navigator))
+    throw new Error("Service workers require a secure browser.");
   if (!registrationPromise)
     registrationPromise = navigator.serviceWorker
       .register("/api/plugins/chathermes/push-service-worker.js", {
         scope: "/chathermes",
         updateViaCache: "none",
+      })
+      .then(async (registration) => {
+        // Precache can take time. PushManager.subscribe requires an active
+        // worker; a failed first install must reject and allow another attempt.
+        await activated(registration);
+        return registration;
       })
       .catch((error) => {
         registrationPromise = undefined;

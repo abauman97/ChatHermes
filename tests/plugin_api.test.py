@@ -3362,3 +3362,32 @@ async def test_transcript_route_preserves_real_desktop_ids_and_profile_isolation
         assert [row["id"] for row in response.json()["data"]] == [user, answer]
         assert response.json()["pagination"]["order"] == "latest"
         assert (await client.get(route + "&profile=beta")).status_code == 404
+
+
+@pytest.mark.parametrize("serving_profile", ["default", "alpha", ""])
+@run_async
+async def test_worker_binds_only_native_serving_profile(
+    app, monkeypatch, tmp_path, serving_profile
+):
+    import json
+
+    from hermes_cli import web_server_profiles
+
+    monkeypatch.setattr(web_server_profiles, "serving_profile_name", lambda: serving_profile)
+    monkeypatch.setattr(plugin, "__file__", str(tmp_path / "plugin_api.py"))
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "push-service-worker.js").write_text(
+        'const ASSET_PROFILE = /* __CHATHERMES_ASSET_PROFILE__ */ "";'
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get(
+            "/api/plugins/chathermes/push-service-worker.js?profile=unrelated"
+        )
+        assert response.status_code == 200
+        assert response.text == f"const ASSET_PROFILE = {json.dumps(serving_profile)};"
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.headers["service-worker-allowed"] == "/chathermes"
+        assert response.headers["x-content-type-options"] == "nosniff"
