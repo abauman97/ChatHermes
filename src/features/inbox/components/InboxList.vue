@@ -123,6 +123,7 @@ onBeforeUnmount(() => controller?.abort());
           class="flex items-center gap-1"
         >
           <button
+            data-drawer-swipe
             class="inbox-open grid min-w-0 flex-1 gap-1 rounded-lg px-2 py-2 text-left hover:bg-[#292929]"
             :disabled="!!opening || !!removing"
             @click="open(item)"

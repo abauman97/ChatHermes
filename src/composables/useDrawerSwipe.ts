@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from "vue";
 
 const controls =
-  'button, a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
+  'button:not([data-drawer-swipe]), a, input, textarea, select, label, summary, audio, video, [role="button"], [role="link"], [role="slider"], [role="checkbox"], [role="switch"], [role="combobox"], [role="textbox"], [role="menuitem"], [tabindex]:not([data-chat-message]):not([data-drawer-swipe]), [contenteditable]:not([contenteditable="false"]), .composer, pre, code';
 
 /** Local touch handlers only: scroll surfaces explicitly opt in to opening the drawer. */
 export function useDrawerSwipe(
