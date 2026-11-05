@@ -1,7 +1,6 @@
-"""Explicit delivery grammar shared with the conversation artifact contract.
+"""Shared explicit delivery and assistant-only Deliverable Mode extraction.
 
-Do not mine arbitrary tool output, ordinary Markdown links, or context references.
-The marker fast path avoids Markdown parsing for ordinary conversation text.
+Filesystem validation is separate; tool bodies and context references are data.
 """
 
 import json
@@ -46,20 +45,23 @@ def _delivery_link(state, silent):
 _IMAGE_MARKDOWN.inline.ruler.at("link", _delivery_link)
 
 
-def _media_references(line):
+def _media_references(line, automatic=False, env=None):
     files = []
-    for token in _IMAGE_MARKDOWN.parseInline(line)[0].children or []:
+    automatic = automatic and not re.fullmatch(r"\s*[\"'“‘].*[\"'”’]\s*", line)
+    for token in _IMAGE_MARKDOWN.parseInline(line, env)[0].children or []:
         src = token.attrGet("src" if token.type == "image" else "href")
         if (
             token.type not in ("image", "link_open")
             or not isinstance(src, str)
-            or not src.startswith("MEDIA:")
+            or not (src.startswith("MEDIA:") or (automatic and token.type == "link_open"))
         ):
             continue
         if token.type == "link_open" and not token.meta.get("delivery_link"):
             continue
         try:
-            path = unquote(src[6:], errors="strict")
+            path = unquote(src[6:] if src.startswith("MEDIA:") else src, errors="strict")
+            if not src.startswith("MEDIA:") and not automatic_path(path, linked=True):
+                continue
         except UnicodeDecodeError:
             continue
         if not re.match(
@@ -68,6 +70,8 @@ def _media_references(line):
             continue
         file = artifact(path)
         if file:
+            if not src.startswith("MEDIA:"):
+                file["automatic"] = True
             files.append(file)
     return files
 
@@ -165,11 +169,22 @@ def _labeled_media(line):
     return _media(line[label.end() :], local_only=True)
 
 
-def text_artifacts(text):
-    if "MEDIA:" not in text and not re.search(r"Attached (?:file|image) ", text):
+def automatic_path(path, *, linked=False):
+    """Pinned Deliverable Mode extensions; narrower standalone/link intent boundary."""
+    return (
+        bool(re.match(r"^(?:/(?!/)|~/)", path))
+        and not re.search(r"[\x00-\x1f\x7f?#\\]", path)
+        and path.rsplit(".", 1)[-1].lower() in _EXTENSIONS.split()
+        and (linked or bool(re.fullmatch(r"(?:~/|/)(?:[\w.\-]+/)*[\w.\-]+", path)))
+    )
+
+
+def text_artifacts(text, *, automatic=True):
+    if not re.search(r"MEDIA:|Attached (?:file|image) |/", text):
         return []
     lines = text.split("\n")
-    tokens = _MARKDOWN.parse(text)
+    env = {}
+    tokens = _MARKDOWN.parse(text, env)
     literal, untrusted = set(), set()
     for token in tokens:
         if token.map and (
@@ -177,7 +192,11 @@ def text_artifacts(text):
             in ("fence", "code_block", "blockquote_open", "bullet_list_open", "ordered_list_open")
             or any(
                 child.type == "code_inline"
-                and re.search("untrusted_tool_result", child.content, re.I)
+                and re.search(
+                    r"untrusted_tool_result|</?(?:think|thinking|reasoning|analysis|pre|code|script|style)\b",
+                    child.content,
+                    re.I,
+                )
                 for child in token.children or []
             )
         ):
@@ -186,9 +205,17 @@ def text_artifacts(text):
     for index, line in enumerate(lines):
         if depth:
             untrusted.add(index)
-        if index in literal or not re.match(r"\s*</?untrusted_tool_result\b", line, re.I):
+        if index in literal or not re.search(
+            r"</?(?:untrusted_tool_result|think|thinking|reasoning|analysis|pre|code|script|style)\b",
+            line,
+            re.I,
+        ):
             continue
-        for tag in re.finditer(r"<(/?)untrusted_tool_result\b[^>]*(?:>|$)", line, re.I):
+        for tag in re.finditer(
+            r"<(/?)(?:untrusted_tool_result|think|thinking|reasoning|analysis|pre|code|script|style)\b[^>]*(?:>|$)",
+            line,
+            re.I,
+        ):
             untrusted.add(index)
             depth = max(0, depth - 1) if tag[1] else depth + 1
     files = {}
@@ -198,8 +225,10 @@ def text_artifacts(text):
         # Quoted examples protect their source lines, not the whole paragraph.
         quoted = set()
         for child in tokens[position + 1].children or []:
-            if child.type != "code_inline" or not re.search(
-                r"MEDIA:|Attached (?:image|file) ", child.content
+            if child.type != "code_inline":
+                continue
+            if not re.search(r"MEDIA:|Attached (?:image|file) ", child.content) and (
+                child.meta["delivery_lines"][0] == child.meta["delivery_lines"][1]
             ):
                 continue
             first, last = child.meta["delivery_lines"]
@@ -217,9 +246,14 @@ def text_artifacts(text):
             elif line.startswith("MEDIA:"):
                 found = _media(line)
             else:
-                found = _labeled_media(line) or _media_references(line)
+                found = _labeled_media(line) or _media_references(line, automatic, env)
+                if automatic and automatic_path(line.strip()):
+                    found.append({**artifact(line.strip()), "automatic": True})
             for file in found:
-                files.setdefault(file["path"], file)
+                if file["path"] not in files or (
+                    files[file["path"]].get("automatic") and not file.get("automatic")
+                ):
+                    files[file["path"]] = file
     return list(files.values())
 
 
@@ -301,7 +335,7 @@ def extract(messages, session):
             else ""
         )
         found = (
-            text_artifacts(text)
+            text_artifacts(text, automatic=role == "assistant")
             if role in ("user", "assistant")
             else tool_artifacts(text)
             if role == "tool"
@@ -349,5 +383,8 @@ def extract(messages, session):
                 ),
                 direction="uploaded" if role == "user" else "generated",
             )
-            files.setdefault(file["path"], file)
+            if file["path"] not in files or (
+                files[file["path"]].get("automatic") and not file.get("automatic")
+            ):
+                files[file["path"]] = file
     return list(files.values())

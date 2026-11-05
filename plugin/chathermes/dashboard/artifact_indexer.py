@@ -9,6 +9,7 @@ from urllib.parse import quote
 from fastapi import Request
 
 from . import artifact_store as storage
+from .artifact_extraction import automatic_path as automatic_path
 from .artifact_extraction import extract
 
 
@@ -90,6 +91,22 @@ class Source:
     async def session(self, profile, session):
         return (await self.get(profile, "/api/sessions/" + quote(session, safe="")))["session"]
 
+    async def validate(self, profile, session, file):
+        request = Request(
+            {
+                "type": "http",
+                "method": "HEAD",
+                "path": "/",
+                "headers": [],
+                "query_string": ("profile=" + profile).encode(),
+            }
+        )
+        try:
+            metadata = await self.api._native_file(request, "inspect", file["path"], session)
+        except Exception:
+            return None  # Missing/denied files do not fail history reconciliation.
+        return {**{key: value for key, value in file.items() if key != "automatic"}, **metadata}
+
     async def messages(self, profile, session, inline=False):
         rows, offset = [], 0
         while True:
@@ -110,7 +127,8 @@ def modification(session):
     # last_active is the pinned runtime's latest message timestamp. Metadata is
     # included so title/membership changes are reflected without waiting for audit.
     return json.dumps(
-        [
+        ["automatic-paths-v1"]
+        + [
             session.get(key)
             for key in (
                 "last_active",
@@ -211,13 +229,24 @@ class Service:
             try:
                 messages = await self.source.messages(profile, identity)
                 files = await asyncio.to_thread(extract, messages, session)
+                validated = {}
+                automatic = any(file.get("automatic") for file in files)
+                for file in files:
+                    if automatic and automatic_path(file["path"], linked=True):
+                        resolved = await self.source.validate(profile, identity, file)
+                        if file.get("automatic"):
+                            file = resolved
+                        elif resolved:
+                            file = {**file, "path": resolved["path"]}
+                    if file:
+                        validated.setdefault(file["path"], file)
                 await asyncio.to_thread(
                     storage.replace_session,
                     self.store,
                     profile,
                     session,
                     modification(session),
-                    files,
+                    list(validated.values()),
                 )
             except asyncio.CancelledError:
                 raise

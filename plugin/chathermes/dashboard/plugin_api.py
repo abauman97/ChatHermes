@@ -1164,10 +1164,53 @@ async def _native_file(request, operation, path, session_id=None, name=None):
     try:
         from hermes_cli.web_routers import files
 
+        if operation == "inspect":
+            # Reuse the download boundary without transferring file contents.
+            # FileResponse.path is already canonical and sandbox/profile aware.
+            result = await files.fs_download(
+                path, request=request, profile=profile, session_id=session_id
+            )
+            import asyncio
+
+            backend, size = None, 0
+            if isinstance(result, FileResponse):
+                target = Path(result.path)
+
+            else:
+                backend = await asyncio.to_thread(files._fs_backend, profile)
+                if backend is None:
+                    raise HTTPException(503, "File inspection unavailable")
+                canonical, size = await asyncio.to_thread(backend.inspect_file, path)
+                target = Path(canonical)
+            if not _artifact_indexer.automatic_path(
+                str(target), linked=True
+            ) or files._is_sensitive_path(target):
+                raise HTTPException(403, "Unsupported artifact")
+            if backend is None:
+                if not await asyncio.to_thread(os.access, target, os.R_OK):
+                    raise HTTPException(403, "File unavailable")
+                await asyncio.to_thread(files._fs_read_bytes, target, 1)
+            else:
+                await asyncio.to_thread(
+                    backend.read_bytes, str(target), max_bytes=size, read_limit=1
+                )
+            return {
+                "path": str(target),
+                "name": target.name,
+                "type": result.media_type or "application/octet-stream",
+            }
         if operation == "preview":
             result = await files.fs_read_data_url(
                 path, request=request, profile=profile, session_id=session_id
             )
+            # Newer Hermes renders inline bytes in its own JSONResponse; the
+            # reviewed pin returns a dict. Preserve both native response shapes.
+            if isinstance(result, Response):
+                if result.status_code >= 400:
+                    raise HTTPException(result.status_code, "Hermes could not access this file")
+                result.headers["Cache-Control"] = "private, no-store"
+                result.headers["X-Content-Type-Options"] = "nosniff"
+                return result
             return Response(
                 __import__("json").dumps(result),
                 media_type="application/json",
@@ -1199,9 +1242,20 @@ async def _native_file(request, operation, path, session_id=None, name=None):
         # Native managed deletion enforces the host's configured write policy.
         # Validate a regular readable file without the preview size cap.
         await files.fs_download(path, request=request, profile=profile, session_id=session_id)
-        from hermes_cli.web_models import ManagedFileDelete
+        from inspect import iscoroutinefunction
 
-        await files.delete_managed_file(ManagedFileDelete(path=path, recursive=False), request)
+        from hermes_cli.web_models import ManagedFileDelete
+        from starlette.concurrency import run_in_threadpool
+
+        # Match FastAPI dispatch across Hermes versions: the reviewed pin is
+        # async; newer releases use a blocking handler returning a dict. The
+        # threadpool preserves request/profile context without blocking the loop.
+        delete = files.delete_managed_file
+        payload = ManagedFileDelete(path=path, recursive=False)
+        if iscoroutinefunction(delete):
+            await delete(payload, request)
+        else:
+            _ = await run_in_threadpool(delete, payload, request)
         return {"ok": True}
     except HTTPException as exc:
         raise HTTPException(exc.status_code, "Hermes could not access this file") from None
@@ -1216,6 +1270,23 @@ async def _native_file(request, operation, path, session_id=None, name=None):
 @router.get("/files/preview")
 async def artifact_preview(request: Request, path: str, session_id: str | None = None):
     return await _native_file(request, "preview", path, session_id)
+
+
+@router.head("/files/download")
+async def artifact_inspect(request: Request, path: str, session_id: str | None = None):
+    file = await _native_file(request, "inspect", path, session_id)
+    return Response(
+        headers={
+            "Content-Type": file["type"],
+            "Content-Location": "/api/plugins/chathermes/files/download?path="
+            + quote(file["path"], safe="")
+            + "&profile="
+            + quote(_rpc_profile(request), safe="")
+            + ("&session_id=" + quote(session_id, safe="") if session_id else ""),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        }
+    )
 
 
 @router.get("/files/download")

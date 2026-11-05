@@ -262,17 +262,35 @@ reference and filename annotation while preserving quotation/untrusted boundarie
 Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
-Timeline cards and the backend index use the same explicit delivery contract
-and share one preview/download component. Generated artifact cards
-require explicit `MEDIA:` delivery directives or existing `Attached file` /
-`Attached image` annotations. Markdown images with explicit `MEDIA:` sources
+Timeline cards and the backend index share the extraction fixtures in
+`tests/fixtures/artifact-deliveries.json` and one preview/download component.
+Assistant response text also delivers standalone absolute (`/…`) and runtime
+home-relative (`~/…`) paths, or Markdown links to those paths. Automatic detection
+uses the pinned Hermes Deliverable Mode extension allowlist; source files such
+as `.py` and `.log` are excluded. Paths in ordinary prose, quotes, code, lists,
+blockquotes, reasoning and untrusted tool content do not assert automatic delivery.
+User/system messages and tool bodies never trigger automatic extraction.
+
+Automatic candidates pass the native Hermes download boundary before cards or
+index entries appear. `HEAD /files/download?path=…&profile=…&session_id=…` reuses
+that boundary, probes readability without transferring contents, and returns
+canonical identity in `Content-Location` with the native MIME type. The index
+uses the same validation in process. Canonical aliases and repeated updates are
+deduplicated; missing, denied and unsupported targets leave response text intact.
+Home expansion, sandbox translation, remote adapters, profile/session checks and
+sensitive-path restrictions belong to the runtime. Preview and download recheck
+access, so later filesystem changes can still make a delivered file unavailable.
+Live, resumed and saved assistant turns use the same parser and validation.
+
+Explicit `MEDIA:` delivery directives and existing `Attached file` /
+`Attached image` annotations retain their existing behavior. Markdown images with explicit `MEDIA:` sources
 (for example `![Chart](MEDIA:/opt/data/chart.png)`) use the same authenticated
 artifact preview flow. Ordinary HTTPS Markdown images remain inline images.
 MEDIA parsing retains quoted paths, spaced media
 filenames, unknown formats, and extensionless files; no extension eligibility
-filter is used. Bare paths, ordinary markdown links (including `file:`, `sandbox:`, and
-`#media:` links), ordinary URLs, screenshot labels, and arbitrary producer output
-fields do not assert delivery. Standalone `@file:` references remain text unless
+filter is used for explicit delivery. `file:`, `sandbox:`, and `#media:` links,
+ordinary URLs, screenshot labels without delivery markers, and arbitrary producer
+output fields do not assert delivery. Standalone `@file:` references remain text unless
 an upload annotation supplies a card and hides the redundant context reference.
 Fenced source code remains intact.
 Completed, successful tool outputs use the same explicit delivery rules regardless
@@ -311,6 +329,10 @@ explicitly unsupported because the native managed deletion route is host-local.
 Missing native handlers return 501. Deleting a file removes its indexed cards
 and persists suppression metadata so reconciliation cannot restore them. Historical
 conversation references remain; subsequent preview/download reports it unavailable.
+The deletion adapter awaits the reviewed pin's async handler and runs synchronous
+release handlers in a thread pool with the request/profile context preserved.
+Index removal and suppression follow successful native deletion; denied or failed
+native operations retain their indexed entries.
 
 Raster images have thumbnails and a larger viewer; PDFs and browser media use
 browser viewers. Source/text formats, including HTML and SVG, display as escaped

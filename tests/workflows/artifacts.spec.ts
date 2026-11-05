@@ -86,16 +86,39 @@ test("indexed artifact pages preserve project scope, file actions and responsive
   await expect(page.locator(".header-title")).toHaveText(refreshedName);
   await expect(confirmation).toBeVisible();
   await expect(cards).toHaveCount(55);
+  const deletionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      new URL(response.url()).pathname === "/api/plugins/chathermes/files",
+  );
   await page
     .getByRole("dialog", { name: "Delete artifact" })
     .getByRole("button", { name: "Delete file", exact: true })
     .click();
+  const deleted = await deletionResponse;
+  expect(deleted.status(), await deleted.text()).toBe(200);
+  expect(await deleted.json()).toEqual({ ok: true });
+  await expect(confirmation).not.toBeVisible();
   await expect(cards).toHaveCount(54);
+  expect(
+    runtime(
+      "import pathlib,sys,json; print(json.dumps((pathlib.Path(sys.argv[1])/'artifact-54.txt').exists()))",
+      workspace,
+    ),
+  ).toBe(false);
+  const indexed = await api(page, `${root}&limit=100`);
+  expect(indexed.status).toBe(200);
+  expect(indexed.body.files).toHaveLength(54);
+  expect(
+    indexed.body.files.some((file: { path: string }) => file.path.endsWith("/artifact-54.txt")),
+  ).toBe(false);
+  await page.screenshot({ path: info.outputPath("artifact-deleted.png") });
   await library.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(cards).toHaveCount(50);
   await library.getByRole("button", { name: "Load More", exact: true }).click();
   await expect(cards).toHaveCount(54);
   await expect(cards.filter({ hasText: "artifact-54.txt" })).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("artifact-refreshed.png") });
   await cards.first().getByRole("button", { name: identity, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(identity));
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeEnabled();

@@ -58,7 +58,7 @@ The library shows its first 50 indexed files immediately. Use **Load More** for
 older files and **Refresh** to read the latest index. Existing conversations are
 indexed in the background; newly delivered files may take a moment to appear.
 
-Artifacts come from explicit delivered-file references and uploads in saved history. A bare path or ordinary link does not create an artifact. Preview and download use the authenticated dashboard and the chat's profile/workspace. Confirm deletion only when you intend to remove the actual managed file. Historical references remain afterward; remote SSH deletion is unsupported.
+Artifacts come from delivered-file references and uploads in saved history. Assistant replies can also deliver a standalone absolute or `~/` file path, or a Markdown link to it, for supported document, image, media, data and archive types. The file must exist and pass Hermes’s access checks. Paths discussed in prose, quoted examples, code, thinking, tool output and user context do not automatically create artifacts. Preview and download use the authenticated dashboard and the chat's profile/workspace. Confirm deletion only when you intend to remove the actual managed file. Historical references remain afterward; remote SSH deletion is unsupported.
 
 ## Scheduled results
 
