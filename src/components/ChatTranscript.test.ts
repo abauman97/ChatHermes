@@ -714,7 +714,7 @@ it("keeps disclosure instances independent when two turns reuse a local block ID
   const earlier = turns[0]!.get("details").element;
   const arriving = turns[1]!.get("details").element;
   expect(earlier.open).toBe(false);
-  expect(arriving.open).toBe(true);
+  expect(arriving.open).toBe(false);
   earlier.open = true;
   await turns[0]!.get("details").trigger("toggle");
   await wrapper.setProps({

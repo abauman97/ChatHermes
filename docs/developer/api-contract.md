@@ -21,35 +21,36 @@ history as well.
 The opt-in plugin extension opens the owning profile's SessionDB read-only,
 resolves the resume tip, and delegates ancestor expansion, generation deduplication
 and rewind removal to `get_messages(...include_compacted=True, include_ancestors=True)`.
-It applies the pinned Desktop `_project_for_display` and honors `display_content`;
-standalone compaction summaries never reach the browser. Inline image bytes become authenticated `artifact-images` addresses; image reads select one profile-owned lineage row rather than scanning the transcript. `display_id` is a stable
-logical first-row identity for rendering; `id` remains the durable representative
-used by response actions.
+It applies the pinned Desktop REST `_project_for_display` and honors
+`display_content`. Hidden rows retain their source ID but have an empty body;
+summary text is withheld. Inline image bytes become authenticated `artifact-images`
+addresses; reads select one profile-owned lineage row. Source `id` is Hermes's
+current representative, without a locally inferred alias or original-row position.
+The extension adds no historical compaction separators. Typed display entries
+returned by Hermes still render normally.
 
-The response adds `transcript: {revision, next_offset, has_more}`. Marker rows
-have `display_kind: "compaction"`, an empty body and a stable `compaction-{row}` ID;
-they do not count toward the next offset. Historical markers come only from
-persisted `_compressed_summary` carriers and proven `end_reason="compression"`
-lineage edges. Copies of one carrier are one boundary; changed carriers preserve
-multiple compactions. Markers follow the pre-compaction retained tail in logical
-message order. Unrecorded/provider-only rewrites without durable row anchors
-cannot be reconstructed and are never guessed from message text or token counts.
+The response adds `transcript: {revision, next_offset, has_more}`. A one-row
+lookahead establishes `has_more`; `next_offset` consumes source rows, including
+hidden rows. Hermes's `conversation_revision(...include_ancestors=True)` fences
+offsets and detects in-place rewrites. Append, rewind, compaction, rotation or a
+mutation during reading returns 409. The client refreshes its loaded window
+before advancing; generation and request guards reject obsolete results.
+Nonadvancing/repeating pages report an error and remain retryable.
 
-A content-free identity/active-state revision (with flagged carrier fingerprints)
-fences pagination. Changed append, rewind, compaction or rotation state returns
-409; the client refreshes its loaded window before advancing. Refresh and backfill
-results are guarded by profile/session generation and request identity. Live
-projections remain until their persistence coverage is proven. A settled omitted
-snapshot recovers persisted tool blocks only when its complete ordered prose
-agrees with the latest saved occurrence. Earlier pages load
-near scroll-top and through a retryable button; a DOM anchor preserves the reader
-while pages prepend or live content grows.
+Saved selection and order match the pinned Desktop REST path, including its
+limitations: uncovered user clones may appear after retained answers, and exact
+content/timestamp identities may collapse separate equal sends. No local
+reconstruction repairs these cases. The 120-row HTTP window does **not** bound
+backend work: the pin's multi-ancestor `get_messages` reads all retained payloads
+before deduplication and paging. No metadata selector or transcript store is added.
 
-Older Hermes versions without the storage helpers keep the ordinary gateway
-proxy. An explicit `pagination.order="latest"` is required to adopt a bounded tail.
-An orderless response falls back to oldest-first full pagination, matching Desktop;
-responses without pagination are complete. Legacy latest paging without revision
-support revalidates the loaded tail before advancing.
+Earlier pages load near scroll-top and through a retryable button. A DOM anchor
+preserves the reader while pages prepend or live content grows. Older Hermes
+versions without the storage helpers retain the gateway proxy. An explicit
+`pagination.order="latest"` is required to adopt a tail. A full orderless page
+falls back to complete oldest-first pagination; short orderless pages and replies
+without pagination are complete, as in Desktop. Source counts advance offsets.
+Legacy latest paging without revision support revalidates the loaded tail.
 
 ## Native chat contract
 
@@ -113,9 +114,19 @@ The execution lease lasts for the hosting process; host/runtime crashes are not
 durable execution continuation. Workers must have affinity to the same native
 runtime; the loopback target uses `HERMES_DASHBOARD_PORT` (default 9119).
 
-Browser recovery uses native snapshots and persisted history, with a second
-activation when completion races a busy resume. It does not claim lossless
-progress replay. Healthy hidden viewers stay connected. The composer stays
+Browser recovery uses native snapshots and persisted history, with Desktop's deferred cold
+resume (`defer_history=true`, `cols=96`) and a second activation when completion
+races a busy resume. A cold `hydrating=true` ack also denotes omitted history. It does not claim lossless
+progress replay. Omitted native history is not an empty persisted transcript.
+Partial saved tool commentary is reconciled using Desktop's backward final-reply
+boundary, ordered correction checks and symmetric prefix subtraction. Correction
+offsets count Unicode code points; unusable offsets retain the whole first
+interval, as Desktop does. These prompt/prefix rules are heuristics, not durable
+occurrence provenance. Saved tool IDs, structured phases and images remain
+available. Completed omitted snapshots use the existing complete ordered prose
+check; optional native persistence receipts retain their stronger coverage path.
+Hermes does not persist all transient reasoning/tool events, so cold reload cannot
+replay unavailable activity. Healthy hidden viewers stay connected. The composer stays
 focusable during recovery and execution; sending is gated separately.
 Before dispatch the browser records a profile/session/attempt uncertainty marker.
 Lost acknowledgements stay unknown across reload; no prompt is automatically

@@ -89,8 +89,17 @@ sending independently of editing. Keep standalone composer tests provider-free.
 `ChatTranscript` owns scrolling, native toggle capture and image load updates.
 `transcriptEntries` preserves history/live fallback rules without modifying or
 reconciling runtime blocks. Assistant turn keys scope local block IDs; historical
-turns receive their own working state. Work remains before text; `TurnWork` and
-`ActivityRow` retain their disclosure state and `v-show` row instances. Active disclosures expand to show arriving data, untouched completed rows collapse, and explicit manual toggles persist.
+turns receive their own working state. Empty runtime `blocks` fall back to saved
+prose, images and tool output; nonempty structured blocks remain authoritative.
+Saved pages use Hermes's Desktop REST selection and display projector. The plugin
+adds profile checks, authenticated image addresses and a mutation fence, without
+an independent order or compaction-marker reconstruction. Native snapshots supply
+live state separately; partial saved tool commentary follows Desktop's correction
+interval and prefix heuristics. Clone ordering, ambiguous equal identities and
+multi-ancestor payload cost retain the pinned upstream limitations described in
+the [API contract](api-contract.md#persisted-transcript-pages).
+Work remains before text; `TurnWork` and
+`ActivityRow` retain their disclosure state and `v-show` row instances. Thinking and tool bodies stay collapsed by default, including while active. Users can expand them to inspect arriving data; explicit manual toggles persist through streaming, completion and group toggles.
 
 Request forms are keyed by `[profile, session, envelope ID]`. The adapter accepts
 only known payload shapes and never displays unknown params. Forms own drafts

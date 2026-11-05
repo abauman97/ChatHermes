@@ -300,7 +300,7 @@ it("streams mixed activity below one collapsed history and folds delegation only
   expect(summary.attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
   expect(rows.every(rowShown)).toBe(true);
-  expect(rows[0]!.attributes("open")).toBeDefined();
+  expect(rows[0]!.attributes("open")).toBeUndefined();
   expect(rows[1]!.attributes("open")).toBeUndefined();
   expect(rows[1]!.get("summary").text()).toContain("Running…");
   await rows[1]!.get("summary").trigger("click");
@@ -350,3 +350,48 @@ it.each(["thinking", "tool"] as const)(
     wrapper.unmount();
   },
 );
+
+it("keeps nested reasoning collapsed by default and preserves independent disclosure choices", async () => {
+  const activities = reactive<Activity[]>([
+    { id: "thought", kind: "thinking", title: "Thinking", content: "First", complete: false },
+    { ...tool, id: "live", complete: false, state: "running" },
+  ]);
+  const wrapper = mount(TurnWork, { props: { activities, working: true } });
+  const summary = wrapper.get(".work-summary");
+  const thought = wrapper.get(".activity-thinking");
+  const element = thought.element;
+  expect(rowShown(thought)).toBe(true);
+  expect(thought.attributes("open")).toBeUndefined();
+  await summary.trigger("click");
+  expect(thought.attributes("open")).toBeUndefined();
+  await thought.get("summary").trigger("click");
+  activities[0]!.content += " second";
+  await nextTick();
+  expect(thought.get("pre").text()).toBe("First second");
+  await summary.trigger("click");
+  expect(thought.attributes("open")).toBeDefined();
+  expect(summary.attributes("aria-expanded")).toBe("false");
+  activities[0]!.complete = true;
+  await nextTick();
+  expect(rowShown(thought)).toBe(false);
+  await summary.trigger("click");
+  expect(thought.element).toBe(element);
+  expect(thought.attributes("open")).toBeDefined();
+  await thought.get("summary").trigger("click");
+  activities[0]!.content += " final";
+  activities.push({ ...tool, id: "next", complete: false, state: "pending" });
+  await nextTick();
+  expect(thought.attributes("open")).toBeUndefined();
+  expect(
+    wrapper
+      .findAll(".activity:not(.activity-thinking)")
+      .every((row) => row.attributes("open") === undefined),
+  ).toBe(true);
+  await summary.trigger("click");
+  await wrapper.setProps({ working: false });
+  await summary.trigger("click");
+  expect(thought.element).toBe(element);
+  expect(thought.attributes("open")).toBeUndefined();
+  expect(thought.get("pre").text()).toBe("First second final");
+  wrapper.unmount();
+});

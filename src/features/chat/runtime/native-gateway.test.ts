@@ -103,9 +103,13 @@ describe("profile-bound native gateway", () => {
         viewer = new NativeGatewayViewer(profile, "stored", h);
       try {
         await Promise.all([viewer.ensure(), viewer.ensure()]);
-        expect(frames.find((frame) => frame.method === "session.resume").params.omit_messages).toBe(
-          true,
-        );
+        expect(frames.find((frame) => frame.method === "session.resume").params).toMatchObject({
+          omit_messages: true,
+          defer_history: true,
+          cols: 96,
+          source: "desktop",
+          profile,
+        });
         expect(sockets).toHaveLength(1);
         expect(sockets[0]!.url.href).toBe("wss://dashboard.test/api/ws");
         expect(sockets[0]!.protocols).toEqual([
@@ -485,4 +489,18 @@ describe("profile-bound native gateway", () => {
     ).toBe(true);
     viewer.close();
   });
+});
+
+it("treats a deferred cold ack as omitted history while REST hydrates", async () => {
+  snapshot = { ...snapshot, messages: [], hydrating: true, messages_omitted: undefined };
+  const h = hooks();
+  const viewer = new NativeGatewayViewer("alpha", "stored", h);
+  try {
+    await viewer.ensure();
+    expect(h.snapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ messages: [], messages_omitted: true, hydrating: true }),
+    );
+  } finally {
+    viewer.close();
+  }
 });

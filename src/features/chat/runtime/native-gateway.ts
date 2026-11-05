@@ -237,6 +237,8 @@ export class NativeGatewayViewer {
     let snapshot = await this.call<NativeSnapshot>("session.resume", {
       session_id: this.stored,
       source: "desktop",
+      cols: 96,
+      defer_history: true,
       omit_messages: true,
     });
     this.assertLive();
@@ -273,6 +275,9 @@ export class NativeGatewayViewer {
     }
     this.hooks.snapshot({
       ...snapshot,
+      // A cold deferred ack uses hydrating instead of messages_omitted at
+      // this pin. The request still explicitly delegated history to REST.
+      messages_omitted: snapshot.messages_omitted ?? snapshot.hydrating === true,
       recovery: { epoch: "native-snapshot", through: 0, base_row_ids: null, complete: false },
     });
     this.holding = false;

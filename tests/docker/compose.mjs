@@ -9,6 +9,9 @@ export const composeArgs = [
   root,
   "-f",
   `${root}tests/docker/compose.yml`,
+  ...(process.env.CHATHERMES_COMPOSE_OVERRIDE
+    ? ["-f", process.env.CHATHERMES_COMPOSE_OVERRIDE]
+    : []),
 ];
 export function compose(...args) {
   return execFileSync("docker", [...composeArgs, ...args], {

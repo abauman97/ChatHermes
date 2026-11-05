@@ -169,3 +169,43 @@ it("renders multiple authoritative boundaries and projected content without inte
   expect(result[1]).toMatchObject({ responseId: "12", blocks: [{ content: "Before" }] });
   expect(result[3]).toMatchObject({ responseId: "14", blocks: [{ content: "After" }] });
 });
+
+it.each([
+  [{ role: "assistant", content: "Saved prose" }],
+  [
+    {
+      role: "assistant",
+      content: [
+        { type: "image_url", image_url: { url: "/api/plugins/chathermes/artifact-images/s/1/0" } },
+      ],
+    },
+  ],
+  [
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "call", function: { name: "terminal" } }],
+    },
+    { role: "tool", content: "Saved tool output", tool_call_id: "call" },
+  ],
+] as Message[][])(
+  "empty blocks retain the same saved projection as absent blocks: %j",
+  (...rows) => {
+    const messages: Message[] = [{ id: "user", role: "user", content: "Question" }, ...rows];
+    const expected = transcriptEntries({ messages, progress: [] }).filter(
+      (entry) => entry.kind === "turn",
+    );
+    expect(
+      transcriptEntries({
+        messages: [{ ...messages[0]!, blocks: [] }, ...rows],
+        progress: [],
+      }).filter((entry) => entry.kind === "turn"),
+    ).toEqual(expected);
+    expect(
+      transcriptEntries({
+        messages: [messages[0]!, ...rows.map((row) => ({ ...row, blocks: [] }))],
+        progress: [],
+      }).filter((entry) => entry.kind === "turn"),
+    ).toEqual(expected);
+  },
+);

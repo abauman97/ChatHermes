@@ -202,7 +202,12 @@ it("loads a bounded compacted tail and echoes revision-scoped older offsets", as
         JSON.stringify({
           data: [{ id: 12, role: "user", content: "internal", display_content: "Visible" }],
           pagination: { order: "latest", returned: 120, limit: 120 },
-          transcript: { revision: "r1", next_offset: 120, has_more: true },
+          transcript: {
+            revision: "r1",
+            next_offset:
+              Number(new URL(_url, "https://dashboard.test").searchParams.get("offset")) + 120,
+            has_more: true,
+          },
         }),
       ),
   );
@@ -233,7 +238,10 @@ it("does not treat an orderless oldest page as the tail on older gateways", asyn
                 { id: 2, role: "assistant", content: "New" },
               ]
             : [{ id: 1, role: "user", content: "Old" }],
-          pagination: { returned: url.includes("order=oldest") ? 2 : 1, limit: 500 },
+          pagination: {
+            returned: url.includes("order=oldest") ? 2 : 1,
+            limit: url.includes("order=oldest") ? 500 : 1,
+          },
         }),
       ),
   );
@@ -245,4 +253,38 @@ it("does not treat an orderless oldest page as the tail on older gateways", asyn
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(fetcher.mock.calls[1]?.[0]).toContain("order=oldest");
   expect(fetcher.mock.calls[1]?.[0]).toContain("include_compacted=true");
+});
+
+it.each([undefined, { limit: 120, returned: 1 }])(
+  "adopts a complete orderless response without arming backfill: %j",
+  async (pagination) => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ data: [{ id: 1, role: "user", content: "Complete" }], pagination }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    expect(await api.latestMessages("alpha", "old")).toMatchObject({
+      nextOffset: 0,
+      hasMore: false,
+      messages: [{ id: "1" }],
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("advances by source counts and rejects repeating oldest pages as incomplete", async () => {
+  const fetcher = vi.fn(
+    async (_url: string) =>
+      new Response(
+        JSON.stringify({
+          data: [{ id: 1, role: "user", content: "Repeated" }],
+          pagination: { limit: 2, returned: 2 },
+        }),
+      ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  await expect(api.messages("alpha", "old")).rejects.toThrow("repeated a page");
+  expect(fetcher.mock.calls[1]?.[0]).toContain("offset=2");
 });

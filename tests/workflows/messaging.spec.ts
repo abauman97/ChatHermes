@@ -191,6 +191,18 @@ test("reasoning and tools share one collapsed history with the active stream bel
   const summary = work.locator(".work-summary");
   await expect(summary).toHaveAttribute("aria-expanded", "false");
   await expect(work.locator(".current-activity")).toBeVisible();
+  const thought = work.locator(".activity-thinking");
+  await expect(thought).toHaveClass(/activity-active/);
+  await expect(thought).not.toHaveAttribute("open", "");
+  await expect(thought.locator("pre")).toBeHidden();
+  await page.screenshot({ path: info.outputPath("reasoning-streaming-collapsed.png") });
+  await summary.click();
+  await expect(thought).not.toHaveAttribute("open", "");
+  await thought.locator("summary").click();
+  await expect(thought.locator("pre")).toBeVisible();
+  await expect(thought.locator("pre")).toContainText("Inspect the workspace before answering.");
+  await page.screenshot({ path: info.outputPath("reasoning-streaming-expanded.png") });
+  await summary.click();
   await composer.fill("Draft while activity arrives");
   await expect(composer).toBeFocused();
   await page.screenshot({ path: info.outputPath("activity-streaming.png") });
@@ -203,6 +215,7 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await liveTool.locator("summary").click();
   await expect(liveTool.locator("pre")).toBeVisible();
   await expect(liveTool.locator("pre")).toContainText("workflow-tool-start");
+  await page.screenshot({ path: info.outputPath("tool-streaming-expanded.png") });
   await expect(page.locator(".message.assistant").last()).toHaveText(
     "Tool completed: workflow-tool-ok.",
   );
@@ -214,6 +227,10 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await page.screenshot({ path: info.outputPath("activity-collapsed.png") });
   await summary.click();
   await expect(work.locator(".activity:visible")).toHaveCount(2);
+  await expect(thought).toHaveAttribute("open", "");
+  const completedTool = work.locator(".activity:not(.activity-thinking)");
+  await expect(completedTool).toHaveAttribute("open", "");
+  await expect(completedTool.locator("pre")).toBeVisible();
   for (const row of await work.locator(".activity").all()) {
     if (!(await row.evaluate((element) => (element as HTMLDetailsElement).open)))
       await row.locator("summary").click();
@@ -230,4 +247,8 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await expect(summary).toHaveAttribute("aria-expanded", "false");
   await summary.click();
   await expect(work.locator(".activity:visible")).toHaveCount(2);
+  await expect(thought).not.toHaveAttribute("open", "");
+  await expect(thought.locator("pre")).toBeHidden();
+  await expect(completedTool).not.toHaveAttribute("open", "");
+  await expect(completedTool.locator("pre")).toBeHidden();
 });

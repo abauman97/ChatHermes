@@ -107,20 +107,21 @@ inspection. Login: `tester` / `chathermes-local-test` (synthetic test account on
 Publications default to loopback. For a remote daemon, use SSH forwarding or
 explicit private daemon addresses. Never publish browser controls publicly.
 
-| Setting                           | Default / purpose                                                       |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `COMPOSE_PROJECT_NAME`            | Checkout basename; isolate simultaneous environments                    |
-| `CHATHERMES_BIND_ADDRESS`         | `127.0.0.1`; dashboard and MockServer publication                       |
-| `CHATHERMES_ANDROID_BIND_ADDRESS` | `127.0.0.1`; private noVNC/CDP publication                              |
-| `CHATHERMES_DASHBOARD_PORT`       | `9119`                                                                  |
-| `CHATHERMES_MOCKSERVER_PORT`      | `1080`                                                                  |
-| `CHATHERMES_ANDROID_VNC_PORT`     | `6080`                                                                  |
-| `CHATHERMES_ANDROID_CDP_PORT`     | `9223`                                                                  |
-| `CHATHERMES_DASHBOARD_URL_HOST`   | Client-reachable hostname; otherwise `DOCKER_HOST` hostname or loopback |
-| `CHATHERMES_TEST_URL`             | Explicit dashboard origin override                                      |
-| `CHATHERMES_MOCKSERVER_URL`       | Explicit MockServer endpoint override                                   |
-| `CHATHERMES_ANDROID_CDP_ENDPOINT` | Explicit client-reachable CDP endpoint                                  |
-| `CHATHERMES_CHROMIUM`             | Optional installed desktop Chrome executable                            |
+| Setting                           | Default / purpose                                                             |
+| --------------------------------- | ----------------------------------------------------------------------------- |
+| `CHATHERMES_COMPOSE_OVERRIDE`     | Optional extra Compose file used consistently by all Node environment helpers |
+| `COMPOSE_PROJECT_NAME`            | Checkout basename; isolate simultaneous environments                          |
+| `CHATHERMES_BIND_ADDRESS`         | `127.0.0.1`; dashboard and MockServer publication                             |
+| `CHATHERMES_ANDROID_BIND_ADDRESS` | `127.0.0.1`; private noVNC/CDP publication                                    |
+| `CHATHERMES_DASHBOARD_PORT`       | `9119`                                                                        |
+| `CHATHERMES_MOCKSERVER_PORT`      | `1080`                                                                        |
+| `CHATHERMES_ANDROID_VNC_PORT`     | `6080`                                                                        |
+| `CHATHERMES_ANDROID_CDP_PORT`     | `9223`                                                                        |
+| `CHATHERMES_DASHBOARD_URL_HOST`   | Client-reachable hostname; otherwise `DOCKER_HOST` hostname or loopback       |
+| `CHATHERMES_TEST_URL`             | Explicit dashboard origin override                                            |
+| `CHATHERMES_MOCKSERVER_URL`       | Explicit MockServer endpoint override                                         |
+| `CHATHERMES_ANDROID_CDP_ENDPOINT` | Explicit client-reachable CDP endpoint                                        |
+| `CHATHERMES_CHROMIUM`             | Optional installed desktop Chrome executable                                  |
 
 Container health checks run inside Docker; they do not establish that the test
 runner can reach published ports. Endpoint helpers use the configured ports (or
@@ -130,6 +131,13 @@ existing project, inspect its publications with `docker compose --project-direct
 URL overrides before loading fixtures or running tests. Check
 `PUT <MockServer URL>/mockserver/status` from the runner: a healthy container
 with a refused connection usually means the publication or host is wrong.
+If automatic Docker address pools are exhausted, supply an unused explicit subnet
+in an ignored local Compose override, then set `CHATHERMES_COMPOSE_OVERRIDE` to
+that file for every preparation/integration command. Include the same `-f` override
+in direct Compose build/up commands. Changing network configuration even with
+`--no-recreate` can make Compose stop containers to replace their network; keep
+the configuration stable when retaining state.
+
 Android also needs a runner-reachable CDP endpoint; a remote daemon's loopback
 publication requires a tunnel. Keep that tunnel private and point
 `CHATHERMES_ANDROID_CDP_ENDPOINT` at its local address. The emulator's

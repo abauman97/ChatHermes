@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { test, expect } from "./fixtures";
 import { api, runtime } from "./helpers";
 
 const seed = readFileSync(new URL("../fixtures/transcript.py", import.meta.url), "utf8");
 
-test("compacted rotated history pages chronologically, survives reconnect and excludes rewind", async ({
+test("Desktop-selected rotated history pages, survives reconnect and excludes rewind", async ({
   page,
 }, info) => {
   const id = `history-${randomUUID()}`;
@@ -73,18 +73,51 @@ test("compacted rotated history pages chronologically, survives reconnect and ex
   const after = await history.locator(".message.user").filter({ hasText: text }).boundingBox();
   expect(Math.abs((after?.y || 0) - (before?.y || 0))).toBeLessThan(3);
   await expect(earlier).toHaveCount(0);
-  await expect(plugin.getByRole("separator", { name: "Context compacted" })).toHaveCount(3);
+  await expect(plugin.getByRole("separator", { name: "Context compacted" })).toHaveCount(0);
   const prompts = await history.locator(".message.user").allTextContents();
   expect(prompts.filter((text) => text.includes("Persisted prompt"))).toHaveLength(168);
   for (let n = 0; n < 168; n++)
     expect(prompts[n]).toContain(`Persisted prompt ${String(n).padStart(3, "0")}`);
+  const comparison = [];
+  const desktopRows = [];
+  for (const offset of [240, 120, 0]) {
+    const desktop = await api(
+      page,
+      `/api/sessions/${id}/messages?profile=default&limit=120&offset=${offset}&order=latest&include_compacted=true`,
+    );
+    const saved = await api(
+      page,
+      `/api/plugins/chathermes/api/sessions/${id}/messages?profile=default&transcript=1&limit=120&offset=${offset}&order=latest`,
+    );
+    expect(desktop.status).toBe(200);
+    expect(saved.status).toBe(200);
+    const desktopIds = desktop.body.messages.map((row: { id: number }) => row.id);
+    const pluginIds = saved.body.data.map((row: { id: number }) => row.id);
+    expect(pluginIds).toEqual(desktopIds);
+    comparison.push({ offset, desktopIds, pluginIds });
+    desktopRows.push(...desktop.body.messages);
+  }
+  const rendered = (await history.locator(".message").allTextContents()).map((text) => text.trim());
+  expect(rendered).toEqual(
+    desktopRows
+      .filter((row: { display_kind?: string }) => row.display_kind !== "hidden")
+      .map(
+        (row: { display_content?: string; content: string }) => row.display_content ?? row.content,
+      ),
+  );
+  const comparisonPath = info.outputPath("desktop-rest-plugin-comparison.json");
+  writeFileSync(comparisonPath, JSON.stringify({ comparison, rendered }, null, 2));
+  await info.attach("desktop-rest-plugin-comparison.json", {
+    path: comparisonPath,
+    contentType: "application/json",
+  });
   await history.evaluate((element) => {
     element.scrollTop = 0;
   });
   await page.screenshot({ path: info.outputPath("history-oldest.png") });
-  await plugin
-    .getByRole("separator", { name: "Context compacted" })
-    .first()
+  await history
+    .locator(".message.user")
+    .filter({ hasText: "Persisted prompt 076" })
     .scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("history-compaction.png") });
 
@@ -92,7 +125,7 @@ test("compacted rotated history pages chronologically, survives reconnect and ex
   await page.context().setOffline(true);
   await expect(plugin.getByRole("status").filter({ hasText: "offline" }).first()).toBeVisible();
   await page.context().setOffline(false);
-  await expect(plugin.getByRole("separator", { name: "Context compacted" })).toHaveCount(3);
+  await expect(plugin.getByRole("separator", { name: "Context compacted" })).toHaveCount(0);
   await expect(history).toContainText("Persisted prompt 000");
   await expect(area).toHaveValue("Draft stays focusable while browsing history");
   await page.reload();
@@ -150,7 +183,7 @@ test("live tool response survives a changed backfill cursor without moving the r
   await expect(earlier).toBeEnabled();
   await earlier.evaluate((element) => (element as HTMLButtonElement).click());
   await expect(history).toContainText("Persisted prompt 060");
-  const marker = plugin.getByRole("separator", { name: "Context compacted" }).first();
+  const marker = history.locator(".message.user").filter({ hasText: "Persisted prompt 100" });
   await marker.scrollIntoViewIfNeeded();
   const before = await marker.boundingBox();
   await expect(history.locator(".message.assistant").last()).toHaveText(
@@ -436,4 +469,142 @@ test("archived multipart user and assistant images load through authenticated ro
   await expect(history).not.toContainText("INTERNAL IMAGE SUMMARY");
   await images.first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("history-archived-images.png") });
+});
+
+test("synthetic uncovered clones match Desktop REST order and retain the shared upstream limitation", async ({
+  page,
+}, info) => {
+  const id = `clone-parity-${randomUUID()}`;
+  runtime(
+    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed_uncovered_clones(db,sys.argv[1])))\nfinally: db.close()`,
+    id,
+  );
+  const origin = new URL(page.url()).origin;
+  await page.goto(`${origin}/chathermes?profile=default#/chat/${id}?profile=default`);
+  const history = page.locator(".chathermes-embedded").getByRole("log", { name: "Conversation" });
+  await expect(history).toContainText("Clone prompt 5");
+  const desktop = await api(
+    page,
+    `/api/sessions/${id}/messages?profile=default&limit=120&order=latest&include_compacted=true`,
+  );
+  const plugin = await api(
+    page,
+    `/api/plugins/chathermes/api/sessions/${id}/messages?profile=default&transcript=1&limit=120&order=latest`,
+  );
+  expect(desktop.status).toBe(200);
+  expect(plugin.status).toBe(200);
+  expect(plugin.body.data.map((row: { id: number }) => row.id)).toEqual(
+    desktop.body.messages.map((row: { id: number }) => row.id),
+  );
+  const visible = desktop.body.messages.filter(
+    (row: { display_kind?: string }) => row.display_kind !== "hidden",
+  );
+  const expected = [
+    ...Array.from({ length: 6 }, (_, n) => `Clone answer ${n}`),
+    ...Array.from({ length: 6 }, (_, n) => `Clone prompt ${n}`),
+  ];
+  expect(visible.map((row: { content: string }) => row.content)).toEqual(expected);
+  const comparisonPath = info.outputPath("desktop-rest-clone-comparison.json");
+  writeFileSync(
+    comparisonPath,
+    JSON.stringify(
+      {
+        desktopIds: desktop.body.messages.map((row: { id: number }) => row.id),
+        pluginIds: plugin.body.data.map((row: { id: number }) => row.id),
+        expectedRenderedOrder: expected,
+        rendered: (await history.locator(".message").allTextContents()).map((text) => text.trim()),
+      },
+      null,
+      2,
+    ),
+  );
+  await info.attach("desktop-rest-clone-comparison.json", {
+    path: comparisonPath,
+    contentType: "application/json",
+  });
+  expect((await history.locator(".message").allTextContents()).map((text) => text.trim())).toEqual(
+    expected,
+  );
+  await history.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.screenshot({ path: info.outputPath("shared-desktop-clone-limitation.png") });
+  await history
+    .locator(".message.assistant")
+    .filter({ hasText: "Clone answer 5" })
+    .evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: info.outputPath("shared-desktop-clone-boundary.png") });
+  await page.reload();
+  await expect(history).toContainText("Clone prompt 5");
+  expect((await history.locator(".message").allTextContents()).map((text) => text.trim())).toEqual(
+    expected,
+  );
+  await expect(history).not.toContainText("INTERNAL CLONE SUMMARY");
+});
+
+test("native steering resumes with real correction offsets without another submission", async ({
+  page,
+}, info) => {
+  const plugin = page.locator(".chathermes-embedded");
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  const history = plugin.getByRole("log", { name: "Conversation" });
+  const prompt = `[workflow-resume] correction-${randomUUID()}`;
+  const correction = "Guide 😀 after first phase";
+  let submissions = 0;
+  let steers = 0;
+  const snapshots: { assistant: string; corrections: string[]; correction_offsets: number[] }[] =
+    [];
+  page.on("websocket", (socket) => {
+    const resumes = new Set<string>();
+    socket.on("framesent", ({ payload }) => {
+      for (const line of String(payload).split("\n").filter(Boolean)) {
+        const frame = JSON.parse(line);
+        if (frame.method === "prompt.submit") submissions++;
+        if (frame.method === "session.steer") steers++;
+        if (["session.resume", "session.activate"].includes(frame.method)) resumes.add(frame.id);
+      }
+    });
+    socket.on("framereceived", ({ payload }) => {
+      for (const line of String(payload).split("\n").filter(Boolean)) {
+        const frame = JSON.parse(line);
+        if (resumes.has(frame.id) && frame.result?.inflight?.corrections?.length) {
+          const turn = frame.result.inflight;
+          snapshots.push({
+            assistant: turn.assistant,
+            corrections: turn.corrections,
+            correction_offsets: turn.correction_offsets,
+          });
+        }
+      }
+    });
+  });
+  await composer.fill(prompt);
+  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(history.locator(".message.assistant").last()).toHaveText("Before disconnect.");
+  await composer.fill(correction);
+  await plugin.getByRole("button", { name: "Guide this run", exact: true }).click();
+  await expect(history.locator(".message.user").last()).toContainText(correction);
+  await page.context().setOffline(true);
+  await expect(plugin.getByRole("status").filter({ hasText: "offline" }).first()).toBeVisible();
+  await page.context().setOffline(false);
+  await expect.poll(() => snapshots.length).toBeGreaterThan(0);
+  const snapshot = snapshots.at(-1)!;
+  expect(snapshot.corrections).toEqual([correction]);
+  expect(snapshot.correction_offsets).toHaveLength(1);
+  const offset = snapshot.correction_offsets[0]!;
+  expect(Number.isInteger(offset)).toBe(true);
+  expect(offset).toBeGreaterThan(0);
+  expect(offset).toBeLessThanOrEqual(Array.from(snapshot.assistant).length);
+  await expect(history.locator(".message.user").filter({ hasText: correction })).toHaveCount(1);
+  await expect(history.locator(".message.assistant").first()).toHaveText(
+    Array.from(snapshot.assistant).slice(0, offset).join(""),
+  );
+  await composer.fill("Unsent correction recovery draft");
+  await expect(composer).toBeFocused();
+  await page.screenshot({ path: info.outputPath("native-correction-resumed.png") });
+  await composer.fill("");
+  await plugin.getByRole("button", { name: "Stop response", exact: true }).click();
+  await expect(plugin.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0);
+  expect(submissions).toBe(1);
+  expect(steers).toBe(1);
 });

@@ -19,6 +19,11 @@ import {
   gatewayOutcome,
   type DisplayMetadata,
 } from "./gateway-display";
+import {
+  locatePersistedLiveTurn,
+  snapshotIntervals,
+  unrepresentedText,
+} from "./persisted-live-turn";
 import type { Message, MessageWindow } from "../../../types/hermes";
 import type {
   OpenRequestEntry,
@@ -201,6 +206,8 @@ export function useNativeSession(
       );
       if (current !== generation || revision !== backfillRevision || window !== saved) return;
       if (page.revision !== saved.revision) throw new ApiError(409, "Transcript changed");
+      if (page.hasMore && page.nextOffset <= saved.nextOffset)
+        throw new Error("History pagination did not advance");
       const ids = new Set(messages.value.map((row) => row.id).filter(Boolean));
       const older = page.messages.filter((row) => !row.id || !ids.has(row.id));
       messages.value = [...older, ...messages.value];
@@ -246,6 +253,7 @@ export function useNativeSession(
     hasCorrections: boolean;
   }[] = [];
   let omittedRecovery = false;
+  let resumeInflight: NativeSnapshot["inflight"];
   let recoveryQueued = false;
   let pendingAttempt = "";
   let pendingText = "";
@@ -316,6 +324,7 @@ export function useNativeSession(
       settings.value = { profile: p, session: s, info: value.info, generation: current };
     recovering = true;
     omittedRecovery = value.messages_omitted === true;
+    resumeInflight = value.inflight;
     recoveryQueued = Boolean(value.queued);
     hydrating++;
     receipt = undefined;
@@ -341,12 +350,17 @@ export function useNativeSession(
       ? [...window.messages, ...recovered.filter((row) => !persistedIds.has(row.id))]
       : recovered;
     busy.value = !!(value.running || value.queued);
+    if (omittedRecovery && value.inflight?.user) {
+      const partial = locatePersistedLiveTurn(messages.value, value.inflight);
+      if (partial) messages.value = messages.value.slice(0, partial.start);
+    }
     if (!value.recovery.complete && value.inflight?.user) {
       const last = messages.value.reduce(
         (last, row, index) => (row.role === "user" ? index : last),
         -1,
       );
       if (
+        omittedRecovery ||
         last < 0 ||
         messageText(messages.value[last]!.content) !== value.inflight.user ||
         (messages.value[last]!.display_kind || undefined) !==
@@ -363,9 +377,14 @@ export function useNativeSession(
         mergeHistoryBlocks(turn, recoveredBlocks, busy.value);
         user!.blocks = turn.blocks;
       }
-      if (value.inflight.assistant && !turn!.blocks.some((block) => block.kind === "text"))
-        reduceTurn(turn!, { type: "text.snapshot", data: { text: value.inflight.assistant } });
-      for (const text of value.inflight.corrections || []) input(text, true);
+      const intervals = snapshotIntervals(value.inflight);
+      if (intervals[0] && !turn!.blocks.some((block) => block.kind === "text"))
+        reduceTurn(turn!, { type: "text.snapshot", data: { text: intervals[0] } });
+      for (const [index, text] of (value.inflight.corrections || []).entries()) {
+        input(text, true);
+        if (intervals[index + 1])
+          reduceTurn(turn!, { type: "text.snapshot", data: { text: intervals[index + 1] } });
+      }
       if (value.inflight.error) error.value = value.inflight.error;
       status.value =
         gatewayDisplay(user!) === "status"
@@ -458,6 +477,57 @@ export function useNativeSession(
       if (!busy.value) responseTargets.value = savedResponseTargets(messages.value, history);
       // A newer turn may start while REST is pending. Preserve its projection;
       // only a receipt with durable row identities retires covered live parts.
+      if (busy.value && omittedRecovery && resumeInflight && user && turn && !recoveryQueued) {
+        const partial = locatePersistedLiveTurn(history, resumeInflight);
+        const live = [...completed, { user, turn, hasCorrections }];
+        if (partial && partial.intervals.length <= live.length) {
+          for (const [index, entry] of live.entries()) {
+            const rows = partial.intervals[index] || [];
+            const saved = partial.users[index];
+            if (saved) {
+              entry.user.display_id ||= entry.user.id;
+              entry.user.id = saved.id;
+              entry.user.content = saved.content;
+            }
+            // The snapshot's first text block is flattened commentary plus
+            // a live remainder. Preserve phases that arrived behind it while
+            // REST was pending, including reasoning and later tool events.
+            const cached = [...entry.turn.blocks];
+            const textIndex = cached.findIndex((block) => block.kind === "text");
+            const raw = rows
+              .filter((row) => row.role === "assistant")
+              .map((row) => messageText(row.content))
+              .filter((text) => text.trim())
+              .join("\n\n");
+            const retained = cached.flatMap((block, index) => {
+              if (index !== textIndex) return [block];
+              const content = unrepresentedText(block.content, raw);
+              return content.trim() || (block.kind === "text" && block.images?.length)
+                ? [{ ...block, content }]
+                : [];
+            });
+            entry.turn.blocks = [];
+            entry.turn.native = undefined;
+            mergeHistoryBlocks(entry.turn, historyBlocks(rows), true);
+            for (const block of retained) {
+              const saved =
+                block.kind === "tool"
+                  ? entry.turn.blocks.find((item) => item.kind === "tool" && item.id === block.id)
+                  : undefined;
+              if (saved && block.kind === "tool") {
+                if (block.complete) Object.assign(saved, block);
+              } else entry.turn.blocks.push(block);
+            }
+            entry.user.blocks = entry.turn.blocks;
+          }
+          messages.value = [...history.slice(0, partial.start), ...live.map((entry) => entry.user)];
+          // The source-addressed partial prefix has now been consumed. Future
+          // deltas append to its remainder; another reconnect builds afresh.
+          resumeInflight = undefined;
+          repaint();
+          return;
+        }
+      }
       if (busy.value && user && turn) {
         const anchor = receipt?.user_row_id;
         const index = anchor ? history.findIndex((row) => row.id === String(anchor)) : -1;
@@ -900,6 +970,7 @@ export function useNativeSession(
     messages.value = [];
     window = undefined;
     omittedRecovery = false;
+    resumeInflight = undefined;
     hasEarlier.value = false;
     earlierError.value = "";
     responseTargets.value = {};

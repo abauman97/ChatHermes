@@ -42,3 +42,23 @@ def seed(db, root):
     db.append_message(child, "user", "Replacement after rewind")
     db.append_message(child, "assistant", "Replacement saved answer")
     return {"id": root, "tip": child}
+
+
+def seed_uncovered_clones(db, root):
+    """Synthetic assistant-only coverage; not a production coverage diagnosis."""
+    db.create_session(root, source="desktop", profile_name="default")
+    for n in range(6):
+        db.append_message(root, "user", f"Clone prompt {n}", timestamp=1700000100 + n * 2)
+        db.append_message(root, "assistant", f"Clone answer {n}", timestamp=1700000101 + n * 2)
+    before = db.get_messages(root)
+    db.archive_and_compact(
+        root,
+        [{"role": "user", "content": "INTERNAL CLONE SUMMARY", "_compressed_summary": True}],
+        covered_ids=[row["id"] for row in before if row["role"] == "assistant"],
+    )
+    return {
+        "id": root,
+        "before": [
+            {"id": row["id"], "role": row["role"], "content": row["content"]} for row in before
+        ],
+    }
