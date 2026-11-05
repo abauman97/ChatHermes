@@ -5,6 +5,7 @@ import type { Message, TurnBlock } from "../../types/hermes";
 
 export interface Artifact {
   path: string;
+  automatic?: boolean;
   name: string;
   type: string;
   size?: number;
@@ -66,8 +67,8 @@ function mediaValue(value: string) {
   return /[/\\]|\.[^.]/.test(value) ? value : "";
 }
 // Parse explicit MEDIA destinations with Markdown's quotation and escape rules.
-// Ordinary links/images never assert delivery. Keep source ranges so only the
-// accepted reference is removed, leaving surrounding prose intact.
+// Automatic links are opt-in; MEDIA references retain their existing grammar.
+// Keep source ranges so only accepted references are removed.
 const mediaMarkdown = new MarkdownIt({ html: true });
 for (const name of ["image", "link"]) {
   const rule = mediaMarkdown.inline.ruler.__rules__.find((rule) => rule.name === name)!.fn;
@@ -86,8 +87,14 @@ for (const name of ["image", "link"]) {
     return matched;
   });
 }
-function collectMediaReferences(line: string, add: (path: string) => boolean) {
-  const tokens = mediaMarkdown.parseInline(line, {})[0]?.children || [];
+function collectMediaReferences(
+  line: string,
+  add: (path: string, name?: string, automatic?: boolean) => boolean,
+  automatic = false,
+  env = {},
+) {
+  automatic = automatic && !/^\s*["'“‘].*["'”’]\s*$/.test(line);
+  const tokens = mediaMarkdown.parseInline(line, env)[0]?.children || [];
   let removed = 0;
   let consumed = 0;
   for (const token of tokens) {
@@ -97,10 +104,15 @@ function collectMediaReferences(line: string, add: (path: string) => boolean) {
         : token.type === "link_open"
           ? token.attrGet("href")
           : undefined;
-    if (typeof src !== "string" || !src.startsWith("MEDIA:")) continue;
+    if (
+      typeof src !== "string" ||
+      (!src.startsWith("MEDIA:") && !(automatic && token.type === "link_open"))
+    )
+      continue;
     let path: string;
     try {
-      path = decodeURIComponent(src.slice(6));
+      path = decodeURIComponent(src.startsWith("MEDIA:") ? src.slice(6) : src);
+      if (!src.startsWith("MEDIA:") && !automaticPath(path, true)) continue;
     } catch {
       continue;
     }
@@ -109,7 +121,9 @@ function collectMediaReferences(line: string, add: (path: string) => boolean) {
       continue;
     if (!token.meta?.deliveryRange || token.meta.escapedImage) continue;
     const [start, end] = token.meta.deliveryRange as [number, number];
-    if (!add(path)) continue;
+    if (!add(path, undefined, !src.startsWith("MEDIA:"))) continue;
+    // Keep automatic references visible so failed validation never erases response text.
+    if (!src.startsWith("MEDIA:")) continue;
     if (start < consumed) continue;
     line = line.slice(0, start - removed) + line.slice(end - removed);
     removed += end - start;
@@ -131,7 +145,7 @@ function collectMedia(text: string, add: (path: string) => boolean) {
     end = match.index + match[0].length;
   }
   if (!paths.length || text.slice(end).trim()) return text;
-  return paths.every((path) => !!artifact(path)) && paths.every(add) ? "" : text;
+  return paths.every((path) => !!artifact(path)) && paths.every((path) => add(path)) ? "" : text;
 }
 // A plain label followed exclusively by directives asserts delivery. Do not
 // scan arbitrary prose for markers or weaken Markdown quotation boundaries.
@@ -149,7 +163,7 @@ function collectLabeledMedia(line: string, add: (path: string) => boolean) {
     return true;
   });
   if (remainder || !files.length) return line;
-  files.forEach(add);
+  files.forEach((path) => add(path));
   return label[1]!;
 }
 export function extension(name: string) {
@@ -230,20 +244,35 @@ deliveryMarkdown.inline.ruler.at("backticks", (state, silent) => {
   return matched;
 });
 
-export function textArtifacts(text: string): { text: string; files: Artifact[] } {
+// Match the pinned Hermes Deliverable Mode allowlist, with explicit intent.
+export function automaticPath(path: string, linked = false): boolean {
+  return (
+    /^(?:\/(?!\/)|~\/)/.test(path) &&
+    !/[?#\\]/.test(path) &&
+    !path.split("").some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) &&
+    new RegExp(`\\.(?:${mediaExtensions})$`, "i").test(path) &&
+    (linked || /^(?:~\/|\/)(?:[\p{L}\p{N}_.-]+\/)*[\p{L}\p{N}_.-]+$/u.test(path))
+  );
+}
+
+export function textArtifacts(text: string, automatic = true): { text: string; files: Artifact[] } {
   const files: Artifact[] = [];
-  if (!/MEDIA:|Attached (?:image|file) /.test(text)) return { text, files };
-  const add = (path: string, name?: string) => {
+  if (!/MEDIA:|Attached (?:image|file) |\//.test(text)) return { text, files };
+  const add = (path: string, name?: string, automatic = false) => {
     const file = artifact(path, name);
     if (!file) return false;
-    if (!files.some((item) => item.path === file.path)) files.push(file);
+    if (automatic) file.automatic = true;
+    const existing = files.findIndex((item) => item.path === file.path);
+    if (existing < 0) files.push(file);
+    else if (files[existing]?.automatic && !automatic) files[existing] = file;
     return true;
   };
   const originalLines = text.split("\n");
   const lines = [...originalLines];
   let hasAttachment = false;
   const references: number[] = [];
-  const tokens = deliveryMarkdown.parse(text, {});
+  const env = {};
+  const tokens = deliveryMarkdown.parse(text, env);
   const literalLines = new Set<number>();
   for (const token of tokens) {
     if (!token.map) continue;
@@ -252,7 +281,11 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
         token.type,
       ) ||
       token.children?.some(
-        (child) => child.type === "code_inline" && /untrusted_tool_result/i.test(child.content),
+        (child) =>
+          child.type === "code_inline" &&
+          /untrusted_tool_result|<\/?(?:think|thinking|reasoning|analysis|pre|code|script|style)\b/i.test(
+            child.content,
+          ),
       )
     )
       for (let index = token.map[0]; index < token.map[1]; index++) literalLines.add(index);
@@ -261,8 +294,16 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
   let untrustedDepth = 0;
   for (const [index, line] of originalLines.entries()) {
     if (untrustedDepth) untrustedLines.add(index);
-    if (literalLines.has(index) || !/^\s*<\/?untrusted_tool_result\b/i.test(line)) continue;
-    for (const tag of line.matchAll(/<(\/?)untrusted_tool_result\b[^>]*(?:>|$)/gi)) {
+    if (
+      literalLines.has(index) ||
+      !/<\/?(?:untrusted_tool_result|think|thinking|reasoning|analysis|pre|code|script|style)\b/i.test(
+        line,
+      )
+    )
+      continue;
+    for (const tag of line.matchAll(
+      /<(\/?)(?:untrusted_tool_result|think|thinking|reasoning|analysis|pre|code|script|style)\b[^>]*(?:>|$)/gi,
+    )) {
       untrustedLines.add(index);
       untrustedDepth = tag[1] ? Math.max(0, untrustedDepth - 1) : untrustedDepth + 1;
     }
@@ -272,9 +313,13 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
     // A code example protects its own lines, not every delivery in the paragraph.
     const quotedLines = new Set<number>();
     for (const child of tokens[position + 1]?.children || []) {
-      if (child.type !== "code_inline" || !/MEDIA:|Attached (?:image|file) /.test(child.content))
-        continue;
       const deliveryLines = child.meta?.deliveryLines as [number, number] | undefined;
+      if (
+        child.type !== "code_inline" ||
+        (!/MEDIA:|Attached (?:image|file) /.test(child.content) &&
+          deliveryLines?.[0] === deliveryLines?.[1])
+      )
+        continue;
       if (!deliveryLines) continue;
       const [first, last] = deliveryLines;
       for (let line = first; line <= last; line++) quotedLines.add(token.map[0] + line);
@@ -289,12 +334,15 @@ export function textArtifacts(text: string): { text: string; files: Artifact[] }
       } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
         references.push(index);
       } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
-      else lines[index] = collectMediaReferences(collectLabeledMedia(line, add), add);
+      else {
+        lines[index] = collectMediaReferences(collectLabeledMedia(line, add), add, automatic, env);
+        if (automatic && automaticPath(line.trim())) add(line.trim(), undefined, true);
+      }
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";
   return {
-    text: files.length
+    text: files.some((file) => !file.automatic)
       ? lines
           .filter((line, index) => line !== "" || originalLines[index] === "")
           .join("\n")
@@ -344,13 +392,13 @@ export function toolArtifacts(block: TurnBlock): Artifact[] {
 export function uploadedArtifacts(text: string): { text: string; files: Artifact[] } {
   // Uploads share the explicit delivery parser, including its quotation and
   // untrusted-content boundaries. Legacy annotations retain original names.
-  return textArtifacts(text);
+  return textArtifacts(text, false);
 }
 export function messageArtifacts(message: Message): Artifact[] {
   if (message.role !== "user" && message.role !== "assistant") return [];
   const { content } = message;
   const files = (message.role === "user" ? uploadedArtifacts : textArtifacts)(
-    messageText(content),
+    messageText(Array.isArray(content) ? content.filter((part) => part?.type === "text") : content),
   ).files;
   const uploadedImages = files.filter((file) => previewKind(file) === "image");
   if (Array.isArray(content)) {

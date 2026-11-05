@@ -326,3 +326,152 @@ it("renders local MEDIA Markdown images through authenticated artifact previews 
   expect(wrapper.text()).toContain("Here is the chart.");
   wrapper.unmount();
 });
+
+it("validates automatic paths once across streaming updates, resume and history", async () => {
+  const fetch = vi.fn(async (url: string) => {
+    const path = new URL(url, "https://dashboard.test").searchParams.get("path");
+    return {
+      ok: path !== "/tmp/missing.pdf",
+      headers: new Headers({
+        "Content-Type": "application/pdf",
+        "Content-Location":
+          "/api/plugins/chathermes/files/download?path=%2Ftmp%2Freport.pdf&profile=alpha&session_id=session",
+      }),
+    };
+  });
+  vi.stubGlobal("fetch", fetch);
+  const turn = reactive(createTurn());
+  const entry = () => ({ kind: "turn" as const, key: "turn", working: true, blocks: turn.blocks });
+  const wrapper = mount(AssistantTurn, {
+    props: { entry: entry(), profile: "alpha", sessionId: "session" },
+  });
+  reduceNativeTurn(turn, "reasoning.delta", { text: "/tmp/private.pdf" });
+  reduceNativeTurn(turn, "tool.start", { tool_id: "tool", name: "terminal" });
+  reduceNativeTurn(turn, "tool.complete", { tool_id: "tool", result_text: "/tmp/private.pdf" });
+  reduceNativeTurn(turn, "message.delta", { text: "/tmp/report.pd" });
+  await wrapper.setProps({ entry: entry() });
+  await flushPromises();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(0);
+  reduceNativeTurn(turn, "message.delta", { text: "f" });
+  await wrapper.setProps({ entry: entry() });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining("profile=alpha&session_id=session"),
+    expect.objectContaining({ method: "HEAD", credentials: "same-origin", redirect: "error" }),
+  );
+  reduceNativeTurn(turn, "message.delta", { text: "\n\nFinished." });
+  await wrapper.setProps({ entry: entry() });
+  await flushPromises();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  const saved = historyBlocks([{ role: "assistant", content: "/tmp/report.pdf\n\nFinished." }]);
+  await wrapper.setProps({ entry: { kind: "turn", key: "turn", working: false, blocks: saved } });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  // Duplicate formats and canonical aliases, including across text blocks.
+  await wrapper.setProps({
+    entry: {
+      kind: "turn",
+      key: "turn",
+      working: false,
+      blocks: [
+        { id: "first", kind: "text", content: "~/report.pdf\n/tmp/report.pdf" },
+        { id: "second", kind: "text", content: "[Again](/tmp/report.pdf)\nMEDIA:/tmp/report.pdf" },
+        { id: "missing", kind: "text", content: "/tmp/missing.pdf" },
+      ],
+    },
+  });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  expect(wrapper.text()).toContain("/tmp/missing.pdf");
+  wrapper.unmount();
+});
+
+it("discards automatic file validation when the profile or session changes", async () => {
+  let resolve!: (value: unknown) => void;
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    )
+    .mockResolvedValue({ ok: false });
+  vi.stubGlobal("fetch", fetch);
+  const wrapper = mount(AssistantTurn, {
+    props: {
+      profile: "alpha",
+      sessionId: "a",
+      entry: {
+        kind: "turn",
+        key: "turn",
+        working: false,
+        blocks: [{ id: "text", kind: "text", content: "/tmp/report.pdf" }],
+      },
+    },
+  });
+  await wrapper.setProps({ profile: "beta", sessionId: "b" });
+  resolve({
+    ok: true,
+    headers: new Headers({
+      "Content-Location": "/api/plugins/chathermes/files/download?path=%2Ftmp%2Freport.pdf",
+    }),
+  });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(0);
+  expect(fetch.mock.calls[0]![1].signal.aborted).toBe(true);
+  wrapper.unmount();
+});
+
+it("preserves later explicit delivery while an earlier automatic reference is unavailable", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  const wrapper = mount(AssistantTurn, {
+    props: {
+      entry: {
+        kind: "turn",
+        key: "turn",
+        working: false,
+        blocks: [
+          { id: "first", kind: "text", content: "/tmp/report.pdf" },
+          { id: "second", kind: "text", content: "MEDIA:/tmp/report.pdf" },
+        ],
+      },
+    },
+  });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  wrapper.unmount();
+});
+
+it("keeps explicit tool delivery when an automatic text candidate is unavailable", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  const wrapper = mount(AssistantTurn, {
+    props: {
+      entry: {
+        kind: "turn",
+        key: "turn",
+        working: false,
+        blocks: [
+          {
+            id: "tool",
+            kind: "tool",
+            title: "Generated file",
+            toolName: "text_to_speech",
+            content: "",
+            output: '{"media_tag":"MEDIA:/tmp/report.pdf"}',
+            complete: true,
+            state: "completed",
+          },
+          { id: "text", kind: "text", content: "/tmp/report.pdf" },
+        ],
+      },
+    },
+  });
+  await flushPromises();
+  expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
+  wrapper.unmount();
+});
