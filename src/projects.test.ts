@@ -496,13 +496,18 @@ describe("authoritative gateway Projects", () => {
     finish(a);
     await flushPromises();
     const content = wrapper.get('[aria-label="Selected Project"]').text();
+    expect(wrapper.get(".header-title").text()).toBe("Projects");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
     refresh();
     await new Promise((resolve) => setTimeout(resolve, 150));
     await flushPromises();
     expect(wrapper.get('[aria-label="Selected Project"]').text()).toBe(content);
     expect(wrapper.find('[aria-label="Selected Project"] [role="status"]').exists()).toBe(false);
-    finish(a);
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(a.label);
+    finish({ ...a, label: "Updated Project A" });
     await flushPromises();
+    expect(wrapper.get(".header-title").text()).toBe("Projects");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Updated Project A");
     wrapper.unmount();
   });
   it("moves Projects out of the drawer and navigates to selected project sessions", async () => {
@@ -552,8 +557,8 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     expect(routeSession()).toBeNull();
     expect(routeProject()).toBe("p_b");
-    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
-    expect(wrapper.get(".header-title").text()).toBe("Project B");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project B");
+    expect(wrapper.get(".header-title").text()).toBe("Projects");
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     wrapper.unmount();
   });
@@ -887,7 +892,8 @@ describe("authoritative gateway Projects", () => {
     history.pushState({}, "", "/chathermes?profile=default#/projects/p_b?project=p_b");
     dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
-    expect(wrapper.get(".topbar h1").text()).toBe("Project B");
+    expect(wrapper.get(".topbar h1").text()).toBe("Projects");
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project B");
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
     await flushPromises();
     expect(wrapper.get('[role="menuitem"]').attributes("disabled")).toBeDefined();
@@ -954,10 +960,10 @@ describe("authoritative gateway Projects", () => {
     history.replaceState({}, "", "/chathermes?profile=default#/projects/p_a?project=p_a");
     const wrapper = mount(App);
     await flushPromises();
-    expect(wrapper.get(".topbar h1").text()).toBe("Project A");
+    expect(wrapper.get(".topbar h1").text()).toBe("Projects");
     expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
     expect(wrapper.find(".project-settings").exists()).toBe(false);
-    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
     await wrapper
       .findAll('[aria-label="Selected Project"] button')
       .find((button) => button.attributes("aria-label") === "Native worktree chat")!
@@ -1081,7 +1087,7 @@ describe("authoritative gateway Projects", () => {
     expect(wrapper.find(".projects-page").exists()).toBe(true);
     wrapper.unmount();
   });
-  it("defaults to active projects when returning from the archived filter", async () => {
+  it("preserves the archived list on sidebar navigation and switches through the list filter", async () => {
     setup();
     history.replaceState({}, "", "/chathermes?profile=default#/projects?archived=1");
     const wrapper = mount(App);
@@ -1090,6 +1096,10 @@ describe("authoritative gateway Projects", () => {
     expect(wrapper.find(".project-tabs").exists()).toBe(false);
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
+    expect(wrapper.text()).toContain("No archived projects.");
+    expect(routeUrl().search).toContain("archived=1");
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await wrapper.get('[role="menuitemradio"]').trigger("click");
     await flushPromises();
     expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Project A");
     expect(routeUrl().search).not.toContain("archived=1");
@@ -1143,7 +1153,7 @@ it("opens an automatic project whose gateway ID is a filesystem path", async () 
 describe("URL-authoritative composer context", () => {
   it.each([
     ["/?session=project_s1&project=p_a", "", "Message Hermes…", "ChatHermes"],
-    ["/projects/p_a?session=project_s1&project=p_b", "", "Message Project A", "Project A"],
+    ["/projects/p_a?session=project_s1&project=p_b", "", "Message Project A", "Projects"],
     [
       "/chat/project_s1?session=s1&project=p_b",
       "project_s1",
@@ -1160,7 +1170,9 @@ describe("URL-authoritative composer context", () => {
       expect(wrapper.findComponent({ name: "SessionSidebar" }).props("selected")).toBe(selected);
       expect(wrapper.get("#prompt").attributes("placeholder")).toBe(placeholder);
       expect(wrapper.get(".header-title").text()).toBe(title);
-      expect(wrapper.find(".header-project-subtitle").exists()).toBe(selected === "project_s1");
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(
+        selected === "project_s1" || path.startsWith("/projects/p_a"),
+      );
       if (!selected) expect(nativeOwner.attach).not.toHaveBeenCalled();
       else expect(nativeOwner.attach).toHaveBeenCalledExactlyOnceWith("", selected);
       wrapper.unmount();

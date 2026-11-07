@@ -83,7 +83,8 @@ test("indexed artifact pages preserve project scope, file actions and responsive
     name: refreshedName,
   });
   expect(updated.status).toBe(200);
-  await expect(page.locator(".header-title")).toHaveText(refreshedName);
+  await expect(page.locator(".header-title")).toHaveText("Projects");
+  await expect(page.locator(".header-project-subtitle")).toHaveText(refreshedName);
   await expect(confirmation).toBeVisible();
   await expect(cards).toHaveCount(55);
   const deletionResponse = page.waitForResponse(

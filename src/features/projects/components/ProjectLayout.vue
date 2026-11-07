@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useProjects } from "../context";
 import { useRoute, useRouter } from "vue-router";
-const { selectedProject, projectLoading, projectError, loadProject, showProjects } = useProjects();
+const { selectedProject, projectLoading, projectError, loadProject } = useProjects();
 const route = useRoute(),
   router = useRouter();
 </script>
@@ -11,9 +11,6 @@ const route = useRoute(),
     aria-label="Selected Project"
   >
     <div class="project-home-content">
-      <button class="project-back" @click="showProjects(!!selectedProject?.archived)">
-        ← Projects
-      </button>
       <p v-if="projectLoading" role="status">Loading Project…</p>
       <p v-if="projectError" class="mb-4 text-[#fecaca]" role="alert">
         {{ projectError }} <button class="underline" @click="loadProject">Retry Project</button>
