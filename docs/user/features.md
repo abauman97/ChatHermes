@@ -44,6 +44,12 @@ Compaction carries the status to the continuation chat.
 
 Open **Projects** and select a Project to view its recent chats and repository hierarchy. Hermes supplies Projects, including automatic repository Projects and Home.
 
+The Projects **···** menu has **Hide automatic projects**, enabled by default.
+Turn it off to include discovered workspaces in the active and archived lists.
+This preference is saved in this browser for all profiles. Explicit Projects and
+conversations are preserved; hidden Projects still open through existing links
+and their conversations.
+
 Use **New Project Chat** to create a distinct chat in the selected Project workspace. In an open chat, **New chat** starts an unscoped chat; on Project home it retains scoped creation. Home starts without a Project workspace. A Project without an available workspace cannot start a chat.
 
 Browsing another Project changes the view while retaining the current chat's workspace. Resuming an existing chat always uses its saved workspace. Manage Projects and move sessions through Hermes Desktop/CLI.

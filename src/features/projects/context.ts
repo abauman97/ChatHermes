@@ -1,5 +1,5 @@
 import { useRoute } from "vue-router";
-import { inject, provide, ref, watch, type Ref, type InjectionKey } from "vue";
+import { inject, provide, readonly, ref, watch, type Ref, type InjectionKey } from "vue";
 import type { useProjectWorkspace } from "./composables/useProjectWorkspace";
 type Context = Pick<
   ReturnType<typeof useProjectWorkspace>,
@@ -26,18 +26,44 @@ type Context = Pick<
   chooseSession: (id: string) => Promise<void>;
   createSession: () => Promise<string | undefined>;
 };
-type ProjectContext = Context & { projectConfirmation: Ref<"delete" | "archive" | undefined> };
+type ProjectContext = Context & {
+  projectConfirmation: Ref<"delete" | "archive" | undefined>;
+  hideAutomaticProjects: Readonly<Ref<boolean>>;
+  toggleAutomaticProjects: () => void;
+};
+const STORAGE_KEY = "chathermes.hide-automatic-projects";
+function hideAutomaticPreference() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
 const key: InjectionKey<ProjectContext> = Symbol("projects");
 export function provideProjects(context: Context) {
   const route = useRoute();
   const projectConfirmation = ref<"delete" | "archive">();
+  const hideAutomaticProjects = ref(hideAutomaticPreference());
+  function toggleAutomaticProjects() {
+    hideAutomaticProjects.value = !hideAutomaticProjects.value;
+    try {
+      localStorage.setItem(STORAGE_KEY, String(hideAutomaticProjects.value));
+    } catch {
+      // The preference still applies for this mount when browser storage is unavailable.
+    }
+  }
   watch(
     () => route.fullPath,
     () => {
       projectConfirmation.value = undefined;
     },
   );
-  provide(key, { ...context, projectConfirmation });
+  provide(key, {
+    ...context,
+    projectConfirmation,
+    hideAutomaticProjects: readonly(hideAutomaticProjects),
+    toggleAutomaticProjects,
+  });
 }
 export function useProjects() {
   const context = inject(key);

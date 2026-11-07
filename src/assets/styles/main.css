@@ -656,6 +656,10 @@ body {
 .screen-menu-wrap {
   grid-column: 3;
 }
+.screen-menu {
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+}
 .screen-menu > button {
   min-height: 44px;
   padding: 10px 12px;
@@ -669,8 +673,17 @@ body {
 .screen-menu > button:disabled {
   opacity: 0.55;
 }
-.screen-menu > [aria-checked="true"]::after {
+.screen-menu > [aria-checked="true"]:not(.projects-filter-action)::after {
   content: " ✓";
+}
+.screen-menu > .projects-filter-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1em;
+  align-items: center;
+  gap: 12px;
+}
+.projects-filter-action > [aria-hidden] {
+  text-align: center;
 }
 .project-editor > *,
 .project-home-content {

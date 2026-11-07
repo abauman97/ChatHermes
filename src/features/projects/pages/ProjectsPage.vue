@@ -5,6 +5,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 const {
   projects,
+  hideAutomaticProjects,
   projectsLoading,
   projectsError,
   manageError,
@@ -16,10 +17,13 @@ const {
 } = useProjects();
 const route = useRoute();
 const archived = computed(() => route.query.archived === "1");
+const listedProjects = computed(() =>
+  projects.value.filter((project) => !hideAutomaticProjects.value || !project.isAuto),
+);
 </script>
 <template>
   <ProjectList
-    :projects="projects"
+    :projects="listedProjects"
     :archived="archived"
     :loading="projectsLoading"
     :error="projectsError || manageError"
