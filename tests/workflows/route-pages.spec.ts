@@ -10,9 +10,10 @@ test("every route opens directly, nested pages reload, and history restores its 
     "import pathlib,sys,json; p=pathlib.Path('/opt/data/workflow-tests')/sys.argv[1]; p.mkdir(parents=True); print(json.dumps(str(p)))",
     randomUUID(),
   );
+  const projectLabel = `Route pages ${randomUUID()}`;
   const created = await api(page, "/api/plugins/chathermes/projects/manage?profile=default", {
     action: "create",
-    name: `Route pages ${randomUUID()}`,
+    name: projectLabel,
     primary_path: workspace,
   });
   expect(created.status).toBe(200);
@@ -43,12 +44,44 @@ test("every route opens directly, nested pages reload, and history restores its 
     ["/settings", ".settings-page"],
   ];
   for (const [path, selector] of destinations) {
+    const expectedTitle = path.startsWith(`/projects/${project}`)
+      ? projectLabel
+      : path.startsWith("/scheduled")
+        ? "Scheduled"
+        : path === "/"
+          ? "ChatHermes"
+          : path.startsWith("/inbox")
+            ? "Inbox"
+            : path.startsWith("/artifacts")
+              ? "Artifacts"
+              : path.startsWith("/projects")
+                ? "Projects"
+                : "Settings";
     await page.goto(url(path));
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
+    await expect(plugin.locator(".header-title")).toHaveText(expectedTitle);
+    if (path === `/projects/${project}/settings`) {
+      const editor = plugin.locator(".project-editor");
+      await editor.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      expect(await editor.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      await expect(plugin.locator(".header-title")).toBeInViewport();
+    }
+    await expect(plugin.locator(".header-project-subtitle")).toHaveCount(0);
     const supportsChat = path === "/" || path === `/projects/${project}`;
     await expect(plugin.locator("#prompt")).toBeVisible({ visible: supportsChat });
     await page.reload();
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
+    await expect(plugin.locator(".header-title")).toHaveText(expectedTitle);
+    if (path === `/projects/${project}` || path.endsWith("/instructions"))
+      await page.screenshot({
+        path: info.outputPath(
+          path.endsWith("/instructions")
+            ? "route-instructions-header.png"
+            : "route-project-header.png",
+        ),
+      });
   }
   await plugin.getByRole("button", { name: "Close settings", exact: true }).click();
   await expect(
@@ -87,6 +120,22 @@ test("every route opens directly, nested pages reload, and history restores its 
   );
   await page.goBack();
   await page.reload();
+  await expect(page.locator(".message.user")).toHaveText(prompt);
+  await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
+  const renamedTitle = `Renamed route chat ${randomUUID()}`;
+  if (await open.isVisible()) await open.click();
+  await plugin
+    .locator(".session-row.active")
+    .getByRole("button", { name: /^Options for / })
+    .click();
+  await plugin.getByRole("button", { name: "Rename", exact: true }).click();
+  await plugin.getByRole("textbox", { name: "Session title", exact: true }).fill(renamedTitle);
+  await plugin.getByRole("button", { name: "Save title", exact: true }).click();
+  if (await plugin.getByRole("button", { name: "Close navigation", exact: true }).isVisible())
+    await plugin.getByRole("button", { name: "Close navigation", exact: true }).click();
+  await expect(plugin.locator(".header-title")).toHaveText(renamedTitle);
+  await page.reload();
+  await expect(plugin.locator(".header-title")).toHaveText(renamedTitle);
   await expect(page.locator(".message.user")).toHaveText(prompt);
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
   await page.screenshot({ path: info.outputPath("route-chat-restored.png") });

@@ -120,7 +120,7 @@ describe("live chat controller", () => {
     const wrapper = mount(
       defineComponent({
         setup() {
-          provideChat(controller);
+          provideChat({ ...controller, sessions: ref([]) });
           return () => h(ChatInterface, { showChat: true });
         },
       }),

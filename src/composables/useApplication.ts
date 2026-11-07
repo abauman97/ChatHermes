@@ -253,7 +253,7 @@ export function useApplication() {
       void loadSessions();
     },
   });
-  provideChat(chat);
+  provideChat({ ...chat, sessions: computed(() => sessions.value) });
   const wakeLock = useWakeLock();
   const kanban = provideKanban(offline);
   const scheduled = provideScheduled({ profile, offline, creating, recentSession });

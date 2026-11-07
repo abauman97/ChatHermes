@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ProjectInstructions from "../components/ProjectInstructions.vue";
+import { usePageHeader } from "../../../composables/usePageHeader";
 import { useProjects } from "../context";
 const {
   profile,
@@ -11,6 +12,7 @@ const {
   projectError,
   loadProject,
 } = useProjects();
+usePageHeader(() => ({ title: selectedProject.value?.label || "Project" }));
 </script>
 <template>
   <section class="page-content project-editor" aria-label="Edit Instructions">
