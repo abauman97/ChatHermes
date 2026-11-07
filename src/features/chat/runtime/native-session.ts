@@ -129,6 +129,14 @@ export function useNativeSession(
   let refreshingHistory = false;
   let earlierPending = false;
   let historyAbort: AbortController | undefined;
+  const historyFailure =
+    "Could not refresh saved history. Try again when the dashboard is available.";
+  let historyRetry: ReturnType<typeof setTimeout> | undefined;
+  let historyFailures = 0;
+  function cancelHistoryRetry() {
+    clearTimeout(historyRetry);
+    historyRetry = undefined;
+  }
   async function readWindow(signal?: AbortSignal, minimum = 0): Promise<MessageWindow> {
     const target = Math.max(120, minimum, window?.nextOffset || 0);
     const firstLoaded = window?.messages.find((row) => row.display_kind !== "compaction");
@@ -253,6 +261,7 @@ export function useNativeSession(
     hasCorrections: boolean;
   }[] = [];
   let omittedRecovery = false;
+  let incompleteRecovery = false;
   let resumeInflight: NativeSnapshot["inflight"];
   let recoveryQueued = false;
   let pendingAttempt = "";
@@ -324,6 +333,7 @@ export function useNativeSession(
       settings.value = { profile: p, session: s, info: value.info, generation: current };
     recovering = true;
     omittedRecovery = value.messages_omitted === true;
+    incompleteRecovery = !value.recovery.complete;
     resumeInflight = value.inflight;
     recoveryQueued = Boolean(value.queued);
     hydrating++;
@@ -392,9 +402,6 @@ export function useNativeSession(
           : value.running
             ? "Working…"
             : gatewayOutcome(value.inflight.status);
-      if (value.running && !value.inflight.error)
-        error.value =
-          "Earlier progress is outside retained recovery; saved history is authoritative.";
     }
     busy.value = !!(value.running || value.queued);
   }
@@ -403,11 +410,14 @@ export function useNativeSession(
       flight = ++hydrating,
       currentViewer = viewer;
     if (!currentViewer || recovering || connection.value !== "ready") return;
+    cancelHistoryRetry();
+    const boundary = currentViewer.boundary;
     backfillRevision++;
     refreshingHistory = true;
     const controller = new AbortController();
     historyAbort?.abort();
     historyAbort = controller;
+    let failed = false;
     try {
       const loaded = await readWindow(controller.signal, minimum);
       const stored = loaded.messages;
@@ -437,14 +447,14 @@ export function useNativeSession(
       // keep the richer live tool/thinking projection intact.
       adoptWindow(loaded);
       if (
-        omittedRecovery &&
+        (omittedRecovery || incompleteRecovery) &&
         !busy.value &&
         user &&
         turn &&
         !hasCorrections &&
         !completed.some((entry) => entry.hasCorrections)
       ) {
-        // An omitted resume may retain the final in-flight text after the turn
+        // An incomplete resume may retain final in-flight text after the turn
         // settles. Recover its tools from the latest saved occurrence only when
         // the whole ordered user/assistant prose agrees; never bind by prompt alone.
         const lastUser = history.reduce(
@@ -467,11 +477,7 @@ export function useNativeSession(
           turn = undefined;
           completed = [];
           omittedRecovery = false;
-          if (
-            error.value ===
-            "Earlier progress is outside retained recovery; saved history is authoritative."
-          )
-            error.value = "";
+          incompleteRecovery = false;
         }
       }
       if (!busy.value) responseTargets.value = savedResponseTargets(messages.value, history);
@@ -546,6 +552,11 @@ export function useNativeSession(
             -1,
           );
           let baseline = baselineIndex >= 0 ? history.slice(0, baselineIndex + 1) : [];
+          // Incomplete snapshots can retain the current durable user while
+          // omitting its earlier history. Its identity anchors the saved prefix
+          // even when there are no previously displayed baseline rows.
+          const savedStart = history.findIndex((row) => row.id && row.id === liveUser.id);
+          if (savedStart >= 0) baseline = history.slice(0, savedStart);
           // A running omitted resume has no native display prefix. Under the
           // pin, its user is persisted before execution starts. Match that last
           // user projection exactly, with no queued/correction ambiguity, and
@@ -617,17 +628,40 @@ export function useNativeSession(
       }
       messages.value = history;
       const result = await currentViewer.rpc<{ settled: boolean }>("reconciled", {
-        through: currentViewer.boundary,
+        through: boundary,
       });
-      if (current === generation && result.settled) onSettled();
+      if (
+        current === generation &&
+        flight === hydrating &&
+        currentViewer === viewer &&
+        boundary === currentViewer.boundary &&
+        !busy.value &&
+        result.settled
+      )
+        onSettled();
       return true;
     } catch {
-      if (current === generation && flight === hydrating)
-        error.value =
-          "Response ended; saved history could not be reconciled. Refresh history before sending again.";
+      failed = true;
+      if (current === generation && flight === hydrating) {
+        // Reads are safe to retry; never retry submission or discard the live
+        // transcript. Bound retries and leave an explicit recovery action if
+        // the dashboard remains unavailable. Scope changes cancel the timer.
+        if (!error.value) error.value = historyFailure;
+        if (historyFailures < 3) {
+          const delay = 1000 * 2 ** historyFailures++;
+          historyRetry = setTimeout(() => {
+            historyRetry = undefined;
+            if (current === generation && currentViewer === viewer) void hydrate(minimum);
+          }, delay);
+        }
+      }
       return false;
     } finally {
       if (current === generation && flight === hydrating) {
+        if (!failed) {
+          historyFailures = 0;
+          if (error.value === historyFailure) error.value = "";
+        }
         refreshingHistory = false;
         loading.value = false;
         if (earlierPending) {
@@ -651,6 +685,8 @@ export function useNativeSession(
   }
   function stale() {
     clearContext();
+    cancelHistoryRetry();
+    historyFailures = 0;
     historyAbort?.abort();
     historyAbort = undefined;
     backfillRevision++;
@@ -970,6 +1006,7 @@ export function useNativeSession(
     messages.value = [];
     window = undefined;
     omittedRecovery = false;
+    incompleteRecovery = false;
     resumeInflight = undefined;
     hasEarlier.value = false;
     earlierError.value = "";

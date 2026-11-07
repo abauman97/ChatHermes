@@ -1313,3 +1313,58 @@ it("keeps reasoning and later text phases arriving while partial saved history l
   ]);
   session.close();
 });
+
+it("acknowledges only the native boundary captured before saved history loading", async () => {
+  let finish!: (value: any) => void;
+  vi.spyOn(api, "latestMessages").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  fake.rpc.mockResolvedValue({ settled: true });
+  const settled = vi.fn();
+  const session = useNativeSession(settled);
+  await session.attach("alpha", "one");
+  const boundary = fake.boundary;
+  fake.boundary++;
+  finish({ messages: [], nextOffset: 0, hasMore: false, projected: true });
+  await vi.waitFor(() =>
+    expect(fake.rpc).toHaveBeenCalledWith("reconciled", { through: boundary }),
+  );
+  expect(settled).not.toHaveBeenCalled();
+  session.close();
+});
+
+it.each(["refresh", "input", "close"])(
+  "ignores a late settled acknowledgement after %s",
+  async (change) => {
+    vi.spyOn(api, "latestMessages").mockResolvedValue({
+      messages: [],
+      nextOffset: 0,
+      hasMore: false,
+      projected: true,
+    });
+    const acknowledgements: ((value: { settled: boolean }) => void)[] = [];
+    fake.rpc.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          acknowledgements.push(resolve);
+        }),
+    );
+    const settled = vi.fn();
+    const session = useNativeSession(settled);
+    await session.attach("alpha", "one");
+    await vi.waitFor(() => expect(acknowledgements).toHaveLength(1));
+    if (change === "refresh") {
+      void session.hydrate();
+      await vi.waitFor(() => expect(acknowledgements).toHaveLength(2));
+    } else if (change === "input") fake.hooks!.input("New question", false);
+    else session.close();
+    acknowledgements[0]!({ settled: true });
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    if (change === "input") expect(session.messages.value.at(-1)?.content).toBe("New question");
+    session.close();
+  },
+);

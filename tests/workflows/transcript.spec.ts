@@ -330,6 +330,13 @@ test("mid-flight resume joins snapshot, persisted history and later deltas exact
     await composer.fill(prompt);
     await plugin.getByRole("button", { name: "Send message", exact: true }).click();
     await expect(history.locator(".message.assistant").last()).toHaveText("Before disconnect.");
+    const oldSocket = snapshots.at(-1)!.socket;
+    const oldRuntime = snapshots.at(-1)!.runtime;
+    expect(observed).not.toContain("Arrived while disconnected.");
+    // Disconnect as soon as the first delta renders. Draft/scroll preparation
+    // must not consume the fixture's gap before its next server-side delta.
+    await page.context().setOffline(true);
+    await expect(plugin.getByRole("status").filter({ hasText: "offline" }).first()).toBeVisible();
     await expect(stop).toBeVisible();
     await composer.fill("Unsent draft survives live resume");
     await expect(composer).toBeFocused();
@@ -344,11 +351,6 @@ test("mid-flight resume joins snapshot, persisted history and later deltas exact
         }),
     );
     const before = await anchor.boundingBox();
-    const oldSocket = snapshots.at(-1)!.socket;
-    const oldRuntime = snapshots.at(-1)!.runtime;
-    expect(observed).not.toContain("Arrived while disconnected.");
-    await page.context().setOffline(true);
-    await expect(plugin.getByRole("status").filter({ hasText: "offline" }).first()).toBeVisible();
     await expect.poll(() => observed).toContain("Arrived while disconnected.");
     await expect(history.locator(".message.assistant").last()).not.toContainText(
       "Arrived while disconnected.",
@@ -378,6 +380,10 @@ test("mid-flight resume joins snapshot, persisted history and later deltas exact
     expect(answer.startsWith(resumed.text)).toBe(true);
     expect(resumed.text).not.toContain("Resume complete.");
     await expect(history.locator(".message.assistant").last()).toHaveText(resumed.text.trim());
+    await expect(plugin.getByRole("alert")).toHaveCount(0);
+    await expect(plugin.getByRole("button", { name: "Refresh history", exact: true })).toHaveCount(
+      0,
+    );
     await expect(plugin.getByRole("button", { name: "Guide this run", exact: true })).toBeVisible();
     await expect(composer).toBeFocused();
     await expect(composer).toHaveValue("Unsent draft survives live resume");
@@ -411,6 +417,7 @@ test("mid-flight resume joins snapshot, persisted history and later deltas exact
     expect(Math.abs(after!.y - before!.y)).toBeLessThan(3);
     await expect(composer).toHaveValue("Unsent draft survives live resume");
     await expect(plugin.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
+    await expect(plugin.getByRole("alert")).toHaveCount(0);
     await history.locator(".message.assistant").last().scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath("history-mid-flight-complete.png") });
     await page.reload();
