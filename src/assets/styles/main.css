@@ -60,6 +60,9 @@ body {
   max-height: calc(8lh + 0.5rem);
   overflow-y: auto;
 }
+.composer-hint {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 700px), (hover: none) and (max-height: 500px) {
   .main-panel:has(.composer-input:focus) > .app-footer {
     padding-bottom: 4px;

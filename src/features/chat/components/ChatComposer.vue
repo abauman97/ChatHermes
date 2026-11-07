@@ -460,6 +460,9 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
         aria-label="Take a photo"
         @change="attach"
       />
+      <p class="composer-hint min-w-0 px-1 text-[11px] text-[#a3a3a3]">
+        {{ reading ? "Preparing attachments…" : reason || "" }}
+      </p>
       <div class="composer-controls flex items-center gap-3">
         <button
           v-show="!compactEditing"
@@ -485,9 +488,7 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
-        <p class="composer-hint min-w-0 flex-1 px-1 text-[11px] text-[#a3a3a3]">
-          {{ reading ? "Preparing attachments…" : reason || "" }}
-        </p>
+        <span v-show="!compactEditing" class="min-w-0 flex-1" aria-hidden="true" />
         <ContextUsageIndicator
           v-if="sessionId"
           :key="sessionId"
