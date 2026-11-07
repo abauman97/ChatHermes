@@ -487,3 +487,222 @@ it("retains a healthy native transport while hidden and gates preparation separa
   expect(session.connection.value).toBe("stale");
   session.close();
 });
+
+describe("automatic saved-history recovery", () => {
+  const saved = {
+    messages: [
+      { id: "1", role: "user", content: "Earlier question" },
+      { id: "2", role: "assistant", content: "Saved answer" },
+      { id: "3", role: "user", content: "Current question" },
+    ],
+    nextOffset: 3,
+    hasMore: false,
+    projected: true,
+  };
+  function resume(viewer: any, omitted: boolean) {
+    viewer.hooks.snapshot({
+      messages: omitted ? [] : [{ row_id: 3, role: "user", text: "Current question" }],
+      messages_omitted: omitted,
+      running: true,
+      inflight: { user: "Current question", assistant: "Partial", streaming: true },
+      recovery: { complete: false, base_row_ids: null },
+    });
+    viewer.hooks.recovered();
+    viewer.finish();
+  }
+
+  it.each([false, true])(
+    "automatically rebuilds incomplete recovery (omitted: %s)",
+    async (omitted) => {
+      vi.spyOn(api, "latestMessages").mockResolvedValue(saved);
+      const session = useNativeSession(vi.fn());
+      const opening = session.attach("alpha", "one");
+      resume(latest(), omitted);
+      await opening;
+      await flushPromises();
+      expect(session.messages.value.slice(0, 2).map((row) => row.content)).toEqual([
+        "Earlier question",
+        "Saved answer",
+      ]);
+      expect(
+        session.messages.value.filter((row) => row.content === "Current question"),
+      ).toHaveLength(1);
+      expect(session.messages.value.at(-1)?.blocks).toEqual([
+        expect.objectContaining({ kind: "text", content: "Partial" }),
+      ]);
+      expect(session.error.value).toBe("");
+      expect(session.busy.value).toBe(true);
+      session.close();
+    },
+  );
+
+  it("retries failed history reads automatically, retaining arriving output and runtime errors", async () => {
+    vi.useFakeTimers();
+    const session = useNativeSession(vi.fn());
+    try {
+      const reads = vi
+        .spyOn(api, "latestMessages")
+        .mockRejectedValueOnce(new Error("private server detail"))
+        .mockResolvedValue(saved);
+      const opening = session.attach("alpha", "one");
+      resume(latest(), true);
+      await opening;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.error.value).toContain("Could not refresh saved history");
+      expect(session.error.value).not.toContain("private");
+      latest().hooks.event({ type: "message.delta", payload: { text: " arriving" } });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(reads).toHaveBeenCalledTimes(2);
+      expect(session.error.value).toBe("");
+      expect(session.messages.value.at(-1)?.blocks).toEqual([
+        expect.objectContaining({ content: "Partial arriving" }),
+      ]);
+      reads.mockRejectedValueOnce(new Error("unavailable"));
+      await session.hydrate();
+      latest().hooks.event({ type: "error", payload: { message: "Provider failed" } });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(session.error.value).toBe("Provider failed");
+    } finally {
+      session.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds failures and cancels retries on scope changes and close", async () => {
+    vi.useFakeTimers();
+    const session = useNativeSession(vi.fn());
+    try {
+      const reads = vi.spyOn(api, "latestMessages").mockRejectedValue(new Error("unavailable"));
+      const opening = session.attach("alpha", "one");
+      resume(latest(), true);
+      await opening;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(reads).toHaveBeenCalledTimes(4);
+      expect(session.messages.value.at(-1)?.content).toBe("Current question");
+      await session.hydrate();
+      expect(reads).toHaveBeenCalledTimes(5);
+      // A new viewer gets its own retry budget; the departed viewer cannot retry.
+      const second = session.attach("beta", "two");
+      ready(latest(), "Other profile");
+      await second;
+      await vi.advanceTimersByTimeAsync(0);
+      const calls = reads.mock.calls.length;
+      session.close();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(reads).toHaveBeenCalledTimes(calls);
+      expect(session.error.value).toBe("");
+    } finally {
+      session.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["alpha", "two"],
+    ["beta", "one"],
+    ["alpha", "one"],
+  ])("ignores late history success and failure after reopening %s/%s", async (profile, stored) => {
+    let resolve!: (value: typeof saved) => void;
+    let reject!: (cause: Error) => void;
+    const reads = vi
+      .spyOn(api, "latestMessages")
+      .mockImplementationOnce(
+        () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_done, fail) => {
+            reject = fail;
+          }),
+      )
+      .mockResolvedValue({
+        ...saved,
+        messages: [{ id: "other", role: "assistant", content: "Selected" }],
+      });
+    const session = useNativeSession(vi.fn());
+    const opening = session.attach("alpha", "one");
+    resume(latest(), true);
+    await opening;
+    const refresh = session.hydrate();
+    session.close();
+    const second = session.attach(profile!, stored!);
+    ready(latest(), "Selected");
+    await second;
+    resolve(saved);
+    reject(new Error("obsolete failure"));
+    await refresh;
+    await flushPromises();
+    expect(reads).toHaveBeenCalledTimes(3);
+    expect(session.messages.value.map((row) => row.content)).toEqual(["Selected"]);
+    expect(session.error.value).toBe("");
+    session.close();
+  });
+});
+
+it.each([false, true])(
+  "rebuilds settled incomplete recovery automatically (omitted: %s)",
+  async (omitted) => {
+    vi.spyOn(api, "latestMessages").mockResolvedValue({
+      messages: [
+        { id: "1", role: "user", content: "Earlier" },
+        { id: "2", role: "assistant", content: "Earlier answer" },
+        { id: "3", role: "user", content: "Question" },
+        { id: "4", role: "assistant", content: "Final" },
+      ],
+      nextOffset: 4,
+      hasMore: false,
+      projected: true,
+    });
+    const session = useNativeSession(vi.fn());
+    const opening = session.attach("alpha", "one");
+    latest().hooks.snapshot({
+      messages: omitted ? [] : [{ row_id: 3, role: "user", text: "Question" }],
+      messages_omitted: omitted,
+      running: false,
+      inflight: { user: "Question", assistant: "Final", streaming: false },
+      recovery: { complete: false, base_row_ids: null },
+    });
+    latest().hooks.recovered();
+    latest().finish();
+    await opening;
+    await flushPromises();
+    expect(session.messages.value.map((row) => row.id)).toEqual(["1", "2", "3", "4"]);
+    expect(session.error.value).toBe("");
+    expect(session.busy.value).toBe(false);
+    session.close();
+  },
+);
+
+it.each(["background", "offline", "profile", "session"])(
+  "cancels pending history retries on %s",
+  async (transition) => {
+    vi.useFakeTimers();
+    const session = useNativeSession(vi.fn());
+    try {
+      const reads = vi.spyOn(api, "latestMessages").mockRejectedValue(new Error("unavailable"));
+      const opening = session.attach("alpha", "one");
+      ready(latest(), "Saved");
+      await opening;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reads).toHaveBeenCalledTimes(1);
+      if (transition === "background") await session.availability(false, true);
+      else if (transition === "offline") await session.availability(true, false);
+      else {
+        reads.mockResolvedValue({ messages: [], nextOffset: 0, hasMore: false, projected: true });
+        const next = session.attach(transition === "profile" ? "beta" : "alpha", "two");
+        ready(latest(), "Next selection");
+        await next;
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      const count = reads.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(reads).toHaveBeenCalledTimes(count);
+    } finally {
+      session.close();
+      vi.useRealTimers();
+    }
+  },
+);

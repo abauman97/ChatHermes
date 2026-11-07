@@ -118,12 +118,19 @@ Browser recovery uses native snapshots and persisted history, with Desktop's def
 resume (`defer_history=true`, `cols=96`) and a second activation when completion
 races a busy resume. A cold `hydrating=true` ack also denotes omitted history. It does not claim lossless
 progress replay. Omitted native history is not an empty persisted transcript.
+After reconnect, the browser automatically rebuilds the loaded saved-history
+window while preserving the active response and arriving events. Incomplete
+replay alone does not show a warning or require Refresh history. Failed reads
+retain the transcript and retry after 1, 2 and 4 seconds; persistent failure keeps
+a generic error and an explicit refresh action. Profile/session changes, viewer
+replacement and unmount cancel retries and reject obsolete results. Reconciliation
+acknowledgements cover only the native event boundary captured before the read.
 Partial saved tool commentary is reconciled using Desktop's backward final-reply
 boundary, ordered correction checks and symmetric prefix subtraction. Correction
 offsets count Unicode code points; unusable offsets retain the whole first
 interval, as Desktop does. These prompt/prefix rules are heuristics, not durable
 occurrence provenance. Saved tool IDs, structured phases and images remain
-available. Completed omitted snapshots use the existing complete ordered prose
+available. Settled incomplete or omitted snapshots use the complete ordered prose
 check; optional native persistence receipts retain their stronger coverage path.
 Hermes does not persist all transient reasoning/tool events, so cold reload cannot
 replay unavailable activity. Healthy hidden viewers stay connected. The composer stays
