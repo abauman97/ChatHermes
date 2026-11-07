@@ -31,7 +31,7 @@ async function submit() {
         autocomplete="off"
         :aria-label="request.params.prompt || 'Secret'"
         :disabled="disabled || pending"
-        class="block w-full rounded-lg bg-[#303030] p-2 text-base"
+        class="block min-w-0 w-full rounded-lg bg-[#303030] p-2 text-base"
       />
     </label>
     <button

@@ -13,7 +13,7 @@ const answerFor = actions.answerFor;
   <div
     v-if="request"
     :key="JSON.stringify([profile, session, request.id])"
-    class="notice px-5 py-3 text-sm"
+    class="live-request notice px-5 py-3 text-sm"
     role="status"
   >
     <ApprovalRequest
@@ -38,3 +38,13 @@ const answerFor = actions.answerFor;
     <p v-else>This request cannot be displayed. Open it in Hermes.</p>
   </div>
 </template>
+
+<style scoped>
+.live-request {
+  min-width: 0;
+  max-width: 100%;
+  /* Commands, questions and environment names can contain unbroken tokens.
+     Include wrapping in intrinsic sizing so nested flex/grid items can shrink. */
+  overflow-wrap: anywhere;
+}
+</style>

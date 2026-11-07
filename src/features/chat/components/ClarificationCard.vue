@@ -71,6 +71,7 @@ function send() {
 <style scoped>
 .clarification-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   margin: 12px 0;
 }
@@ -81,6 +82,7 @@ fieldset {
   border: 0;
 }
 legend {
+  max-width: 100%;
   margin-bottom: 10px;
   padding: 0;
   font-size: 16px;
