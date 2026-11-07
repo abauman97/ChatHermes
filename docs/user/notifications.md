@@ -5,8 +5,9 @@
 Open **Inbox** in the drawer to see completed responses and requests for attention
 across accessible Hermes profiles. Inbox works without browser notification
 permission or push subscriptions. Choose **All profiles** or the currently selected
-**Profile**, and use **Unread only** to filter the list. Items show their profile,
-chat title, event type, time and a short preview, newest first.
+**Profile** in the **View** selector. The list shows unread notifications, with
+profile, chat title, time and a short preview, newest first. Use **Load More**
+for older notifications.
 Each profile/chat keeps only its latest notification; a new response or request
 replaces its previous item. Subagent sessions are excluded.
 
@@ -19,8 +20,10 @@ of how you navigated there. Deletion is checked again when a final response arri
 the chat reconnects, and the visible Inbox count refreshes. Matching system push
 notifications close while that exact profile/chat is visible and connected.
 Deletion is shared across devices. Opening an approval or clarification does not answer or resolve the request;
-use the request form in its chat. **Delete read** removes read notifications from
-the selected view; replay and reconciliation do not restore them.
+use the request form in its chat. Use the check-circle beside an item to remove
+its notification without opening it. Removing a notification does not delete the
+conversation or answer a pending request; replay and reconciliation do not restore
+the removed item.
 
 Collection runs while the Hermes dashboard server is running, including when
 ChatHermes is closed. It recovers missed persisted responses after a disconnect
@@ -37,6 +40,10 @@ The mounted plugin refreshes on foregrounding, gateway changes and periodic poll
 3. Have the dashboard operator set `HERMES_DASHBOARD_PUBLIC_URL` to its public HTTPS URL in every dashboard/plugin-host process that sends push. For the pinned push library, use a DNS HTTPS origin with no path or explicit port; localhost, credentials, query strings, and fragments are rejected. Restart after changing the setting.
 4. Open ChatHermes's drawer, choose the footer **Settings** cog, and select **Enable notifications**. Allow the browser permission prompt.
 5. Use **Send test** to check delivery. A successful request means the test was scheduled; verify that the device actually shows it.
+
+![Mobile Settings showing the active profile, global preferences, and notification controls](images/settings-mobile.png)
+
+_Notification controls apply to the selected profile on this device. The test environment shown here has notifications disabled._
 
 Settings shows notification status for the selected profile on this device. Enable each desired profile separately. Disabling one profile preserves registrations for other profiles; browser permission is shared.
 

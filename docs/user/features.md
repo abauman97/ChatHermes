@@ -4,13 +4,23 @@
 
 Use the drawer to open a saved chat, or **New chat** to start another. Switch profiles to see that profile's conversations. Select the provider and model before sending; selections affect the session runtime.
 
-The model picker also has a **Reasoning effort** select. Choose None, Minimal, Low, Medium, High, XHigh, Max, or Ultra before sending. Explicit choices apply to that chat after its model is selected; they do not change other chats or profile defaults. **Model default** uses the selected model’s configured reasoning setting without adding an explicit override. Hermes controls the model's supported levels and may map a requested level to a supported one or omit reasoning for models that do not support it. Picker choices are held for the current page visit.
+The model picker also has a **Reasoning effort** select. Choose None, Minimal, Low, Medium, High, XHigh, Max, or Ultra before sending. Explicit choices apply to that chat after its model is selected; they do not change other chats or profile defaults. **Model default** uses the selected model’s configured reasoning setting without adding an explicit override. Hermes controls the model's supported levels and may map a requested level to a supported one or omit reasoning for models that do not support it. Unsent picker choices are held for the current page visit; saved chats restore their runtime model and reasoning settings.
 
 Attach files or images with the composer, drag files onto the chat, or use camera capture where supported. Failed uploads can be retried or removed without losing the draft. Uploads are limited to 20 MB decoded per file. Images retain their originals for later viewing. Other files are made available to the agent in the selected profile's filesystem.
+
+![Mobile composer with a workshop notes file attached and a draft message ready to send](images/attachments-mobile.png)
+
+_Attach a file before sending. Remove it with the × beside its name if you change your mind._
 
 Saved chats open at their latest messages. Scroll toward the top to load older history, or use **Show earlier messages**. Earlier messages remain available after context compaction and session rotation; **Context compacted** dividers mark persisted compression boundaries. Internal summaries and rewound messages stay hidden. Loading older messages preserves your reading position.
 
 Thinking and tool disclosures show the activity Hermes provides. Details stay collapsed by default, even while active. Expand a disclosure to inspect streaming or completed work. Approvals and clarification requests appear in the conversation; respond there to continue.
+
+Use **Copy response** below a completed reply to copy its text. **Branch in new chat** starts a separate conversation containing the history through that reply, preserving its profile and Project workspace. Branching is available when the chat is ready.
+
+![Desktop conversation showing the navigation sidebar, sample response, and composer](images/chat-desktop.png)
+
+_The same conversation on desktop, with navigation alongside the chat._
 
 ## Home and Inbox
 
@@ -21,9 +31,13 @@ refills the preview with the next unread message. Removing a notification leaves
 the conversation and any pending request available.
 
 Open **Inbox** for the full unread list. Choose **All profiles** or the current
-profile in **Inbox view**, and use **Load More** for older notifications. You can
+profile in the **View** selector, and use **Load More** for older notifications. You can
 also remove notifications here. The composer remains available for drafting on
 Home and Inbox.
+
+![Mobile Home showing unread workshop updates and the message composer](images/home-mobile.png)
+
+_Home previews recent unread messages. Open an item to visit its conversation, or use its check-circle to remove the notification._
 
 ## Active and recent chats
 
@@ -42,7 +56,7 @@ Compaction carries the status to the continuation chat.
 
 ## Projects and instructions
 
-Open **Projects** and select a Project to view its recent chats and repository hierarchy. Hermes supplies Projects, including automatic repository Projects and Home.
+Open **Projects** and select a Project to view its workspace and recent chats. Hermes supplies Projects, including automatic repository Projects and Home.
 
 The Projects **···** menu has **Hide automatic projects**, enabled by default.
 Turn it off to include discovered workspaces in the active and archived lists.
@@ -52,9 +66,15 @@ and their conversations.
 
 Use **New Project Chat** to create a distinct chat in the selected Project workspace. In an open chat, **New chat** starts an unscoped chat; on Project home it retains scoped creation. Home starts without a Project workspace. A Project without an available workspace cannot start a chat.
 
-Browsing another Project changes the view while retaining the current chat's workspace. Resuming an existing chat always uses its saved workspace. Manage Projects and move sessions through Hermes Desktop/CLI.
+Browsing another Project changes the view while retaining the current chat's workspace. Resuming an existing chat always uses its saved workspace. Use **New project** on the Projects page to create a Project, optionally supplying a folder path on the Hermes server. In a Project’s **···** menu, **Edit project** lets you change its details and folders; the primary folder is used for new chats. Saved Projects can be archived, restored, or deleted from that menu. Automatically discovered workspaces offer **Save project** before their details can be managed.
 
-Use the Project instructions editor to load and save the workspace instruction file. It edits the first existing supported instruction file, or creates `.hermes.md` when none exists. It does not edit inherited instructions in parent directories. If the file changes elsewhere, reload and reconcile your draft before saving. Hermes loads instructions through its normal context loader.
+To add an existing chat to a Project, open the chat’s ellipsis menu in the drawer, choose **Add to project**, select the destination, and choose **Add**.
+
+![Mobile Project page showing the workshop workspace and a saved conversation](images/project-mobile.png)
+
+_A Project keeps related conversations together. Its workspace folder is on the Hermes server._
+
+Use **Edit Instructions** in the Project’s **···** menu to load and save the workspace instruction file. It edits the first existing supported instruction file, or creates `.hermes.md` when none exists. It does not edit inherited instructions in parent directories. If the file changes elsewhere, reload and reconcile your draft before saving. Hermes loads instructions through its normal context loader.
 
 ## Artifacts
 
@@ -70,7 +90,11 @@ Artifacts come from delivered-file references and uploads in saved history. Assi
 
 Open **Scheduled** in the drawer and select Active, Paused, or Completed. Select a job, then a dated run to read its final assistant response. Runs appear newest first; load older pages as needed. Intermediate responses, thinking and tool activity are hidden. Runs without an assistant response show their saved raw output.
 
-**Open a chat about this run** creates a separate normal chat and drafts the job, date, and saved output for review before sending. Create, schedule, pause, or modify jobs in Hermes's native dashboard. Deleted jobs and pruned output cannot be recovered.
+If the run has an associated session, choose **Resume Session** in the **···** menu to open that conversation. Runs with saved output only do not offer this action. Create, schedule, pause, or modify jobs in Hermes's native dashboard. Deleted jobs and pruned output cannot be recovered.
+
+![Mobile Scheduled page showing a saved workshop preparation report](images/scheduled-mobile.png)
+
+_Select a dated run to read its saved result. This example shows a fictional preparation report._
 
 To receive Cron notifications, [configure ChatHermes delivery](notifications.md#enable-cron-delivery).
 

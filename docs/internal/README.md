@@ -16,6 +16,7 @@ The former `docs/plans/`, `docs/verification/`, and `docs/reference/` trees move
 
 Reports record what was tested and the limits of that evidence. Older protocol descriptions can be superseded by the [current native contract](../developer/api-contract.md). Ignored local screenshots may not be available; such paths are retained as text rather than broken links.
 
+- [2026-11-07-user-documentation](verification/2026-11-07-user-documentation.md)
 - [2026-11-01-media-links](verification/2026-11-01-media-links.md)
 - [2026-10-01-model-picker](verification/2026-10-01-model-picker.md)
 - [2026-10-01-projects](verification/2026-10-01-projects.md)
