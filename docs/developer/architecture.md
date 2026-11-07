@@ -199,6 +199,13 @@ Projects and Home. Selecting a Project loads its fully hydrated
 session query parameters preserve scope across refresh and browser navigation.
 Other chats remain available. Hermes owns all membership and Git/worktree grouping.
 
+The Projects list hides entries marked `isAuto` by default. Its **···** menu
+persists the browser-wide `chathermes.hide-automatic-projects` preference across
+profiles; only the stored value `false` disables the filter. Filtering is confined
+to list presentation, leaving the authoritative catalog, session membership,
+selected hierarchy and direct navigation intact. If storage is unavailable, the
+preference remains usable for the current mount.
+
 **New Project Chat** appears on Project home and in an open chat with a selected
 Project. It creates a distinct chat in that selected Project. **New chat** in an
 open chat still starts an unscoped chat; on Project home it retains scoped creation.

@@ -31,6 +31,7 @@ import type { Project, ProjectTree } from "./types/hermes";
 const nativeFactory = nativeSession.useNativeSession;
 let nativeOwner: ReturnType<typeof nativeFactory>;
 beforeEach(() => {
+  localStorage.clear();
   vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
 });
 beforeEach(() => {
@@ -134,6 +135,137 @@ function setup(
   return fetch;
 }
 describe("authoritative gateway Projects", () => {
+  async function toggleAutomatic(wrapper: ReturnType<typeof mount>, checked: boolean) {
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    const toggle = wrapper.get('[role="menuitemcheckbox"]');
+    expect(toggle.get("span").text()).toBe("Hide automatic projects");
+    expect(toggle.get('[aria-hidden="true"]').text()).toBe(checked ? "✓" : "");
+    expect(toggle.attributes("aria-checked")).toBe(String(checked));
+    await toggle.trigger("click");
+    await flushPromises();
+  }
+
+  it("hides only automatic list rows by default and toggles active and archived lists", async () => {
+    const fetch = setup();
+    vi.spyOn(api, "projects").mockResolvedValue({
+      projects: [
+        a,
+        b,
+        auto,
+        home,
+        { ...b, id: "archived", archived: true },
+        { ...auto, id: "archived-auto", label: "Archived automatic", archived: true },
+      ],
+      scoped_session_ids: ["project_s1"],
+    });
+    history.replaceState({}, "", "/chathermes?profile=alpha#/projects?profile=alpha");
+    const wrapper = mount(App);
+    await flushPromises();
+    const list = () => wrapper.get('[aria-label="Project list"]');
+    expect(list().text()).toContain("Project A");
+    expect(list().text()).toContain("Project B");
+    expect(list().text()).not.toContain("Automatic repo");
+    expect(list().text()).not.toContain("Home");
+    const url = location.href;
+    const requests = fetch.mock.calls.length;
+    await toggleAutomatic(wrapper, true);
+    expect(location.href).toBe(url);
+    expect(fetch.mock.calls.length).toBe(requests);
+    expect(list().text()).toContain("Automatic repo");
+    expect(localStorage.getItem("chathermes.hide-automatic-projects")).toBe("false");
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await wrapper.findAll('[role="menuitemradio"]')[1]!.trigger("click");
+    await flushPromises();
+    expect(list().text()).toContain("Project B");
+    expect(list().text()).toContain("Archived automatic");
+    expect(list().text()).not.toContain("Project A");
+    await toggleAutomatic(wrapper, false);
+    expect(list().text()).toContain("Project B");
+    expect(list().text()).not.toContain("Archived automatic");
+    expect(localStorage.getItem("chathermes.hide-automatic-projects")).toBe("true");
+    expect(wrapper.get('[aria-label="Sessions"]').text()).toContain("Ungrouped");
+    expect(fetch.mock.calls.some(([, init]) => init?.method)).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("retains the browser preference through navigation, profile changes and remounts", async () => {
+    setup();
+    history.replaceState({}, "", "/chathermes?profile=alpha#/projects?profile=alpha");
+    let wrapper = mount(App);
+    await flushPromises();
+    await toggleAutomatic(wrapper, true);
+    await wrapper.get('[aria-label="Project A"]').trigger("click");
+    await flushPromises();
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Automatic repo");
+    await wrapper.get("#profile-field").setValue("beta");
+    await flushPromises();
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(routeUrl().searchParams.get("profile")).toBe("beta");
+    expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Automatic repo");
+    wrapper.unmount();
+    wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Automatic repo");
+    await toggleAutomatic(wrapper, false);
+    wrapper.unmount();
+    wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain("Automatic repo");
+    wrapper.unmount();
+  });
+
+  it("keeps automatic project conversations and membership available while hidden", async () => {
+    setup();
+    const withChat = { ...a, id: auto.id, label: auto.label, isAuto: true };
+    vi.spyOn(api, "projects").mockResolvedValue({
+      projects: [withChat, b, home],
+      scoped_session_ids: ["project_s1"],
+    });
+    vi.spyOn(api, "project").mockResolvedValue(withChat);
+    history.replaceState({}, "", "/chathermes?profile=alpha#/projects?profile=alpha");
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain(auto.label);
+    await wrapper.findAll(".session-select")[1]!.trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".header-project-subtitle").text()).toBe(auto.label);
+    expect(wrapper.text()).toContain("Native chat history");
+    expect(nativeOwner.attach).toHaveBeenCalledWith("alpha", "project_s1");
+    expect(routeSession()).toBe("project_s1");
+    wrapper.unmount();
+  });
+
+  it.each([null, "true", "invalid"])("defaults to hiding with stored value %s", async (value) => {
+    setup();
+    if (value !== null) localStorage.setItem("chathermes.hide-automatic-projects", value);
+    history.replaceState({}, "", "/chathermes#/projects");
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain(auto.label);
+    wrapper.unmount();
+  });
+
+  it("keeps the toggle usable when storage reads and writes fail", async () => {
+    setup();
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("Unavailable");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("Unavailable");
+    });
+    history.replaceState({}, "", "/chathermes#/projects");
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain(auto.label);
+    await toggleAutomatic(wrapper, true);
+    expect(wrapper.get('[aria-label="Project list"]').text()).toContain(auto.label);
+    await toggleAutomatic(wrapper, false);
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain(auto.label);
+    wrapper.unmount();
+  });
   it.each(["hierarchy", "summary"])(
     "resumes a drawer session in its owning Project using %s membership",
     async (shape) => {
@@ -374,7 +506,7 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(wrapper.get('[aria-label="Project list"]').text()).toContain("Automatic repo");
+    expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain("Automatic repo");
     expect(wrapper.get('[aria-label="Project list"]').text()).not.toContain("Home");
     expect(wrapper.get('[aria-label="Sessions"]').text()).toContain("Ungrouped");
     await wrapper.get('[aria-label="Project A"]').trigger("click");
