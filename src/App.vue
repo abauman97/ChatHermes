@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from "vue-router";
+import { providePageHeader } from "./composables/usePageHeader";
 import { useApplication } from "./composables/useApplication";
 import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import WorkerUpdatePrompt from "./features/notifications/components/WorkerUpdatePrompt.vue";
 import { projectRoot } from "./features/projects/utils/projects";
 const route = useRoute();
+const header = providePageHeader();
 const {
   profile,
   session,
   sessions,
   projects,
   selectedProject,
-  projectId,
   offline,
   creating,
   profiles,
@@ -318,17 +319,10 @@ const {
         </button>
         <div class="min-w-0 flex-1">
           <h1 class="header-title truncate text-base font-medium">
-            {{
-              route.meta.title ||
-              sessions.find((s) => s.id === session)?.title ||
-              (session ? "Conversation" : selectedProject?.label || "ChatHermes")
-            }}
+            {{ header.title }}
           </h1>
-          <p
-            v-if="!settingsPage && projectId && session && selectedProject"
-            class="header-project-subtitle truncate text-xs text-[#a3a3a3]"
-          >
-            {{ selectedProject.label }}
+          <p v-if="header.subtitle" class="header-project-subtitle truncate text-xs text-[#a3a3a3]">
+            {{ header.subtitle }}
           </p>
         </div>
         <span class="topbar-profile sr-only">{{ profile || "Current profile" }}</span>
@@ -392,7 +386,8 @@ const {
         @touchcancel="drawerSwipe.cancel"
         @click.capture="drawerSwipe.click"
         :show-chat="route.meta.chat === true"
-        :hide-composer="route.meta.hideComposer === true"
+        :draft-scope="route.name === 'project' ? String(route.params.projectId) : ''"
+        :hide-composer="route.meta.chat !== true && route.meta.composer !== 'project'"
       >
         <template #default>
           <RouterView :key="profile" />

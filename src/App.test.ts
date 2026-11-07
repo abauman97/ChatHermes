@@ -294,7 +294,7 @@ describe("settings page", () => {
     expect(wrapper.get('[aria-label="Open navigation"]').element).toBe(document.activeElement);
     wrapper.unmount();
   });
-  it("preserves the composer draft and live runtime across settings history", async () => {
+  it("detaches the viewer across settings history without stopping backend work", async () => {
     const factory = nativeSession.useNativeSession;
     let owner!: ReturnType<typeof factory>;
     vi.spyOn(nativeSession, "useNativeSession").mockImplementation((callback) => {
@@ -304,62 +304,35 @@ describe("settings page", () => {
       });
       return owner;
     });
-    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/live-chat?profile=alpha");
-    const fake = vi.fn(async (input: string) =>
+    history.replaceState({}, "", "/chathermes#/chat/live-chat?profile=alpha");
+    mockFetch(async (input) =>
       json(
         input.includes("/capabilities")
           ? { features: { native_chat: true } }
           : { sessions: [], total: 0 },
       ),
     );
-    mockFetch(fake);
     const wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
     const close = vi.spyOn(owner, "close");
+    const stop = vi.spyOn(owner, "stop");
     owner.busy.value = true;
-    const composer = wrapper.get(".composer").element;
-    const textarea = wrapper.get("textarea");
-    await textarea.setValue("Unsent draft");
+    await wrapper.get("textarea").setValue("Session draft");
     const chatUrl = location.href;
     await wrapper.get(".drawer-settings").trigger("click");
     await flushPromises();
-    const settingsUrl = location.href;
-    expect(wrapper.get(".settings-page").text()).toContain("Settings");
-    expect(wrapper.find('[role="dialog"][aria-label="Settings"]').exists()).toBe(false);
-    const chatRequests = () => fake.mock.calls.filter(([url]) => !url.includes("/inbox?"));
-    const requests = chatRequests().length;
-    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    expect(wrapper.find(".settings-page").exists()).toBe(true);
-    for (const url of [chatUrl, settingsUrl, chatUrl]) {
-      history.replaceState({}, "", url);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      await flushPromises();
-      expect(wrapper.find(".settings-page").exists()).toBe(url === settingsUrl);
-    }
+    expect(wrapper.get(".settings-page").isVisible()).toBe(true);
+    expect(wrapper.get("textarea").isVisible()).toBe(false);
+    expect(wrapper.findComponent(SessionSidebar).props("selected")).toBe("");
+    expect(close).toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    history.replaceState({}, "", chatUrl);
+    window.dispatchEvent(new PopStateEvent("popstate"));
     await flushPromises();
-    expect(close).not.toHaveBeenCalled();
-    expect(owner.attach).toHaveBeenCalledTimes(1);
-    expect(owner.busy.value).toBe(true);
-    // Reopening the chat checks Inbox again without reloading its runtime/history.
-    expect(chatRequests()).toHaveLength(requests);
-    expect(wrapper.get(".composer").element).toBe(composer);
-    expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
-    for (const selector of [".projects-nav", ".artifacts-nav"]) {
-      await wrapper.get(selector).trigger("click");
-      await flushPromises();
-      expect(wrapper.get(".composer").element).toBe(composer);
-      expect((textarea.element as HTMLTextAreaElement).value).toBe("Unsent draft");
-      expect(owner.busy.value).toBe(true);
-      history.replaceState({}, "", chatUrl);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      await flushPromises();
-    }
-    expect(nativeSession.useNativeSession).toHaveBeenCalledTimes(1);
-    expect(owner.attach).toHaveBeenCalledTimes(1);
-    expect(close).not.toHaveBeenCalled();
-    await textarea.trigger("focus");
-    await flushPromises();
-    expect(textarea.attributes("disabled")).toBeUndefined();
+    expect(owner.attach).toHaveBeenCalledTimes(2);
+    expect(wrapper.get("textarea").isVisible()).toBe(true);
+    expect(wrapper.findComponent(SessionSidebar).props("selected")).toBe("live-chat");
+    expect(stop).not.toHaveBeenCalled();
     wrapper.unmount();
   });
   it("loads settings links and returns to archived projects, then keeps profile changes on settings", async () => {

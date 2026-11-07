@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import ProjectLayout from "../components/ProjectLayout.vue";
+import { usePageHeader } from "../../../composables/usePageHeader";
 import { useProjects } from "../context";
 import { projectRoot } from "../utils/projects";
 const { selectedProject, visibleSessions, chooseSession, chooseProject } = useProjects();
+usePageHeader(() => ({ title: selectedProject.value?.label || "Project" }));
 </script>
 <template>
   <ProjectLayout

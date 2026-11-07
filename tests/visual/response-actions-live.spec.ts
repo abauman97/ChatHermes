@@ -116,6 +116,10 @@ test("native response branches retain their Project workspace", async ({ page },
   }
   await page.goto(`/chathermes?profile=${profile}#/projects/${project}?profile=${profile}`);
   const plugin = page.locator(".chathermes-embedded");
+  await expect(plugin.getByRole("region", { name: "Selected Project" })).toContainText(
+    "Workspace: /tmp",
+  );
+  const projectName = await plugin.locator(".header-title").innerText();
   const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
   await composer.fill("Reply with exactly PROJECT_BRANCH_OK. Do not use tools.");
   await plugin.getByRole("button", { name: "Send message", exact: true }).click();
@@ -126,9 +130,19 @@ test("native response branches retain their Project workspace", async ({ page },
   const branch = plugin.getByRole("button", { name: "Branch in new chat" });
   await expect(branch).toBeEnabled({ timeout: 30000 });
   await branch.click();
+  await expect.poll(() => sessionFromUrl(page.url()), { timeout: 30000 }).toBeTruthy();
   await expect.poll(() => sessionFromUrl(page.url()), { timeout: 30000 }).not.toBe(parent);
   const child = sessionFromUrl(page.url())!;
-  expect(new URL(page.url()).hash).toContain(`project=${encodeURIComponent(project)}`);
+  const childHash = `#/chat/${encodeURIComponent(child)}?profile=${profile}`;
+  expect(new URL(page.url()).hash).toBe(childHash);
+  await expect(plugin.locator(".header-project-subtitle")).toHaveText(projectName);
+  await page.reload();
+  await expect(plugin.locator(".header-project-subtitle")).toHaveText(projectName);
+  await expect(plugin.locator(".topbar-profile")).toHaveText(profile);
+  await expect(composer).toHaveAttribute("placeholder", `Message ${projectName}`);
+  await composer.fill("Focusable project branch draft");
+  await expect(composer).toBeFocused();
+  expect(new URL(page.url()).hash).toBe(childHash);
   const detail = await page.request.get(
     `/api/plugins/chathermes/projects/detail?project_id=${project}&profile=${profile}`,
   );
@@ -143,6 +157,7 @@ test("native response branches retain their Project workspace", async ({ page },
       `/api/plugins/chathermes/chat/sessions/${id}/membership?profile=${profile}`,
     );
     expect(member.ok()).toBeTruthy();
+    expect(await member.json()).toEqual({ member: true });
     const foreign = await page.request.get(
       `/api/plugins/chathermes/chat/sessions/${id}/membership?profile=${foreignProfile}`,
     );

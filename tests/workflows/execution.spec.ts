@@ -79,6 +79,10 @@ test("thinking streams through Hermes and remains inspectable after completion",
   await expect(thought).toBeVisible();
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
   await expect(thought).not.toHaveAttribute("open", "");
+  // Completed rows live inside the collapsed work group; inspect that group first.
+  const group = page.locator(".turn-work").last().locator(".work-summary");
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+  await group.click();
   await thought.locator("summary").click();
   await expect(thought).toContainText("Second visible chunk.");
 });

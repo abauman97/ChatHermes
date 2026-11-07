@@ -140,9 +140,7 @@ export function createChatHermesRouter(
       (profile && !profileName.test(profile)) ||
       Object.entries(to.params).some(([key, id]) =>
         key === "projectId" ? !validProjectId(id) : typeof id !== "string" || !identifier.test(id),
-      ) ||
-      (to.query.project && !validProjectId(to.query.project)) ||
-      [to.query.session].some((id) => id && (typeof id !== "string" || !identifier.test(id)))
+      )
     )
       return { name: "home" };
     if (

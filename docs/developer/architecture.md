@@ -88,7 +88,15 @@ refs and model setter commands. It exposes no viewer or mutable runtime error.
 `ChatInterface`, `ChatConversation` and `LiveRequest` consume it. Arrays retain their reactive
 identity; do not copy streamed data into snapshots or use module-global UI state.
 
-`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, session]`, never busy/loading/page state.
+`App.vue` keeps the shared header layout and controls. Fixed titles come from route
+metadata; active Chat and Project pages derive dynamic titles and Project subtitles
+from the existing guarded runtime state through `usePageHeader`. The per-mount
+context accepts reactive getters, scopes each owner to its matched route record,
+and only clears that owner on disposal. Reused parameter routes stay reactive;
+late data or disposal from a departed page cannot replace the active header.
+Header context does not select composer scope.
+
+`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, session, draftProject]`, never busy/loading state.
 Drafts, attachment reads, editing, sizing and focus remain composer-local; gate
 sending independently of editing. Keep standalone composer tests provider-free.
 
@@ -195,8 +203,13 @@ The registered pages are:
 
 Projects use Hermes's `projects.tree` gateway RPC, including automatic repository
 Projects and Home. Selecting a Project loads its fully hydrated
-`projects.project_sessions` hierarchy and displays its recent chats. Project and
-session query parameters preserve scope across refresh and browser navigation.
+`projects.project_sessions` hierarchy and displays its recent chats. The URL alone selects composer scope: `/chat/:sessionId` resumes an existing
+session, `/projects/:projectId` starts a fresh project draft, and `/` starts a fresh
+unscoped draft. Other routes hide the composer and select no session. Session and
+project query parameters have no scope meaning and are never propagated. Existing
+session membership comes from the backend Project catalog, including after refresh
+and browser history navigation. Detaching the browser viewer leaves backend work
+running.
 Other chats remain available. Hermes owns all membership and Git/worktree grouping.
 
 The Projects list hides entries marked `isAuto` by default. Its **···** menu

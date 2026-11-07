@@ -116,12 +116,18 @@ test("response branches retain Project workspace and profile isolation", async (
   await expect.poll(() => sessionFromUrl(page.url())).toBeTruthy();
   await expect.poll(() => sessionFromUrl(page.url())).not.toBe(parent);
   const child = sessionFromUrl(page.url());
-  expect(new URL(page.url()).hash).toContain(`project=${encodeURIComponent(project)}`);
-  expect(new URL(page.url()).hash).toContain("profile=alpha");
+  const childHash = `#/chat/${encodeURIComponent(child!)}?profile=alpha`;
+  expect(new URL(page.url()).hash).toBe(childHash);
   await expect(plugin.locator(".message.user")).toHaveText(prompt);
   await expect(page.locator(".header-project-subtitle")).toHaveText(projectName);
   await page.reload();
   await expect(page.locator(".topbar-profile")).toHaveText("alpha");
+  await expect(page.locator(".header-project-subtitle")).toHaveText(projectName);
+  await expect(plugin.locator(".message.user")).toHaveText(prompt);
+  await expect(composer).toHaveAttribute("placeholder", `Message ${projectName}`);
+  await composer.fill("Focusable project branch draft");
+  await expect(composer).toBeFocused();
+  expect(new URL(page.url()).hash).toBe(childHash);
   const detail = await api(
     page,
     `/api/plugins/chathermes/projects/detail?project_id=${encodeURIComponent(project)}&profile=alpha`,
@@ -138,6 +144,7 @@ test("response branches retain Project workspace and profile isolation", async (
       `/api/plugins/chathermes/chat/sessions/${id}/membership?profile=alpha`,
     );
     expect(member.status).toBe(200);
+    expect(member.body).toEqual({ member: true });
     const denied = await api(
       page,
       `/api/plugins/chathermes/api/sessions/${id}/branch?profile=beta`,
