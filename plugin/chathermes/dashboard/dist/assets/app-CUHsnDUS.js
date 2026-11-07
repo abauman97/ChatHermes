@@ -11752,28 +11752,31 @@ var S_ = {
 }, q_ = ["disabled"], J_ = /* @__PURE__ */ H({
 	__name: "App",
 	setup(e) {
-		let t = Oc(), n = Ac(), { profile: r, session: i, sessions: a, projects: o, selectedProject: s, offline: c, creating: l, profiles: u, loading: d, error: f, hasMore: p, tracking: m, trackingPending: h, sessionBusy: g, drawer: _, embedded: v, menuButton: y, closeButton: b, screenMenuButton: x, screenMenuWrap: S, screenMenu: C, sidebar: w, chatPlane: T, drawerSwipe: E, kanban: D, settingsButton: O, inboxUnread: k, settingsPage: A, projectView: ee, recentSession: j, chooseProfile: te, createSession: M, trackSession: N, newChat: ne, loadSessions: re, manageSession: ie, rename: ae, exitPlugin: P, showSettings: se, openDrawer: ce, closeDrawer: le, closeScreenMenu: ue, screenLink: fe } = $g();
-		return (e, F) => (G(), K("div", O_, [
+		let t = Oc(), n = Ac(), { profile: r, session: i, sessions: a, projects: o, selectedProject: s, offline: c, creating: l, profiles: u, loading: d, error: f, hasMore: p, tracking: m, trackingPending: h, sessionBusy: g, drawer: _, embedded: v, menuButton: y, closeButton: b, screenMenuButton: x, screenMenuWrap: S, screenMenu: C, sidebar: w, chatPlane: T, drawerSwipe: E, kanban: D, settingsButton: O, inboxUnread: k, settingsPage: A, projectView: ee, recentSession: j, chooseProfile: te, createSession: M, trackSession: N, newChat: ne, loadSessions: re, manageSession: ie, rename: ae, exitPlugin: P, showSettings: se, openDrawer: ce, closeDrawer: le, closeScreenMenu: ue, screenLink: fe } = $g(), F = Z(() => {
+			let e = t.params.projectId, n = t.meta.section === "projects" && Fc(t.query.profile) === r.value ? s.value?.id === e ? s.value : o.value.find((t) => t.id === e) : void 0, i = t.name === "projects" && t.query.archived === "1" || n?.archived;
+			return fe("projects", i ? { archived: "1" } : {});
+		});
+		return (e, I) => (G(), K("div", O_, [
 			J("aside", {
 				ref: (e) => w.value = e,
 				class: de(["sidebar fixed inset-y-0 h-dvh left-0 z-20 flex w-[min(300px,85vw)] shrink-0 flex-col gap-0.5 bg-black px-3 py-4 text-white shadow-xl transition-transform duration-200 min-[701px]:static min-[701px]:w-[294px] min-[701px]:translate-x-0 min-[701px]:shadow-none dark:bg-black dark:text-white", z(_) ? "translate-x-0" : "-translate-x-full"]),
 				style: oe(z(E).sidebarStyle.value),
-				onTouchstart: F[15] ||= (...e) => z(E).start && z(E).start(...e),
-				onTouchmove: F[16] ||= (...e) => z(E).move && z(E).move(...e),
-				onTouchend: F[17] ||= (...e) => z(E).end && z(E).end(...e),
-				onTouchcancel: F[18] ||= (...e) => z(E).cancel && z(E).cancel(...e),
-				onClickCapture: F[19] ||= (...e) => z(E).click && z(E).click(...e),
+				onTouchstart: I[15] ||= (...e) => z(E).start && z(E).start(...e),
+				onTouchmove: I[16] ||= (...e) => z(E).move && z(E).move(...e),
+				onTouchend: I[17] ||= (...e) => z(E).end && z(E).end(...e),
+				onTouchcancel: I[18] ||= (...e) => z(E).cancel && z(E).cancel(...e),
+				onClickCapture: I[19] ||= (...e) => z(E).click && z(E).click(...e),
 				"aria-label": "Navigation"
 			}, [
 				J("div", k_, [
-					F[32] ||= J("span", { class: "min-w-0 truncate" }, "ChatHermes", -1),
+					I[32] ||= J("span", { class: "min-w-0 truncate" }, "ChatHermes", -1),
 					z(v) ? (G(), K("button", {
 						key: 0,
 						class: "drawer-dashboard grid size-8 shrink-0 place-items-center rounded-lg text-[#a3a3a3] hover:bg-[#303030] hover:text-white focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 						"aria-label": "Return to Hermes Desktop",
 						title: "Return to Hermes Desktop",
-						onClick: F[0] ||= (...e) => z(P) && z(P)(...e)
-					}, [...F[31] ||= [J("svg", {
+						onClick: I[0] ||= (...e) => z(P) && z(P)(...e)
+					}, [...I[31] ||= [J("svg", {
 						class: "size-5",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -11785,17 +11788,17 @@ var S_ = {
 						ref: (e) => b.value = e,
 						class: "mobile-close ml-auto px-2 text-2xl leading-none min-[701px]:hidden focus-visible:outline-3 focus-visible:outline-[#b4b4b4]",
 						"aria-label": "Close navigation",
-						onClick: F[1] ||= (...e) => z(le) && z(le)(...e)
+						onClick: I[1] ||= (...e) => z(le) && z(le)(...e)
 					}, " × ", 512)
 				]),
 				Ki(z(vc), {
 					class: "inbox-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "inbox" ? "page" : void 0,
 					to: z(fe)("inbox"),
-					onClick: F[2] ||= (e) => _.value = !1
+					onClick: I[2] ||= (e) => _.value = !1
 				}, {
 					default: jn(() => [
-						F[33] ||= J("svg", {
+						I[33] ||= J("svg", {
 							class: "size-6",
 							viewBox: "0 0 24 24",
 							fill: "none",
@@ -11803,7 +11806,7 @@ var S_ = {
 							"stroke-width": "1.5",
 							"aria-hidden": "true"
 						}, [J("path", { d: "M4 4h16v16H4zM4 13h4l2 3h4l2-3h4" })], -1),
-						F[34] ||= Y(" Inbox ", -1),
+						I[34] ||= Y(" Inbox ", -1),
 						z(k) ? (G(), K("span", {
 							key: 0,
 							class: "ml-auto rounded-full bg-[#424242] px-2 text-sm leading-[1.5]",
@@ -11815,10 +11818,10 @@ var S_ = {
 				Ki(z(vc), {
 					class: "projects-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).meta.section === "projects" ? "page" : void 0,
-					to: z(fe)("projects"),
-					onClick: F[3] ||= (e) => _.value = !1
+					to: F.value,
+					onClick: I[3] ||= (e) => _.value = !1
 				}, {
-					default: jn(() => [...F[35] ||= [J("svg", {
+					default: jn(() => [...I[35] ||= [J("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -11832,9 +11835,9 @@ var S_ = {
 					class: "scheduled-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).meta.section === "scheduled" ? "page" : void 0,
 					to: z(fe)("scheduled"),
-					onClick: F[4] ||= (e) => _.value = !1
+					onClick: I[4] ||= (e) => _.value = !1
 				}, {
-					default: jn(() => [...F[36] ||= [J("svg", {
+					default: jn(() => [...I[36] ||= [J("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -11854,9 +11857,9 @@ var S_ = {
 					class: "artifacts-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "artifacts" ? "page" : void 0,
 					to: z(fe)("artifacts"),
-					onClick: F[5] ||= (e) => _.value = !1
+					onClick: I[5] ||= (e) => _.value = !1
 				}, {
-					default: jn(() => [...F[37] ||= [J("svg", {
+					default: jn(() => [...I[37] ||= [J("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -11871,9 +11874,9 @@ var S_ = {
 					class: "kanban-nav flex min-h-[36px] w-full items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]",
 					"aria-current": z(t).name === "kanban" ? "page" : void 0,
 					to: z(fe)("kanban"),
-					onClick: F[6] ||= (e) => _.value = !1
+					onClick: I[6] ||= (e) => _.value = !1
 				}, {
-					default: jn(() => [...F[38] ||= [J("svg", {
+					default: jn(() => [...I[38] ||= [J("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -11902,13 +11905,13 @@ var S_ = {
 					busy: z(c) || z(l) || z(g),
 					projects: z(o),
 					key: z(r),
-					onArchive: F[7] ||= (e) => z(ie)("archive", e),
-					onDelete: F[8] ||= (e) => z(ie)("delete", e),
-					onProject: F[9] ||= (e, t) => z(ie)("project", e, t),
+					onArchive: I[7] ||= (e) => z(ie)("archive", e),
+					onDelete: I[8] ||= (e) => z(ie)("delete", e),
+					onProject: I[9] ||= (e, t) => z(ie)("project", e, t),
 					onSelect: z(j),
 					onCreate: z(ne),
-					onMore: F[10] ||= (e) => z(re)(!0),
-					onRetry: F[11] ||= (e) => z(re)(),
+					onMore: I[10] ||= (e) => z(re)(!0),
+					onRetry: I[11] ||= (e) => z(re)(),
 					onRename: z(ae)
 				}, null, 8, [
 					"sessions",
@@ -11926,15 +11929,15 @@ var S_ = {
 					"onRename"
 				])),
 				J("div", j_, [
-					F[42] ||= J("label", { for: "profile-field" }, "Profile", -1),
+					I[42] ||= J("label", { for: "profile-field" }, "Profile", -1),
 					J("div", M_, [
 						J("select", {
 							id: "profile-field",
 							class: "profile-field min-w-0 flex-1 rounded-md border border-[#424242] bg-[#171717] px-2 py-2 text-base text-white",
 							value: z(r),
-							onChange: F[12] ||= (e) => z(te)(e.target.value)
+							onChange: I[12] ||= (e) => z(te)(e.target.value)
 						}, [
-							F[39] ||= J("option", { value: "" }, "Default profile", -1),
+							I[39] ||= J("option", { value: "" }, "Default profile", -1),
 							z(r) && !z(u).some((e) => e.name === z(r)) ? (G(), K("option", {
 								key: 0,
 								value: z(r)
@@ -11949,8 +11952,8 @@ var S_ = {
 							"aria-label": "New chat",
 							title: "New chat",
 							disabled: z(c) || z(l),
-							onClick: F[13] ||= (...e) => z(ne) && z(ne)(...e)
-						}, [...F[40] ||= [J("svg", {
+							onClick: I[13] ||= (...e) => z(ne) && z(ne)(...e)
+						}, [...I[40] ||= [J("svg", {
 							class: "size-6",
 							viewBox: "0 0 24 24",
 							fill: "none",
@@ -11963,8 +11966,8 @@ var S_ = {
 							class: "drawer-settings grid size-11 shrink-0 place-items-center rounded-lg text-white hover:bg-[#303030]",
 							"aria-label": "Settings",
 							"aria-current": z(A) ? "page" : void 0,
-							onClick: F[14] ||= (e) => z(se)()
-						}, [...F[41] ||= [J("svg", {
+							onClick: I[14] ||= (e) => z(se)()
+						}, [...I[41] ||= [J("svg", {
 							class: "size-6",
 							viewBox: "0 0 24 24",
 							fill: "none",
@@ -11984,12 +11987,12 @@ var S_ = {
 				key: 0,
 				class: "scrim fixed inset-0 z-10 bg-black/55 min-[701px]:hidden",
 				style: oe(z(E).scrimStyle.value),
-				onTouchstart: F[20] ||= (...e) => z(E).start && z(E).start(...e),
-				onTouchmove: F[21] ||= (...e) => z(E).move && z(E).move(...e),
-				onTouchend: F[22] ||= (...e) => z(E).end && z(E).end(...e),
-				onTouchcancel: F[23] ||= (...e) => z(E).cancel && z(E).cancel(...e),
-				onClickCapture: F[24] ||= (...e) => z(E).click && z(E).click(...e),
-				onClick: F[25] ||= (...e) => z(le) && z(le)(...e)
+				onTouchstart: I[20] ||= (...e) => z(E).start && z(E).start(...e),
+				onTouchmove: I[21] ||= (...e) => z(E).move && z(E).move(...e),
+				onTouchend: I[22] ||= (...e) => z(E).end && z(E).end(...e),
+				onTouchcancel: I[23] ||= (...e) => z(E).cancel && z(E).cancel(...e),
+				onClickCapture: I[24] ||= (...e) => z(E).click && z(E).click(...e),
+				onClick: I[25] ||= (...e) => z(le) && z(le)(...e)
 			}, null, 36)) : X("v-if", !0),
 			J("main", R_, [
 				J("header", z_, [
@@ -11998,8 +12001,8 @@ var S_ = {
 						class: "mobile-menu grid size-10 place-items-center rounded-xl min-[701px]:hidden hover:bg-[#303030]",
 						"aria-label": "Open navigation",
 						"aria-expanded": z(_),
-						onClick: F[26] ||= (...e) => z(ce) && z(ce)(...e)
-					}, [...F[43] ||= [J("svg", {
+						onClick: I[26] ||= (...e) => z(ce) && z(ce)(...e)
+					}, [...I[43] ||= [J("svg", {
 						class: "size-6",
 						viewBox: "0 0 24 24",
 						fill: "none",
@@ -12013,7 +12016,7 @@ var S_ = {
 						key: 0,
 						ref: (e) => S.value = e,
 						class: "screen-menu-wrap relative",
-						onKeydown: F[30] ||= ko(Do((e) => z(ue)(), ["stop", "prevent"]), ["esc"])
+						onKeydown: I[30] ||= ko(Do((e) => z(ue)(), ["stop", "prevent"]), ["esc"])
 					}, [J("button", {
 						ref: (e) => x.value = e,
 						class: "screen-menu-button grid size-10 place-items-center rounded-full text-xl text-[#b4b4b4] hover:bg-[#303030]",
@@ -12021,20 +12024,20 @@ var S_ = {
 						"aria-haspopup": "menu",
 						"aria-expanded": z(C),
 						"aria-controls": "screen-menu",
-						onClick: F[27] ||= (e) => C.value = !z(C)
+						onClick: I[27] ||= (e) => C.value = !z(C)
 					}, " ··· ", 8, G_), B(J("div", {
 						id: "screen-menu",
 						class: "screen-menu absolute right-0 top-12 z-30 grid min-w-48 gap-1 rounded-xl border border-[#424242] bg-[#303030] p-2 shadow-xl",
 						role: "menu",
 						"aria-label": "Screen options",
-						onClick: F[29] ||= (e) => z(ue)()
+						onClick: I[29] ||= (e) => z(ue)()
 					}, [
 						J("span", K_, L(z(r) || "Current profile"), 1),
 						J("button", {
 							class: "rounded-lg px-3 py-2 text-left text-sm hover:bg-[#424242]",
 							role: "menuitem",
 							disabled: z(c) || z(l) || z(ee) && (!z(s) || z(s).archived || !z(s).isNoProject && !z(kl)(z(s))),
-							onClick: F[28] ||= (e) => {
+							onClick: I[28] ||= (e) => {
 								z(ee) ? z(M)() : z(ne)(), z(ue)();
 							}
 						}, " New chat ", 8, q_),
@@ -12066,7 +12069,7 @@ var S_ = {
 					"draft-scope",
 					"hide-composer"
 				]),
-				F[44] ||= J("footer", {
+				I[44] ||= J("footer", {
 					class: "app-footer shrink-0 bg-black",
 					"aria-hidden": "true"
 				}, null, -1)
@@ -14624,30 +14627,26 @@ var ex = ["open"], tx = {
 }, QS = ["aria-pressed"], $S = ["aria-pressed"], eC = /* @__PURE__ */ H({
 	__name: "ProjectLayout",
 	setup(e) {
-		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i, showProjects: a } = Ug(), o = Oc(), s = Dc();
-		return (e, c) => (G(), K("section", qS, [J("div", JS, [
-			J("button", {
-				class: "project-back",
-				onClick: c[0] ||= (e) => z(a)(!!z(t)?.archived)
-			}, " ← Projects "),
+		let { selectedProject: t, projectLoading: n, projectError: r, loadProject: i } = Ug(), a = Oc(), o = Dc();
+		return (e, s) => (G(), K("section", qS, [J("div", JS, [
 			z(n) ? (G(), K("p", YS, "Loading Project…")) : X("v-if", !0),
 			z(r) ? (G(), K("p", XS, [Y(L(z(r)) + " ", 1), J("button", {
 				class: "underline",
-				onClick: c[1] ||= (...e) => z(i) && z(i)(...e)
+				onClick: s[0] ||= (...e) => z(i) && z(i)(...e)
 			}, "Retry Project")])) : X("v-if", !0),
 			z(t) ? (G(), K(W, { key: 2 }, [J("nav", ZS, [J("button", {
-				"aria-pressed": z(o).name === "project",
-				onClick: c[2] ||= (e) => z(s).push({
+				"aria-pressed": z(a).name === "project",
+				onClick: s[1] ||= (e) => z(o).push({
 					name: "project",
-					params: z(o).params,
-					query: z(o).query
+					params: z(a).params,
+					query: z(a).query
 				})
 			}, " Sessions / Chat ", 8, QS), J("button", {
-				"aria-pressed": z(o).name === "project-artifacts",
-				onClick: c[3] ||= (e) => z(s).push({
+				"aria-pressed": z(a).name === "project-artifacts",
+				onClick: s[2] ||= (e) => z(o).push({
 					name: "project-artifacts",
-					params: z(o).params,
-					query: z(o).query
+					params: z(a).params,
+					query: z(a).query
 				})
 			}, " Artifacts ", 8, $S)]), vr(e.$slots, "default")], 64)) : X("v-if", !0)
 		])]));
@@ -14668,7 +14667,10 @@ var ex = ["open"], tx = {
 	__name: "ProjectHomePage",
 	setup(e) {
 		let { selectedProject: t, visibleSessions: n, chooseSession: r, chooseProject: i } = Ug();
-		return jc(() => ({ title: t.value?.label || "Project" })), (e, a) => (G(), q(eC, null, {
+		return jc(() => ({
+			title: "Projects",
+			subtitle: t.value?.label
+		})), (e, a) => (G(), q(eC, null, {
 			default: jn(() => [z(t) ? (G(), K(W, { key: 0 }, [
 				z(t).archived ? (G(), K("p", tC, "Archived project")) : X("v-if", !0),
 				J("p", nC, L(z(kl)(z(t)) ? "Workspace: " + z(kl)(z(t)) : z(t).isNoProject ? "No project workspace" : "No workspace configured"), 1),
@@ -14691,7 +14693,10 @@ var ex = ["open"], tx = {
 	__name: "ProjectArtifactsPage",
 	setup(e) {
 		let { selectedProject: t, profile: n, visibleSessions: r, recentSession: i } = Ug();
-		return jc(() => ({ title: t.value?.label || "Project" })), (e, a) => (G(), q(eC, null, {
+		return jc(() => ({
+			title: "Projects",
+			subtitle: t.value?.label
+		})), (e, a) => (G(), q(eC, null, {
 			default: jn(() => [z(t) ? (G(), q(jS, {
 				key: 0,
 				project: z(t),
@@ -14892,7 +14897,10 @@ var ex = ["open"], tx = {
 	__name: "ProjectSettingsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, projectBusy: i, offline: a, manageError: o, manageProject: s, chooseProject: c, projectLoading: l, projectError: u, loadProject: d } = Ug();
-		return jc(() => ({ title: r.value?.label || "Project" })), (e, f) => (G(), K("section", NC, [
+		return jc(() => ({
+			title: "Projects",
+			subtitle: r.value?.label
+		})), (e, f) => (G(), K("section", NC, [
 			J("button", {
 				class: "project-back",
 				onClick: f[0] ||= (e) => z(c)(z(n))
@@ -15009,7 +15017,10 @@ var ex = ["open"], tx = {
 	__name: "ProjectInstructionsPage",
 	setup(e) {
 		let { profile: t, projectId: n, selectedProject: r, offline: i, chooseProject: a, projectLoading: o, projectError: s, loadProject: c } = Ug();
-		return jc(() => ({ title: r.value?.label || "Project" })), (e, l) => (G(), K("section", KC, [
+		return jc(() => ({
+			title: "Projects",
+			subtitle: r.value?.label
+		})), (e, l) => (G(), K("section", KC, [
 			J("button", {
 				class: "project-back",
 				onClick: l[0] ||= (e) => z(a)(z(n))
