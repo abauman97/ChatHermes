@@ -33,7 +33,8 @@ for (const entry of ["project composer", "New Project Chat"]) {
       `${new URL(page.url()).origin}/chathermes?profile=alpha#/projects/${encodeURIComponent(project)}?profile=alpha`,
     );
     await expect(page.locator(".chathermes-embedded #prompt")).toBeVisible();
-    await expect(page.locator(".header-title")).toHaveText(projectName);
+    await expect(page.locator(".header-title")).toHaveText("Projects");
+    await expect(page.locator(".header-project-subtitle")).toHaveText(projectName);
     expect(sessionFromUrl(page.url())).toBeFalsy();
     await page.screenshot({ path: info.outputPath("fresh-project-composer.png") });
     if (entry === "New Project Chat") {

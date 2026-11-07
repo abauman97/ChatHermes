@@ -12,7 +12,7 @@ const {
   projectError,
   loadProject,
 } = useProjects();
-usePageHeader(() => ({ title: selectedProject.value?.label || "Project" }));
+usePageHeader(() => ({ title: "Projects", subtitle: selectedProject.value?.label }));
 </script>
 <template>
   <section class="page-content project-editor" aria-label="Edit Instructions">

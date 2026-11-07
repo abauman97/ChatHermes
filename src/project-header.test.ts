@@ -216,12 +216,176 @@ describe("page-owned header navigation", () => {
     wrapper.unmount();
   });
 
-  it("keeps backend project labels across all project views and refresh", async () => {
+  it("uses Projects with no subtitle on active and archived lists", async () => {
     const { wrapper, go, title } = setup();
+    await go("/projects/p1");
+    for (const path of ["/projects", "/projects?archived=1"]) {
+      await go(path);
+      expect(title()).toBe("Projects");
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+    }
+    wrapper.unmount();
+  });
+
+  it("returns from archived project pages through sidebar Projects and can switch to active", async () => {
+    const { router, wrapper, go } = setup();
+    const archived = { ...project("p1"), archived: true };
+    vi.mocked(api.projects).mockResolvedValue({
+      projects: [archived, project("p2")],
+      scoped_session_ids: ["s1", "s2"],
+    });
+    vi.mocked(api.project).mockImplementation(async (_profile, id) =>
+      id === "p1" ? archived : project(id),
+    );
+    await go("/projects?archived=1");
+    await wrapper.get('.project-list button[aria-label="Project p1"]').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe("project");
+    for (const suffix of ["", "/artifacts", "/settings", "/instructions"]) {
+      // Direct navigation also covers a fresh URL without inherited list queries.
+      await go(`/projects/p1${suffix}`);
+      await wrapper.get(".projects-nav").trigger("click");
+      await flushPromises();
+      expect(router.currentRoute.value.name).toBe("projects");
+      expect(router.currentRoute.value.query).toEqual({ profile: "alpha", archived: "1" });
+      expect(wrapper.get(".project-list").text()).toContain("Project p1");
+      expect(wrapper.get(".project-list").text()).not.toContain("Project p2");
+    }
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await wrapper.get('[role="menuitemradio"]').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query.archived).toBeUndefined();
+    expect(wrapper.get(".project-list").text()).toContain("Project p2");
+    await wrapper.get('.project-list button[aria-label="Project p2"]').trigger("click");
+    await flushPromises();
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query.archived).toBeUndefined();
+    await go("/inbox?archived=1");
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query.archived).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it.each(["", "/artifacts", "/settings", "/instructions"])(
+    "returns to archived Projects while details are pending on %s",
+    async (suffix) => {
+      const { router, wrapper, go } = setup();
+      const archived = { ...project("p1"), archived: true };
+      vi.mocked(api.projects).mockResolvedValue({
+        projects: [archived, project("p2")],
+        scoped_session_ids: ["s1", "s2"],
+      });
+      const pending = deferred<ReturnType<typeof project>>();
+      vi.mocked(api.project).mockReturnValue(pending.promise);
+      await go("/projects?archived=1");
+      await wrapper.get('.project-list button[aria-label="Project p1"]').trigger("click");
+      await flushPromises();
+      await go(`/projects/p1${suffix}`);
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+      await wrapper.get(".projects-nav").trigger("click");
+      await flushPromises();
+      expect(router.currentRoute.value.query).toEqual({ profile: "alpha", archived: "1" });
+      pending.resolve(archived);
+      await flushPromises();
+      expect(router.currentRoute.value.name).toBe("projects");
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+
+  it("scopes the archive fallback to the current route and profile despite late replies", async () => {
+    const { router, wrapper, go } = setup();
+    const archived = { ...project("p1"), archived: true };
+    vi.mocked(api.projects).mockResolvedValue({
+      projects: [archived, project("p2")],
+      scoped_session_ids: ["s1", "s2"],
+    });
+    const oldDetail = deferred<ReturnType<typeof project>>();
+    vi.mocked(api.project).mockReturnValue(oldDetail.promise);
+    await go("/projects?archived=1");
+    await go("/projects/p1");
+    expect(wrapper.get(".projects-nav").attributes("href")).toContain("archived=1");
+    await go("/projects/p2");
+    oldDetail.resolve(archived);
+    await flushPromises();
+    expect(wrapper.get(".projects-nav").attributes("href")).not.toContain("archived=1");
+
+    // The same ID in another profile must not inherit alpha's archived catalog.
+    const betaCatalog = deferred<Awaited<ReturnType<typeof api.projects>>>();
+    const betaDetail = deferred<ReturnType<typeof project>>();
+    vi.mocked(api.projects).mockReturnValue(betaCatalog.promise);
+    vi.mocked(api.project).mockReturnValue(betaDetail.promise);
+    await router.push({ name: "project", params: { projectId: "p1" }, query: { profile: "beta" } });
+    await flushPromises();
+    expect(wrapper.get(".projects-nav").attributes("href")).not.toContain("archived=1");
+    betaCatalog.resolve({ projects: [project("p1")], scoped_session_ids: ["s1"] });
+    betaDetail.resolve(project("p1"));
+    await flushPromises();
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ profile: "beta" });
+    wrapper.unmount();
+  });
+
+  it("prefers loaded detail archive state over an older catalog entry", async () => {
+    const { wrapper, go } = setup();
+    vi.mocked(api.projects).mockResolvedValue({
+      projects: [{ ...project("p1"), archived: true }],
+      scoped_session_ids: ["s1"],
+    });
+    const pending = deferred<ReturnType<typeof project>>();
+    vi.mocked(api.project).mockReturnValue(pending.promise);
+    await go("/projects");
+    await go("/projects/p1");
+    expect(wrapper.get(".projects-nav").attributes("href")).toContain("archived=1");
+    pending.resolve(project("p1"));
+    await flushPromises();
+    expect(wrapper.get(".projects-nav").attributes("href")).not.toContain("archived=1");
+    wrapper.unmount();
+  });
+
+  it("ignores a late archived catalog and detail after switching profiles", async () => {
+    const { router, wrapper, go } = setup();
+    const alphaCatalog = deferred<Awaited<ReturnType<typeof api.projects>>>();
+    const alphaDetail = deferred<ReturnType<typeof project>>();
+    const betaCatalog = deferred<Awaited<ReturnType<typeof api.projects>>>();
+    const betaDetail = deferred<ReturnType<typeof project>>();
+    vi.mocked(api.projects).mockImplementation((profile) =>
+      profile === "alpha" ? alphaCatalog.promise : betaCatalog.promise,
+    );
+    vi.mocked(api.project).mockImplementation((profile) =>
+      profile === "alpha" ? alphaDetail.promise : betaDetail.promise,
+    );
+    await go("/projects/p1");
+    await router.push({ name: "project", params: { projectId: "p1" }, query: { profile: "beta" } });
+    await flushPromises();
+    const archived = { ...project("p1"), archived: true };
+    alphaCatalog.resolve({ projects: [archived], scoped_session_ids: ["s1"] });
+    alphaDetail.resolve(archived);
+    await flushPromises();
+    expect(wrapper.get(".projects-nav").attributes("href")).not.toContain("archived=1");
+    betaCatalog.resolve({ projects: [project("p1")], scoped_session_ids: ["s1"] });
+    betaDetail.resolve(project("p1"));
+    await flushPromises();
+    await router.push({ name: "inbox", query: { profile: "beta", archived: "1" } });
+    await flushPromises();
+    await wrapper.get(".projects-nav").trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ profile: "beta" });
+    wrapper.unmount();
+  });
+
+  it("keeps Projects and backend project subtitles across all project views and refresh", async () => {
+    const { wrapper, go, title, subtitle } = setup();
     for (const suffix of ["", "/artifacts", "/settings", "/instructions"]) {
       await go(`/projects/p1${suffix}`);
-      expect(title()).toBe("Project p1");
-      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+      expect(title()).toBe("Projects");
+      expect(subtitle()).toBe("Project p1");
+      expect(wrapper.findAll("button").some((button) => button.text() === "← Projects")).toBe(
+        false,
+      );
     }
     await go("/projects/p1/settings");
     vi.spyOn(api, "projectManage").mockResolvedValue({});
@@ -229,30 +393,36 @@ describe("page-owned header navigation", () => {
     await wrapper.get('.project-form input[maxlength="160"]').setValue("Requested label");
     await wrapper.get(".project-form").trigger("submit");
     await flushPromises();
-    expect(title()).toBe("Backend renamed project");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Backend renamed project");
     await go("/projects/p1/instructions");
-    expect(title()).toBe("Backend renamed project");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Backend renamed project");
     wrapper.unmount();
     // A fresh app/router at the current deep URL must resolve the same label.
     const refreshed = mount(App);
     await flushPromises();
-    expect(refreshed.get(".header-title").text()).toBe("Backend renamed project");
+    expect(refreshed.get(".header-title").text()).toBe("Projects");
+    expect(refreshed.get(".header-project-subtitle").text()).toBe("Backend renamed project");
     refreshed.unmount();
   });
 
   it("rejects late project replies after parameter changes, fixed-page navigation, and profile remounts", async () => {
-    const { router, wrapper, go, title } = setup();
+    const { router, wrapper, go, title, subtitle } = setup();
     const old = deferred<ReturnType<typeof project>>();
     vi.mocked(api.project).mockImplementation((_profile, id) =>
       id === "p1" ? old.promise : Promise.resolve(project(id)),
     );
     await go("/projects/p1");
-    expect(title()).toBe("Project");
+    expect(title()).toBe("Projects");
+    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
     await go("/projects/p2");
-    expect(title()).toBe("Project p2");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Project p2");
     old.resolve(project("p1", "Obsolete label"));
     await flushPromises();
-    expect(title()).toBe("Project p2");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Project p2");
     const leaving = deferred<ReturnType<typeof project>>();
     vi.mocked(api.project).mockReturnValue(leaving.promise);
     await go("/projects/p1/settings");
@@ -260,6 +430,7 @@ describe("page-owned header navigation", () => {
     leaving.resolve(project("p1", "Departed label"));
     await flushPromises();
     expect(title()).toBe("Scheduled");
+    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
     const alpha = deferred<ReturnType<typeof project>>();
     vi.mocked(api.project).mockImplementation((profile, id) =>
       profile === "alpha" ? alpha.promise : Promise.resolve(project(id, "Beta project")),
@@ -267,10 +438,12 @@ describe("page-owned header navigation", () => {
     await go("/projects/p1");
     await router.push({ name: "project", params: { projectId: "p1" }, query: { profile: "beta" } });
     await flushPromises();
-    expect(title()).toBe("Beta project");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Beta project");
     alpha.resolve(project("p1", "Alpha project"));
     await flushPromises();
-    expect(title()).toBe("Beta project");
+    expect(title()).toBe("Projects");
+    expect(subtitle()).toBe("Beta project");
     wrapper.unmount();
   });
 });

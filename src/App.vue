@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import { providePageHeader } from "./composables/usePageHeader";
 import { useApplication } from "./composables/useApplication";
@@ -6,6 +7,7 @@ import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
 import ChatInterface from "./features/chat/components/ChatInterface.vue";
 import WorkerUpdatePrompt from "./features/notifications/components/WorkerUpdatePrompt.vue";
 import { projectRoot } from "./features/projects/utils/projects";
+import { queryString } from "./router/links";
 const route = useRoute();
 const header = providePageHeader();
 const {
@@ -53,6 +55,19 @@ const {
   closeScreenMenu,
   screenLink,
 } = useApplication();
+const projectsLink = computed(() => {
+  const id = route.params.projectId;
+  // Route/profile changes can precede workspace scope updates. Never use the
+  // previous scope's detail or catalog to decide this route's destination.
+  const project =
+    route.meta.section === "projects" && queryString(route.query.profile) === profile.value
+      ? selectedProject.value?.id === id
+        ? selectedProject.value
+        : projects.value.find((item) => item.id === id)
+      : undefined;
+  const archived = (route.name === "projects" && route.query.archived === "1") || project?.archived;
+  return screenLink("projects", archived ? { archived: "1" } : {});
+});
 </script>
 <template>
   <div
@@ -125,7 +140,7 @@ const {
       <RouterLink
         class="projects-nav flex min-h-[36px] items-center gap-3 rounded-lg px-3 py-1 text-left text-base hover:bg-[#303030]"
         :aria-current="route.meta.section === 'projects' ? 'page' : undefined"
-        :to="screenLink('projects')"
+        :to="projectsLink"
         @click="drawer = false"
       >
         <svg

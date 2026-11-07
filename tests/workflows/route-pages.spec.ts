@@ -44,19 +44,17 @@ test("every route opens directly, nested pages reload, and history restores its 
     ["/settings", ".settings-page"],
   ];
   for (const [path, selector] of destinations) {
-    const expectedTitle = path.startsWith(`/projects/${project}`)
-      ? projectLabel
-      : path.startsWith("/scheduled")
-        ? "Scheduled"
-        : path === "/"
-          ? "ChatHermes"
-          : path.startsWith("/inbox")
-            ? "Inbox"
-            : path.startsWith("/artifacts")
-              ? "Artifacts"
-              : path.startsWith("/projects")
-                ? "Projects"
-                : "Settings";
+    const expectedTitle = path.startsWith("/scheduled")
+      ? "Scheduled"
+      : path === "/"
+        ? "ChatHermes"
+        : path.startsWith("/inbox")
+          ? "Inbox"
+          : path.startsWith("/artifacts")
+            ? "Artifacts"
+            : path.startsWith("/projects")
+              ? "Projects"
+              : "Settings";
     await page.goto(url(path));
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
     await expect(plugin.locator(".header-title")).toHaveText(expectedTitle);
@@ -68,12 +66,19 @@ test("every route opens directly, nested pages reload, and history restores its 
       expect(await editor.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
       await expect(plugin.locator(".header-title")).toBeInViewport();
     }
-    await expect(plugin.locator(".header-project-subtitle")).toHaveCount(0);
+    const expectSubtitle = async () => {
+      if (path.startsWith(`/projects/${project}`))
+        await expect(plugin.locator(".header-project-subtitle")).toHaveText(projectLabel);
+      else await expect(plugin.locator(".header-project-subtitle")).toHaveCount(0);
+    };
+    await expectSubtitle();
+    await expect(plugin.getByRole("button", { name: "← Projects", exact: true })).toHaveCount(0);
     const supportsChat = path === "/" || path === `/projects/${project}`;
     await expect(plugin.locator("#prompt")).toBeVisible({ visible: supportsChat });
     await page.reload();
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
     await expect(plugin.locator(".header-title")).toHaveText(expectedTitle);
+    await expectSubtitle();
     if (path === `/projects/${project}` || path.endsWith("/instructions"))
       await page.screenshot({
         path: info.outputPath(

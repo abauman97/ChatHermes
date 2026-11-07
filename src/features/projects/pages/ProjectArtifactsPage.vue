@@ -4,7 +4,7 @@ import ArtifactBrowser from "../../artifacts/components/ArtifactBrowser.vue";
 import { usePageHeader } from "../../../composables/usePageHeader";
 import { useProjects } from "../context";
 const { selectedProject, profile, visibleSessions, recentSession } = useProjects();
-usePageHeader(() => ({ title: selectedProject.value?.label || "Project" }));
+usePageHeader(() => ({ title: "Projects", subtitle: selectedProject.value?.label }));
 </script>
 <template>
   <ProjectLayout

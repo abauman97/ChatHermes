@@ -89,9 +89,11 @@ refs and model setter commands. It exposes no viewer or mutable runtime error.
 identity; do not copy streamed data into snapshots or use module-global UI state.
 
 `App.vue` keeps the shared header layout and controls. Fixed titles come from route
-metadata; active Chat and Project pages derive dynamic titles and Project subtitles
-from the existing guarded runtime state through `usePageHeader`. The per-mount
-context accepts reactive getters, scopes each owner to its matched route record,
+metadata; active Chat and Project pages supply their title and Project subtitle
+from the existing guarded runtime state through `usePageHeader`. Project views
+keep the title **Projects** and show the selected Project's name as the subtitle;
+the Project list has no subtitle. Chat titles remain the conversation title.
+The per-mount context accepts reactive getters, scopes each owner to its matched route record,
 and only clears that owner on disposal. Reused parameter routes stay reactive;
 late data or disposal from a departed page cannot replace the active header.
 Header context does not select composer scope.
@@ -213,6 +215,13 @@ running.
 Other chats remain available. Hermes owns all membership and Git/worktree grouping.
 
 The Projects list hides entries marked `isAuto` by default. Its **···** menu
+switches between active and archived lists. The sidebar **Projects** link returns
+to the archived list while browsing an archived Project (including its artifacts
+and editors), using the backend archive state after reload; active Projects return
+to the active list. While details are pending, the link uses the current profile's
+catalog entry matching the route's Project ID. Loaded matching details take
+precedence over the catalog. On the list itself, the link preserves its current archive filter.
+The menu also
 persists the browser-wide `chathermes.hide-automatic-projects` preference across
 profiles; only the stored value `false` disables the filter. Filtering is confined
 to list presentation, leaving the authoritative catalog, session membership,
