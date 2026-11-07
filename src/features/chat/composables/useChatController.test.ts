@@ -163,6 +163,19 @@ describe("live chat controller", () => {
     }
   });
 
+  it.each(["blocked route", "history loading", "reconnecting"])(
+    "does not submit or create while the composer is gated by %s",
+    async (state) => {
+      const { native, scope, controller } = setup();
+      const submit = vi.spyOn(native, "submit");
+      if (state === "blocked route") scope.composerBlocked.value = true;
+      else if (state === "history loading") native.loading.value = true;
+      else native.connection.value = "reconnecting";
+      await controller.actions.send("Cannot send here");
+      expect(submit).not.toHaveBeenCalled();
+      expect(scope.createSession).not.toHaveBeenCalled();
+    },
+  );
   it("keeps projections reactive and model commands affect native submission", async () => {
     const { native, scope, controller } = setup();
     native.submit = vi.fn(async () => {});

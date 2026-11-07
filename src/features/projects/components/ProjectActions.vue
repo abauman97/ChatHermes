@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useRoute, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import { useProjects } from "../context";
 import { projectRoot } from "../utils/projects";
 const {
@@ -13,13 +13,12 @@ const {
   creating,
   projectConfirmation,
 } = useProjects();
-const route = useRoute(),
-  router = useRouter();
+const router = useRouter();
 function openProjectPage(page: "edit" | "instructions") {
   return router.push({
     name: page === "edit" ? "project-settings" : "project-instructions",
     params: { projectId: projectId.value },
-    query: { ...route.query, ...(profile.value ? { profile: profile.value } : {}) },
+    query: profile.value ? { profile: profile.value } : {},
   });
 }
 function confirmProject(action: "delete" | "archive") {

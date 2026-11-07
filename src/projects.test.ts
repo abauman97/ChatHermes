@@ -8,12 +8,10 @@ function routeUrl() {
 function routeSession() {
   return routeUrl().pathname.startsWith("/chat/")
     ? decodeURIComponent(routeUrl().pathname.slice(6))
-    : routeUrl().searchParams.get("session");
+    : null;
 }
 function routeProject() {
-  return (
-    /^\/projects\/([^/]+)/.exec(routeUrl().pathname)?.[1] || routeUrl().searchParams.get("project")
-  );
+  return /^\/projects\/([^/]+)/.exec(routeUrl().pathname)?.[1] || null;
 }
 const mount: typeof vueMount = (component, options = {}) =>
   vueMount(component, {
@@ -93,10 +91,12 @@ function setup(
   detail: (id: string) => Promise<Response> = async (id) =>
     json({ project: [a, b, auto, home].find((p) => p.id === id) }),
 ) {
+  let created = false;
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes("/profiles")) return json({ profiles: [{ name: "alpha" }, { name: "beta" }] });
     if (url.includes("/scheduled")) return json({ jobs: [] });
-    if (url.includes("/projects/session?"))
+    if (url.includes("/projects/session?")) {
+      created = true;
       return json(
         {
           session: {
@@ -108,8 +108,17 @@ function setup(
         },
         201,
       );
+    }
     if (/\/projects(?:\?|$)/.test(url))
-      return json({ projects: [a, b, auto, home], scoped_session_ids: ["project_s1"] });
+      return json({
+        projects: [
+          created ? { ...a, sessionIds: ["project_s1", "project_created"] } : a,
+          b,
+          auto,
+          home,
+        ],
+        scoped_session_ids: ["project_s1"],
+      });
     if (url.includes("/projects/"))
       return detail(new URL(url, "http://dashboard.test").searchParams.get("project_id")!);
     if (url.includes("/capabilities"))
@@ -530,7 +539,7 @@ describe("authoritative gateway Projects", () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     wrapper.unmount();
   });
-  it("retains a workspace project chat context when browsing a separate project", async () => {
+  it("opens a fresh composer when browsing a separate project", async () => {
     history.replaceState({}, "", "/chathermes?profile=default#/chat/project_s1?project=p_a");
     const fetch = setup();
     const wrapper = mount(App);
@@ -541,9 +550,10 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get('[aria-label="Project B"]').trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(routeSession()).toBe("project_s1");
+    expect(routeSession()).toBeNull();
     expect(routeProject()).toBe("p_b");
-    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project B");
+    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+    expect(wrapper.get(".header-title").text()).toBe("Project B");
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     wrapper.unmount();
   });
@@ -661,12 +671,14 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     expect(create).toHaveBeenCalledExactlyOnceWith("alpha", "p_a");
     expect(unscoped).not.toHaveBeenCalled();
-    expect(routeProject()).toBe("p_a");
+    expect(routeProject()).toBeNull();
     expect(routeSession()).toBe("project_created");
     expect(routeSession()).not.toBe("project_s1");
     expect(new URLSearchParams(routeUrl().search).has("view")).toBe(false);
     expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
-    expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A");
+    await vi.waitFor(() =>
+      expect(wrapper.get("#prompt").attributes("placeholder")).toBe("Message Project A"),
+    );
     wrapper.unmount();
   });
   it.each([
@@ -679,7 +691,7 @@ describe("authoritative gateway Projects", () => {
     "/projects/home",
     "/chat/s1?project=home",
     "/projects/p_missing",
-    "/chat/project_s1?project=p_missing",
+    "/chat/s1?project=p_a",
   ])("hides New Project Chat outside project context: %s", async (query) => {
     setup();
     history.replaceState({}, "", "/chathermes?profile=default#" + query);
@@ -854,7 +866,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     finish({ id: "late_other_scope" });
     await flushPromises();
-    expect(routeUrl().search).toContain("project=p_b");
+    expect(routeProject()).toBe("p_b");
     expect(routeUrl().search).not.toContain("session=");
     wrapper.unmount();
   });
@@ -1125,5 +1137,116 @@ it("opens an automatic project whose gateway ID is a filesystem path", async () 
   await flushPromises();
   expect(wrapper.get('[aria-label="Selected Project"]').text()).toContain("/auto/repo");
   expect(nativeOwner.attach).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+describe("URL-authoritative composer context", () => {
+  it.each([
+    ["/?session=project_s1&project=p_a", "", "Message Hermes…", "ChatHermes"],
+    ["/projects/p_a?session=project_s1&project=p_b", "", "Message Project A", "Project A"],
+    [
+      "/chat/project_s1?session=s1&project=p_b",
+      "project_s1",
+      "Message Project A",
+      "Native worktree chat",
+    ],
+    ["/chat/s1?session=project_s1&project=p_a", "s1", "Message Hermes…", "Ungrouped"],
+  ])("uses the path on deep link and refresh: %s", async (path, selected, placeholder, title) => {
+    setup();
+    history.replaceState({}, "", "/chathermes#" + path);
+    for (let refresh = 0; refresh < 2; refresh++) {
+      const wrapper = mount(App);
+      await flushPromises();
+      expect(wrapper.findComponent({ name: "SessionSidebar" }).props("selected")).toBe(selected);
+      expect(wrapper.get("#prompt").attributes("placeholder")).toBe(placeholder);
+      expect(wrapper.get(".header-title").text()).toBe(title);
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(selected === "project_s1");
+      if (!selected) expect(nativeOwner.attach).not.toHaveBeenCalled();
+      else expect(nativeOwner.attach).toHaveBeenCalledExactlyOnceWith("", selected);
+      wrapper.unmount();
+    }
+  });
+
+  it.each([
+    "/inbox",
+    "/projects",
+    "/scheduled",
+    "/scheduled/job",
+    "/scheduled/job/run",
+    "/projects/p_a/settings",
+    "/projects/p_a/instructions",
+    "/projects/p_a/artifacts",
+    "/artifacts",
+    "/settings",
+    "/kanban",
+  ])("selects no session and hides the composer on %s", async (path) => {
+    setup();
+    history.replaceState({}, "", `/chathermes#${path}?session=project_s1&project=p_a`);
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get("#prompt").isVisible()).toBe(false);
+    expect(wrapper.findComponent({ name: "SessionSidebar" }).props("selected")).toBe("");
+    expect(nativeOwner.attach).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it.each(["/", "/projects/p_a"])("submits the first draft once using %s", async (path) => {
+    setup();
+    history.replaceState({}, "", `/chathermes#${path}?session=project_s1&project=p_b`);
+    const create = vi.spyOn(api, "create"),
+      scoped = vi.spyOn(api, "projectCreate");
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("#prompt").setValue("Initial submission");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    if (path === "/") {
+      expect(create).toHaveBeenCalledExactlyOnceWith("");
+      expect(scoped).not.toHaveBeenCalled();
+    } else {
+      expect(scoped).toHaveBeenCalledExactlyOnceWith("", "p_a");
+      expect(create).not.toHaveBeenCalled();
+    }
+    expect(routeUrl().pathname).toBe(`/chat/${path === "/" ? "other_created" : "project_created"}`);
+    expect(routeUrl().search).toBe("");
+    expect(nativeOwner.submit).toHaveBeenCalledExactlyOnceWith(
+      "Initial submission",
+      expect.any(Function),
+      expect.any(Object),
+      expect.any(Array),
+    );
+    wrapper.unmount();
+  });
+});
+
+it("updates session membership from backend events without changing URL or reattaching", async () => {
+  setup();
+  vi.stubGlobal("EventSource", class {});
+  let refresh!: () => void;
+  vi.spyOn(api, "projectEvents").mockImplementation((_profile, callback) => {
+    refresh = callback;
+    return vi.fn();
+  });
+  const catalog = vi
+    .spyOn(api, "projects")
+    .mockResolvedValue({ projects: [a, b], scoped_session_ids: ["project_s1"] });
+  history.replaceState({}, "", "/chathermes#/chat/project_s1?project=wrong");
+  const wrapper = mount(App);
+  await flushPromises();
+  expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
+  const url = location.href;
+  const close = vi.spyOn(nativeOwner, "close");
+  catalog.mockResolvedValue({
+    projects: [{ ...b, sessionIds: ["project_s1"] }],
+    scoped_session_ids: ["project_s1"],
+  });
+  refresh();
+  await vi.waitFor(() => expect(wrapper.get(".header-project-subtitle").text()).toBe("Project B"));
+  catalog.mockResolvedValue({ projects: [], scoped_session_ids: [] });
+  refresh();
+  await vi.waitFor(() => expect(wrapper.find(".header-project-subtitle").exists()).toBe(false));
+  expect(location.href).toBe(url);
+  expect(nativeOwner.attach).toHaveBeenCalledTimes(1);
+  expect(close).not.toHaveBeenCalled();
   wrapper.unmount();
 });

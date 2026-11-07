@@ -320,12 +320,15 @@ const {
           <h1 class="header-title truncate text-base font-medium">
             {{
               route.meta.title ||
-              sessions.find((s) => s.id === session)?.title ||
-              (session ? "Conversation" : selectedProject?.label || "ChatHermes")
+              (route.name === "chat"
+                ? sessions.find((s) => s.id === session)?.title || "Conversation"
+                : route.params.projectId
+                  ? selectedProject?.label || "Project"
+                  : "ChatHermes")
             }}
           </h1>
           <p
-            v-if="!settingsPage && projectId && session && selectedProject"
+            v-if="route.name === 'chat' && projectId && selectedProject"
             class="header-project-subtitle truncate text-xs text-[#a3a3a3]"
           >
             {{ selectedProject.label }}
@@ -392,7 +395,8 @@ const {
         @touchcancel="drawerSwipe.cancel"
         @click.capture="drawerSwipe.click"
         :show-chat="route.meta.chat === true"
-        :hide-composer="route.meta.hideComposer === true"
+        :draft-scope="route.name === 'project' ? String(route.params.projectId) : ''"
+        :hide-composer="route.meta.chat !== true && route.meta.composer !== 'project'"
       >
         <template #default>
           <RouterView :key="profile" />

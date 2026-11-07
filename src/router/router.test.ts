@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createMemoryHistory } from "vue-router";
 import { createPluginHistory } from "./history";
 import { createChatHermesRouter } from "./index";
-import { resolvePluginUrl, safeReturn } from "./links";
+import { destination, resolvePluginUrl, safeReturn } from "./links";
 beforeEach(() =>
   history.replaceState(
     { usr: { host: true }, key: "host-key", idx: 7, extra: "kept" },
@@ -56,6 +56,25 @@ describe("plugin routing", () => {
     expect(router.currentRoute.value.name).toBe(name);
     expect(router.currentRoute.value.query.profile).toBe("alpha");
   });
+  it("builds screen links with only their own query context", async () => {
+    const router = createChatHermesRouter(createMemoryHistory());
+    await router.push("/chat/s1?profile=alpha&project=p1");
+    expect(router.resolve(destination("scheduled", "alpha", { status: "paused" })).fullPath).toBe(
+      "/scheduled?profile=alpha&status=paused",
+    );
+    expect(router.resolve(destination("home")).fullPath).toBe("/");
+  });
+  it.each(["/", "/projects/p1", "/chat/s1"])(
+    "ignores obsolete scope queries on %s",
+    async (path) => {
+      const router = createChatHermesRouter(createMemoryHistory());
+      await router.push(path + "?session=bad/old&project=../old");
+      expect(router.currentRoute.value.path).toBe(path);
+      expect(router.currentRoute.value.params.sessionId).toBe(
+        path === "/chat/s1" ? "s1" : undefined,
+      );
+    },
+  );
   it.each([
     "?session=s1",
     "?profile=alpha&session=s1",

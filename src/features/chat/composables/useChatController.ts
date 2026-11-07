@@ -144,7 +144,7 @@ export function useChatController(
   const viewActive = computed(() => native.busy.value);
   async function sendNative(text: string, attachments: Attachment[]) {
     if (
-      composerBlocked.value ||
+      composer.value.disabled ||
       branching.value ||
       viewBusy.value ||
       creating.value ||
@@ -159,7 +159,7 @@ export function useChatController(
       draftProfile = profile.value,
       draftModel = selectedModel.value,
       draftProvider = selectedProvider.value;
-    if (projectView.value || !session.value) {
+    if (!session.value) {
       const created = await scope.createSession();
       if (!created || profile.value !== draftProfile || session.value !== created) return;
       modelChoices.value.set(effortKey(), { model: draftModel, provider: draftProvider });

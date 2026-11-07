@@ -8,7 +8,6 @@ import type { RouteLocationRaw } from "vue-router";
 /** Shared gateway-owned workspace data used by the sidebar, chat creation and project pages. */
 export function useProjectWorkspace(dependencies: {
   profile: Ref<string>;
-  session: Ref<string>;
   sessions: Ref<Session[]>;
   offline: Ref<boolean>;
   navigate: (to: RouteLocationRaw) => Promise<void>;
@@ -16,7 +15,7 @@ export function useProjectWorkspace(dependencies: {
   refreshInbox: () => Promise<void>;
   profileGeneration: () => number;
 }) {
-  const { profile, session, sessions, offline, navigate } = dependencies;
+  const { profile, sessions, offline, navigate } = dependencies;
   const route = useRoute(),
     router = useRouter();
   const archivedProjects = computed(() => route.query.archived === "1");
@@ -58,12 +57,7 @@ export function useProjectWorkspace(dependencies: {
   }
   let projectsAbort: AbortController | undefined, projectAbort: AbortController | undefined;
 
-  let projectsWork: Promise<void> = Promise.resolve();
-  function loadProjects() {
-    projectsWork = readProjects();
-    return projectsWork;
-  }
-  async function readProjects() {
+  async function loadProjects() {
     projectsAbort?.abort();
     const controller = new AbortController();
     projectsAbort = controller;
@@ -122,22 +116,14 @@ export function useProjectWorkspace(dependencies: {
     return navigate(
       id
         ? {
-            ...(destination("project", profile.value, session.value, id) as object),
+            ...(destination("project", profile.value) as object),
             params: { projectId: id },
           }
-        : destination("home", profile.value, session.value),
+        : destination("home", profile.value),
     );
   }
   function showProjects(archived = false) {
-    return navigate(
-      destination(
-        "projects",
-        profile.value,
-        session.value,
-        projectId.value,
-        archived ? { archived: "1" } : {},
-      ),
-    );
+    return navigate(destination("projects", profile.value, archived ? { archived: "1" } : {}));
   }
 
   async function manageProject(action: ProjectAction, fields: Record<string, string | boolean>) {
@@ -236,6 +222,5 @@ export function useProjectWorkspace(dependencies: {
     manageProject,
     resetProjects,
     selectProjectScope,
-    whenProjectsLoaded: () => projectsWork,
   };
 }

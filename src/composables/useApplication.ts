@@ -49,7 +49,10 @@ export function useApplication() {
     route = useRoute();
   const isChat = computed(() => route.meta.chat === true);
   const projectView = computed(() => route.meta.composer === "project");
-  const composerBlocked = computed(() => !isChat.value && !projectView.value);
+  const composerBlocked = computed(
+    () =>
+      (!isChat.value && !projectView.value) || queryString(route.query.profile) !== profile.value,
+  );
   const settingsPage = computed(() => route.name === "settings");
   const scheduledPage = computed(() => route.meta.section === "scheduled");
   let scopeReady = false,
@@ -72,12 +75,14 @@ export function useApplication() {
     drawerNavigationTarget = "";
   }
   function screenLink(name: RouteName, extra: Record<string, string> = {}) {
-    return destination(name, profile.value, session.value, projectId.value, extra);
+    return destination(name, profile.value, extra);
   }
   const profile = ref(""),
-    session = ref(""),
+    session = computed(() => (route.name === "chat" ? String(route.params.sessionId) : "")),
     sessions = ref<Session[]>([]),
     messages = ref<Message[]>([]);
+  // Connection bookkeeping never selects the composer session.
+  let attachedSession = "";
   const capabilities = ref<Capabilities>({}),
     offset = ref(0),
     hasMore = ref(false),
@@ -178,7 +183,6 @@ export function useApplication() {
     projectLoading,
     projectsError,
     projectError,
-    projectsLoaded,
     visibleSessions,
     subscribeProjectEvents,
     refreshProjects,
@@ -189,16 +193,25 @@ export function useApplication() {
     manageProject,
     resetProjects,
     selectProjectScope,
-    whenProjectsLoaded,
   } = useProjectWorkspace({
     profile,
-    session,
     sessions,
     offline,
     navigate,
     loadSessions,
     refreshInbox,
     profileGeneration: () => profileGeneration,
+  });
+  const contextProject = computed(() => {
+    if (session.value)
+      return (
+        projects.value.find(
+          (project) =>
+            project.sessionIds?.includes(session.value) ||
+            projectSessions(project).some((row) => row.id === session.value),
+        )?.id || ""
+      );
+    return typeof route.params.projectId === "string" ? route.params.projectId : "";
   });
   const native = useNativeSession(
     () => {
@@ -258,7 +271,7 @@ export function useApplication() {
     loading.value = false;
   }
   function recentSession(id: string) {
-    return chooseSession(id, "");
+    return chooseSession(id);
   }
   async function newChat() {
     return await createSession(true);
@@ -393,7 +406,7 @@ export function useApplication() {
     cancel();
     resetProjects();
     profile.value = id;
-    session.value = "";
+    attachedSession = "";
     sessions.value = [];
     tracking.value = [];
     trackingPending.value = new Set();
@@ -446,8 +459,7 @@ export function useApplication() {
       api.workspace(profile.value, id);
 
     suggestedPrompt.value = "";
-    cancelChat();
-    session.value = id;
+    attachedSession = id;
     messages.value = [];
     chatError.value = "";
     drawer.value = false;
@@ -495,7 +507,7 @@ export function useApplication() {
         return;
       // RPC drafts have no DB row until the first prompt; their normal resume path
       // can still hydrate them by stored ID. Keep the same chat components.
-      await chooseSession(made.id, scope);
+      await chooseSession(made.id);
       refreshProjects();
       const trackingRead = ++trackingRevision;
       void api
@@ -572,13 +584,7 @@ export function useApplication() {
         sessions.value = sessions.value.filter((row) => row.id !== id);
       }
       if (current === generation && session.value === id) {
-        if (action === "project")
-          await navigate({
-            name: "chat",
-            params: { sessionId: id },
-            query: { ...(p ? { profile: p } : {}), project: target },
-          });
-        else await navigate({ name: "home", query: p ? { profile: p } : {} });
+        if (action !== "project") await navigate({ name: "home", query: p ? { profile: p } : {} });
       }
       await loadSessions();
       refreshProjects();
@@ -615,7 +621,7 @@ export function useApplication() {
     }
     return navigate(
       settingsPage.value
-        ? destination("settings", id, "", "", {
+        ? destination("settings", id, {
             return_to: router.resolve(destination("home", id)).fullPath,
           })
         : destination("home", id),
@@ -623,14 +629,11 @@ export function useApplication() {
       true,
     );
   }
-  function chooseSession(id: string, project = projectId.value) {
+  function chooseSession(id: string) {
     return navigate({
       name: "chat",
       params: { sessionId: id },
-      query: {
-        ...(profile.value ? { profile: profile.value } : {}),
-        ...(project ? { project } : {}),
-      },
+      query: profile.value ? { profile: profile.value } : {},
     });
   }
   async function applyScope(revision: RouteLocationNormalizedLoaded) {
@@ -643,60 +646,44 @@ export function useApplication() {
     }
     await profileWork;
     if (revision !== router.currentRoute.value) return;
-    const nextSession =
-      typeof route.params.sessionId === "string"
-        ? route.params.sessionId
-        : queryString(route.query.session);
-    const explicitProject =
-      typeof route.params.projectId === "string"
-        ? route.params.projectId
-        : queryString(route.query.project);
-    const membership = () =>
-      projects.value.find(
-        (project) =>
-          project.sessionIds?.includes(nextSession) ||
-          projectSessions(project).some((row) => row.id === nextSession),
-      );
-    const nextProject = explicitProject || (route.name === "chat" ? membership()?.id || "" : "");
-    if (nextProject !== projectId.value) {
-      selectProjectScope(nextProject);
-    }
-    if (nextSession !== session.value) {
+    const nextSession = session.value;
+    if (contextProject.value !== projectId.value) selectProjectScope(contextProject.value);
+    if (nextSession !== attachedSession) {
       if (nextSession) await attachSession(nextSession);
       else {
         cancelChat();
-        session.value = "";
+        attachedSession = "";
         messages.value = [];
         suggestedPrompt.value = "";
       }
     }
     if (revision !== router.currentRoute.value || p !== profile.value) return;
-    // Notification cleanup depends on the opened chat, not Project discovery.
-    if (nextSession && route.name === "chat" && nextSession === session.value) {
-      await deleteCurrentSessionInbox(p, nextSession);
-    }
-    // Session links need no caller-supplied project hint: membership remains gateway-owned.
-    if (nextSession && !explicitProject && route.name === "chat" && !projectsLoaded.value) {
-      await whenProjectsLoaded();
-      if (
-        revision !== router.currentRoute.value ||
-        p !== profile.value ||
-        nextSession !== session.value
-      )
-        return;
-      const owner = membership();
-      if (owner && owner.id !== projectId.value) {
-        projectId.value = owner.id;
-        selectedProject.value = owner;
-        void loadProject();
-      }
-    }
+    if (nextSession) await deleteCurrentSessionInbox(p, nextSession);
   }
+  // Backend membership also updates after moves, project events and delayed catalog reads.
+  watch(
+    contextProject,
+    (id) => {
+      if (
+        scopeReady &&
+        queryString(route.query.profile) === profile.value &&
+        id !== projectId.value
+      )
+        selectProjectScope(id);
+    },
+    { flush: "sync" },
+  );
   watch(
     () => route.fullPath,
     () => {
       if (!route.matched.length) return;
       const revision = router.currentRoute.value;
+      if (session.value !== attachedSession || queryString(route.query.profile) !== profile.value) {
+        cancelChat();
+        attachedSession = "";
+        messages.value = [];
+        suggestedPrompt.value = "";
+      }
       drawerSwipe.cancel();
       if (route.fullPath !== drawerNavigationTarget) drawer.value = false;
       closeScreenMenu(false);

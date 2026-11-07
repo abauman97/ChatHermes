@@ -49,16 +49,12 @@ export function safeReturn(value: unknown): string {
 export function destination(
   name: RouteName,
   profile = "",
-  session = "",
-  project = "",
   extra: Record<string, string> = {},
 ): RouteLocationRaw {
   return {
     name,
     query: {
       ...(profile ? { profile } : {}),
-      ...(session ? { session } : {}),
-      ...(project ? { project } : {}),
       ...extra,
     },
   };

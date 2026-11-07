@@ -33,79 +33,53 @@ afterEach(() => {
 });
 
 describe("project chat header", () => {
-  it("shows the session title with its project name below it", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string, init?: RequestInit) => {
-        if (input.endsWith("/profiles")) return json({ profiles: [{ name: "alpha" }] });
-        if (/\/projects(?:\?|$)/.test(input))
-          return json({
-            projects: [
-              {
-                id: "p1",
-                label: "Hermes Mobile",
-                path: "/workspace",
-                sessionCount: 1,
-                repos: [
-                  {
-                    id: "r1",
-                    label: "Repo",
-                    groups: [
-                      {
-                        id: "g1",
-                        label: "Group",
-                        sessions: [{ id: "s1", title: "Investigate mobile flow" }],
-                      },
-                    ],
-                  },
-                ],
-                previewSessions: [{ id: "s1", title: "Investigate mobile flow" }],
-                sessionIds: ["s1"],
-              },
-            ],
-            scoped_session_ids: ["s1"],
-          });
-        if (input.includes("/api/sessions?"))
-          return json({ sessions: [{ id: "s1", title: "Investigate mobile flow" }], total: 1 });
-        if (input.includes("/capabilities")) return json({ features: {}, endpoints: {} });
-        if (input.includes("/models")) return json({ data: [] });
-        if (input.includes("/workspace/sessions/s1"))
-          return json({ session: { id: "s1", title: "Investigate mobile flow" }, messages: [] });
-        if (input.includes("/api/sessions/s1"))
-          return json({ session: { id: "s1", title: "Investigate mobile flow" } });
-        if (input.includes("/sessions/s1/messages")) return json({ messages: [] });
-        if (input.includes("/sessions")) return json({ sessions: [], total: 0 });
-        if (input.includes("/projects/detail?"))
-          return json({
-            project: {
-              id: "p1",
-              label: "Hermes Mobile",
-              path: "/workspace",
-              sessionCount: 1,
-              repos: [
+  it.each(["", "&project=wrong-project&session=wrong-session"])(
+    "derives the session header from backend membership on a deep link: %s",
+    async (query) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string, init?: RequestInit) => {
+          if (input.endsWith("/profiles")) return json({ profiles: [{ name: "alpha" }] });
+          if (/\/projects(?:\?|$)/.test(input))
+            return json({
+              projects: [
                 {
-                  id: "r1",
-                  label: "Repo",
-                  groups: [
+                  id: "p1",
+                  label: "Hermes Mobile",
+                  path: "/workspace",
+                  sessionCount: 1,
+                  repos: [
                     {
-                      id: "g1",
-                      label: "Group",
-                      sessions: [{ id: "s1", title: "Investigate mobile flow" }],
+                      id: "r1",
+                      label: "Repo",
+                      groups: [
+                        {
+                          id: "g1",
+                          label: "Group",
+                          sessions: [{ id: "s1", title: "Investigate mobile flow" }],
+                        },
+                      ],
                     },
                   ],
+                  previewSessions: [{ id: "s1", title: "Investigate mobile flow" }],
+                  sessionIds: ["s1"],
                 },
               ],
-              previewSessions: [{ id: "s1", title: "Investigate mobile flow" }],
-              sessionIds: ["s1"],
-            },
-          });
-        if (input.includes("/projects/session?"))
-          return json({ session: { id: "s1", title: "Investigate mobile flow" } });
-        if (input.includes("/projects/") && init?.method === "POST") return json({});
-        if (input.includes("/projects?") || input.endsWith("/projects"))
-          return json({
-            projects: [
-              {
+              scoped_session_ids: ["s1"],
+            });
+          if (input.includes("/api/sessions?"))
+            return json({ sessions: [{ id: "s1", title: "Investigate mobile flow" }], total: 1 });
+          if (input.includes("/capabilities")) return json({ features: {}, endpoints: {} });
+          if (input.includes("/models")) return json({ data: [] });
+          if (input.includes("/workspace/sessions/s1"))
+            return json({ session: { id: "s1", title: "Investigate mobile flow" }, messages: [] });
+          if (input.includes("/api/sessions/s1"))
+            return json({ session: { id: "s1", title: "Investigate mobile flow" } });
+          if (input.includes("/sessions/s1/messages")) return json({ messages: [] });
+          if (input.includes("/sessions")) return json({ sessions: [], total: 0 });
+          if (input.includes("/projects/detail?"))
+            return json({
+              project: {
                 id: "p1",
                 label: "Hermes Mobile",
                 path: "/workspace",
@@ -126,20 +100,48 @@ describe("project chat header", () => {
                 previewSessions: [{ id: "s1", title: "Investigate mobile flow" }],
                 sessionIds: ["s1"],
               },
-            ],
-            scoped_session_ids: ["s1"],
-          });
-        return json({});
-      }),
-    );
-    history.replaceState({}, "", "/chathermes?profile=alpha#/chat/s1?profile=alpha&project=p1");
-    const wrapper = mount(App);
-    await flushPromises();
-    expect(wrapper.get(".header-title").text()).toBe("Investigate mobile flow");
-    await wrapper.findAll(".session-select")[0]!.trigger("click");
-    await flushPromises();
-    await flushPromises();
-    expect(wrapper.get(".header-project-subtitle").text()).toBe("Hermes Mobile");
-    wrapper.unmount();
-  });
+            });
+          if (input.includes("/projects/session?"))
+            return json({ session: { id: "s1", title: "Investigate mobile flow" } });
+          if (input.includes("/projects/") && init?.method === "POST") return json({});
+          if (input.includes("/projects?") || input.endsWith("/projects"))
+            return json({
+              projects: [
+                {
+                  id: "p1",
+                  label: "Hermes Mobile",
+                  path: "/workspace",
+                  sessionCount: 1,
+                  repos: [
+                    {
+                      id: "r1",
+                      label: "Repo",
+                      groups: [
+                        {
+                          id: "g1",
+                          label: "Group",
+                          sessions: [{ id: "s1", title: "Investigate mobile flow" }],
+                        },
+                      ],
+                    },
+                  ],
+                  previewSessions: [{ id: "s1", title: "Investigate mobile flow" }],
+                  sessionIds: ["s1"],
+                },
+              ],
+              scoped_session_ids: ["s1"],
+            });
+          return json({});
+        }),
+      );
+      history.replaceState({}, "", "/chathermes#/chat/s1?profile=alpha" + query);
+      const wrapper = mount(App);
+      await flushPromises();
+      expect(wrapper.get(".header-title").text()).toBe("Investigate mobile flow");
+      await flushPromises();
+      await flushPromises();
+      expect(wrapper.get(".header-project-subtitle").text()).toBe("Hermes Mobile");
+      wrapper.unmount();
+    },
+  );
 });

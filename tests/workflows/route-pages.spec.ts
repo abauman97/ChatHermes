@@ -26,7 +26,7 @@ test("every route opens directly, nested pages reload, and history restores its 
   const url = (path: string) =>
     `${origin}/chathermes?profile=default#${path}${path.includes("?") ? "&" : "?"}profile=default`;
   const destinations: Array<[string, string]> = [
-    ["/", ".transcript"],
+    ["/", 'section[aria-label="Recent inbox messages"]'],
     ["/inbox?scope=profile", 'section[aria-label="Inbox"]'],
     ["/artifacts", 'section[aria-label="Artifacts"]'],
     ["/projects?archived=1", ".projects-page"],
@@ -45,11 +45,15 @@ test("every route opens directly, nested pages reload, and history restores its 
   for (const [path, selector] of destinations) {
     await page.goto(url(path));
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
+    const supportsChat = path === "/" || path === `/projects/${project}`;
+    await expect(plugin.locator("#prompt")).toBeVisible({ visible: supportsChat });
     await page.reload();
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
   }
   await plugin.getByRole("button", { name: "Close settings", exact: true }).click();
-  await expect(page.locator(".transcript")).toBeVisible();
+  await expect(
+    plugin.getByRole("region", { name: "Recent inbox messages", exact: true }),
+  ).toBeVisible();
   const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
   const prompt = `[workflow-stream] route continuity ${randomUUID()}`;
   await composer.fill(prompt);
@@ -59,8 +63,7 @@ test("every route opens directly, nested pages reload, and history restores its 
     .poll(() => plugin.locator(".transcript").evaluate((el) => el.contains(document.activeElement)))
     .toBe(true);
   const session = sessionFromUrl(page.url());
-  await composer.fill("Draft survives screen navigation");
-  await composer.evaluate((el) => el.setAttribute("data-route-composer", "persistent"));
+
   const open = plugin.getByRole("button", { name: "Open navigation", exact: true });
   if (await open.isVisible()) await open.click();
   await plugin.getByRole("link", { name: "Scheduled", exact: true }).click();
@@ -68,15 +71,15 @@ test("every route opens directly, nested pages reload, and history restores its 
   await expect(plugin.getByRole("combobox", { name: "Job status", exact: true })).toHaveValue(
     "active",
   );
-  await composer.focus();
-  await expect(composer).toBeFocused();
-  await expect(composer).toHaveValue("Draft survives screen navigation");
+  await expect(composer).toBeHidden();
+  expect(new URL(page.url()).hash).not.toContain("session=");
   await page.goBack();
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
   expect(sessionFromUrl(page.url())).toBe(session);
   await expect(page.locator(".message.user")).toHaveText(prompt);
-  await expect(composer).toHaveAttribute("data-route-composer", "persistent");
-  await expect(composer).toHaveValue("Draft survives screen navigation");
+  await expect(composer).toBeVisible();
+  await composer.focus();
+  await expect(composer).toBeFocused();
   await page.goForward();
   await expect(plugin.locator(".scheduled-page")).toBeVisible();
   await expect(plugin.getByRole("combobox", { name: "Job status", exact: true })).toHaveValue(
