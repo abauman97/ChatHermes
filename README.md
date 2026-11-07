@@ -8,6 +8,12 @@ A mobile-friendly chat plugin for the [Hermes Agent](https://github.com/NousRese
 - Read scheduled job results and enable per-profile Web Push notifications.
 - Attach files, images, or a camera photo on supported devices.
 
+| Desktop                                                                                                                                                            | Mobile                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img src="docs/user/images/chat-desktop.png" width="600" alt="ChatHermes on desktop showing navigation, a sample workshop conversation, and the message composer"> | <img src="docs/user/images/chat-mobile.png" width="195" alt="ChatHermes on mobile showing the same workshop conversation and message composer"> |
+
+_The same conversation on desktop and mobile in the Hermes dashboard, using fictional workshop data and a test model._
+
 ## Quick install
 
 With Hermes and its dashboard installed:
