@@ -2,7 +2,8 @@ name: chathermes
 label: ChatHermes
 kind: platform
 version: 1.0.0
-description: Deliver cron results to the existing ChatHermes Scheduled results view.
+requires_hermes: ">=0.22.5"
+description: Authenticated dashboard chat, artifacts, and scheduled result notifications.
 platforms:
   - chathermes
 optional_env:

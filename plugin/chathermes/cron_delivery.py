@@ -12,8 +12,22 @@ import sqlite3
 from contextlib import closing
 
 from .dashboard import push_sender
+from .dashboard.credential_redaction import redact_gateway_key as _redact_gateway_key
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,159}\Z")
+
+
+def _redact_outbound(text):
+    """Use Hermes's public redactor with the scheduler's fail-closed policy."""
+    if not text:
+        return text
+    try:
+        from agent.redact import redact_sensitive_text
+
+        return redact_sensitive_text(text, force=True)
+    except Exception:
+        # Exception messages may themselves hold the credential being scrubbed.
+        return "[REDACTED - redaction failed]"
 
 
 def _queued_execution(home, message):
@@ -23,7 +37,6 @@ def _queued_execution(home, message):
     standalone hook has no metadata argument. Match the exact scheduler payload,
     never a job ID parsed from model text or the most recent run of a job.
     """
-    from cron.scheduler_delivery import _redact_cron_payload
     from gateway.platforms.base import BasePlatformAdapter
 
     path = home / "cron" / "deliveries.db"
@@ -44,7 +57,7 @@ def _queued_execution(home, message):
         )
         for candidate in (content, wrapped):
             _, cleaned = BasePlatformAdapter.extract_media(candidate)
-            if _redact_cron_payload(cleaned, "delivery content") == message:
+            if _redact_outbound(cleaned) == message:
                 matches.append((job["id"], execution_id))
                 break
     # Equal outputs from concurrent jobs cannot be safely attributed.
@@ -142,12 +155,9 @@ def _send(chat_id, message, thread_id, media_files):
     if identity is None:
         return {"error": "ChatHermes delivery requires an unambiguous native cron execution"}
     target = _result(home, *identity, profile=profile)
-    from cron.scheduler_delivery import _cron_display_name, _redact_cron_payload
-
     from .dashboard.plugin_api import (
         _gateway_settings,
         _profile_gateway_key,
-        _safe_body,
         _scheduled_job,
         _scheduled_output_sync,
     )
@@ -161,10 +171,10 @@ def _send(chat_id, message, thread_id, media_files):
     ) or ""
 
     def safe(text):
-        text = _safe_body(text.encode("utf-8", errors="replace"), gateway_key).decode("utf-8")
-        return _redact_cron_payload(text, "notification content")
+        text = text.encode("utf-8", errors="replace").decode("utf-8")
+        return _redact_outbound(_redact_gateway_key(text, gateway_key))
 
-    title = safe(_cron_display_name(job))
+    title = safe(job.get("name") or job.get("id", "cron"))
     assistant_result = next(
         (
             row.get("content")

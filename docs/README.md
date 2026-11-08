@@ -15,6 +15,7 @@ Choose a task below. User and developer guides describe the current plugin; inte
 
 - [Developer setup](developer/getting-started.md): prerequisites and repository map.
 - [Architecture](developer/architecture.md): component ownership, native runtime, routing, Projects, and scheduled history.
+- [Catalog admission](developer/catalog-admission.md): eligibility gaps, public API assessment and disclosures.
 - [API contract](developer/api-contract.md): native gateway, authenticated routes, recovery, and delivery guarantees.
 - [Testing](developer/testing.md): local checks and workflow validation; [Docker environment](../tests/docker/README.md) owns detailed infrastructure instructions.
 - [Deployment](developer/deployment.md): build, package, install, host, and release.

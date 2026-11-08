@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import json
 import re
 import sys
 from functools import wraps
@@ -41,8 +42,59 @@ def test_safe_body_redacts_only_nonempty_credentials(body, key, expected):
     assert plugin._safe_body(body, key) == expected
 
 
+@pytest.mark.parametrize("key", ['quote"key', "back\\slash", 'both"\\/café😀\n'])
+@pytest.mark.parametrize("encoding", ["json", "unicode", "text"])
+def test_safe_body_redacts_escaped_credentials_without_corrupting_payload(key, encoding):
+    payload = {f"prefix {key}": [f"value {key}", {"safe": "unchanged"}], "count": 3}
+    if encoding == "text":
+        body = f"not JSON: {key} / {key}".encode()
+        assert plugin._safe_body(body, key) == b"not JSON: [redacted] / [redacted]"
+        return
+    body = json.dumps(payload, ensure_ascii=encoding == "unicode").encode()
+    if encoding == "unicode":
+        # JSON permits escaping even ordinary ASCII characters.
+        body = body.replace(b"key", b"\\u006b\\u0065\\u0079")
+    assert json.loads(plugin._safe_body(body, key)) == {
+        "prefix [redacted]": ["value [redacted]", {"safe": "unchanged"}],
+        "count": 3,
+    }
+    assert plugin._safe_body(body, "") == body
+    assert plugin._safe_body(body, "absent-secret") == body
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize("as_json", [True, False])
+@run_async
+async def test_proxy_redacts_escaped_credentials(app, monkeypatch, status, as_json):
+    key = 'profile-"quoted"\\credential'
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: key)
+
+    def gateway(request):
+        assert request.url.path == (
+            "/p/alpha/v1/capabilities" if as_json else "/p/alpha/api/sessions"
+        )
+        assert request.headers["authorization"] == f"Bearer {key}"
+        if as_json:
+            return httpx.Response(status, json={"result": [key, {key: f"echo {key}"}]})
+        return httpx.Response(status, text=f"echo {key}")
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        route = "/v1/capabilities" if as_json else "/sessions"
+        response = await client.get(f"/api/plugins/chathermes{route}?profile=alpha")
+    assert response.status_code == status
+    if as_json:
+        assert response.json()["result"] == ["[redacted]", {"[redacted]": "echo [redacted]"}]
+    else:
+        assert response.text == "echo [redacted]"
+
+
 @pytest.fixture
-def app(monkeypatch, tmp_path):
+def app(monkeypatch, tmp_path, hermes_startup):
     monkeypatch.setattr(plugin._push_store_module, "_path", lambda: tmp_path / "push.json")
     monkeypatch.setattr(plugin, "_gateway_settings", lambda: ("http://gateway.test", KEY))
     monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: KEY)
@@ -50,6 +102,289 @@ def app(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(plugin.router, prefix="/api/plugins/chathermes")
     return app
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize(
+    "key,body,expected",
+    [
+        ("secret", b'{"value":"secret","value":"safe"}', {"value": "safe"}),
+        ("secret", b'{"value":"sec\\u0072et","value":"safe"}', {"value": "safe"}),
+        ("secret", b'{"value":{"secret":"hidden"},"value":0}', {"value": 0}),
+        ("12345", b'{"value":12345}', {"value": "[redacted]"}),
+        (
+            "12345",
+            b'{"value":[-12345,12345.67,1.12345e20,12345e999]}',
+            {"value": ["[redacted]"] * 4},
+        ),
+        ("12345", b"12345", "[redacted]"),
+        ("12345", b'{"value":12345,"value":0}', {"value": 0}),
+        ("100000", b'{"value":1e5,"echo":"100000"}', {"value": "[redacted]", "echo": "[redacted]"}),
+        ("secret", b'{"value":"sec\\u0072et",}', "[redacted]"),
+        ("secret", '{"value":"sec\\u0072et",}'.encode("utf-16"), "[redacted]"),
+        ("secret", b"[" * 2000 + b'"sec\\u0072et"' + b"]" * 2000, "[redacted]"),
+        ("secret", b'{"value":' + b"9" * 5000 + b',"echo":"sec\\u0072et"}', "[redacted]"),
+    ],
+    ids=[
+        "duplicate-value",
+        "escaped-duplicate-value",
+        "discarded-object-key",
+        "integer",
+        "numeric-spellings",
+        "scalar",
+        "discarded-number",
+        "normalized-number",
+        "malformed-json",
+        "malformed-utf16-json",
+        "excessive-nesting",
+        "excessive-integer",
+    ],
+)
+@run_async
+async def test_proxy_redacts_discarded_members_and_numeric_tokens(
+    app, monkeypatch, status, key, body, expected
+):
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: key)
+
+    def gateway(request):
+        assert request.headers["authorization"] == f"Bearer {key}"
+        return httpx.Response(status, content=body, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert key not in response.text
+    # Inspect all wire members, including Unicode escapes and duplicate names
+    # that response.json() would discard.
+    assert key not in json.dumps(json.loads(response.content, object_pairs_hook=list))
+    assert response.json() == expected
+
+
+def test_safe_body_preserves_unaffected_json_bytes():
+    body = b'{ "value": 1.2300e+02, "value": [false, null, -7] }'
+    assert plugin._safe_body(body, "absent") == body
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize(
+    "key", ["opaque-gateway-key", 'opaque-"quoted"-key', r"opaque-\backslash/key"]
+)
+@pytest.mark.parametrize("shape", ["object", "array", "string"])
+@run_async
+async def test_proxy_scrubs_escaped_credentials_in_structured_strings(
+    app, monkeypatch, status, key, shape
+):
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: key)
+    escaped = json.dumps(key)[1:-1].replace("o", r"\u006f")
+    unicode_escaped = "".join(f"\\u{ord(char):04x}" for char in key)
+    suffix = r" keep \u0041 and \"quotes\" \\ intact"
+    nested = '{"member ' + escaped + '":["' + unicode_escaped + '",false,null]}'
+    redacted_nested = '{"member [redacted]":["[redacted]",false,null]}'
+    texts = [key, escaped, unicode_escaped, nested, "echo " + escaped + suffix]
+    expected_texts = ["[redacted]"] * 3 + [redacted_nested, "echo [redacted]" + suffix]
+    if shape == "object":
+        payload = {"items": texts, "member " + nested: {"ok": True}, "count": 7}
+        expected = {"items": expected_texts, "member " + redacted_nested: {"ok": True}, "count": 7}
+    elif shape == "array":
+        payload, expected = [texts, {escaped: None}], [expected_texts, {"[redacted]": None}]
+    else:
+        payload, expected = nested, redacted_nested
+
+    monkeypatch.setattr(
+        plugin,
+        "_client",
+        lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status, json=payload))
+        ),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.json() == expected
+    assert key not in response.text
+    # Decode embedded JSON too: merely searching the outer wire spelling misses
+    # escaped secrets in string values and member names.
+    result = response.json()
+    if shape == "object":
+        nested_result = result["items"][3]
+    elif shape == "array":
+        nested_result = result[0][3]
+    else:
+        nested_result = result
+    assert json.loads(nested_result) == {"member [redacted]": ["[redacted]", False, None]}
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize("member_name", [True, False])
+@run_async
+async def test_proxy_structured_scrubbing_fails_closed(
+    app, monkeypatch, caplog, status, member_name
+):
+    escaped = r"\u0074est-gateway-key-never-expose"
+    payload = {escaped: None} if member_name else [escaped]
+
+    def scrub(text, key):
+        raise RuntimeError(text + key)
+
+    monkeypatch.setattr(plugin._credential_redaction, "redact_gateway_key", scrub)
+    monkeypatch.setattr(
+        plugin,
+        "_client",
+        lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status, json=payload))
+        ),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.content == b'"[redacted]"'
+    assert KEY not in caplog.text
+    assert escaped not in caplog.text
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize("number", ["1e400", "-1e400", "NaN", "Infinity", "-Infinity"])
+@run_async
+async def test_proxy_fails_closed_for_nonfinite_json_numbers(app, monkeypatch, status, number):
+    body = ('{"value":' + number + ',"echo":"' + KEY + '"}').encode()
+
+    def gateway(request):
+        return httpx.Response(status, content=body, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.content == b'"[redacted]"'
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize(
+    "encoding",
+    ["utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "utf-32", "utf-32-le", "utf-32-be"],
+)
+@pytest.mark.parametrize("echo", [True, False])
+@run_async
+async def test_proxy_scrubs_encoded_plain_text(app, monkeypatch, status, encoding, echo):
+    text = f"gateway error: {KEY}" if echo else "gateway error: unavailable"
+
+    def gateway(request):
+        return httpx.Response(
+            status,
+            content=text.encode(encoding),
+            headers={"content-type": f"text/plain; charset={encoding}"},
+        )
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.headers["content-type"] == f"text/plain; charset={encoding}"
+    assert response.content.decode(encoding) == text.replace(KEY, "[redacted]")
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize(
+    "encoding",
+    ["utf-8", "utf-8-sig", "utf-16", "utf-16-le", "utf-16-be", "utf-32", "utf-32-le", "utf-32-be"],
+)
+@pytest.mark.parametrize(
+    "key", ["opaque-gateway-key", 'opaque-"quoted"-key', r"opaque-\backslash/key"]
+)
+@pytest.mark.parametrize("prefix", ["gateway error: ", 'gateway error: He said "hello '])
+@run_async
+async def test_proxy_scrubs_json_escaped_credentials_in_prose(
+    app, monkeypatch, status, encoding, key, prefix
+):
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: key)
+    forms = [
+        key,
+        json.dumps(key),
+        json.dumps(key)[1:-1],
+        json.dumps(key).replace("o", r"\u006f"),
+        '"' + "".join(f"\\u{ord(char):04x}" for char in key) + '"',
+    ]
+    suffix = r" — keep \u0041 and \"quotes\" \\ intact"
+    text = "\n".join(prefix + form + suffix for form in forms)
+    expected = "\n".join(
+        prefix + form + suffix
+        for form in ["[redacted]", '"[redacted]"', "[redacted]", '"[redacted]"', '"[redacted]"']
+    )
+
+    def gateway(request):
+        return httpx.Response(
+            status,
+            content=text.encode(encoding),
+            headers={"content-type": f"text/plain; charset={encoding}"},
+        )
+
+    monkeypatch.setattr(
+        plugin, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(gateway))
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.headers["content-type"] == f"text/plain; charset={encoding}"
+    assert response.content == expected.encode(encoding)
+    assert plugin._safe_body(text.encode(encoding), "absent-secret") == text.encode(encoding)
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "utf-32"])
+def test_safe_body_scrubs_unicode_escaped_prose(encoding):
+    key = 'opaque-"\\漢字-🔑'
+    text = "gateway error: " + json.dumps(key) + r" keep \u0041"
+    expected = 'gateway error: "[redacted]"' + r" keep \u0041"
+    assert plugin._safe_body(text.encode(encoding), key) == expected.encode(encoding)
+
+
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize("failure", ["scanner", "encoding"])
+@run_async
+async def test_proxy_escaped_prose_scrubbing_fails_closed(
+    app, monkeypatch, caplog, status, failure
+):
+    body = b'gateway error: "\\u0074est-gateway-key-never-expose"'
+
+    def scrub(text, key):
+        if failure == "scanner":
+            raise RuntimeError(text + key)
+        return "\ud800"  # Cannot be encoded as UTF-8.
+
+    monkeypatch.setattr(plugin._credential_redaction, "redact_gateway_key", scrub)
+    monkeypatch.setattr(
+        plugin,
+        "_client",
+        lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(status, content=body))
+        ),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/sessions?profile=alpha")
+    assert response.status_code == status
+    assert response.content == b'"[redacted]"'
+    assert KEY not in caplog.text
+    assert body.decode() not in caplog.text
 
 
 @run_async
@@ -206,6 +541,47 @@ async def test_real_secondary_host_forwarding_keeps_profile_and_query(
     assert seen[0].url.query.decode() == "limit=30&offset=4&tag=a&tag=b&empty="
     assert "cookie" not in seen[0].headers
     assert profile_key not in response.text and KEY not in response.text
+
+
+@pytest.mark.parametrize("configured_key", [None, "configured-key"])
+def test_gateway_settings_resolves_secret_inside_host_scope(monkeypatch, configured_key):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    active = []
+
+    @contextmanager
+    def scope(value):
+        active.append(value)
+        try:
+            yield
+        finally:
+            active.pop()
+
+    def get_secret(name, default):
+        assert name == "API_SERVER_KEY"
+        assert active == ["/synthetic/host", None]
+        return "host-scoped-key"
+
+    monkeypatch.setenv("API_SERVER_KEY", "wrong-profile-process-key")
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", SimpleNamespace(get_secret=get_secret))
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.web_server_profiles",
+        SimpleNamespace(_hermes_home_scope=scope, _config_profile_scope=scope),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_constants",
+        SimpleNamespace(get_process_hermes_home=lambda: "/synthetic/host"),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "hermes_cli.config",
+        SimpleNamespace(load_config=lambda: {"platforms": {"api_server": {"key": configured_key}}}),
+    )
+    assert plugin._gateway_settings()[1] == (configured_key or "host-scoped-key")
+    assert active == []
 
 
 @run_async
@@ -1062,9 +1438,14 @@ def scheduled(monkeypatch, tmp_path):
     return homes, jobs, history, messages, opened
 
 
+@pytest.mark.parametrize("secret", [KEY, 'profile-"quoted"\\credential'])
 @run_async
-async def test_scheduled_profile_history_pagination_output_and_redaction(app, scheduled):
+async def test_scheduled_profile_history_pagination_output_and_redaction(
+    app, scheduled, monkeypatch, secret
+):
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: secret)
     homes, jobs, history, messages, opened = scheduled
+    jobs["beta"][0]["prompt"] = secret
     history["beta"] = [
         {
             "id": f"cron_audit_20260101_{i:06d}",
@@ -1078,7 +1459,7 @@ async def test_scheduled_profile_history_pagination_output_and_redaction(app, sc
     run = history["beta"][0]["id"]
     messages["beta", run] = [
         {"role": "system", "content": "hidden"},
-        {"role": "assistant", "content": KEY},
+        {"role": "assistant", "content": secret},
         {"role": "tool", "content": "full tool output", "tool_name": "terminal"},
     ]
     async with httpx.AsyncClient(
@@ -1086,6 +1467,7 @@ async def test_scheduled_profile_history_pagination_output_and_redaction(app, sc
     ) as client:
         listed = await client.get("/api/plugins/chathermes/scheduled?profile=beta")
         assert listed.status_code == 200
+        assert listed.json()["jobs"][0]["prompt"] == "[redacted]"
         assert (
             KEY not in listed.text
             and "/secret" not in listed.text
@@ -1104,6 +1486,7 @@ async def test_scheduled_profile_history_pagination_output_and_redaction(app, sc
         )
         assert output.status_code == 200 and KEY not in output.text
         assert [row["role"] for row in output.json()["messages"]] == ["assistant", "tool"]
+        assert output.json()["messages"][0]["content"] == "[redacted]"
         assert output.json()["session_id"] == run
         denied = await client.get(
             "/api/plugins/chathermes/scheduled/output", params={"job_id": "audit", "run_id": run}
@@ -1547,8 +1930,11 @@ async def test_scheduled_reads_complete_compressed_run_lineage(app, scheduled, m
     assert output.json()["messages"][-1]["reasoning_content"] == "Audited dependencies"
 
 
+@pytest.mark.parametrize("secret", [KEY, 'profile-"quoted"\\credential'])
 @run_async
-async def test_transport_async_response_request_distinction_and_recursive_redaction(monkeypatch):
+async def test_transport_async_response_request_distinction_and_recursive_redaction(
+    monkeypatch, secret
+):
     import sys
     import types
 
@@ -1559,11 +1945,11 @@ async def test_transport_async_response_request_distinction_and_recursive_redact
                 "jsonrpc": "2.0",
                 "id": req["id"],
                 "method": "approval",
-                "params": {"ticket": "private"},
+                "params": {"ticket": "private", "delta": {secret: f"arriving {secret}"}},
             }
         )
         transport.write(
-            {"id": req["id"], "result": {"value": KEY, "nested": {"authorization": "private"}}}
+            {"id": req["id"], "result": {"value": secret, "nested": {"authorization": "private"}}}
         )
 
     server = types.SimpleNamespace(
@@ -1573,7 +1959,7 @@ async def test_transport_async_response_request_distinction_and_recursive_redact
     )
     monkeypatch.setitem(sys.modules, "tui_gateway", types.SimpleNamespace(server=server))
     transport = plugin._RpcTransport()
-    transport.secret = KEY
+    transport.secret = secret
     try:
         assert await transport.call("session.resume", {}) == {
             "value": "[redacted]",
@@ -1581,6 +1967,9 @@ async def test_transport_async_response_request_distinction_and_recursive_redact
         }
         request = await transport.events.get()
         assert request["method"] == "approval" and request["params"]["ticket"] == "[redacted]"
+        assert json.loads(json.dumps(request))["params"]["delta"] == {
+            "[redacted]": "arriving [redacted]"
+        }
         transport.write({"id": "late", "result": {}})
         await asyncio.sleep(0)
         assert transport.events.empty()
@@ -3141,16 +3530,20 @@ async def test_native_preparation_rejects_invalid_provider_without_dispatch(
         assert response.status_code == 422
 
 
+@pytest.mark.parametrize("secret", [KEY, 'profile-"quoted"\\credential'])
 @run_async
-async def test_transcript_extension_validates_pages_and_redacts_credentials(app, monkeypatch):
+async def test_transcript_extension_validates_pages_and_redacts_credentials(
+    app, monkeypatch, secret
+):
     from types import SimpleNamespace
 
     seen = []
+    monkeypatch.setattr(plugin, "_profile_gateway_key", lambda profile: secret)
 
     def page(profile, session, limit, offset, revision):
         seen.append((profile, session, limit, offset, revision))
         return {
-            "data": [{"id": "1", "role": "user", "content": KEY}],
+            "data": [{"id": "1", "role": "user", "content": secret}],
             "transcript": {"revision": "safe", "next_offset": 240, "has_more": True},
         }
 
@@ -3164,6 +3557,7 @@ async def test_transcript_extension_validates_pages_and_redacts_credentials(app,
         response = await client.get(root + "&limit=120&offset=120&revision=before")
         assert response.status_code == 200
         assert KEY not in response.text and "[redacted]" in response.text
+        assert response.json()["data"][0]["content"] == "[redacted]"
         assert seen == [("alpha", "s", 120, 120, "before")]
         for query in ("limit=0", "limit=121", "offset=-1", "offset=bad"):
             assert (await client.get(root + "&" + query)).status_code == 422

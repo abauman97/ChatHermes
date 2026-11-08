@@ -372,7 +372,7 @@ def _deliver(
         from py_vapid import Vapid
         from pywebpush import webpush
 
-        with push_store._LOCK:
+        with push_store._transaction():
             failure_stage = "state_read"
             data = push_store._read()
             failure_stage = "vapid_key_load"

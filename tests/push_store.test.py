@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import multiprocessing
+import multiprocessing.dummy
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +15,96 @@ spec = importlib.util.spec_from_file_location(
 assert spec is not None and spec.loader is not None
 store = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(store)
+
+
+@pytest.mark.parametrize("operation", ["config", "upsert", "remove", "remove_endpoint"])
+@pytest.mark.parametrize("hosts_kind", ["process", "module_threads"])
+def test_two_hosts_serialize_whole_push_transactions(tmp_path, monkeypatch, operation, hosts_kind):
+    # Spawned interpreters must import the worker without pytest's import hook.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent))
+    from push_store_worker import competing_store
+
+    path = tmp_path / "push.json"
+    monkeypatch.setattr(store, "_path", lambda: path)
+    # Preserve legacy keys, subscriptions and unrecognized metadata byte-for-value.
+    if operation != "config":
+        assert store.config()["available"]
+    original = store._read()
+    original["legacy_metadata"] = {"keep": ["unchanged"]}
+    original["subscriptions"] = [
+        {"id": "old-" + p, "profile": p, "endpoint": "https://push.test/old-" + p, "enabled": True}
+        for p in ("alpha", "beta", "unrelated")
+    ]
+    store._write(original)
+    ctx = multiprocessing.get_context("spawn") if hosts_kind == "process" else multiprocessing.dummy
+    results = ctx.Queue()
+    entered = [ctx.Event(), ctx.Event()]
+    release = [ctx.Event(), ctx.Event()]
+    attempting = [ctx.Event(), ctx.Event()]
+    hosts = [
+        ctx.Process(
+            target=competing_store,
+            args=(path, operation, p, entered[i], release[i], attempting[i], results),
+        )
+        for i, p in enumerate(("alpha", "beta"))
+    ]
+    try:
+        hosts[0].start()
+        assert entered[0].wait(10)
+        hosts[1].start()
+        assert attempting[1].wait(10)
+        # Force the old implementation to read the same snapshot in both hosts.
+        # With transactional locking the second read must wait for publication.
+        overlapped = entered[1].wait(1)
+        release[0].set()
+        hosts[0].join(10)
+        assert hosts[0].exitcode == 0
+        assert entered[1].wait(10)
+        release[1].set()
+        hosts[1].join(10)
+        assert hosts[1].exitcode == 0
+        responses = [results.get(timeout=5), results.get(timeout=5)]
+        final = store._read()
+        assert final["legacy_metadata"] == original["legacy_metadata"]
+        if operation == "config":
+            assert responses[0] == responses[1] == store.config()
+            assert final["subscriptions"] == original["subscriptions"]
+        else:
+            assert final["vapid"] == original["vapid"]
+            expected = 5 if operation == "upsert" else 1
+            assert len(final["subscriptions"]) == expected
+            assert original["subscriptions"][-1] in final["subscriptions"]
+        assert not overlapped, "a competing host read an uncommitted snapshot"
+    finally:
+        for event in release:
+            event.set()
+        for host in hosts:
+            if host.ident is not None:
+                host.join(10)
+                terminate = getattr(host, "terminate", None)
+                if host.is_alive() and callable(terminate):
+                    terminate()
+                    host.join(5)
+        close = getattr(results, "close", None)
+        if callable(close):
+            close()
+
+
+def test_push_transaction_releases_on_failure_and_keeps_stable_private_lock(tmp_path, monkeypatch):
+    path = tmp_path / "push.json"
+    monkeypatch.setattr(store, "_path", lambda: path)
+    assert store.config()["available"]
+    original = path.read_bytes()
+    lock = path.with_name(path.name + ".lock")
+    inode = lock.stat().st_ino
+    if os.name != "nt":
+        assert lock.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        with store._transaction():
+            raise RuntimeError("synthetic failure")
+    assert path.read_bytes() == original
+    assert store.config()["available"]
+    assert lock.stat().st_ino == inode
 
 
 @pytest.fixture(autouse=True)
@@ -697,3 +790,227 @@ def test_scheduled_push_scopes_destination_uses_stable_result_tag_and_reports_fa
         is False
     )
     assert sender._deliver("unsubscribed", "", "scheduled", "run", target=target) is True
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink/permission contract")
+def test_push_state_is_private_before_publication_and_ignores_predictable_symlink(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "state" / "push.json"
+    path.parent.mkdir()
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_text("preserve")
+    path.with_suffix(".tmp").symlink_to(unrelated)
+    monkeypatch.setattr(store, "_path", lambda: path)
+    replace = store.os.replace
+    published = []
+
+    def inspect(source, destination):
+        assert source.stat().st_mode & 0o777 == 0o600
+        assert source.parent.stat().st_mode & 0o777 == 0o700
+        assert json.loads(source.read_text()) == {"vapid": "synthetic-signing-key"}
+        published.append(source)
+        replace(source, destination)
+
+    monkeypatch.setattr(store.os, "replace", inspect)
+    store._write({"vapid": "synthetic-signing-key"})
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert unrelated.read_text() == "preserve"
+    assert published and all(not temporary.exists() for temporary in published)
+
+
+def test_failed_push_state_publication_preserves_identity_and_removes_temporary_key(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "state" / "push.json"
+    monkeypatch.setattr(store, "_path", lambda: path)
+    store._write({"vapid": "original-synthetic-key"})
+
+    def fail(*args):
+        raise OSError("synthetic replace failure")
+
+    monkeypatch.setattr(store.os, "replace", fail)
+    with pytest.raises(OSError, match="synthetic replace failure"):
+        store._write({"vapid": "replacement-synthetic-key"})
+    assert json.loads(path.read_text()) == {"vapid": "original-synthetic-key"}
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_push_state_serialization_failure_preserves_identity_without_temporary_material(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "state" / "push.json"
+    monkeypatch.setattr(store, "_path", lambda: path)
+    store._write({"vapid": "original-synthetic-key"})
+    with pytest.raises(TypeError):
+        store._write({"vapid": "partial-synthetic-key", "invalid": object()})
+    assert json.loads(path.read_text()) == {"vapid": "original-synthetic-key"}
+    assert list(path.parent.iterdir()) == [path]
+
+
+def test_dashboard_import_without_posix_modules_or_open_flags():
+    import os
+    import subprocess
+    import sys
+
+    script = """
+import builtins
+import os
+original = builtins.__import__
+def windows_import(name, *args, **kwargs):
+    if name == "fcntl":
+        raise ModuleNotFoundError("fcntl unavailable on Windows")
+    return original(name, *args, **kwargs)
+builtins.__import__ = windows_import
+for name in ("O_CLOEXEC", "O_NOFOLLOW", "O_DIRECTORY", "O_NONBLOCK"):
+    if hasattr(os, name):
+        delattr(os, name)
+import chathermes.dashboard.plugin_api
+import chathermes.cron_delivery
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).parents[1] / "plugin")
+            + os.pathsep
+            + os.environ.get("PYTHONPATH", ""),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("failure", [None, RuntimeError("transaction failed")])
+def test_windows_byte_lock_retries_contention_and_releases(tmp_path, monkeypatch, failure):
+    import errno
+    import os
+    import sys
+    from types import SimpleNamespace
+
+    path = tmp_path / "lock"
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    calls = []
+    sleeps = []
+
+    def locking(fd, operation, size):
+        calls.append((fd, operation, size, os.lseek(fd, 0, os.SEEK_CUR)))
+        if len(calls) == 1:
+            raise OSError(errno.EACCES, "contended")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        SimpleNamespace(
+            locking=locking,
+            LK_NBLCK=1,
+            LK_UNLCK=2,
+        ),
+    )
+    monkeypatch.setattr(
+        store, "os", SimpleNamespace(name="nt", lseek=os.lseek, SEEK_SET=os.SEEK_SET)
+    )
+    monkeypatch.setattr(store.time, "sleep", sleeps.append)
+    try:
+        try:
+            with store._file_lock(descriptor):
+                os.lseek(descriptor, 12, os.SEEK_SET)
+                if failure:
+                    raise failure
+        except RuntimeError as error:
+            assert error is failure
+        assert calls == [(descriptor, 1, 1, 0), (descriptor, 1, 1, 0), (descriptor, 2, 1, 0)]
+        assert sleeps == [0.05]
+    finally:
+        os.close(descriptor)
+
+
+def test_windows_lock_errors_fail_closed_without_unlock(tmp_path, monkeypatch):
+    import errno
+    import sys
+    from types import SimpleNamespace
+
+    calls = []
+
+    def locking(*args):
+        calls.append(args)
+        raise OSError(errno.EBADF, "invalid handle")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "msvcrt",
+        SimpleNamespace(
+            locking=locking,
+            LK_NBLCK=1,
+            LK_UNLCK=2,
+        ),
+    )
+    monkeypatch.setattr(store, "os", SimpleNamespace(name="nt", lseek=lambda *a: 0, SEEK_SET=0))
+    with pytest.raises(OSError):
+        with store._file_lock(42):
+            pytest.fail("entered without a lock")
+    assert calls == [(42, 1, 1)]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink/permission contract")
+def test_push_lock_rejects_symlinks_and_hardlinks(tmp_path, monkeypatch):
+    path = tmp_path / "push.json"
+    monkeypatch.setattr(store, "_path", lambda: path)
+    victim = tmp_path / "victim"
+    victim.write_text("untouched")
+    lock = path.with_name(path.name + ".lock")
+    for link in (lambda: lock.symlink_to(victim), lambda: lock.hardlink_to(victim)):
+        link()
+        with pytest.raises(OSError):
+            with store._transaction():
+                pytest.fail("unsafe lock accepted")
+        lock.unlink()
+    assert victim.read_text() == "untouched"
+
+
+@pytest.mark.parametrize(
+    "attributes,links,accepted", [(0, 1, True), (0x400, 1, False), (0, 2, False)]
+)
+def test_windows_lock_open_uses_reparse_handle_and_rejects_unsafe_files(
+    tmp_path, monkeypatch, attributes, links, accepted
+):
+    import ctypes
+    import os
+    import stat
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    create = Mock(return_value=1234)
+    close = Mock()
+    kernel = SimpleNamespace(CreateFileW=create, CloseHandle=close)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **kw: kernel, raising=False)
+    transfer = Mock(return_value=42)
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(open_osfhandle=transfer))
+    closed = Mock()
+    monkeypatch.setattr(
+        store,
+        "os",
+        SimpleNamespace(
+            name="nt",
+            O_RDWR=os.O_RDWR,
+            O_BINARY=0x8000,
+            close=closed,
+            fstat=lambda fd: SimpleNamespace(
+                st_mode=stat.S_IFREG, st_nlink=links, st_file_attributes=attributes
+            ),
+        ),
+    )
+    path = tmp_path / "push.json.lock"
+    if accepted:
+        assert store._open_lock(path) == 42
+        closed.assert_not_called()
+    else:
+        with pytest.raises(OSError):
+            store._open_lock(path)
+        closed.assert_called_once_with(42)
+    create.assert_called_once_with(str(path), 0xC0000000, 3, None, 4, 0x00200000, None)
+    transfer.assert_called_once_with(1234, os.O_RDWR | 0x8000)
+    close.assert_not_called()  # Ownership transferred to the CRT descriptor.

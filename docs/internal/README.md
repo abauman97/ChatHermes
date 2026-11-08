@@ -14,6 +14,8 @@ The former `docs/plans/`, `docs/verification/`, and `docs/reference/` trees move
 
 ## Verification
 
+- [2026-11-08-issue-238-catalog-admission](verification/2026-11-08-issue-238-catalog-admission.md)
+
 Reports record what was tested and the limits of that evidence. Older protocol descriptions can be superseded by the [current native contract](../developer/api-contract.md). Ignored local screenshots may not be available; such paths are retained as text rather than broken links.
 
 - [2026-11-07-user-documentation](verification/2026-11-07-user-documentation.md)

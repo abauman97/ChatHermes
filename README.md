@@ -35,3 +35,5 @@ ChatHermes runs inside the Hermes dashboard. Its reviewed native gateway contrac
 - [Configuration](docs/user/configuration.md) · [Notifications and Cron delivery](docs/user/notifications.md)
 - [Developer setup](docs/developer/getting-started.md) · [Contributing](CONTRIBUTING.md)
 - [All documentation](docs/README.md), including architecture, testing, deployment, and historical records
+
+Catalog eligibility is still under review; see the [admission assessment](docs/developer/catalog-admission.md) for public API gaps, credential/signing questions and installation disclosures.

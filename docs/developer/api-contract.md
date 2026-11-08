@@ -480,3 +480,12 @@ need deterministic fixtures for their auxiliary-model and worker side effects
 before being exposed. Advanced execution controls and diagnostic actions likewise
 need real-worker lifecycle coverage. These remain follow-up work, not changes to
 Hermes core.
+
+## Catalog admission boundaries
+
+The plugin remains dependent on undocumented Hermes backend APIs and server-side
+gateway credentials. The [catalog admission assessment](catalog-admission.md)
+describes supported replacements, remaining upstream requirements and Web Push
+signing policy. Registration never replaces native Cron functions; notification
+redaction uses the public forced redactor and fails closed. This does not certify
+catalog eligibility or credential-policy compliance.

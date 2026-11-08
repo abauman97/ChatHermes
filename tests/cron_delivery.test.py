@@ -11,7 +11,7 @@ import pytest
 
 
 @pytest.fixture
-def runtime(tmp_path, monkeypatch):
+def runtime(tmp_path, monkeypatch, hermes_startup):
     pytest.importorskip("cron.execution_identity")
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "plugin"))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -27,9 +27,11 @@ def runtime(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(plugin_api, "_profile_gateway_key", lambda profile: "scoped-gateway-secret")
     token = set_hermes_home_override(tmp_path)
-    with use_cron_store(tmp_path):
-        yield tmp_path, chathermes, delivery
-    reset_hermes_home_override(token)
+    try:
+        with use_cron_store(tmp_path):
+            yield tmp_path, chathermes, delivery
+    finally:
+        reset_hermes_home_override(token)
 
 
 def _execution(home, job):
@@ -70,7 +72,7 @@ def test_native_discovery_and_home_target(runtime, monkeypatch):
     target = next(
         t for t in asyncio.run(get_cron_delivery_targets())["targets"] if t["id"] == "chathermes"
     )
-    assert target["name"] == "ChatHermes"
+    assert target["name"] == "Chathermes"  # Native Cron title-cases platform IDs.
     assert target["home_target_set"] is True
     assert _is_known_delivery_platform("chathermes")
     assert (
@@ -338,7 +340,7 @@ def test_discovered_yaml_home_is_a_native_cron_ui_target(
         assert target is not None and entry.is_connected is not None
         config = load_gateway_config().platforms[Platform("chathermes")]
         assert entry.is_connected(config)
-        assert target["name"] == "ChatHermes"
+        assert target["name"] == "Chathermes"  # Native Cron title-cases platform IDs.
         assert target["home_target_set"] is True
         assert target["home_env_var"] == "CHATHERMES_HOME_CHANNEL"
         resolved = _resolve_delivery_targets({"id": "audit", "deliver": "chathermes"})
@@ -378,27 +380,26 @@ def test_named_profile_reads_shared_push_store_and_routes_own_history(runtime, m
         reset_hermes_home_override(override)
 
 
-def test_cron_display_name_changes_only_matching_target_and_wraps_once(runtime, monkeypatch):
+def test_registration_preserves_native_cron_function_and_targets(runtime, monkeypatch):
+    from types import SimpleNamespace
+
     _, plugin, _ = runtime
     from cron import scheduler_delivery
 
-    targets = [
-        {
-            "id": "chathermes",
-            "name": "Chathermes",
-            "home_target_set": True,
-            "home_env_var": "CHATHERMES_HOME_CHANNEL",
-        },
-        {"id": "telegram", "name": "Telegram", "home_target_set": False, "home_env_var": None},
-        {"id": "bot_chat:chathermes", "name": "Bot Chat (chathermes)"},
-    ]
-    monkeypatch.setattr(scheduler_delivery, "cron_delivery_targets", lambda: targets)
-    plugin._register_cron_display_name()
-    wrapped = scheduler_delivery.cron_delivery_targets
-    plugin._register_cron_display_name()
-    assert scheduler_delivery.cron_delivery_targets is wrapped
-    assert wrapped() == [dict(targets[0], name="ChatHermes"), *targets[1:]]
-    assert targets[0]["name"] == "Chathermes"
+    targets = [{"id": "chathermes", "name": "Chathermes"}, {"id": "telegram"}]
+
+    def native():
+        return targets
+
+    monkeypatch.setattr(scheduler_delivery, "cron_delivery_targets", native)
+    registrations = []
+    context = SimpleNamespace(register_platform=lambda **kw: registrations.append(kw))
+    plugin.register(context)
+    plugin.register(context)
+    assert scheduler_delivery.cron_delivery_targets is native
+    assert scheduler_delivery.cron_delivery_targets() is targets
+    assert len(registrations) == 2
+    assert all(entry["label"] == "ChatHermes" for entry in registrations)
 
 
 @pytest.mark.parametrize("saved", [False, True])
@@ -451,6 +452,40 @@ def test_notification_reads_safe_scoped_result_without_changing_history(
             assert sent["message"].endswith(" END")
             assert "[redacted]" in sent["message"]
             assert sent["target"]["run_id"] == "execution:" + execution["id"]
+    finally:
+        exit_cron_execution(token)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[Report] All jobs passed",
+        "[Report](https://example.test/result) All jobs passed",
+        "{Report} All jobs passed",
+        '"Report" All jobs passed',
+        '["scoped-gateway-secret"]',
+        "[Report](https://example.test/scoped-gateway-secret) All jobs passed 漢字😀",
+    ],
+)
+def test_cron_preserves_plain_text_and_markdown_with_credential_redaction(
+    runtime, monkeypatch, text
+):
+    home, _, delivery = runtime
+    from chathermes.dashboard import plugin_api
+    from cron.execution_identity import exit_cron_execution
+
+    _, token = _execution(home, {"id": "audit", "name": text})
+    try:
+        monkeypatch.setattr(plugin_api, "_scheduled_output_sync", lambda *a: {"output": text})
+        sends = []
+        monkeypatch.setattr(
+            delivery.push_sender, "_deliver", lambda *a, **kw: sends.append(kw) or True
+        )
+        result = asyncio.run(delivery.standalone_send(None, "scheduled", "wrapper"))
+        assert result.get("success"), result
+        expected = text.replace("scoped-gateway-secret", "[redacted]")
+        assert sends[0]["title"] == expected
+        assert sends[0]["message"] == expected
     finally:
         exit_cron_execution(token)
 
@@ -686,3 +721,105 @@ def test_deep_link_missing_or_ambiguous_saved_output(runtime, monkeypatch, count
             "run_id": "execution:" + execution["id"],
         }
     assert not (home / "state.db").exists()
+
+
+def test_public_redactor_forces_scrubbing_and_fails_closed_without_logging(
+    runtime, monkeypatch, caplog
+):
+    from agent import redact
+
+    _, _, delivery = runtime
+    calls = []
+
+    def scrub(text, *, force=False):
+        calls.append((text, force))
+        return "scrubbed"
+
+    monkeypatch.setattr(redact, "redact_sensitive_text", scrub)
+    assert delivery._redact_outbound("synthetic-private-material") == "scrubbed"
+    assert calls == [("synthetic-private-material", True)]
+    assert delivery._redact_outbound("") == ""
+
+    def fail(text, **kwargs):
+        raise RuntimeError(text)
+
+    monkeypatch.setattr(redact, "redact_sensitive_text", fail)
+    assert (
+        delivery._redact_outbound("synthetic-private-material") == "[REDACTED - redaction failed]"
+    )
+    assert "synthetic-private-material" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["opaque-gateway-key", 'opaque-"quoted"-key', r"opaque-\backslash\key", 'opaque-"\\漢字-🔑'],
+)
+@pytest.mark.parametrize("assistant", [False, True])
+@pytest.mark.parametrize("prefix", ["", 'He said "hello ', r'He said \"hello \\ "'])
+def test_standalone_send_redacts_escaped_credentials_without_losing_text(
+    runtime, monkeypatch, key, assistant, prefix
+):
+    import json
+
+    from chathermes.dashboard import plugin_api
+    from cron.execution_identity import exit_cron_execution
+
+    home, _, delivery = runtime
+    monkeypatch.setattr(plugin_api, "_gateway_settings", lambda: ("http://gateway.test", key))
+    forms = [key, json.dumps(key), json.dumps(key, ensure_ascii=False), json.dumps(key)[1:-1]]
+    # Alternate legal JSON escapes must also be decoded before inspection.
+    forms.append(json.dumps(key).replace("o", r"\u006f"))
+    # Keep each occurrence after unmatched prose quotes, including the review's
+    # exact He said "hello "\u006fpaque-gateway-key" reproduction. Neither quote
+    # pairing nor reserializing surrounding prose is safe for notification text.
+    forms.append(
+        '"'
+        + "".join(
+            json.dumps(char)[1:-1] if ord(char) > 127 else f"\\u{ord(char):04x}" for char in key
+        )
+        + '"'
+    )
+    forms = [prefix + form + r" — keep \u0041 and \"quotes\" \\ intact" for form in forms]
+    text = "[Report] **Result** [details](https://example.test/result)\n" + "\n".join(forms)
+    expected = "[Report] **Result** [details](https://example.test/result)\n" + "\n".join(
+        prefix + form + r" — keep \u0041 and \"quotes\" \\ intact"
+        for form in [
+            "[redacted]",
+            '"[redacted]"',
+            '"[redacted]"',
+            "[redacted]",
+            '"[redacted]"',
+            '"[redacted]"',
+        ]
+    )
+    _, token = _execution(home, {"id": "audit", "name": text})
+    try:
+        output = (
+            {"messages": [{"role": "assistant", "content": text}]}
+            if assistant
+            else {"output": text}
+        )
+        monkeypatch.setattr(plugin_api, "_scheduled_output_sync", lambda *a: output)
+        redacted = []
+        monkeypatch.setattr(
+            delivery, "_redact_outbound", lambda value: redacted.append(value) or value
+        )
+        sends = []
+        monkeypatch.setattr(
+            delivery.push_sender, "_deliver", lambda *a, **kw: sends.append(kw) or True
+        )
+        result = asyncio.run(delivery.standalone_send(None, "scheduled", "wrapper"))
+        assert result.get("success"), result
+        assert sends[0]["title"] == sends[0]["message"] == expected
+        assert redacted == [expected, expected]
+
+        def fail_scrub(*args):
+            raise ValueError(text)
+
+        monkeypatch.setattr(delivery, "_redact_gateway_key", fail_scrub)
+        sends.clear()
+        result = asyncio.run(delivery.standalone_send(None, "scheduled", "wrapper"))
+        assert result == {"error": "ChatHermes cron delivery unavailable"}
+        assert not sends
+    finally:
+        exit_cron_execution(token)

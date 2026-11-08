@@ -17,32 +17,9 @@ def _configured_home(config):
     return bool(config.home_channel and config.home_channel.chat_id)
 
 
-def _register_cron_display_name():
-    """Preserve branding where Hermes title-cases platform IDs for cron UIs."""
-    from functools import wraps
-
-    from cron import scheduler_delivery
-
-    original = scheduler_delivery.cron_delivery_targets
-    if getattr(original, "_chathermes_display_name", False):
-        return
-
-    @wraps(original)
-    def targets_with_display_name() -> list[dict]:
-        return [
-            dict(target, name="ChatHermes") if target["id"] == "chathermes" else target
-            for target in original()
-        ]
-
-    targets_with_display_name.__dict__["_chathermes_display_name"] = True
-    scheduler_delivery.__dict__["cron_delivery_targets"] = targets_with_display_name
-
-
 def register(ctx):
     from .adapter import ChatHermesAdapter
     from .cron_delivery import standalone_send
-
-    _register_cron_display_name()
 
     ctx.register_platform(
         name="chathermes",

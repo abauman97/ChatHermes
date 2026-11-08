@@ -179,6 +179,7 @@ async def push_unsubscribe(request: Request, identity: str):
 
 
 def _gateway_settings():
+    from agent.secret_scope import get_secret
     from hermes_cli.config import load_config
     from hermes_cli.web_server_profiles import _config_profile_scope, _hermes_home_scope
     from hermes_constants import get_process_hermes_home
@@ -186,10 +187,11 @@ def _gateway_settings():
     # The gateway listener belongs to the dashboard host, even in a profile request.
     with _hermes_home_scope(get_process_hermes_home()), _config_profile_scope(None):
         config = load_config() or {}
+        scoped_key = get_secret("API_SERVER_KEY", "")
     server = (config.get("platforms") or {}).get("api_server") or {}
     host = server.get("host") or os.environ.get("API_SERVER_HOST") or "127.0.0.1"
     port = server.get("port") or os.environ.get("API_SERVER_PORT") or "8642"
-    key = server.get("key") or os.environ.get("API_SERVER_KEY")
+    key = server.get("key") or scoped_key
     return f"http://{host}:{port}", key
 
 
@@ -236,7 +238,79 @@ def _client():
 def _safe_body(body: bytes, key: str) -> bytes:
     # A broken gateway must never reflect credentials to the browser.
     # Cron may have no gateway credential; replacing b'' corrupts every byte.
-    return body.replace(key.encode(), b"[redacted]") if key else body
+    if not key:
+        return body
+
+    import json
+
+    changed = False
+
+    def scrub(text):
+        nonlocal changed
+        try:
+            redacted = _credential_redaction.redact_gateway_key(text, key)
+        except Exception:
+            # Structured member names and values can contain nested JSON text.
+            # Scanner failures must reach the fail-closed response below.
+            raise ValueError("Credential inspection failed") from None
+        if redacted != text:
+            changed = True
+        return redacted
+
+    def clean(value):
+        if isinstance(value, str):
+            return scrub(value)
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return value
+
+    def object_pairs(pairs):
+        # Inspect every member before duplicate names are discarded. Comparing
+        # the final dicts would miss credentials in overwritten members.
+        return {scrub(name): clean(value) for name, value in pairs}
+
+    def number(token):
+        # Inspect the source spelling, before numeric conversion loses digits or
+        # overflows. A matching numeric value becomes a JSON string.
+        if scrub(token) != token:
+            return "[redacted]"
+        value = json.loads(token)
+        # Serialization may expand an exponent or round a float into the key.
+        # Overflow and nonstandard constants must fail closed, rather than
+        # turning otherwise valid JSON numbers such as 1e400 into Infinity.
+        encoded = json.dumps(value, allow_nan=False)
+        return "[redacted]" if scrub(encoded) != encoded else value
+
+    try:
+        # Decode before scrubbing: quotes, backslashes and Unicode can all have
+        # JSON escape spellings. Serialized replacement can miss or break them.
+        payload = json.loads(
+            body,
+            object_pairs_hook=object_pairs,
+            parse_int=number,
+            parse_float=number,
+            parse_constant=number,
+        )
+        cleaned = clean(payload)
+        return json.dumps(cleaned, allow_nan=False).encode() if changed else body
+    except json.JSONDecodeError as error:
+        # Malformed structured responses may still contain escaped credentials.
+        # Only unstructured text can safely preserve surrounding prose.
+        if error.doc.lstrip("\ufeff \t\r\n").startswith(("{", "[", '"')):
+            return b'"[redacted]"'
+        # The decoder also accepts UTF-16/32, with or without a BOM. Searching
+        # their raw bytes for a UTF-8 key would silently leave credentials intact.
+        try:
+            # Prose can contain JSON-escaped keys even with unmatched quotes.
+            # Preserve source spans and the original encoding when scrubbing.
+            text = _credential_redaction.redact_gateway_key(error.doc, key)
+            return text.encode(json.detect_encoding(body)) if text != error.doc else body
+        except Exception:
+            # Scanner/encoding failures may contain credentials; never echo them.
+            return b'"[redacted]"'
+    except ValueError, UnicodeDecodeError, RecursionError:
+        # Unsupported encodings, numbers or nesting cannot be safely inspected.
+        return b'"[redacted]"'
 
 
 def _error_response(upstream, key: str):
@@ -711,6 +785,7 @@ async def native_image(request: Request, file_id: str):
 # connection, credentials, native database writes, or a second session store.
 # Hermes imports this file by spec rather than as a package. Resolve siblings
 # relative to this trusted plugin directory, never through sys.path/CWD.
+_credential_redaction = _load_sibling("credential_redaction")
 _gateway_transport = _load_sibling("gateway_transport")
 _RpcTransport = _gateway_transport._RpcTransport
 
