@@ -1653,7 +1653,7 @@ describe("local mobile drawer swipes", () => {
   it.each(["dashboard entry", "/inbox"])(
     "opens from the Home or Inbox scroll surface at %s while preserving controls and vertical scrolling",
     async (path) => {
-      vi.spyOn(api, "inbox").mockResolvedValue({
+      vi.spyOn(api, "inbox").mockImplementation(async (_profile, options = {}) => ({
         items: [
           {
             id: 1,
@@ -1669,8 +1669,8 @@ describe("local mobile drawer swipes", () => {
         ],
         unread: 1,
         byProfile: { alpha: 1 },
-        nextCursor: "next",
-      });
+        nextCursor: options.cursor ? null : "next",
+      }));
       if (path === "dashboard entry") {
         wrapper.unmount();
         history.replaceState({}, "", "/chathermes");

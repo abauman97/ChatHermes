@@ -6,6 +6,7 @@ const props = defineProps<{
   sessions: Session[];
   tracking?: SessionTracking[];
   trackingPending?: Set<string>;
+  unreadSessions?: Set<string>;
   selected: string;
   loading: boolean;
   error: string;
@@ -203,8 +204,20 @@ function remove() {
             :aria-current="selected === session.id ? 'page' : undefined"
             @click="emit('select', session.id)"
           >
-            <span class="truncate">{{ session.title || "Untitled session" }}</span
-            ><span
+            <span class="flex min-w-0 items-center gap-2">
+              <span
+                class="truncate"
+                :class="{ 'font-semibold': unreadSessions?.has(session.id) }"
+                >{{ session.title || "Untitled session" }}</span
+              >
+              <span v-if="unreadSessions?.has(session.id)" class="sr-only">Unread</span>
+              <span
+                v-if="unreadSessions?.has(session.id)"
+                class="session-unread ml-auto size-2 shrink-0 rounded-full bg-[#2563eb]"
+                aria-hidden="true"
+              />
+            </span>
+            <span
               class="truncate text-xs leading-4 text-[#a3a3a3] dark:text-[#a3a3a3]"
               :title="sessionSource(session)"
               >{{ sessionSource(session) }}</span
