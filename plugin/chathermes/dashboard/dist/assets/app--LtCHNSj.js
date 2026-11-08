@@ -15215,7 +15215,10 @@ var ex = ["open"], tx = {
 }, yw = {
 	key: 0,
 	class: "project-muted"
-}, bw = /* @__PURE__ */ U({
+}, bw = {
+	key: 1,
+	class: "project-muted"
+}, xw = /* @__PURE__ */ U({
 	__name: "ScheduledRunPage",
 	setup(e) {
 		let t = Oc(), n = /* @__PURE__ */ B(), r = /* @__PURE__ */ B(), i = Xg(async (e, t, a, o) => {
@@ -15245,56 +15248,56 @@ var ex = ["open"], tx = {
 			draft: "",
 			loading: !1,
 			progress: []
-		}, null, 8, ["messages"])) : (K(), q("div", vw, [r.value ? (K(), q("p", yw, "No output was saved for this run.")) : X("v-if", !0)]))]));
+		}, null, 8, ["messages"])) : (K(), q("div", vw, [r.value?.output_status === "unverified" ? (K(), q("p", yw, " Saved output or error diagnostics could not be safely separated from this run's private prompt. Inspect the original archive on the Hermes server. ")) : r.value ? (K(), q("p", bw, "No output was saved for this run.")) : X("v-if", !0)]))]));
 	}
-}), xw = {
+}), Sw = {
 	class: "settings-page page-content",
 	"aria-label": "Settings"
-}, Sw = { class: "settings-content" }, Cw = { class: "settings-heading" }, ww = {
+}, Cw = { class: "settings-content" }, ww = { class: "settings-heading" }, Tw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-profile-heading"
-}, Tw = { class: "settings-row" }, Ew = ["value"], Dw = ["value"], Ow = ["value"], kw = {
+}, Ew = { class: "settings-row" }, Dw = ["value"], Ow = ["value"], kw = ["value"], Aw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-app-heading"
-}, Aw = { class: "settings-row settings-notifications" }, jw = { class: "wake-lock-setting" }, Mw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, Nw = ["checked"], Pw = {
+}, jw = { class: "settings-row settings-notifications" }, Mw = { class: "wake-lock-setting" }, Nw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, Pw = ["checked"], Fw = {
 	key: 0,
 	class: "mt-1 text-sm"
-}, Fw = {
+}, Iw = {
 	key: 0,
 	class: "settings-row settings-notifications"
-}, Iw = { class: "kanban-setting" }, Lw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, Rw = ["checked", "disabled"], zw = {
+}, Lw = { class: "kanban-setting" }, Rw = { class: "mt-2 flex min-h-[44px] items-center gap-3 text-sm" }, zw = ["checked", "disabled"], Bw = {
 	id: "kanban-description",
 	role: "status"
-}, Bw = ["disabled"], Vw = {
+}, Vw = ["disabled"], Hw = {
 	class: "settings-group",
 	"aria-labelledby": "settings-notifications-heading"
-}, Hw = { class: "settings-row settings-notifications" }, Uw = {
+}, Uw = { class: "settings-row settings-notifications" }, Ww = {
 	class: "push-setting",
 	"aria-labelledby": "notifications-heading"
-}, Ww = {
+}, Gw = {
 	id: "notifications-heading",
 	class: "text-sm font-medium text-white"
-}, Gw = ["disabled"], Kw = ["disabled"], qw = {
+}, Kw = ["disabled"], qw = ["disabled"], Jw = {
 	key: 1,
 	class: "mt-1 text-sm text-[#dcae6e]",
 	role: "status"
-}, Jw = {
+}, Yw = {
 	key: 2,
 	class: "mt-1 text-sm"
-}, Yw = {
+}, Xw = {
 	key: 3,
 	class: "mt-1 text-sm",
 	role: "status"
-}, Xw = {
+}, Zw = {
 	key: 4,
 	class: "mt-1 text-sm"
-}, Zw = {
+}, Qw = {
 	key: 5,
 	class: "mt-1 text-sm"
-}, Qw = {
+}, $w = {
 	key: 6,
 	class: "mt-1 text-sm"
-}, $w = /* @__PURE__ */ U({
+}, eT = /* @__PURE__ */ U({
 	__name: "SettingsPanel",
 	props: {
 		kanban: {},
@@ -15316,8 +15319,8 @@ var ex = ["open"], tx = {
 	],
 	setup(e, { emit: t }) {
 		let n = t, r = /* @__PURE__ */ B();
-		return or(() => r.value?.focus()), (t, i) => (K(), q("section", xw, [J("div", Sw, [
-			J("div", Cw, [J("h2", {
+		return or(() => r.value?.focus()), (t, i) => (K(), q("section", Sw, [J("div", Cw, [
+			J("div", ww, [J("h2", {
 				ref_key: "heading",
 				ref: r,
 				tabindex: "-1",
@@ -15331,7 +15334,7 @@ var ex = ["open"], tx = {
 				id: "settings-profile-heading",
 				class: "settings-section-title"
 			}, "Profile", -1),
-			J("div", ww, [J("div", Tw, [i[8] ||= Xi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), J("select", {
+			J("div", Tw, [J("div", Ew, [i[8] ||= Xi("<svg class=\"settings-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"></circle><circle cx=\"12\" cy=\"9\" r=\"3\"></circle><path d=\"M6 19c0-6 12-6 12 0\"></path></svg><label for=\"settings-profile\">Active profile</label>", 2), J("select", {
 				id: "settings-profile",
 				value: e.profile,
 				onChange: i[1] ||= (e) => n("profile", e.target.value)
@@ -15340,17 +15343,17 @@ var ex = ["open"], tx = {
 				e.profile && !e.profiles.some((t) => t.name === e.profile) ? (K(), q("option", {
 					key: 0,
 					value: e.profile
-				}, z(e.profile), 9, Dw)) : X("v-if", !0),
+				}, z(e.profile), 9, Ow)) : X("v-if", !0),
 				(K(!0), q(G, null, W(e.profiles, (e) => (K(), q("option", {
 					key: e.name,
 					value: e.name
-				}, z(e.name), 9, Ow))), 128))
-			], 40, Ew)])]),
+				}, z(e.name), 9, kw))), 128))
+			], 40, Dw)])]),
 			i[16] ||= J("h3", {
 				id: "settings-app-heading",
 				class: "settings-section-title"
 			}, "Global settings", -1),
-			J("div", kw, [J("div", Aw, [i[11] ||= J("svg", {
+			J("div", Aw, [J("div", jw, [i[11] ||= J("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -15363,19 +15366,19 @@ var ex = ["open"], tx = {
 				width: "14",
 				height: "18",
 				rx: "2"
-			}), J("path", { d: "M9 17h6" })], -1), J("div", jw, [
+			}), J("path", { d: "M9 17h6" })], -1), J("div", Mw, [
 				i[10] ||= J("h3", {
 					id: "wake-lock-heading",
 					class: "text-sm font-medium text-white"
 				}, "Keep Screen Awake", -1),
-				J("label", Mw, [J("input", {
+				J("label", Nw, [J("input", {
 					type: "checkbox",
 					"aria-labelledby": "wake-lock-heading",
 					checked: e.keepScreenAwake,
 					onChange: i[2] ||= (e) => n("toggleWakeLock", e.target.checked)
-				}, null, 40, Nw), i[9] ||= Y(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
-				e.wakeLockAvailable ? X("v-if", !0) : (K(), q("p", Pw, " Screen wake lock is unavailable in this browser. "))
-			])]), e.kanban ? (K(), q("div", Fw, [i[13] ||= J("svg", {
+				}, null, 40, Pw), i[9] ||= Y(" Prevent the display from sleeping while ChatHermes is visible. ", -1)]),
+				e.wakeLockAvailable ? X("v-if", !0) : (K(), q("p", Fw, " Screen wake lock is unavailable in this browser. "))
+			])]), e.kanban ? (K(), q("div", Iw, [i[13] ||= J("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
@@ -15388,58 +15391,58 @@ var ex = ["open"], tx = {
 				width: "18",
 				height: "18",
 				rx: "2"
-			}), J("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), J("div", Iw, [
+			}), J("path", { d: "M9 3v18M15 3v18M5 7h2M11 7h2M17 7h2M5 11h2M11 11h2" })], -1), J("div", Lw, [
 				i[12] ||= J("h3", {
 					id: "kanban-heading",
 					class: "text-sm font-semibold text-white"
 				}, "Kanban Viewer", -1),
-				J("label", Lw, [J("input", {
+				J("label", Rw, [J("input", {
 					type: "checkbox",
 					"aria-labelledby": "kanban-heading",
 					"aria-describedby": "kanban-description",
 					checked: e.kanban.enabled.value,
 					disabled: !e.kanban.available.value || e.kanban.checking.value,
 					onChange: i[3] ||= (t) => e.kanban.setEnabled(t.target.checked)
-				}, null, 40, Rw), J("span", zw, z(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
+				}, null, 40, zw), J("span", Bw, z(e.kanban.checking.value ? "Checking Hermes Kanban…" : e.kanban.available.value ? "Show the Hermes Kanban board in navigation." : "Hermes Kanban is inactive or its authenticated API is unavailable."), 1)]),
 				J("button", {
 					class: "min-h-[44px] underline",
 					disabled: e.kanban.checking.value,
 					onClick: i[4] ||= (t) => e.kanban.check()
-				}, " Recheck availability ", 8, Bw)
+				}, " Recheck availability ", 8, Vw)
 			])])) : X("v-if", !0)]),
 			i[17] ||= J("h3", {
 				id: "settings-notifications-heading",
 				class: "settings-section-title"
 			}, "Notifications", -1),
-			J("div", Vw, [J("div", Hw, [i[14] ||= J("svg", {
+			J("div", Hw, [J("div", Uw, [i[14] ||= J("svg", {
 				class: "settings-icon",
 				viewBox: "0 0 24 24",
 				fill: "none",
 				stroke: "currentColor",
 				"stroke-width": "1.5",
 				"aria-hidden": "true"
-			}, [J("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), J("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), J("div", Uw, [
-				J("h3", Ww, " Notifications for " + z(e.profile || "default"), 1),
+			}, [J("path", { d: "M5 16h14l-2-3V9a5 5 0 0 0-10 0v4l-2 3Z" }), J("path", { d: "M10 19a2 2 0 0 0 4 0" })], -1), J("div", Ww, [
+				J("h3", Gw, " Notifications for " + z(e.profile || "default"), 1),
 				J("button", {
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.supported || !e.pushState.subscribed && !e.pushState.available,
 					onClick: i[5] ||= (e) => n("togglePush")
-				}, z(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, Gw),
+				}, z(e.pushLoading ? "Loading…" : e.pushBusy ? "Updating…" : e.pushState.subscribed ? "Disable notifications" : "Enable notifications"), 9, Kw),
 				e.pushState.subscribed ? (K(), q("button", {
 					key: 0,
 					class: "mt-2 min-h-[44px] rounded-lg bg-[#303030] px-3 text-sm text-white disabled:opacity-55",
 					disabled: e.pushBusy || e.pushLoading || !e.pushState.available,
 					onClick: i[6] ||= (e) => n("testPush")
-				}, " Send test ", 8, Kw)) : X("v-if", !0),
-				e.pushState.error || e.pushMessage ? (K(), q("p", qw, z(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (K(), q("p", Jw, " Notifications enabled for " + z(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (K(), q("p", Yw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (K(), q("p", Zw, " Allow notifications in browser settings to enable them. ")) : (K(), q("p", Qw, " Notifications disabled for " + z(e.profile || "default") + " on this device. ", 1)) : (K(), q("p", Xw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
+				}, " Send test ", 8, qw)) : X("v-if", !0),
+				e.pushState.error || e.pushMessage ? (K(), q("p", Jw, z(e.pushMessage || e.pushState.error), 1)) : e.pushState.subscribed ? (K(), q("p", Yw, " Notifications enabled for " + z(e.profile || "default") + " on this device. ", 1)) : e.pushLoading ? (K(), q("p", Xw, " Loading profile notification status… ")) : e.pushState.supported ? e.pushState.permission === "denied" ? (K(), q("p", Qw, " Allow notifications in browser settings to enable them. ")) : (K(), q("p", $w, " Notifications disabled for " + z(e.profile || "default") + " on this device. ", 1)) : (K(), q("p", Zw, " Install ChatHermes on a secure HTTPS origin to enable notifications. "))
 			])])])
 		])]));
 	}
-}), eT = /* @__PURE__ */ U({
+}), tT = /* @__PURE__ */ U({
 	__name: "SettingsPage",
 	setup(e) {
 		let { profile: t, profiles: n, pushState: r, pushBusy: i, pushLoading: a, pushMessage: o, wakeLock: s, kanban: c, chooseProfile: l, togglePush: u, testPush: d, closeSettings: f } = Rg();
-		return (e, p) => (K(), Vi($w, {
+		return (e, p) => (K(), Vi(eT, {
 			kanban: V(c),
 			profile: V(t),
 			profiles: V(n),
@@ -15471,9 +15474,9 @@ var ex = ["open"], tx = {
 			"onClose"
 		]));
 	}
-}), tT = "chathermes";
-function nT() {
-	let e = [], t = !1, n = !1, r = () => Rc(window.location.href) || "/", i = r(), a = () => window.history.state?.[tT], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
+}), nT = "chathermes";
+function rT() {
+	let e = [], t = !1, n = !1, r = () => Rc(window.location.href) || "/", i = r(), a = () => window.history.state?.[nT], o = a()?.position ?? 0, s = a()?.state ?? {}, c = () => {
 		let e = new URL(window.location.href);
 		return e.pathname + e.search;
 	}, l = (e, t, r) => {
@@ -15482,7 +15485,7 @@ function nT() {
 		r || (typeof a.idx == "number" && a.idx++, typeof a.key == "string" && (a.key = Math.random().toString(36).slice(2, 10)), o++), s = {
 			...t,
 			position: o
-		}, a[tT] = {
+		}, a[nT] = {
 			current: e,
 			position: o,
 			state: s
@@ -15524,7 +15527,7 @@ function nT() {
 }
 //#endregion
 //#region src/features/projects/components/ProjectActions.vue?vue&type=script&setup=true&lang.ts
-var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], sT = ["disabled"], cT = /* @__PURE__ */ U({
+var iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], sT = ["disabled"], cT = ["disabled"], lT = /* @__PURE__ */ U({
 	__name: "ProjectActions",
 	setup(e) {
 		let { selectedProject: t, profile: n, projectId: r, projectBusy: i, offline: a, manageProject: o, createSession: s, creating: c, projectConfirmation: l } = Ug(), u = Dc();
@@ -15545,7 +15548,7 @@ var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], 
 				role: "menuitem",
 				disabled: V(a) || V(c) || !V(t) || V(t).archived || !V(kl)(V(t)),
 				onClick: n[0] ||= (e) => V(s)()
-			}, " New Project Chat ", 8, rT)) : X("v-if", !0),
+			}, " New Project Chat ", 8, iT)) : X("v-if", !0),
 			J("button", {
 				role: "menuitem",
 				onClick: n[1] ||= (e) => d("edit")
@@ -15554,7 +15557,7 @@ var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], 
 				role: "menuitem",
 				disabled: V(a) || !V(kl)(V(t)),
 				onClick: n[2] ||= (e) => d("instructions")
-			}, " Edit Instructions ", 8, iT),
+			}, " Edit Instructions ", 8, aT),
 			V(t).isAuto ? X("v-if", !0) : (K(), q(G, { key: 1 }, [V(t).archived ? (K(), q("button", {
 				key: 0,
 				role: "menuitem",
@@ -15563,20 +15566,20 @@ var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], 
 					id: V(r),
 					restore: !0
 				})
-			}, " Restore project ", 8, aT)) : (K(), q("button", {
+			}, " Restore project ", 8, oT)) : (K(), q("button", {
 				key: 1,
 				role: "menuitem",
 				disabled: V(i) || V(a),
 				onClick: n[4] ||= (e) => f("archive")
-			}, " Archive project ", 8, oT)), J("button", {
+			}, " Archive project ", 8, sT)), J("button", {
 				class: "project-danger",
 				role: "menuitem",
 				disabled: V(i) || V(a),
 				onClick: n[5] ||= (e) => f("delete")
-			}, " Delete project ", 8, sT)], 64))
+			}, " Delete project ", 8, cT)], 64))
 		], 64)) : X("v-if", !0);
 	}
-}), lT = ["aria-checked"], uT = { "aria-hidden": "true" }, dT = ["aria-checked"], fT = { "aria-hidden": "true" }, pT = ["aria-checked"], mT = { "aria-hidden": "true" }, hT = /* @__PURE__ */ U({
+}), uT = ["aria-checked"], dT = { "aria-hidden": "true" }, fT = ["aria-checked"], pT = { "aria-hidden": "true" }, mT = ["aria-checked"], hT = { "aria-hidden": "true" }, gT = /* @__PURE__ */ U({
 	__name: "ProjectsActions",
 	setup(e) {
 		let t = Oc(), n = Z(() => t.query.archived === "1"), { showProjects: r, hideAutomaticProjects: i, toggleAutomaticProjects: a } = Ug();
@@ -15586,22 +15589,22 @@ var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], 
 				role: "menuitemradio",
 				"aria-checked": !n.value,
 				onClick: t[0] ||= (e) => V(r)(!1)
-			}, [t[3] ||= J("span", null, "Active projects", -1), J("span", uT, z(n.value ? "" : "✓"), 1)], 8, lT),
+			}, [t[3] ||= J("span", null, "Active projects", -1), J("span", dT, z(n.value ? "" : "✓"), 1)], 8, uT),
 			J("button", {
 				class: "projects-filter-action",
 				role: "menuitemradio",
 				"aria-checked": n.value,
 				onClick: t[1] ||= (e) => V(r)(!0)
-			}, [t[4] ||= J("span", null, "Archived projects", -1), J("span", fT, z(n.value ? "✓" : ""), 1)], 8, dT),
+			}, [t[4] ||= J("span", null, "Archived projects", -1), J("span", pT, z(n.value ? "✓" : ""), 1)], 8, fT),
 			J("button", {
 				class: "projects-filter-action",
 				role: "menuitemcheckbox",
 				"aria-checked": V(i),
 				onClick: t[2] ||= (...e) => V(a) && V(a)(...e)
-			}, [t[5] ||= J("span", null, "Hide automatic projects", -1), J("span", mT, z(V(i) ? "✓" : ""), 1)], 8, pT)
+			}, [t[5] ||= J("span", null, "Hide automatic projects", -1), J("span", hT, z(V(i) ? "✓" : ""), 1)], 8, mT)
 		], 64));
 	}
-}), gT = ["disabled"], _T = ["disabled"], vT = /* @__PURE__ */ U({
+}), _T = ["disabled"], vT = ["disabled"], yT = /* @__PURE__ */ U({
 	__name: "ScheduledActions",
 	setup(e) {
 		let { current: t, offline: n, creating: r, recentSession: i } = Kg();
@@ -15610,18 +15613,18 @@ var rT = ["disabled"], iT = ["disabled"], aT = ["disabled"], oT = ["disabled"], 
 			"data-test": "refresh-scheduled",
 			disabled: !V(t) || V(t).loading.value,
 			onClick: a[0] ||= (e) => V(t)?.retry()
-		}, " Refresh", 8, gT), V(t)?.sessionId.value ? (K(), q("button", {
+		}, " Refresh", 8, _T), V(t)?.sessionId.value ? (K(), q("button", {
 			key: 0,
 			role: "menuitem",
 			"data-test": "resume-scheduled-session",
 			disabled: V(n) || V(r) || V(t).loading.value,
 			onClick: a[1] ||= (e) => V(i)(V(t).sessionId.value)
-		}, " Resume Session ", 8, _T)) : X("v-if", !0)], 64));
+		}, " Resume Session ", 8, vT)) : X("v-if", !0)], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function yT(e = nT(), t) {
+function bT(e = rT(), t) {
 	let n = Ec({
 		history: e,
 		routes: [
@@ -15636,7 +15639,7 @@ function yT(e = nT(), t) {
 				name: "chat",
 				components: {
 					default: lS,
-					actions: cT,
+					actions: lT,
 					dialogs: Ey
 				},
 				meta: { chat: !0 }
@@ -15664,7 +15667,7 @@ function yT(e = nT(), t) {
 				name: "projects",
 				components: {
 					default: KS,
-					actions: hT
+					actions: gT
 				},
 				meta: {
 					title: "Projects",
@@ -15676,7 +15679,7 @@ function yT(e = nT(), t) {
 				name: "project",
 				components: {
 					default: cC,
-					actions: cT,
+					actions: lT,
 					dialogs: Ey
 				},
 				meta: {
@@ -15689,7 +15692,7 @@ function yT(e = nT(), t) {
 				name: "project-artifacts",
 				components: {
 					default: lC,
-					actions: cT,
+					actions: lT,
 					dialogs: Ey
 				},
 				meta: {
@@ -15702,7 +15705,7 @@ function yT(e = nT(), t) {
 				name: "project-settings",
 				components: {
 					default: IC,
-					actions: cT,
+					actions: lT,
 					dialogs: Ey
 				},
 				meta: { section: "projects" }
@@ -15712,7 +15715,7 @@ function yT(e = nT(), t) {
 				name: "project-instructions",
 				components: {
 					default: YC,
-					actions: cT,
+					actions: lT,
 					dialogs: Ey
 				},
 				meta: { section: "projects" }
@@ -15722,7 +15725,7 @@ function yT(e = nT(), t) {
 				name: "scheduled",
 				components: {
 					default: lw,
-					actions: vT
+					actions: yT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15734,7 +15737,7 @@ function yT(e = nT(), t) {
 				name: "scheduled-job",
 				components: {
 					default: gw,
-					actions: vT
+					actions: yT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15745,8 +15748,8 @@ function yT(e = nT(), t) {
 				path: "/scheduled/:jobId/:runId",
 				name: "scheduled-run",
 				components: {
-					default: bw,
-					actions: vT
+					default: xw,
+					actions: yT
 				},
 				meta: {
 					title: "Scheduled",
@@ -15756,7 +15759,7 @@ function yT(e = nT(), t) {
 			{
 				path: "/settings",
 				name: "settings",
-				components: { default: eT },
+				components: { default: tT },
 				meta: {
 					title: "Settings",
 					hideComposer: !0
@@ -15797,9 +15800,9 @@ function yT(e = nT(), t) {
 }
 //#endregion
 //#region src/main.ts
-function bT(e, t) {
-	let n = No(J_).use(yT(void 0, e));
+function xT(e, t) {
+	let n = No(J_).use(bT(void 0, e));
 	return t && n.provide(zc, t), n;
 }
 //#endregion
-export { J_ as App, bT as createChatHermesApp };
+export { J_ as App, xT as createChatHermesApp };
