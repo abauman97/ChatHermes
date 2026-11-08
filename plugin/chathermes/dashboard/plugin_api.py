@@ -1973,6 +1973,64 @@ def _scheduled_runs_sync(profile, home, job_id, offset, limit):
     }
 
 
+def _scheduled_saved_output(document: str) -> dict:
+    """Separate the pinned scheduler envelope before credential redaction.
+
+    Unframed agent success/error documents cannot distinguish headings in the
+    assembled prompt from writer-owned boundaries. Never apply the upstream last-heading
+    context-reuse heuristic to user-visible output.
+    """
+    if not document.startswith("# Cron Job: "):
+        return {"output": document}
+    # Titles may contain prompt headings. Locate the writer's metadata instead
+    # of searching for a heading that may belong to the title or prompt. Reject
+    # ambiguous metadata (including an envelope forged in a multiline title).
+    headers = list(
+        re.finditer(
+            r"\n\n\*\*Job ID:\*\* [^\n]+\n"
+            r"\*\*Run Time:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\n",
+            document,
+        )
+    )
+    if len(headers) != 1:
+        return {"output_status": "unverified"}
+    body = document[headers[0].end() :]
+    # Native script runs never assemble an agent prompt. Accept only their
+    # exact mode and writer-owned body prefixes, not a mode quoted in a prompt.
+    if body.startswith("**Mode:** no_agent (script)\n"):
+        script = body.removeprefix("**Mode:** no_agent (script)\n")
+        if script.startswith(("\n---\n\n", "**Status:** script failed\n\n")) or script in (
+            "**Status:** silent (empty output)\n",
+            "**Status:** silent (wakeAgent=false)\n",
+        ):
+            return {"output": document}
+        return {"output_status": "unverified"}
+    frame = re.match(
+        r"\*\*Schedule:\*\* [^\n]*\n\n"
+        r"\*\*Prompt Characters:\*\* ([0-9]+)\n## Prompt\n\n",
+        body,
+    )
+    if frame is None:
+        return {"output_status": "unverified"}
+    # Python counts code points; read_text normalizes the writer's newlines.
+    # Bound decimal parsing as well as offsets for malformed/truncated files.
+    count = frame[1]
+    if len(count) > len(str(len(document))):
+        return {"output_status": "unverified"}
+    tail = body[frame.end() + int(count) :]
+    response = re.match(r"\n\n\*\*Response Characters:\*\* ([0-9]+)\n## Response\n\n", tail)
+    if response is None:
+        return {"output_status": "unverified"}
+    answer = tail[response.end() :]
+    if (
+        len(response[1]) > len(str(len(document)))
+        or not answer.endswith("\n")
+        or len(answer) != int(response[1]) + 1
+    ):
+        return {"output_status": "unverified"}
+    return {"output": answer[:-1]}
+
+
 def _scheduled_output_sync(profile, home, job_id, run_id):
     from hermes_cli.web_server_sessions import _open_session_db_for_profile
 
@@ -2014,7 +2072,7 @@ def _scheduled_output_sync(profile, home, job_id, run_id):
         with _cron_store_scope(home):
             started_at = _cron_output_run_timestamp(path)
         return {
-            "output": path.read_text(encoding="utf-8-sig", errors="replace"),
+            **_scheduled_saved_output(path.read_text(encoding="utf-8-sig", errors="replace")),
             "messages": [],
             "started_at": started_at,
         }

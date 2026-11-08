@@ -311,3 +311,45 @@ it("ignores trailing tool-call-only assistant rows and falls back to raw output 
   expect(raw.text()).not.toContain("Internal result");
   raw.unmount();
 });
+
+it("opens only each saved run's framed response across run and profile changes", async () => {
+  setup();
+  // The authenticated API separates archives before credential redaction.
+  const result = "# Current result 🦉\n\n## Response\n\nThis heading belongs to the answer.";
+  vi.mocked(api.scheduledOutput).mockImplementation(async (profile, _job, run) => ({
+    messages: [],
+    output: profile === "beta" && run === "first" ? result : `${profile} ${run} result`,
+  }));
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/first");
+  const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  expect(wrapper.get(".message.assistant").text()).toContain("This heading belongs to the answer.");
+  expect(wrapper.text()).not.toContain("Private prompt");
+  expect(wrapper.text()).not.toContain("Quoted old result");
+  expect(wrapper.text()).not.toContain("Characters:");
+  await wrapper.vm.$router.push({
+    name: "scheduled-run",
+    params: { jobId: "audit", runId: "second" },
+  });
+  await flushPromises();
+  expect(wrapper.get(".message.assistant").text()).toBe("beta second result");
+  await wrapper.setProps({ profile: "alpha" });
+  await flushPromises();
+  expect(wrapper.get(".message.assistant").text()).toBe("alpha second result");
+  expect(wrapper.text()).not.toContain("beta second result");
+  wrapper.unmount();
+});
+
+it("explains that ambiguous archives, including failed runs, cannot be safely displayed", async () => {
+  setup();
+  vi.mocked(api.scheduledOutput).mockResolvedValue({ messages: [], output_status: "unverified" });
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
+  const wrapper = mount(ScheduledPage);
+  await flushPromises();
+  expect(wrapper.text()).toContain(
+    "Saved output or error diagnostics could not be safely separated",
+  );
+  expect(wrapper.text()).not.toContain("No output was saved");
+  expect(wrapper.find(".message.assistant").exists()).toBe(false);
+  wrapper.unmount();
+});

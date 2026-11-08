@@ -172,6 +172,18 @@ execution/delivery lifecycle.
 
 TUI tool and reasoning events carry the available runtime activity. Tool completion/failure and final assistant text close active disclosures. The UI displays available reasoning exactly as Hermes emits it; it cannot create token-level reasoning when the provider only publishes a completed reasoning segment.
 
+Scheduled saved-output reads validate scheduler character frames on the server before
+credential redaction. The `output` field contains the extracted answer or whole
+script output. Native `no_agent (script)` envelopes retain the whole document,
+including failed and silent script runs, after credential redaction. Metadata
+anchors extraction so multiline job names containing `## Prompt` remain valid;
+ambiguous metadata is rejected rather than risking prompt disclosure.
+Unframed agent Cron archives (including the pinned scheduler's failed-run
+`## Error` documents) and invalid frames return `output_status: "unverified"`
+without archive text. Headings in prompts and answers make legacy boundaries
+unprovable; the upstream context-reuse last-heading heuristic is not a display
+contract. Existing job, run, profile and symlink checks apply before extraction.
+
 ## Test environment
 
 The Compose environment extends the latest official Hermes release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
