@@ -115,7 +115,7 @@ it.each(["direct link", "router navigation"])(
         options.limit === 1 ? [] : options.cursor ? [{ ...items[0]!, id: 3, read: true }] : items,
       unread: 2,
       byProfile: {},
-      nextCursor: options.limit === 100 && !options.cursor ? "100:1" : null,
+      nextCursor: options.scope === "profile" && !options.cursor ? "100:1" : null,
     }));
     const removed = vi.spyOn(api, "deleteInboxItem").mockResolvedValue({});
     if (path === "direct link")
@@ -210,7 +210,7 @@ it("does not delete after navigation overtakes an Inbox lookup", async () => {
   readyNative();
   let finish!: (page: Awaited<ReturnType<typeof api.inbox>>) => void;
   vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}) =>
-    options.limit === 100
+    options.scope === "profile"
       ? new Promise((resolve) => {
           finish = resolve;
         })
@@ -586,4 +586,211 @@ it("does not reload a retired Home preview when removal finishes after navigatio
   expect(previewReads()).toBe(before);
   expect(wrapper.vm.$route.name).toBe("projects");
   wrapper.unmount();
+});
+
+it("synchronizes sidebar unread indicators across Inbox pages, receipts, reads, removals and reloads without changing tracking", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const sessions = [
+    { id: "same", title: "Alpha chat" },
+    { id: "older", title: "Older active chat" },
+    { id: "read", title: "Read chat" },
+  ];
+  vi.spyOn(api, "sessions").mockResolvedValue({ sessions, total: 3 });
+  const tracking = [
+    { session_id: "older", status: "open" as const, updated_at: "2026-10-29" },
+    { session_id: "same", status: "settled" as const, updated_at: "2026-10-30" },
+  ];
+  vi.mocked(api.tracking).mockResolvedValue({ tracking, sessions: [sessions[1]!] });
+  const track = vi.spyOn(api, "track");
+  let notices = [
+    items[1]!,
+    { ...items[0]!, id: 3, session: "read", read: true },
+    items[0]!,
+    { ...items[0]!, id: 4, session: "older", title: "Older active chat" },
+  ];
+  let revision = 0;
+  vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}) => {
+    const rows = options.unread ? notices.filter((item) => !item.read) : notices;
+    return {
+      items: options.limit === 100 ? (options.cursor ? rows.slice(1) : rows.slice(0, 1)) : rows,
+      unread: notices.filter((item) => !item.read).length,
+      byProfile: {},
+      nextCursor: options.limit === 100 && !options.cursor && rows.length > 1 ? "next" : null,
+      revision: String(revision),
+    };
+  });
+  vi.spyOn(api, "deleteInboxItem").mockImplementation(async (profile, id) => {
+    notices = notices.filter((item) => item.profile !== profile || item.id !== id);
+    revision++;
+    return { deleted: true };
+  });
+  history.replaceState({}, "", "/chathermes#/inbox?profile=alpha");
+  let wrapper = await open();
+  const rows = () => wrapper.findAll(".session-select");
+  const unread = () => rows().map((row) => row.find(".session-unread").exists());
+  const refresh = async () => {
+    revision++;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushPromises();
+    await flushPromises();
+  };
+  expect(rows().map((row) => row.text())).toEqual([
+    expect.stringContaining("Older active chat"),
+    expect.stringContaining("Alpha chat"),
+    expect.stringContaining("Read chat"),
+  ]);
+  expect(unread()).toEqual([true, true, false]);
+  expect(rows()[1]!.find(".font-semibold").text()).toBe("Alpha chat");
+  expect(rows()[1]!.find(".sr-only").text()).toBe("Unread");
+  expect(rows()[1]!.get(".session-unread").attributes("aria-hidden")).toBe("true");
+  expect(api.inbox).toHaveBeenCalledWith(
+    expect.any(String),
+    { limit: 100, unread: true, cursor: "next" },
+    expect.any(AbortSignal),
+  );
+  // The same ID in beta remains unread after alpha is read externally.
+  notices = notices.map((item) =>
+    item.profile === "alpha" && item.session === "same" ? { ...item, read: true } : item,
+  );
+  await refresh();
+  expect(unread()).toEqual([true, false, false]);
+  await wrapper.vm.$router.push("/inbox?profile=beta");
+  await flushPromises();
+  expect(unread()).toEqual([false, true, false]);
+  await wrapper.vm.$router.push("/inbox?profile=alpha");
+  await flushPromises();
+  // A new receipt restores the indicator without reopening the settled chat.
+  notices = notices.filter((item) => !(item.profile === "alpha" && item.session === "same"));
+  notices.push({ ...items[0]!, id: 5 });
+  await refresh();
+  expect(unread()).toEqual([true, true, false]);
+  await wrapper.get('[aria-label="Remove Alpha chat from inbox"]').trigger("click");
+  await flushPromises();
+  expect(unread()).toEqual([true, false, false]);
+  notices = [];
+  await refresh();
+  expect(unread()).toEqual([false, false, false]);
+  expect(wrapper.findAll(".settle-session")).toHaveLength(1);
+  expect(track).not.toHaveBeenCalled();
+  notices = [{ ...items[0]!, id: 6 }];
+  wrapper.unmount();
+  wrapper = await open();
+  expect(unread()).toEqual([false, true, false]);
+  expect(wrapper.findAll(".settle-session")).toHaveLength(1);
+  wrapper.unmount();
+});
+
+it("retains complete unread state on failed refresh and ignores an overtaken paginated response", async () => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  vi.spyOn(api, "sessions").mockResolvedValue({
+    sessions: [{ id: "same", title: "Alpha chat" }],
+    total: 1,
+  });
+  history.replaceState({}, "", "/chathermes#/projects?profile=alpha");
+  const wrapper = await open();
+  expect(wrapper.find(".session-unread").exists()).toBe(true);
+  vi.mocked(api.inbox).mockRejectedValue(new Error("offline"));
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flushPromises();
+  expect(wrapper.find(".session-unread").exists()).toBe(true);
+  let finish!: (page: Awaited<ReturnType<typeof api.inbox>>) => void;
+  vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}) =>
+    options.cursor
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : { items, unread: 2, byProfile: {}, nextCursor: "next" },
+  );
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flushPromises();
+  vi.mocked(api.inbox).mockResolvedValue({ items: [], unread: 0, byProfile: {}, nextCursor: null });
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flushPromises();
+  expect(wrapper.find(".session-unread").exists()).toBe(false);
+  finish({ items, unread: 2, byProfile: {}, nextCursor: null });
+  await flushPromises();
+  expect(wrapper.find(".session-unread").exists()).toBe(false);
+  wrapper.unmount();
+});
+
+it("finishes slow unread pagination across poll ticks and projects the current profile", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  vi.spyOn(api, "sessions").mockResolvedValue({
+    sessions: [{ id: "same", title: "Shared ID" }],
+    total: 1,
+  });
+  let finish!: (page: Awaited<ReturnType<typeof api.inbox>>) => void;
+  let signal!: AbortSignal;
+  const scan = vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}, abort) => {
+    signal = abort!;
+    return options.cursor
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : { items: [items[0]!], unread: 2, byProfile: {}, nextCursor: "next" };
+  });
+  history.replaceState({}, "", "/chathermes#/projects?profile=alpha");
+  const wrapper = await open();
+  try {
+    await vi.advanceTimersByTimeAsync(45000);
+    expect(scan).toHaveBeenCalledTimes(2);
+    expect(signal.aborted).toBe(false);
+    expect(wrapper.find(".session-unread").exists()).toBe(false);
+    await wrapper.vm.$router.push("/projects?profile=beta");
+    await flushPromises();
+    finish({ items: [items[1]!], unread: 2, byProfile: {}, nextCursor: null });
+    await flushPromises();
+    expect(wrapper.find(".session-unread").exists()).toBe(true);
+    expect(wrapper.get(".inbox-nav").text()).toContain("2");
+    scan.mockResolvedValue({ items: [], unread: 0, byProfile: {}, nextCursor: null });
+    await vi.advanceTimersByTimeAsync(15000);
+    await flushPromises();
+    expect(scan).toHaveBeenCalledTimes(3);
+    expect(wrapper.find(".session-unread").exists()).toBe(false);
+  } finally {
+    wrapper.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("supersedes slow unread scans after removal and keeps the replacement protected from polling", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const wrapper = await open();
+  try {
+    const pending: {
+      finish: (page: Awaited<ReturnType<typeof api.inbox>>) => void;
+      signal: AbortSignal;
+    }[] = [];
+    vi.mocked(api.inbox).mockImplementation(async (_profile, options = {}, signal) =>
+      options.limit === 100
+        ? new Promise((finish) => pending.push({ finish, signal: signal! }))
+        : { items: [items[1]!], unread: 1, byProfile: {}, nextCursor: null },
+    );
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(pending).toHaveLength(1);
+    vi.spyOn(api, "deleteInboxItem").mockResolvedValue({ deleted: true });
+    await wrapper.get('[aria-label="Remove Alpha chat from inbox"]').trigger("click");
+    await flushPromises();
+    expect(pending).toHaveLength(2);
+    expect(pending[0]!.signal.aborted).toBe(true);
+    pending[0]!.finish({ items, unread: 2, byProfile: {}, nextCursor: null });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(pending).toHaveLength(2);
+    expect(pending[1]!.signal.aborted).toBe(false);
+    pending[1]!.finish({ items: [items[1]!], unread: 1, byProfile: {}, nextCursor: null });
+    await flushPromises();
+    expect(wrapper.get(".inbox-nav").text()).toContain("1");
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(pending).toHaveLength(3);
+    wrapper.unmount();
+    expect(pending[2]!.signal.aborted).toBe(true);
+    pending[2]!.finish({ items, unread: 2, byProfile: {}, nextCursor: null });
+    await flushPromises();
+  } finally {
+    if (wrapper.exists()) wrapper.unmount();
+    vi.useRealTimers();
+  }
 });

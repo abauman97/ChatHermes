@@ -118,3 +118,41 @@ it("offers status-aware menu actions and a separate touch-sized settlement butto
   if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
   else Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
 });
+
+it("keeps selection, ordering and settlement independent of reactive unread presentation", async () => {
+  const wrapper = mount(SessionSidebar, {
+    props: {
+      sessions: [
+        { id: "one", title: "One" },
+        { id: "two", title: "Two" },
+      ],
+      tracking: [{ session_id: "two", status: "open", updated_at: "2026-10-29" }],
+      unreadSessions: new Set(["one"]),
+      selected: "one",
+      loading: false,
+      error: "",
+      hasMore: false,
+      busy: false,
+    },
+  });
+  const rows = () => wrapper.findAll(".session-select");
+  expect(rows().map((row) => row.text())).toEqual([
+    expect.stringContaining("Two"),
+    expect.stringContaining("One"),
+  ]);
+  expect(rows()[1]!.attributes("aria-current")).toBe("page");
+  await rows()[1]!.trigger("click");
+  expect(wrapper.emitted("select")).toEqual([["one"]]);
+  expect(rows()[1]!.find(".session-unread").exists()).toBe(true);
+  await wrapper.setProps({ unreadSessions: new Set(["two"]) });
+  expect(rows()[0]!.find(".font-semibold").text()).toBe("Two");
+  expect(rows()[1]!.find(".font-semibold").exists()).toBe(false);
+  expect(rows()[1]!.attributes("aria-current")).toBe("page");
+  await wrapper.get(".settle-session").trigger("click");
+  expect(wrapper.emitted("track")).toEqual([["two", "settled"]]);
+  expect(wrapper.findAll("section").map((section) => section.attributes("aria-label"))).toEqual([
+    "Active",
+    "Recents",
+  ]);
+  wrapper.unmount();
+});

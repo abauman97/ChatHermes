@@ -35,6 +35,11 @@ profile in the **View** selector, and use **Load More** for older notifications.
 also remove notifications here. The composer remains available for drafting on
 Home and Inbox.
 
+Sidebar chats with an unread Inbox notification have a dot and a semibold title.
+Indicators belong to the selected profile and clear when the notification is read,
+removed, or the chat opens successfully. Unread state does not change Active or
+Recents grouping or chat order.
+
 ![Mobile Home showing unread workshop updates and the message composer](images/home-mobile.png)
 
 _Home previews recent unread messages. Open an item to visit its conversation, or use its check-circle to remove the notification._

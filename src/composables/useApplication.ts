@@ -851,16 +851,42 @@ export function useApplication() {
   }
   const inboxUnread = ref(0),
     inboxRevision = ref(0);
+  const inboxUnreadSessions = ref(new Map<string, Set<string>>());
+  const unreadSessions = computed(
+    () => inboxUnreadSessions.value.get(profile.value || "default") || new Set<string>(),
+  );
   let inboxTimer: ReturnType<typeof setInterval> | undefined;
   let inboxAbort: AbortController | undefined;
   let inboxFingerprint = "";
-  async function refreshInbox(checkSession = true) {
+  async function refreshInbox(checkSession = true, periodic = false) {
     if (document.visibilityState === "hidden") return;
+    // Let a complete paginated scan finish even when it spans several poll ticks.
+    // Explicit refreshes still supersede reads started before a mutation.
+    if (periodic && inboxAbort) return;
     inboxAbort?.abort();
     const current = (inboxAbort = new AbortController());
     try {
-      const result = await api.inbox(profile.value, { limit: 1 }, current.signal);
+      const p = profile.value;
+      const result = await api.inbox(p, { limit: 100, unread: true }, current.signal);
+      const unread = new Map<string, Set<string>>();
+      let page = result;
+      do {
+        if (current.signal.aborted) return;
+        for (const item of page.items) {
+          if (item.read) continue;
+          const sessions = unread.get(item.profile) || new Set<string>();
+          sessions.add(item.session);
+          unread.set(item.profile, sessions);
+        }
+        if (!page.nextCursor) break;
+        page = await api.inbox(
+          p,
+          { limit: 100, unread: true, cursor: page.nextCursor },
+          current.signal,
+        );
+      } while (!current.signal.aborted);
       if (current.signal.aborted) return;
+      inboxUnreadSessions.value = unread;
       inboxUnread.value = result.unread;
       if (checkSession) void deleteCurrentSessionInbox(profile.value, session.value);
       const fingerprint = JSON.stringify([result.revision, result.unread, result.items[0]?.id]);
@@ -869,7 +895,9 @@ export function useApplication() {
         inboxRevision.value++;
       }
     } catch {
-      /* Keep the last known count during a disconnect. */
+      /* Keep the last known count and session indicators during a disconnect. */
+    } finally {
+      if (inboxAbort === current) inboxAbort = undefined;
     }
   }
   const inboxCleanup = new Map<string, Promise<void>>();
@@ -957,7 +985,7 @@ export function useApplication() {
   }
   onMounted(async () => {
     void refreshInbox();
-    inboxTimer = setInterval(() => void refreshInbox(), 15000);
+    inboxTimer = setInterval(() => void refreshInbox(true, true), 15000);
     if ("serviceWorker" in navigator)
       pushClient = connectPushClient(
         navigator.serviceWorker,
@@ -1074,6 +1102,7 @@ export function useApplication() {
     kanban,
     settingsButton,
     inboxUnread,
+    unreadSessions,
     settingsPage,
     projectView,
     recentSession,

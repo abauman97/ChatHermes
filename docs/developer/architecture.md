@@ -336,6 +336,14 @@ profile histories through short-lived read-only connections, and inspects native
 open request snapshots without attaching or activating sessions. No session
 execution or request resolution is owned by Inbox.
 
+The shell's Inbox refresh reads every unread page into a profile/session map for
+sidebar indicators, alongside the global count and revision. It replaces the map
+only after a complete, non-aborted refresh and retains the last snapshot on
+disconnect. Sidebar titles and dots use only the selected profile's session IDs;
+they do not affect session grouping, selection, tracking or execution. Existing
+Inbox receipt, mutation, foreground and polling refreshes keep both views in sync,
+and a fresh mount rebuilds the indicators from persisted Inbox state.
+
 Retained native viewers call the inbox recorder separately from push enqueueing.
 Committed responses use Hermes message UIDs (row identity on older histories),
 including deduplication across compaction copies; requests use their original
@@ -367,8 +375,9 @@ refills the Home preview. The full Inbox retains its All/Profile route filter an
 pagination, with the same removal control.
 
 The Vue Inbox is a shell page showing unread notifications. The shell polls
-a small page every 15 seconds while visible, refreshes on foregrounding and native
-completion/project events, and updates the badge from server counts. Opening an
+every 15 seconds while visible, allowing an active unread scan to finish across
+poll ticks. Foreground, mutation and native completion/project refreshes supersede
+older scans. The badge uses server counts. Opening an
 item verifies the owning session and waits for navigation/attachment. Every
 successful chat navigation deletes that profile/session's notifications, paging
 through both read and unread items. Final assistant messages, native recovery and

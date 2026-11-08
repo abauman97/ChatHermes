@@ -38,6 +38,7 @@ const {
   kanban,
   settingsButton,
   inboxUnread,
+  unreadSessions,
   settingsPage,
   projectView,
   recentSession,
@@ -214,6 +215,7 @@ const projectsLink = computed(() => {
         :sessions="sessions"
         :tracking="tracking"
         :tracking-pending="trackingPending"
+        :unread-sessions="unreadSessions"
         @track="trackSession"
         :selected="session"
         :loading="loading"
