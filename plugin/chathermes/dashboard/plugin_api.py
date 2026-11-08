@@ -713,6 +713,7 @@ async def native_image(request: Request, file_id: str):
 # relative to this trusted plugin directory, never through sys.path/CWD.
 _gateway_transport = _load_sibling("gateway_transport")
 _RpcTransport = _gateway_transport._RpcTransport
+_session_activity = _load_sibling("session_activity")
 
 _push_store_module = _load_sibling("push_store")
 _push_sender_module = _load_sibling("push_sender")
@@ -1111,6 +1112,41 @@ async def prepare_native_turn(request: Request):
 
 def _rpc_profile(request):
     return _request_profile(request) or "default"
+
+
+@router.get("/session-activity/{target_profile}")
+async def session_activity(request: Request, target_profile: str):
+    from starlette.concurrency import run_in_threadpool
+
+    profile = target_profile
+    _rpc_profile(request)
+    if not _PROFILE.fullmatch(profile):
+        raise HTTPException(422, "Invalid profile name")
+    principal = getattr(request.state, "native_http_principal", None)
+    if principal is not None:
+        from hermes_cli.dashboard_auth.native_http import _own_profile
+
+        try:
+            _own_profile(profile, principal["profile_id"], current=False)
+        except PermissionError:
+            raise HTTPException(403, "Profile unavailable") from None
+    # Native WS sessions belong to the launch dashboard, not secondary plugin
+    # hosts. The target is a path component so Hermes does not forward this read
+    # via its ?profile IPC selector. The path parameter must NOT be named
+    # `profile`: FastAPI would bind Hermes's profile scope dependency to it too.
+    # A hosted copy must never attest an empty
+    # local registry as the dashboard's live state.
+    if os.environ.get("HERMES_PLUGIN_HOST_PROCESS") == "1":
+        raise HTTPException(503, "Native activity is unavailable in this host")
+    # This plugin's reviewed chat contract is legacy. Never present the legacy
+    # process's empty registry as an authoritative canonical idle snapshot.
+    if (
+        request.scope.get("hermes.session_authority") is not None
+        or getattr(request.app.state, "session_authority", None) is not None
+    ):
+        raise HTTPException(501, "Unsupported native activity contract")
+    result = await run_in_threadpool(_session_activity.snapshot, profile)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
 def _new_rpc_transport(request):

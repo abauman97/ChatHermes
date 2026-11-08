@@ -61,6 +61,42 @@ afterEach(() => {
   fake.boundary = 10;
 });
 describe("native session state", () => {
+  it("publishes profile-owned work from snapshots and turn events, never navigation teardown or obsolete viewers", async () => {
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    const working = vi.fn();
+    const session = useNativeSession(vi.fn(), undefined, undefined, undefined, working);
+    await session.attach("alpha", "one");
+    expect(working).not.toHaveBeenCalled();
+    const old = fake.hooks!;
+    old.event({ type: "message.start", payload: {} } as any);
+    expect(working).toHaveBeenLastCalledWith("alpha", "one", true);
+    working.mockClear();
+    old.event({ type: "error", payload: { message: "Nonterminal warning" } } as any);
+    expect(working).not.toHaveBeenCalled();
+    old.event({ type: "message.complete", payload: { status: "error" } } as any);
+    expect(working).toHaveBeenLastCalledWith("alpha", "one", false);
+    old.event({ type: "message.start", payload: {} } as any);
+    working.mockClear();
+    session.close();
+    expect(working).not.toHaveBeenCalled();
+    await session.attach("beta", "one");
+    working.mockClear();
+    old.event({ type: "message.complete", payload: { status: "complete" } } as any);
+    old.recovered();
+    expect(working).not.toHaveBeenCalled();
+    const current = fake.hooks!;
+    current.snapshot({
+      session_id: "runtime",
+      messages: [],
+      running: true,
+      recovery: { epoch: "epoch", through: 0, base_row_ids: [], complete: true },
+    } as any);
+    current.recovered();
+    expect(working).toHaveBeenLastCalledWith("beta", "one", true);
+    current.event({ type: "session.reclaimed", payload: {} } as any);
+    expect(working).toHaveBeenLastCalledWith("beta", "one", false);
+    session.close();
+  });
   it.each([false, true])(
     "preserves the rendered occurrence when saved history replaces it (omitted resume: %s)",
     async (omitted) => {
@@ -1366,5 +1402,86 @@ it.each(["refresh", "input", "close"])(
     expect(settled).not.toHaveBeenCalled();
     if (change === "input") expect(session.messages.value.at(-1)?.content).toBe("New question");
     session.close();
+  },
+);
+
+it.each(["complete", "error"])(
+  "keeps the rendered continuation working through viewer navigation, rotation polling and terminal %s",
+  async (status) => {
+    const { mount, flushPromises } = await import("@vue/test-utils");
+    const { defineComponent, h, ref } = await import("vue");
+    const { useSessionActivity } = await import("../../sessions/composables/useSessionActivity");
+    const { default: Sidebar } = await import("../../sessions/components/SessionSidebar.vue");
+    vi.spyOn(api, "messages").mockResolvedValue([]);
+    const read = vi.spyOn(api, "sessionActivity").mockResolvedValue({ sessions: [] });
+    let activity!: ReturnType<typeof useSessionActivity>;
+    let native!: ReturnType<typeof useNativeSession>;
+    const profile = ref("alpha");
+    const rows = ref([{ id: "one", title: "Original" }]);
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          activity = useSessionActivity(profile);
+          native = useNativeSession(vi.fn(), undefined, undefined, undefined, activity.event);
+          return () =>
+            h(Sidebar, {
+              sessions: rows.value,
+              selected: "",
+              loading: false,
+              error: "",
+              hasMore: false,
+              busy: false,
+              workingSessions: activity.workingSessions.value,
+            });
+        },
+      }),
+    );
+    try {
+      await flushPromises();
+      await native.attach("alpha", "one");
+      fake.hooks!.event({ type: "message.start", payload: {} } as any);
+      await flushPromises();
+      expect(wrapper.find(".session-working").exists()).toBe(true);
+      const lineage = {
+        id: "runtime",
+        session_key: "tip",
+        session_keys: ["one", "middle", "tip"],
+        status: "working",
+      };
+      read.mockResolvedValue({ sessions: [lineage] });
+      rows.value = [{ id: "tip", title: "Continuation" }];
+      await activity.refresh();
+      await flushPromises();
+      expect(wrapper.find(".session-working").text()).toBe("Continuation");
+      native.close(); // Navigate away: activity survives the viewer.
+      await native.attach("alpha", "one"); // Legacy reconnect snapshot is idle.
+      read.mockResolvedValue({ sessions: [{ ...lineage, status: "unknown" }] });
+      await activity.refresh();
+      await flushPromises();
+      expect(wrapper.find(".session-working").exists()).toBe(true);
+      let resolve!: (value: Awaited<ReturnType<typeof api.sessionActivity>>) => void;
+      read.mockReturnValue(
+        new Promise((done) => {
+          resolve = done;
+        }),
+      );
+      const pending = activity.refresh();
+      // The real native coordinator still closes over the ORIGINAL attached ID.
+      fake.hooks!.event({ type: "message.complete", payload: { status } } as any);
+      resolve({ sessions: [lineage] }); // In-flight working snapshot loses to completion.
+      await pending;
+      await flushPromises();
+      expect(wrapper.find(".session-working").exists()).toBe(false);
+      read.mockResolvedValue({ sessions: [{ ...lineage, status: "idle" }] });
+      await activity.refresh();
+      await flushPromises();
+      expect(wrapper.find(".session-working").exists()).toBe(false);
+      profile.value = "beta";
+      await flushPromises();
+      expect(wrapper.find(".session-working").exists()).toBe(false);
+    } finally {
+      native.close();
+      wrapper.unmount();
+    }
   },
 );

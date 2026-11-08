@@ -302,6 +302,27 @@ order) from Recents (Hermes order), deduplicates IDs, and supports optimistic
 manual transitions with profile guards and rollback. Pending writes protect their
 local projection from metadata refreshes. No sidebar operation loads transcripts.
 
+`useSessionActivity` owns sidebar working state for the selected profile, separate
+from manual tracking and Inbox unread state. The existing native viewer publishes
+guarded snapshots and turn lifecycle events; detaching a viewer
+does not finish background work. A minimal authenticated launch-host registry
+projection restores other sessions on navigation, return, reconnect and visible
+polls. Profile changes clear synchronously; generation and per-session event
+revisions fence late snapshots across native compression lineage IDs. Legacy
+idle snapshots defer to the profile-owned durable ledger check; forwarded owner
+work and failed ledger reads remain unknown rather than authoritative idle.
+Confirmed native working/waiting stays busy despite ledger uncertainty.
+Lineage completeness is tracked separately from activity status. Incomplete
+snapshots retain previously verified runtime aliases only while the current
+lookup key still belongs to that profile's prior group; profile changes, runtime
+absence, unrelated identities and complete replacement groups clear those aliases.
+Root completion therefore clears its continuation even after a failed lineage
+read reports confirmed working/waiting. Canonical
+owner lookup validates receipt lineage on the same read snapshot as compression
+aliases and pending work; inherited chat IDs cannot join unrelated children.
+See the [activity contract](api-contract.md#sidebar-session-activity)
+for ownership and transport limits.
+
 `artifact_store.py` keeps feature SQL separate from infrastructure. Each indexed
 session is replaced transactionally, alongside its successful checkpoint. The
 unique `(profile, session, path)` identity preserves first-reference deduplication.

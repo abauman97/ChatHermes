@@ -39,6 +39,7 @@ const {
   settingsButton,
   inboxUnread,
   unreadSessions,
+  workingSessions,
   settingsPage,
   projectView,
   recentSession,
@@ -216,6 +217,7 @@ const projectsLink = computed(() => {
         :tracking="tracking"
         :tracking-pending="trackingPending"
         :unread-sessions="unreadSessions"
+        :working-sessions="workingSessions"
         @track="trackSession"
         :selected="session"
         :loading="loading"

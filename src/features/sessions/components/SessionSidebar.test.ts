@@ -128,6 +128,7 @@ it("keeps selection, ordering and settlement independent of reactive unread pres
       ],
       tracking: [{ session_id: "two", status: "open", updated_at: "2026-10-29" }],
       unreadSessions: new Set(["one"]),
+      workingSessions: new Set(["one", "two"]),
       selected: "one",
       loading: false,
       error: "",
@@ -141,10 +142,16 @@ it("keeps selection, ordering and settlement independent of reactive unread pres
     expect.stringContaining("One"),
   ]);
   expect(rows()[1]!.attributes("aria-current")).toBe("page");
+  expect(wrapper.findAll(".session-working")).toHaveLength(2);
+  expect(rows()[1]!.find(".session-working").text()).toBe("One");
+  expect(rows()[1]!.text()).toContain("UnreadWorking");
+  expect(rows()[0]!.text()).toContain("Working");
   await rows()[1]!.trigger("click");
   expect(wrapper.emitted("select")).toEqual([["one"]]);
   expect(rows()[1]!.find(".session-unread").exists()).toBe(true);
-  await wrapper.setProps({ unreadSessions: new Set(["two"]) });
+  await wrapper.setProps({ unreadSessions: new Set(["two"]), workingSessions: new Set(["two"]) });
+  expect(rows()[1]!.find(".session-working").exists()).toBe(false);
+  expect(rows()[0]!.find(".session-working").text()).toBe("Two");
   expect(rows()[0]!.find(".font-semibold").text()).toBe("Two");
   expect(rows()[1]!.find(".font-semibold").exists()).toBe(false);
   expect(rows()[1]!.attributes("aria-current")).toBe("page");

@@ -41,6 +41,7 @@ export function useNativeSession(
   onCreated?: (profile: string, stored: string) => void,
   onTitle?: (profile: string, stored: string, title: string) => void,
   onSessionActivity?: (profile: string, session: string) => void,
+  onWorking?: (profile: string, session: string, working: boolean) => void,
 ) {
   const settings = ref<{
     profile: string;
@@ -743,6 +744,9 @@ export function useNativeSession(
           status.value = "";
           requests.value = [];
           restore(value, current);
+          // A legacy idle snapshot cannot attest the external canonical owner
+          // is idle. The profile activity snapshot checks the durable ledger.
+          if (value.running) onWorking?.(p, s, true);
         });
       },
       input: (text, correction, admissionId, display) =>
@@ -750,6 +754,9 @@ export function useNativeSession(
       event: (event) =>
         deliver(() => {
           const data = (event.payload || {}) as Record<string, unknown>;
+          if (event.type === "message.start") onWorking?.(p, s, true);
+          else if (event.type === "message.complete" || event.type === "session.reclaimed")
+            onWorking?.(p, s, false);
           if (event.type === "session.usage")
             applyUsage((event.payload as SessionUsagePayload).usage);
           const text = typeof data.text === "string" ? data.text : "";

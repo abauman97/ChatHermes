@@ -54,6 +54,78 @@ Legacy latest paging without revision support revalidates the loaded tail.
 
 ## Native chat contract
 
+### Sidebar session activity
+
+`GET /session-activity/{target_profile}` returns only `{sessions: [{id, session_key,
+session_keys, session_keys_complete, status}]}` with `Cache-Control: no-store`. It inherits dashboard authentication.
+The explicit target is a path component: `?profile` would forward secondary
+requests to separate plugin processes whose registries do not own the browser's
+native sessions. The path parameter also avoids the name `profile`, which would
+bind Hermes's FastAPI profile dependency. Secondary plugin hosts refuse this
+route; native HTTP principals must own the requested profile. Profile names resolve to actual homes without
+implicit current-profile aliases.
+
+At the reviewed pin, legacy `session.active_list` is process-wide even when its
+params name a profile. The plugin filters the launch registry by each runtime's
+resolved `profile_home` (missing ownership follows Hermes's process-home rule),
+excludes finalized sessions, and uses the same native lookup-key and live-status
+functions as active_list. `session_keys` includes the runtime lookup ID, its
+verified compression ancestors and preferred continuation using the same edge
+selection as native resume. The original stored ID is included when verified on
+that path. Stale closed siblings, branches, resets, tools and delegates are excluded.
+Canonical chat owners require receipt lineage membership through the pinned
+`local_lineage_owner` helper; inherited `chat_id` alone proves no ownership.
+Aliases, validated canonical chat owners and pending ledger work are read in one SQLite
+snapshot so a concurrent rotation cannot splice different lineage versions.
+`session_keys_complete` reports successful lineage traversal independently of
+activity status: a failed traversal returns only the live lookup key and `false`,
+even when native activity confirms `working` or `waiting`. Successful traversal
+returns `true`, including when subsequent ledger checks leave status unknown.
+On incomplete reads, the browser retains previously verified aliases for that
+runtime only if its current lookup key belongs to the prior verified group.
+Profile changes, absent runtimes, unrelated lookup keys (including resets), and
+complete replacement lineages discard the previous group. A failed first read
+cannot establish aliases. This keeps a root completion connected to its live tip
+through busy and subsequent unknown snapshots without joining unrelated sessions.
+The browser applies
+viewer events on any of these IDs to the same continuation, including aliases
+first learned during an in-flight read. A stored ID existing in a profile DB is never proof of
+runtime ownership. Titles, prompts, tool data and provider settings are omitted.
+
+The existing selected-session viewer supplies immediate `message.start` and
+`message.complete` edges plus running recovery snapshots. Idle viewer snapshots
+defer to the ledger-checked activity feed. Reclaimed/finalized sessions
+disappear from subsequent live snapshots. The per-mount activity owner uses
+profile/generation guards and lets newer events win
+over in-flight snapshots. Navigation does not stop work. `working` and `waiting`
+shimmer; `idle`, `starting`, finalized and absent rows do not. A visible five-second
+poll and existing session-change refreshes recover missed edges without resuming
+background transcripts. Return/focus/online refresh immediately. Failed,
+unsupported or malformed reads preserve known state; they are not idle snapshots.
+Reads time out after ten seconds and retry through the same refresh lifecycle.
+
+A legacy dashboard can forward `prompt.submit` to an external canonical owner.
+The pinned relay publishes start/completion without updating legacy `running`.
+The projection checks the profile-owned admissions and worker ledger for each
+compression identity and its receipt-validated canonical chat owner. Confirmed
+native `working` and `waiting` survive pending work and ledger read failures,
+including on a fresh mount. Otherwise pending or outcome-unknown work and
+unavailable ledger reads return `status: "unknown"`. An unknown row
+preserves known activity without inventing work or asserting idle. This is a
+conservative legacy projection, not a query of the external owner's live state.
+If its relay disconnects, Hermes emits a synthetic completion even while durable
+work may continue; this plugin cannot infer that owner's current work from that
+terminal frame. A fresh mount likewise cannot restore external work from an
+unknown row alone.
+
+Hermes's canonical session authority has a different actor-scoped active_list and
+event lifecycle. The plugin's native chat contract already rejects that protocol;
+this route also refuses canonical authority rather than treating the legacy
+registry as its snapshot. This is parity with the supported legacy Desktop
+lifecycle, not support for canonical or remote authority-owned sessions.
+
+### Supported chat wire
+
 ChatHermes targets Hermes release 0.22.5, source
 `bf0203a794a07aac3ff764972ab9087baa4e4f4e`. There is one wire contract:
 the dashboard's authenticated same-origin `/api/ws`, JSON-RPC 2.0, using

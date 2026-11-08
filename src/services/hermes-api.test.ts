@@ -6,6 +6,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("dashboard plugin Hermes client", () => {
+  it("reads the launch registry with an explicit target instead of forwarding to a secondary plugin host", async () => {
+    const fake = vi.fn(async () => new Response('{"sessions":[]}'));
+    vi.stubGlobal("fetch", fake);
+    const controller = new AbortController();
+    await api.sessionActivity("alpha", controller.signal);
+    expect(fake).toHaveBeenCalledWith(
+      "/api/plugins/chathermes/session-activity/alpha",
+      expect.objectContaining({
+        signal: controller.signal,
+        credentials: "same-origin",
+        cache: "no-store",
+        redirect: "manual",
+      }),
+    );
+    await expect(api.sessionActivity("../beta")).rejects.toThrow("Invalid Hermes API path");
+  });
   it.each(["alpha", "beta"])(
     "refreshes metadata for hosted profile %s without an unsupported indefinite stream and stops on disposal",
     (profile) => {
