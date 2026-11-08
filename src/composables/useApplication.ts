@@ -10,6 +10,7 @@ import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from "
 import type { InboxItem } from "../features/inbox/inbox";
 import { api } from "../services/hermes-api";
 import { useNativeSession } from "../features/chat/runtime/native-session";
+import { useSessionActivity } from "../features/sessions/composables/useSessionActivity";
 import type {
   Capabilities,
   Message,
@@ -169,6 +170,7 @@ export function useApplication() {
   function refreshNativeSessions(p: string) {
     if (p === profile.value) void loadSessions();
   }
+  const activity = useSessionActivity(profile);
   function updateNativeTitle(p: string, id: string, title: string) {
     if (p !== profile.value) return;
     sessions.value = sessions.value.map((row) => (row.id === id ? { ...row, title } : row));
@@ -201,6 +203,7 @@ export function useApplication() {
     loadSessions,
     refreshInbox,
     profileGeneration: () => profileGeneration,
+    refreshActivity: activity.refresh,
   });
   const contextProject = computed(() => {
     if (session.value)
@@ -222,6 +225,7 @@ export function useApplication() {
     refreshNativeSessions,
     updateNativeTitle,
     deleteCurrentSessionInbox,
+    activity.event,
   );
   const chat = useChatController(native, {
     profile,
@@ -1103,6 +1107,7 @@ export function useApplication() {
     settingsButton,
     inboxUnread,
     unreadSessions,
+    workingSessions: activity.workingSessions,
     settingsPage,
     projectView,
     recentSession,

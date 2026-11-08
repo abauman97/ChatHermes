@@ -7,6 +7,7 @@ const props = defineProps<{
   tracking?: SessionTracking[];
   trackingPending?: Set<string>;
   unreadSessions?: Set<string>;
+  workingSessions?: Set<string>;
   selected: string;
   loading: boolean;
   error: string;
@@ -206,11 +207,15 @@ function remove() {
           >
             <span class="flex min-w-0 items-center gap-2">
               <span
-                class="truncate"
-                :class="{ 'font-semibold': unreadSessions?.has(session.id) }"
+                class="session-title truncate"
+                :class="{
+                  'font-semibold': unreadSessions?.has(session.id),
+                  'session-working': workingSessions?.has(session.id),
+                }"
                 >{{ session.title || "Untitled session" }}</span
               >
               <span v-if="unreadSessions?.has(session.id)" class="sr-only">Unread</span>
+              <span v-if="workingSessions?.has(session.id)" class="sr-only">Working</span>
               <span
                 v-if="unreadSessions?.has(session.id)"
                 class="session-unread ml-auto size-2 shrink-0 rounded-full bg-[#2563eb]"
@@ -325,3 +330,29 @@ function remove() {
     </div>
   </dialog>
 </template>
+
+<style scoped>
+.session-working {
+  color: #d4d4d4;
+  background: linear-gradient(110deg, #b4b4b4 20%, #fff 45%, #b4b4b4 70%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: session-shimmer 2s linear infinite;
+}
+@keyframes session-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .session-working {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+</style>

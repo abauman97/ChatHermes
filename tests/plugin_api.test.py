@@ -28,6 +28,102 @@ def run_async(fn):
     return wrapper
 
 
+@run_async
+async def test_activity_route_profile_no_store_and_canonical_refusal(app, monkeypatch):
+    seen = []
+    activity = plugin._session_activity
+
+    def snapshot(profile):
+        seen.append(profile)
+        return {"sessions": [{"id": "runtime", "session_key": "stored", "status": "working"}]}
+
+    monkeypatch.setattr(activity, "snapshot", snapshot)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/session-activity/alpha")
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert seen == ["alpha"]
+        assert response.json()["sessions"][0]["session_key"] == "stored"
+        assert (
+            await client.get("/api/plugins/chathermes/session-activity/bad.name")
+        ).status_code == 422
+        app.state.session_authority = object()
+        assert (
+            await client.get("/api/plugins/chathermes/session-activity/default")
+        ).status_code == 501
+        assert seen == ["alpha"]
+
+
+@run_async
+async def test_activity_route_refuses_foreign_native_principal_and_secondary_host(
+    app, monkeypatch, tmp_path
+):
+    from hermes_cli import web_server_profiles
+
+    monkeypatch.setattr(web_server_profiles, "_resolve_profile_dir", lambda name: tmp_path / name)
+    monkeypatch.setattr(web_server_profiles, "serving_profile_name", lambda: "alpha")
+    seen = []
+    monkeypatch.setattr(
+        plugin._session_activity,
+        "snapshot",
+        lambda p: seen.append(p) or {"sessions": []},
+    )
+
+    @app.middleware("http")
+    async def principal(request, call_next):
+        request.state.native_http_principal = {"profile_id": str(tmp_path / "alpha")}
+        return await call_next(request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        assert (
+            await client.get("/api/plugins/chathermes/session-activity/beta")
+        ).status_code == 403
+        assert seen == []
+        assert (
+            await client.get("/api/plugins/chathermes/session-activity/alpha")
+        ).status_code == 200
+        monkeypatch.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")
+        assert (
+            await client.get("/api/plugins/chathermes/session-activity/alpha")
+        ).status_code == 503
+        assert seen == ["alpha"]
+
+
+@run_async
+async def test_activity_target_does_not_bind_hermes_profile_dependency(monkeypatch):
+    from contextlib import contextmanager
+
+    from fastapi import Depends
+    from hermes_cli import web_server_dashboard, web_server_plugin_profiles, web_server_profiles
+
+    scopes = []
+
+    @contextmanager
+    def profile_scope(profile):
+        scopes.append(profile)
+        yield
+
+    monkeypatch.setattr(web_server_profiles, "_config_profile_scope", profile_scope)
+    monkeypatch.setattr(web_server_plugin_profiles, "in_process_router_refused", lambda name: False)
+    monkeypatch.setattr(plugin._session_activity, "snapshot", lambda p: {"sessions": []})
+    app = FastAPI()
+    app.include_router(
+        plugin.router,
+        prefix="/api/plugins/chathermes",
+        dependencies=[Depends(web_server_dashboard._plugin_route_secret_scope)],
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.get("/api/plugins/chathermes/session-activity/alpha")
+        assert response.status_code == 200
+    assert scopes == [None]
+
+
 @pytest.mark.parametrize(
     "body,key,expected",
     [

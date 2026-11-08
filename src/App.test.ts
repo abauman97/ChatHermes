@@ -26,6 +26,7 @@ import * as push from "./features/notifications/services/push";
 import * as nativeSession from "./features/chat/runtime/native-session";
 beforeEach(() => {
   vi.spyOn(api, "tracking").mockResolvedValue({ tracking: [], sessions: [] });
+  vi.spyOn(api, "sessionActivity").mockResolvedValue({ sessions: [] });
 });
 beforeEach(() => {
   history.replaceState({}, "", "/chathermes?profile=alpha#/?profile=alpha");

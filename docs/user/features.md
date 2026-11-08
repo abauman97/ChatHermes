@@ -40,6 +40,12 @@ Indicators belong to the selected profile and clear when the notification is rea
 removed, or the chat opens successfully. Unread state does not change Active or
 Recents grouping or chat order.
 
+While Hermes is working, the chat's sidebar title shimmers. It stays marked while
+Hermes waits for approval or clarification, and stops when the turn finishes or
+is stopped. Reduced motion shows a static title with the same Working label for
+screen readers. Working and unread indicators can appear together; neither
+changes your selection or manual Active tracking.
+
 ![Mobile Home showing unread workshop updates and the message composer](images/home-mobile.png)
 
 _Home previews recent unread messages. Open an item to visit its conversation, or use its check-circle to remove the notification._

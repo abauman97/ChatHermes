@@ -42,6 +42,13 @@ the real plugin at desktop and mobile sizes.
 
 Prefer observable user contracts. Retain focused protocol, security, deduplication, and pure-logic tests until replacements pass. See the [coverage migration audit](../../tests/test-audit.md).
 
+Sidebar activity regressions in `useSessionActivity.test.ts` cover verified
+root/tip aliases followed by an incomplete working/waiting snapshot, root
+completion, and an incomplete unknown snapshot. They also check alias resets on
+profile changes, runtime absence, unrelated identities and complete replacement
+lineages. `tests/session_activity.test.py` verifies lineage completeness separately
+from native activity and later ledger failures against the reviewed Hermes source.
+
 ## Real Hermes and browser workflows
 
 The authoritative setup, rebuild, preparation, remote Docker, Android, failure inspection, and cleanup instructions are in [tests/docker/README.md](../../tests/docker/README.md). It documents the layered environment: Compose owns services, repository fixtures supply stock MockServer inference, and browser preparation and optional Android installation are independent steps.

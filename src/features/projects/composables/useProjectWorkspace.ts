@@ -14,6 +14,7 @@ export function useProjectWorkspace(dependencies: {
   loadSessions: () => Promise<void>;
   refreshInbox: () => Promise<void>;
   profileGeneration: () => number;
+  refreshActivity?: () => Promise<void>;
 }) {
   const { profile, sessions, offline, navigate } = dependencies;
   const route = useRoute(),
@@ -44,6 +45,7 @@ export function useProjectWorkspace(dependencies: {
     closeProjectEvents = undefined;
     if (typeof EventSource === "undefined") return;
     closeProjectEvents = api.projectEvents(profile.value, () => {
+      void dependencies.refreshActivity?.();
       refreshProjects();
       void dependencies.refreshInbox();
     });
