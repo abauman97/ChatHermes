@@ -48,7 +48,11 @@ const messages = computed(() => outputMessages(output.value));
       :progress="[]"
     />
     <div v-else class="scheduled-content">
-      <p v-if="output" class="project-muted">No output was saved for this run.</p>
+      <p v-if="output?.output_status === 'unverified'" class="project-muted">
+        Saved output or error diagnostics could not be safely separated from this run's private
+        prompt. Inspect the original archive on the Hermes server.
+      </p>
+      <p v-else-if="output" class="project-muted">No output was saved for this run.</p>
     </div>
   </section>
 </template>

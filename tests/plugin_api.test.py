@@ -1163,6 +1163,159 @@ async def test_scheduled_saved_outputs_mixed_history_and_invalid_selections(app,
             ).status_code in (404, 422)
 
 
+@pytest.mark.parametrize("profile", ["default", "beta"])
+@run_async
+async def test_scheduled_archive_extraction_precedes_redaction(app, scheduled, profile):
+    homes, *_ = scheduled
+    prompt = f"Private prompt 🦉 {KEY}\n\n## Response\n\nQuoted prompt answer"
+    answer = f"Whole answer 🦉 {KEY}\n\n## Response\n\nQuoted answer heading"
+    header = (
+        "# Cron Job: Audit\n\n**Job ID:** audit\n"
+        "**Run Time:** 2026-01-01 00:00:00\n**Schedule:** Daily\n\n"
+    )
+    framed = (
+        header
+        + f"**Prompt Characters:** {len(prompt)}\n## Prompt\n\n{prompt}\n\n"
+        + f"**Response Characters:** {len(answer)}\n## Response\n\n{answer}\n"
+    )
+    legacy = header + f"## Prompt\n\n{prompt}\n\n## Response\n\n{answer}\n"
+    failed = header.replace("Audit", "Audit (FAILED)") + (
+        f"## Prompt\n\n{prompt}\n\n## Error\n\n```\nRuntimeError: {KEY}\n```\n"
+    )
+    documents = [
+        (framed, answer.replace(KEY, "[redacted]")),
+        (legacy, None),
+        (failed, None),
+        (failed.replace(prompt, "Private prompt without quoted headings"), None),
+        (header + "## Prompt\n\nPrivate prompt\n\n## Response\n\nAnswer with one heading", None),
+        (framed[:-2], None),
+        (
+            framed.replace(
+                f"**Prompt Characters:** {len(prompt)}",
+                "**Prompt Characters:** 99999999999999999999",
+            ),
+            None,
+        ),
+        (
+            "# Script result\n\n## Response\n\n" + KEY,
+            "# Script result\n\n## Response\n\n[redacted]",
+        ),
+        (header + "## Prompt\n\nPrivate prompt with no result", None),
+    ]
+    root = homes[profile] / "cron" / "output" / "audit"
+    root.mkdir(parents=True)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="http://dashboard"
+    ) as client:
+        for index, (document, expected) in enumerate(documents, 1):
+            stamp = f"2026-01-{index:02d}_00-00-00"
+            (root / (stamp + ".md")).write_text(document, encoding="utf-8")
+            params = {"profile": profile, "job_id": "audit", "run_id": "output:" + stamp}
+            response = await client.get("/api/plugins/chathermes/scheduled/output", params=params)
+            assert response.status_code == 200
+            assert KEY not in response.text and "Private prompt" not in response.text
+            if expected is None:
+                assert response.json().get("output_status") == "unverified"
+                assert "output" not in response.json()
+            else:
+                assert response.json()["output"] == expected
+            other = "beta" if profile == "default" else "default"
+            denied = await client.get(
+                "/api/plugins/chathermes/scheduled/output", params={**params, "profile": other}
+            )
+            assert denied.status_code == 404
+
+
+@pytest.mark.parametrize("profile", ["default", "beta"])
+@pytest.mark.parametrize("title", ["Audit", "Audit\n## Prompt\n\nMultiline name"])
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        "framed",
+        "script",
+        "script_failed",
+        "script_silent",
+        "script_wake_gate",
+        "forged_script",
+        "forged_frame",
+        "forged_title",
+    ],
+)
+@run_async
+async def test_scheduled_native_archive_envelopes(app, scheduled, profile, title, envelope):
+    from cron.scheduler import _job_doc_header, _run_doc_header
+    from cron.scheduler_prompt import (
+        _PROMPT_FRAME,
+        _RESPONSE_FRAME,
+        _RESPONSE_HEADING,
+        _RESPONSE_TERMINATOR,
+    )
+
+    homes, *_ = scheduled
+    answer = f"Script or agent result 🦉 {KEY}\n\n## Prompt\n\nResult heading"
+    prompt = f"Private prompt 🦉 {KEY}\n\n## Response\n\nPrivate quoted response"
+    script_header = _job_doc_header(title, "audit", "2026-01-01 00:00:00", "no_agent (script)")
+    script = script_header + f"\n---\n\n{answer}\n"
+    framed_answer = (
+        f"{_RESPONSE_FRAME}{len(answer)}\n{_RESPONSE_HEADING}{answer}{_RESPONSE_TERMINATOR}"
+    )
+    expected = None
+    if envelope == "framed":
+        document = (
+            _run_doc_header(
+                {}, title, "audit", prompt, prompt_stamp=f"{_PROMPT_FRAME}{len(prompt)}\n"
+            )
+            + framed_answer
+        )
+        expected = answer
+    elif envelope == "script":
+        document = expected = script
+    elif envelope == "script_failed":
+        document = expected = script_header + f"**Status:** script failed\n\n{answer}\n"
+    elif envelope == "script_silent":
+        document = expected = script_header + "**Status:** silent (empty output)\n"
+    elif envelope == "script_wake_gate":
+        document = expected = script_header + "**Status:** silent (wakeAgent=false)\n"
+    elif envelope == "forged_title":
+        # A script-mode header injected into a title must not reclassify the
+        # actual agent archive and reveal its prompt.
+        document = _run_doc_header({}, title + "\n" + script, "audit", prompt) + framed_answer
+    else:
+        # An unframed agent prompt can quote a complete script envelope or a
+        # valid-looking frame. Neither is proof of a writer-owned boundary.
+        forged_answer = prompt + "\n\n" + framed_answer
+        quoted = (
+            script
+            if envelope == "forged_script"
+            else (
+                f"{_PROMPT_FRAME}0\n## Prompt\n\n\n\n"
+                f"{_RESPONSE_FRAME}{len(forged_answer) - 1}\n{_RESPONSE_HEADING}{prompt}"
+            )
+        )
+        document = _run_doc_header({}, title, "audit", prompt + "\n" + quoted) + framed_answer
+    root = homes[profile] / "cron" / "output" / "audit"
+    root.mkdir(parents=True)
+    stamp = "2026-01-01_00-00-00"
+    (root / (stamp + ".md")).write_text(document, encoding="utf-8")
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app), base_url="http://dashboard"
+    ) as client:
+        params = {"profile": profile, "job_id": "audit", "run_id": "output:" + stamp}
+        response = await client.get("/api/plugins/chathermes/scheduled/output", params=params)
+        assert response.status_code == 200
+        assert KEY not in response.text and "Private prompt" not in response.text
+        if expected is None:
+            assert response.json().get("output_status") == "unverified"
+            assert "output" not in response.json()
+        else:
+            assert response.json()["output"] == expected.replace(KEY, "[redacted]")
+        other = "beta" if profile == "default" else "default"
+        denied = await client.get(
+            "/api/plugins/chathermes/scheduled/output", params={**params, "profile": other}
+        )
+        assert denied.status_code == 404
+
+
 @run_async
 async def test_scheduled_internal_failure_does_not_expose_details(app, monkeypatch):
     def fail(request):

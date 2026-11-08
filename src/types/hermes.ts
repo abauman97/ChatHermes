@@ -178,6 +178,7 @@ export interface ScheduledRunPage {
   has_more: boolean;
 }
 export interface ScheduledOutput {
+  output_status?: "unverified";
   started_at?: number;
   output?: string;
   messages: Message[];

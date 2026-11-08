@@ -82,7 +82,14 @@ Resolve relative Markdown links from each document's own directory, including fr
 
 The scheduled result workflow (`tests/workflows/scheduled-result.spec.ts`) seeds
 native Cron history and saved output, checks that only the final assistant response
-is shown without work disclosures, and verifies the raw-output fallback and reload.
+is shown without work disclosures, and verifies script output and reload. Saved
+agent documents use the native scheduler header and character frames, including
+Unicode and quoted response headings. API regressions call the pinned scheduler's
+actual header functions for multiline job names and native script envelopes,
+including failed and silent runs. They verify extraction before credential
+redaction and reject forged envelopes, ambiguous unframed agent success/error
+documents, and truncated frames. The workflow opens distinct runs from the
+history and direct URLs, reloads them, and rejects the same URL in another profile.
 
 ### Kanban integration
 
