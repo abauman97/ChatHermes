@@ -1,13 +1,17 @@
 """Persistent, profile-scoped Web Push subscriptions and VAPID identity."""
 
 import base64
+import errno
 import json
 import logging
 import os
 import re
 import secrets
+import stat
+import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -24,6 +28,104 @@ def _home():
 
 def _path():
     return _home() / "state" / "chathermes-push.json"
+
+
+def _open_lock(path):
+    """Open a stable regular sidecar without following links on either OS."""
+    if os.name == "nt":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        create = kernel.CreateFileW
+        create.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        create.restype = wintypes.HANDLE
+        close = kernel.CloseHandle
+        close.argtypes = (wintypes.HANDLE,)
+        close.restype = wintypes.BOOL
+        # OPEN_ALWAYS, OPEN_REPARSE_POINT. Share reads/writes, but disallow
+        # deletion/replacement while any host holds the stable lock handle.
+        handle = create(str(path), 0xC0000000, 3, None, 4, 0x00200000, None)
+        if handle == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+        except BaseException:
+            close(handle)
+            raise
+    else:
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or getattr(info, "st_file_attributes", 0) & 0x400  # Windows reparse point
+        ):
+            raise OSError("Push lock must be a regular file with one link")
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+@contextmanager
+def _file_lock(descriptor):
+    if os.name == "nt":
+        import msvcrt
+
+        # Lock byte zero even in an empty file. LK_LOCK gives up after ten
+        # retries; explicitly retry contention so slow transactions remain safe.
+        while True:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _transaction():
+    """Serialize complete transactions across module copies and profile hosts.
+
+    Lock a stable sidecar: locking the JSON inode would stop protecting the
+    state after atomic replacement. Never unlink the lock file on release.
+    """
+    with _LOCK:
+        path = _path()
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
+        descriptor = _open_lock(Path(str(path) + ".lock"))
+        try:
+            with _file_lock(descriptor):
+                yield
+        finally:
+            os.close(descriptor)
 
 
 def _read():
@@ -43,11 +145,22 @@ def _write(value):
     path = _path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(path.parent, 0o700)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, separators=(",", ":")))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
-    os.chmod(path, 0o600)
+    # Create private from the first byte, without following a predictable .tmp
+    # symlink or sharing a temporary file with another profile's plugin host.
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", delete=False
+        ) as stream:
+            tmp = Path(stream.name)
+            json.dump(value, stream, separators=(",", ":"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    finally:
+        # Close before unlinking, including on serialization/flush failures.
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
 
 
 def config():
@@ -56,7 +169,7 @@ def config():
         from py_vapid import Vapid
         from pywebpush import webpush  # noqa: F401 - availability includes delivery transport.
 
-        with _LOCK:
+        with _transaction():
             data = _read()
             vapid = data.get("vapid")
             if (
@@ -199,7 +312,7 @@ def upsert(profile, subscription):
         or not re.fullmatch(r"[A-Za-z0-9_-]+", auth)
     ):
         raise ValueError("Invalid subscription keys")
-    with _LOCK:
+    with _transaction():
         data = _read()
         found = next(
             (
@@ -233,7 +346,7 @@ def upsert(profile, subscription):
 
 def status(profile, endpoint):
     """Device/profile status only; never return endpoint or subscription keys."""
-    with _LOCK:
+    with _transaction():
         row = next(
             (
                 row
@@ -248,7 +361,7 @@ def status(profile, endpoint):
 
 
 def remove(profile, identity):
-    with _LOCK:
+    with _transaction():
         data = _read()
         old = len(data["subscriptions"])
         data["subscriptions"] = [
@@ -263,7 +376,7 @@ def remove(profile, identity):
 
 
 def subscriptions(profile):
-    with _LOCK:
+    with _transaction():
         return [
             dict(row)
             for row in _read()["subscriptions"]
@@ -272,7 +385,7 @@ def subscriptions(profile):
 
 
 def remove_endpoint(identity):
-    with _LOCK:
+    with _transaction():
         data = _read()
         old = len(data["subscriptions"])
         data["subscriptions"] = [row for row in data["subscriptions"] if row.get("id") != identity]

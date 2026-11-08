@@ -106,3 +106,46 @@ on failure. The suite needs the upstream Kanban plugin API active; a missing API
 is a failure rather than silently skipped coverage. Unit transport faults cover
 reconnect/polling; real active-worker execution and native device behavior remain
 separate verification work.
+
+### Catalog and credential regressions
+
+`tests/workflows/catalog-security.spec.ts` uses the mounted, authenticated plugin
+on desktop/mobile to check anonymous route rejection, distinct alpha/beta chats,
+foreign-session rejection, reload persistence and a durable public-only VAPID
+identity. It uses real host/gateway routing and repository inference fixtures,
+without reading gateway keys or simulating push receipt. Backend regressions in
+`gateway_credentials.test.py` use native profile/secret scopes and synthetic
+credentials; HTTP-route tests cover escaped/encoded reflected credentials in
+prose, structured string values and member names, including embedded JSON text.
+They verify preserved JSON structure and fail-closed responses on scanner failures. Push-store
+contracts check private creation, failed publication and serialization cleanup.
+They also synchronize competing processes and independently loaded module instances
+to verify one initial VAPID identity, retained subscriptions and serialized deletes.
+Cron regressions preserve bracketed text and Markdown links in names/results while
+redacting scoped gateway credentials and retaining forced public redaction.
+They also cover escaped credentials after unmatched prose quotes, Unicode
+surrogate pairs and escaped quotes/backslashes in notification titles and both
+script/assistant bodies. Only matched credential spans change; unrelated prose
+and escape spellings remain intact, and scrubber failures prevent delivery.
+
+The [admission assessment](catalog-admission.md) records remaining public API and
+credential-policy gaps. Dependency audits cover the repository locks separately
+from Hermes installation constraints; see its linked verification record.
+
+Push-store portability regressions import the dashboard and cron sender with
+`fcntl` blocked and POSIX-only open flags removed. Mocked Windows contracts check
+`CreateFileW` reparse-point opening, descriptor ownership, byte-zero locking,
+contention retries, error propagation and release after exceptions. The existing
+spawned-process/module-copy transaction tests exercise the native lock backend
+of the machine running pytest. Windows uses standard-library `ctypes`/`msvcrt`;
+Linux retains `flock`, `O_NOFOLLOW`, and private creation modes.
+
+Linux verification does not establish native Windows behavior. Run
+`PYTHONPATH=.hermes-source:plugin uv run pytest tests/push_store.test.py` with the
+platform-appropriate environment-variable syntax on Windows to verify native
+handle opening and competing processes. Windows ACL inheritance, NTFS reparse
+points, file sharing/atomic replacement, and network filesystem locking still
+need native validation; POSIX mode bits do not enforce Windows ACL privacy.
+POSIX permission/symlink-specific assertions are skipped there. This coverage
+is specific to the push store and dashboard imports, not a claim of full Windows
+support across every Hermes/dashboard route.
