@@ -208,8 +208,9 @@ that lack a user-facing creation flow, such as a paused Cron job with saved outp
 or a disposable project directory. Keep assertions in the actual dashboard.
 
 Authentication readiness uses the persistent profile marker, which is present on
-every plugin route. Assert composer focus on Home, chat, or Project home; Inbox,
-the Projects catalog, and Scheduled output intentionally have no composer. MEDIA
+every plugin route. Assert composer focus on Home or chat; Project home opens
+scoped Home through New chat. Inbox, Project pages, and Scheduled output
+intentionally have no composer. MEDIA
 paths already delivered in the same assistant turn produce no duplicate cards.
 Worker-routing probes use a fresh notification tag for each synthetic click so
 closing an earlier notification cannot race a later probe with the same tag.

@@ -35,7 +35,12 @@ export function createChatHermesRouter(
   const router = createRouter({
     history,
     routes: [
-      { path: "/", name: "home", components: { default: HomePage }, meta: { chat: true } },
+      {
+        path: "/",
+        name: "home",
+        components: { default: HomePage, actions: ProjectActions, dialogs: ProjectConfirmation },
+        meta: { chat: true },
+      },
       {
         path: "/chat/:sessionId",
         name: "chat",
@@ -138,6 +143,7 @@ export function createChatHermesRouter(
     if (
       (to.query.profile && typeof to.query.profile !== "string") ||
       (profile && !profileName.test(profile)) ||
+      (to.name === "home" && to.query.project !== undefined && !validProjectId(to.query.project)) ||
       Object.entries(to.params).some(([key, id]) =>
         key === "projectId" ? !validProjectId(id) : typeof id !== "string" || !identifier.test(id),
       )

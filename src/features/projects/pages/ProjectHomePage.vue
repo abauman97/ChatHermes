@@ -3,12 +3,20 @@ import ProjectLayout from "../components/ProjectLayout.vue";
 import { usePageHeader } from "../../../composables/usePageHeader";
 import { useProjects } from "../context";
 import { projectRoot } from "../utils/projects";
-const { selectedProject, visibleSessions, chooseSession, chooseProject } = useProjects();
+const { selectedProject, visibleSessions, chooseSession, chooseProject, createSession } =
+  useProjects();
 usePageHeader(() => ({ title: "Projects", subtitle: selectedProject.value?.label }));
 </script>
 <template>
   <ProjectLayout
     ><template v-if="selectedProject">
+      <button
+        class="project-back mb-4"
+        :disabled="selectedProject.archived"
+        @click="createSession()"
+      >
+        New chat
+      </button>
       <p v-if="selectedProject.archived" class="project-muted">Archived project</p>
       <p class="mb-4 break-all text-sm text-[#a3a3a3]">
         {{

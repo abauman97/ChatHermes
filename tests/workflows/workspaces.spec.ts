@@ -36,7 +36,8 @@ test("Project instructions, workspace chat and generated artifacts survive reloa
   await page.goto(projectURL);
   await page.getByRole("button", { name: "Screen options", exact: true }).click();
   await page.getByRole("menuitem", { name: "New chat", exact: true }).click();
-  await expect.poll(() => sessionFromUrl(page.url())).toBeTruthy();
+  await expect(page).toHaveURL(/#\/\?profile=default&project=/);
+  expect(sessionFromUrl(page.url())).toBeFalsy();
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
   await composer.fill(`[workflow-project] ${randomUUID()}`);
   await page.getByRole("button", { name: "Send message", exact: true }).click();

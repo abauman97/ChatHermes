@@ -44,7 +44,7 @@ const {
   projectView,
   recentSession,
   chooseProfile,
-  createSession,
+  draftRevision,
   trackSession,
   newChat,
   loadSessions,
@@ -230,7 +230,7 @@ const projectsLink = computed(() => {
         @delete="manageSession('delete', $event)"
         @project="(id, target) => manageSession('project', id, target)"
         @select="recentSession"
-        @create="newChat"
+        @create="newChat()"
         @more="loadSessions(true)"
         @retry="loadSessions()"
         @rename="rename"
@@ -261,7 +261,7 @@ const projectsLink = computed(() => {
             aria-label="New chat"
             title="New chat"
             :disabled="offline || creating"
-            @click="newChat"
+            @click="newChat()"
           >
             <svg
               class="size-6"
@@ -385,7 +385,7 @@ const projectsLink = computed(() => {
                     (!selectedProject.isNoProject && !projectRoot(selectedProject))))
               "
               @click="
-                projectView ? createSession() : newChat();
+                newChat(projectView ? selectedProject?.id : '');
                 closeScreenMenu();
               "
             >
@@ -405,8 +405,8 @@ const projectsLink = computed(() => {
         @touchcancel="drawerSwipe.cancel"
         @click.capture="drawerSwipe.click"
         :show-chat="route.meta.chat === true"
-        :draft-scope="route.name === 'project' ? String(route.params.projectId) : ''"
-        :hide-composer="route.meta.chat !== true && route.meta.composer !== 'project'"
+        :draft-scope="String(draftRevision)"
+        :hide-composer="route.meta.chat !== true"
       >
         <template #default>
           <RouterView :key="profile" />

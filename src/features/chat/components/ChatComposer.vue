@@ -52,6 +52,15 @@ const value = ref(""),
   attachments = ref<Attachment[]>([]),
   attachmentError = ref(""),
   reading = ref(false);
+const unsent = ref<{ text: string; files: Attachment[] }[]>([]);
+const canRestore = computed(() => !value.value && !attachments.value.length && !reading.value);
+function restoreUnsent(index: number) {
+  if (!canRestore.value) return;
+  const draft = unsent.value.splice(index, 1)[0];
+  if (!draft) return;
+  value.value = draft.text;
+  attachments.value = draft.files;
+}
 const files = ref<HTMLInputElement>(),
   camera = ref<HTMLInputElement>();
 const textarea = ref<HTMLTextAreaElement>(),
@@ -382,7 +391,17 @@ async function attach(event: Event) {
   await stageFiles(Array.from(input.files || []));
   input.value = "";
 }
-defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
+defineExpose({
+  stageFiles,
+  blurInput: () => textarea.value?.blur(),
+  restoreDraft: (text: string, files: Attachment[]) => {
+    // Preserve edits made while the request was pending.
+    if (canRestore.value) {
+      value.value = text;
+      attachments.value = files;
+    } else unsent.value.push({ text, files });
+  },
+});
 </script>
 <template>
   <form
@@ -391,6 +410,23 @@ defineExpose({ stageFiles, blurInput: () => textarea.value?.blur() });
     class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
   >
+    <div v-if="unsent.length" class="max-h-40 overflow-y-auto">
+      <details v-for="(draft, index) in unsent" :key="index" class="px-2 pb-2 text-sm">
+        <summary @mousedown="preserveInputFocus">Unsent message</summary>
+        <p class="whitespace-pre-wrap break-words">{{ draft.text }}</p>
+        <p v-for="(file, fileIndex) in draft.files" :key="fileIndex">{{ file.name }}</p>
+        <p v-if="!canRestore">Send or clear the current draft to restore this message.</p>
+        <button
+          type="button"
+          class="underline disabled:no-underline disabled:opacity-50"
+          :disabled="!canRestore"
+          @mousedown="preserveInputFocus"
+          @click="restoreUnsent(index)"
+        >
+          Restore unsent message
+        </button>
+      </details>
+    </div>
     <div v-if="attachments.length" class="flex flex-wrap gap-2 px-2 pb-2">
       <div
         v-for="(file, index) in attachments"

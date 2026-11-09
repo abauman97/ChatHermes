@@ -38,8 +38,7 @@ test("Projects header follows selection, edits, navigation and history", async (
   await expectHeader(name);
   const projectURL = page.url();
   const composer = plugin.getByRole("textbox", { name: "Message Hermes", exact: true });
-  await composer.fill("Project header draft");
-  await expect(composer).toBeFocused();
+  await expect(composer).not.toBeVisible();
   await page.screenshot({ path: info.outputPath("selected-project-header.png") });
   await plugin.getByRole("button", { name: "Artifacts", exact: true }).click();
   await expect(plugin.getByRole("region", { name: "Artifacts", exact: true })).toBeVisible();
@@ -55,8 +54,7 @@ test("Projects header follows selection, edits, navigation and history", async (
   await plugin.getByRole("button", { name: `← ${renamed}`, exact: true }).click();
   await expect(page).toHaveURL(projectURL);
   await expectHeader(renamed);
-  await composer.fill("Returned project draft");
-  await expect(composer).toBeFocused();
+  await expect(composer).not.toBeVisible();
   await options.click();
   await plugin.getByRole("menuitem", { name: "Edit Instructions", exact: true }).click();
   await expect(
@@ -114,8 +112,7 @@ test("Projects header follows selection, edits, navigation and history", async (
     await page.reload();
     await expectHeader(renamed);
     if (view === "home") {
-      await composer.fill("Archived project draft");
-      await expect(composer).toBeFocused();
+      await expect(composer).not.toBeVisible();
       await page.screenshot({ path: info.outputPath("opened-archived-project.png") });
     }
     if (await openNavigation.isVisible()) await openNavigation.click();

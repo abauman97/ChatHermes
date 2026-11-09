@@ -98,7 +98,7 @@ and only clears that owner on disposal. Reused parameter routes stay reactive;
 late data or disposal from a departed page cannot replace the active header.
 Header context does not select composer scope.
 
-`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, session, draftProject]`, never busy/loading state.
+`ChatInterface` keeps its composer mounted below the default router outlet. Unscoped Home shows a five-item global unread Inbox preview; scoped Home shows its validated Project context; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, draftRevision]`, never busy/loading state. Every route change and repeated New chat resets the draft revision except the exact creation-owned Home → stored-session handoff. That one transition keeps the mounted composer, including follow-up text, pending attachment reads/uploads and focus. A consumed handoff records its originating path, destination and draft revision; unrelated navigation invalidates it.
 Drafts, attachment reads, editing, sizing and focus remain composer-local; gate
 sending independently of editing. Keep standalone composer tests provider-free.
 
@@ -149,7 +149,8 @@ Timing if host hydration rewrote it before the app import; later host mounts do 
 restore that original document destination.
 
 The persistent application coordinator applies profile and session scope only when they change.
-Screen-only navigation keeps the native viewer, ChatInterface and composer alive.
+Screen-only navigation keeps the native viewer and ChatInterface alive; composer
+draft ownership resets on navigation as described above.
 Project browsing is separate from session workspace membership; route parameters
 never rewrite membership. Captured Vue Router route identities reject obsolete asynchronous results, including navigation away and back to the same URL; pending creation also retires immediately on a navigation command. Project home, artifacts, settings and instructions each render a dedicated page. Scheduled list, job history and saved output each own an abortable request through `useScheduledHistory`, including saved runs outside page one. Route resource/profile changes and unmount abort obsolete reads. Filters such as scheduled status, archived Projects and Inbox scope live in route queries.
 
@@ -206,9 +207,10 @@ The registered pages are:
 Projects use Hermes's `projects.tree` gateway RPC, including automatic repository
 Projects and Home. Selecting a Project loads its fully hydrated
 `projects.project_sessions` hierarchy and displays its recent chats. The URL alone selects composer scope: `/chat/:sessionId` resumes an existing
-session, `/projects/:projectId` starts a fresh project draft, and `/` starts a fresh
-unscoped draft. Other routes hide the composer and select no session. Session and
-project query parameters have no scope meaning and are never propagated. Existing
+session; `/` starts an unscoped draft and `/?project=:projectId` starts a Project
+draft. Both accept the owning `profile` query parameter. Project home lists chats
+and links to scoped Home. Other routes hide the composer and select no session.
+The legacy `session` query parameter is ignored; `project` selects scope only on Home. Existing
 session membership comes from the backend Project catalog, including after refresh
 and browser history navigation. Detaching the browser viewer leaves backend work
 running.
@@ -229,16 +231,17 @@ selected hierarchy and direct navigation intact. If storage is unavailable, the
 preference remains usable for the current mount.
 
 **New Project Chat** appears on Project home and in an open chat with a selected
-Project. It creates a distinct chat in that selected Project. **New chat** in an
-open chat still starts an unscoped chat; on Project home it retains scoped creation.
+Project. It opens scoped Home without allocating a session. Repeating New chat
+resets the draft, including attachments, even when its URL is unchanged. **New chat** in an
+open chat still starts an unscoped chat; on Project home and scoped Home it retains the Project query. All new-chat entry
+points use Home; only first Send creates and attaches a session.
 Scoped creation uses the Project path, then its first repository path, resolves the
 workspace with `config.get` under the owning profile, and creates a native
 `session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
 `project_id` is sent to session creation. A pathless Project cannot start a chat;
-Home starts a chat without a Project workspace. Native draft IDs are persisted through the authenticated profile API before attachment. An unavailable workspace fails before creation.
+Unscoped Home starts a chat without a Project workspace. Native draft IDs are persisted through the authenticated profile API before attachment. An unavailable workspace fails before creation.
 
-Opening another Project changes UI scope while retaining the current chat and
-its workspace. Existing sessions always resume with their own saved cwd. Native
+Opening another Project leaves the conversation route and selects no session. Existing sessions always resume with their own saved cwd. Native
 `prompt.submit` turns use one Vue session controller with direct native events,
 shared Hermes request correlation/heartbeat, and native snapshot recovery. A healthy
 connection stays attached while the page is hidden. Offline recovery reconstructs

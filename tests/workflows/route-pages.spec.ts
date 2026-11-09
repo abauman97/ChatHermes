@@ -73,7 +73,7 @@ test("every route opens directly, nested pages reload, and history restores its 
     };
     await expectSubtitle();
     await expect(plugin.getByRole("button", { name: "← Projects", exact: true })).toHaveCount(0);
-    const supportsChat = path === "/" || path === `/projects/${project}`;
+    const supportsChat = path === "/";
     await expect(plugin.locator("#prompt")).toBeVisible({ visible: supportsChat });
     await page.reload();
     await expect(page.locator(".chathermes-embedded").locator(selector)).toBeVisible();
