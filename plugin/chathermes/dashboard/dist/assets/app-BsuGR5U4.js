@@ -4744,7 +4744,7 @@ var ol = (e) => {
 //#region src/services/chat-gateway.ts
 function pl(e) {
 	let t = e;
-	if (!t || typeof t != "object" || t.protocol !== "hermes.native.bf0203a7" || t.reviewed_source !== "bf0203a794a07aac3ff764972ab9087baa4e4f4e" || t.mode !== "native-gateway" || t.admission !== !0 || !Array.isArray(t.operations) || !t.operations.every((e) => typeof e == "string") || !Array.isArray(t.blockers) || !t.blockers.every((e) => typeof e == "string") || t.guarantees?.crash_safe_idempotency !== !1 || t.guarantees?.lossless_snapshot_replay !== !1 || t.guarantees?.offline_turn_lease !== !0) throw Error("Unsupported native chat contract");
+	if (!t || typeof t != "object" || t.protocol !== "hermes.native.2bd378ed" || t.reviewed_source !== "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19" || t.mode !== "native-gateway" || t.admission !== !0 || !Array.isArray(t.operations) || !t.operations.every((e) => typeof e == "string") || !Array.isArray(t.blockers) || !t.blockers.every((e) => typeof e == "string") || t.guarantees?.crash_safe_idempotency !== !1 || t.guarantees?.lossless_snapshot_replay !== !1 || t.guarantees?.offline_turn_lease !== !0) throw Error("Unsupported native chat contract");
 	return t;
 }
 async function ml(e, t) {
