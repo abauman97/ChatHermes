@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/bf0203a794a07aac3ff764972ab9087baa4e4f4e/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
 | Operation    | Hermes route                                                                          | Request            | Expected response                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -126,17 +126,22 @@ lifecycle, not support for canonical or remote authority-owned sessions.
 
 ### Supported chat wire
 
-ChatHermes targets Hermes release 0.22.5, source
-`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. There is one wire contract:
+ChatHermes targets Hermes release v0.23.0, source
+`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. There is one wire contract:
 the dashboard's authenticated same-origin `/api/ws`, JSON-RPC 2.0, using
 `hermes-gateway-v1` and a single-use `hermes-gateway-ticket.*` subprotocol.
 Every session operation includes its profile. Revision/generation authority
 snapshots are rejected; there is no translation or alternate transport.
 The plugin registers no WebSocket route.
 
-`GET /chat/capabilities` reports `hermes.native.bf0203a7`, `native-gateway`,
+`GET /chat/capabilities` reports `hermes.native.2bd378ed`, `native-gateway`,
 and the reviewed source pin. The browser checks this contract before enabling
 sending and probes the native gateway without admitting a prompt.
+These fields describe the plugin's reviewed wire contract, not the running
+host's version or commit. `admission: true` declares support for the submission
+path; it does not attest runtime identity or compatibility with every host.
+The read-only gateway probe checks connectivity and supported response shape,
+not source provenance. Exact-release verification belongs to the test fixture.
 
 Normal and Project drafts use native `session.create`. Projects first validate
 the authoritative workspace through `/projects/session?prepare=1`; callers
@@ -258,7 +263,7 @@ contract. Existing job, run, profile and symlink checks apply before extraction.
 
 ## Test environment
 
-The Compose environment extends the latest official Hermes release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
+The Compose environment extends the digest-pinned official Hermes v0.23.0 release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
 
 ## Project metadata and draft history
 
@@ -506,9 +511,9 @@ availability check.
 `src/features/kanban/` calls the existing authenticated, same-origin
 `/api/plugins/kanban/` API directly; it does not use the chat gateway, add Python
 routes, or persist task data. The contract was reviewed against Hermes
-`bf0203a794a07aac3ff764972ab9087baa4e4f4e` and the upstream Desktop Kanban
-[`api.ts`](https://github.com/NousResearch/hermes-agent/blob/main/apps/desktop/src/plugins/kanban/api.ts),
-[`types.ts`](https://github.com/NousResearch/hermes-agent/blob/main/apps/desktop/src/plugins/kanban/types.ts),
+`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19` and the upstream Desktop Kanban
+[`api.ts`](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/apps/desktop/src/plugins/kanban/api.ts),
+[`types.ts`](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/apps/desktop/src/plugins/kanban/types.ts),
 `board.tsx` and `drawer.tsx`.
 
 The global browser preference `chathermes.kanban-viewer` defaults false. A valid

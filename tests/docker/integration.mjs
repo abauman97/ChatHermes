@@ -1,4 +1,5 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   compose,
   dashboardURL,
@@ -29,6 +30,33 @@ console.log(
   ),
 );
 const hermes = serviceContainer("hermes");
+// This verifies the base Hermes pin only, not the plugin build.
+const pin = JSON.parse(readFileSync(new URL("./hermes-pin.json", import.meta.url), "utf8"));
+const revision = dockerExec(
+  hermes,
+  "/opt/hermes/.venv/bin/python",
+  "/opt/chathermes/verify-hermes.py",
+);
+if (revision !== `Verified Hermes source revision: ${pin.commit}`)
+  throw new Error(
+    "Retained Hermes container differs from this checkout's source pin; rebuild explicitly",
+  );
+console.log(revision);
+// A rebuild moves the Compose image tag without replacing --no-recreate containers.
+// Bind this run to that local build; unbuilt checkout edits are not verified here.
+const config = JSON.parse(compose("config", "--format", "json"));
+const fixtureImage = config.services.hermes.image || `${config.name}-hermes`;
+const imageID = execFileSync("docker", ["image", "inspect", "--format", "{{.Id}}", fixtureImage], {
+  encoding: "utf8",
+}).trim();
+const runningImageID = execFileSync("docker", ["inspect", "--format", "{{.Image}}", hermes], {
+  encoding: "utf8",
+}).trim();
+if (!imageID || imageID !== runningImageID)
+  throw new Error(
+    "Retained Hermes container differs from the current Compose fixture image; explicitly apply the built image with Compose up -d --no-build",
+  );
+console.log(`Verified Compose fixture image: ${imageID} (build identity, not checkout freshness)`);
 const deterministic = dockerExec(
   hermes,
   "/opt/hermes/.venv/bin/python",

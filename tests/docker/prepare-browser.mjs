@@ -29,9 +29,8 @@ export async function authenticate(page, url = `${dashboardURL()}/chathermes#/`)
     // Reopen the requested destination after the real authenticated roundtrip.
     await page.goto(url);
   }
-  await page
-    .getByRole("button", { name: "Choose model", exact: true })
-    .waitFor({ state: "visible" });
+  // Every route has the profile marker; only chat destinations have a composer.
+  await page.locator(".chathermes-embedded .topbar-profile").waitFor({ state: "visible" });
   sessions.set(origin, await page.context().cookies(origin));
   return page;
 }

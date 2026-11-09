@@ -22,7 +22,7 @@ import pathlib, sys
 from pm.workspace import _generate_pyproject
 root = pathlib.Path(sys.argv[1])
 profiles = [root / "profiles/default/plugins/chathermes", root / "profiles/developer/plugins/chathermes"]
-_generate_pyproject(profiles, root / "workspace", source=pathlib.Path(sys.argv[2]))
+_generate_pyproject(profiles, root / "workspace", source=pathlib.Path(sys.argv[2]), python=pathlib.Path(sys.executable))
 """
     subprocess.run(
         [sys.executable, "-c", script, str(tmp_path), str(runtime)],

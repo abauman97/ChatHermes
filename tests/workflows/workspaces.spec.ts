@@ -98,6 +98,6 @@ test("native saved Cron output restores its exact job and run", async ({ page },
   expect(decodeURIComponent(page.url())).toContain(seed.run);
   await page.reload();
   await expect(page.locator(".scheduled-page")).toContainText("Synthetic saved Cron output.");
-  await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeEnabled();
+  await expect(page.getByRole("textbox", { name: "Message Hermes" })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("scheduled-restored.png") });
 });

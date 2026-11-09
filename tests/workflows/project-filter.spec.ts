@@ -171,8 +171,5 @@ test("Projects menu fits a narrow mobile viewport and supports keyboard choices"
   await page.keyboard.press("Escape");
   await expect(options).toBeFocused();
   await expect(options).toHaveAttribute("aria-expanded", "false");
-  await page
-    .getByRole("textbox", { name: "Message Hermes", exact: true })
-    .fill("Focusable Projects draft");
-  await expect(page.getByRole("textbox", { name: "Message Hermes", exact: true })).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Message Hermes", exact: true })).toHaveCount(0);
 });

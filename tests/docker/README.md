@@ -17,21 +17,58 @@ From the repository root:
 
 ```sh
 npm ci
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/tmp/playwright-browsers"
 npx playwright install chromium
+export CHATHERMES_CHROMIUM="$(node --input-type=module -e 'import { chromium } from "@playwright/test"; console.log(chromium.executablePath())')"
+# Use a unique name and unused ports when another environment exists.
+export COMPOSE_PROJECT_NAME=chathermes-v023-my-check
+export CHATHERMES_DASHBOARD_PORT=23719 CHATHERMES_MOCKSERVER_PORT=23780
+export CHATHERMES_ANDROID_VNC_PORT=23760 CHATHERMES_ANDROID_CDP_PORT=23723
 npm run test:env:build
 npm run test:integration
 # Filter without bootstrapping another environment:
 npm run test:integration -- tests/workflows/messaging.spec.ts --grep streaming
 ```
 
+Keep browser downloads local to the checkout. The full Chromium executable is
+used for notification probes: the headless shell can report a granted Permissions
+API override while `Notification.permission` remains denied and worker
+`showNotification` fails. `CHATHERMES_CHROMIUM` selects the full browser while
+the integration runner still launches it headlessly.
+
 `test:env:build` builds ignored plugin assets and uses `docker compose build --pull`
-to refresh the latest official Hermes base. Ordinary test runs never rebuild,
+with the immutable official Hermes v0.23.0 image digest in `Dockerfile`. Its install
+stamp must match source commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`
+(`hermes-pin.json`); build and integration startup both verify it. This does not
+follow `latest` or a mutable release tag. Ordinary test runs never rebuild,
 replace, or reseed running containers. After a rebuild, explicitly apply it with
 `docker compose --project-directory . -f tests/docker/compose.yml up -d --no-build`.
 Builds always write to `plugin/chathermes/dashboard/dist/`, and Docker copies
 assets from that same production plugin path. Keep generated output uncommitted;
 after validation, restore only any tracked generated files to `HEAD` and leave
 untracked generated output ignored.
+
+A retained older container fails the revision check; rebuild and explicitly apply
+the image with Compose `up -d --no-build` before retrying. Failed commands retain
+all fixture state.
+
+Startup also compares the retained container's image ID with the currently tagged
+Compose Hermes fixture image (including an explicit override image). A rebuilt
+plugin on the same Hermes pin therefore requires explicitly applying that image
+before tests can proceed. This binds tests to the selected local build, **not to
+the current checkout's source bytes**: unbuilt edits, mutable container files,
+and override mounts are not attested. Build with `npm run test:env:build`, apply
+the image explicitly, and retain the printed image ID with verification evidence
+when claiming coverage of source changes. The Hermes install-stamp check alone
+establishes only the reviewed base revision.
+
+For weekly compatibility updates, review the exact upstream release commit,
+verify the official image install stamp, and update the digest,
+`hermes-pin.json`, local source checkout, native capability pin and developer
+guides together. Compare vendored shared contracts with that source and run all
+local checks plus the deterministic desktop/mobile integration suite. Record each
+exit status and any blockers under `docs/internal/verification/`; a pin update
+alone does not establish compatibility.
 
 Stop Android first if replacing Hermes while an installed app is in use.
 
@@ -106,6 +143,11 @@ inspection. Login: `tester` / `chathermes-local-test` (synthetic test account on
 
 Publications default to loopback. For a remote daemon, use SSH forwarding or
 explicit private daemon addresses. Never publish browser controls publicly.
+Service-worker, update and notification workflows require a browser secure
+context: forward the dashboard to runner loopback and set `CHATHERMES_TEST_URL`
+to that `http://127.0.0.1:<forwarded-port>` origin (or use trusted HTTPS).
+A private `http://docker:<port>` origin can serve chat but does not provide
+`navigator.serviceWorker`.
 
 | Setting                           | Default / purpose                                                             |
 | --------------------------------- | ----------------------------------------------------------------------------- |
@@ -164,6 +206,17 @@ route mocks. Use unique session/prompt markers and retain failed state.
 Use the small `tests/workflows/helpers.ts` runtime helper only for native prerequisites
 that lack a user-facing creation flow, such as a paused Cron job with saved output
 or a disposable project directory. Keep assertions in the actual dashboard.
+
+Authentication readiness uses the persistent profile marker, which is present on
+every plugin route. Assert composer focus on Home, chat, or Project home; Inbox,
+the Projects catalog, and Scheduled output intentionally have no composer. MEDIA
+paths already delivered in the same assistant turn produce no duplicate cards.
+Worker-routing probes use a fresh notification tag for each synthetic click so
+closing an earlier notification cannot race a later probe with the same tag.
+These probes do not verify native notification delivery.
+For active-disclosure screenshots, a scoped real-tool fixture can wait at an
+explicit test-owned gate until inspection completes. Release it after the
+assertions and bound failed runs with the tool's execution timeout.
 
 Test inference faults separately from browser connectivity faults. Check progressive
 rendering, event ordering, final content, reload persistence, and recoverability.

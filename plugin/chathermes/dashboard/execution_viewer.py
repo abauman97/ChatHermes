@@ -9,7 +9,7 @@ import asyncio
 import json
 import os
 
-PIN = "bf0203a794a07aac3ff764972ab9087baa4e4f4e"
+PIN = "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
 
 
 def transcript(profile, stored):

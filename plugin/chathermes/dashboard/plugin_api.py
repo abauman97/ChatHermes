@@ -928,12 +928,13 @@ async def retain_execution(request: Request):
 
 @router.get("/chat/capabilities")
 async def chat_capabilities():
+    """Describe the plugin's reviewed wire contract, not the running host revision."""
     return JSONResponse(
         {
-            "protocol": "hermes.native.bf0203a7",
+            "protocol": "hermes.native.2bd378ed",
             "mode": "native-gateway",
             "admission": True,
-            "reviewed_source": "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
+            "reviewed_source": "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19",
             "operations": [
                 "gateway.ping",
                 "session.create",
@@ -1239,8 +1240,8 @@ async def _native_file(request, operation, path, session_id=None, name=None):
             result = await files.fs_read_data_url(
                 path, request=request, profile=profile, session_id=session_id
             )
-            # Newer Hermes renders inline bytes in its own JSONResponse; the
-            # reviewed pin returns a dict. Preserve both native response shapes.
+            # The reviewed pin renders inline bytes in its own JSONResponse.
+            # Preserve native headers and the older dict response shape.
             if isinstance(result, Response):
                 if result.status_code >= 400:
                     raise HTTPException(result.status_code, "Hermes could not access this file")

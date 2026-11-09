@@ -41,7 +41,7 @@ unwritable or invalid persistent VAPID state; never print the private state file
 
 The dashboard loads `dashboard/plugin_api.py` into its own Python process;
 `dashboard/manifest.json` does not provision dependencies. In the reviewed Hermes
-source (`bf0203a794a07aac3ff764972ab9087baa4e4f4e`), CLI dependency consent
+source (`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`), CLI dependency consent
 is in `hermes_cli/plugins_cmd_install.py`, enable admission prepares the shared
 runtime through `hermes_cli/plugins_admission.py`, and backend imports occur in
 `hermes_cli/web_server_dashboard.py`. Copying files bypasses that admission.
@@ -58,11 +58,17 @@ See [notification setup](../user/notifications.md) for the device enable flow an
 
 ## Native runtime
 
-`npm run live` starts the deterministic Compose stack using the latest official Hermes base and stock MockServer. Real providers are explicit opt-in through `npm run live:real` in a separate project. Follow the [test environment guide](../../tests/docker/README.md) for setup, rebuilds, and explicit project-scoped cleanup.
+`npm run live` starts the deterministic Compose stack using the digest-pinned official Hermes v0.23.0 image and stock MockServer. Real providers are explicit opt-in through `npm run live:real` in a separate project. Follow the [test environment guide](../../tests/docker/README.md) for setup, rebuilds, and explicit project-scoped cleanup.
 
 Deploy the whole plugin directory and rebuild assets after Python or frontend
-changes. The native contract targets Hermes 0.22.5 at
-`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. Unsupported contracts fail closed.
+changes. The native contract targets Hermes v0.23.0 at
+`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. Capabilities describe the plugin's
+reviewed wire contract, not the running host's version or commit; `admission: true`
+declares submission support, not runtime identity or compatibility with every host.
+The browser rejects unsupported capability values and gateway probe responses,
+but the read-only probe checks connectivity and supported response shape, not
+source provenance. Exact-release verification belongs to the test fixture. See
+the [supported chat wire contract](api-contract.md#supported-chat-wire).
 Browser and server execution viewers use the same native dashboard gateway.
 The server viewer connects over loopback using `HERMES_DASHBOARD_PORT` (9119 by
 default) and a delegated single-use dashboard ticket. It must reach the same

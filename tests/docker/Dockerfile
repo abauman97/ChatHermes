@@ -1,6 +1,9 @@
-# Build from the repository root with --pull to refresh the latest Hermes release.
-FROM nousresearch/hermes-agent:latest
+# Hermes v0.23.0; immutable multi-platform image, verified against the source pin.
+FROM nousresearch/hermes-agent:v0.23.0@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002
 USER root
+
+COPY tests/docker/hermes-pin.json tests/docker/verify-hermes.py /opt/chathermes/
+RUN /opt/hermes/.venv/bin/python /opt/chathermes/verify-hermes.py
 
 COPY plugin/chathermes /opt/chathermes/plugin
 COPY plugin/chathermes/dashboard/dist/ /opt/chathermes/plugin/dashboard/dist/

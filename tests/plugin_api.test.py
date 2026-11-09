@@ -2715,9 +2715,23 @@ async def test_native_contract_is_pinned_read_only_and_has_no_plugin_websocket(a
         response = await client.get("/api/plugins/chathermes/chat/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert body["protocol"] == "hermes.native.bf0203a7"
+    assert body["protocol"] == "hermes.native.2bd378ed"
     assert body["reviewed_source"] == plugin._execution_viewer.PIN
     assert body["mode"] == "native-gateway"
+    assert body["admission"] is True
+    assert response.headers["cache-control"] == "no-store"
+    # This read-only descriptor names the reviewed contract, not host provenance.
+    assert set(body) == {
+        "protocol",
+        "mode",
+        "admission",
+        "reviewed_source",
+        "operations",
+        "blockers",
+        "features",
+        "guarantees",
+        "limits",
+    }
     assert body["guarantees"] == {
         "offline_turn_lease": True,
         "crash_safe_idempotency": False,
@@ -3665,6 +3679,7 @@ async def test_transcript_route_preserves_real_desktop_ids_and_profile_isolation
 async def test_automatic_artifacts_use_native_canonical_security_and_indexing(
     app, monkeypatch, tmp_path
 ):
+    from contextlib import nullcontext
     from urllib.parse import parse_qs, urlsplit
 
     from fastapi import HTTPException
@@ -3676,6 +3691,8 @@ async def test_automatic_artifacts_use_native_canonical_security_and_indexing(
     runtime_home = tmp_path / "runtime"
     runtime_home.mkdir()
     monkeypatch.setenv("HOME", str(runtime_home))
+    monkeypatch.setattr(files, "_profile_scope", lambda profile: nullcontext())
+    monkeypatch.setattr(files, "get_hermes_home", lambda: runtime_home)
     monkeypatch.setattr(files, "_fs_backend", lambda profile: None)
     monkeypatch.setattr(files, "_fs_profile_home", lambda profile: runtime_home)
     monkeypatch.setattr(
@@ -3687,10 +3704,18 @@ async def test_automatic_artifacts_use_native_canonical_security_and_indexing(
     )
     calls = []
 
-    async def resolve(path, profile, session_id):
+    async def owned_session(session_id, profile):
+        if profile != "alpha" or session_id != "session":
+            raise HTTPException(404, KEY)
+        return {"id": session_id}
+
+    monkeypatch.setattr(files, "_fs_owned_session", owned_session)
+
+    async def resolve(path, profile, session_id, *, session=None):
         calls.append((path, profile, session_id))
         if profile != "alpha" or session_id != "session":
             raise HTTPException(404, KEY)
+        assert session == {"id": session_id}
         return policy._fs_path(path)
 
     monkeypatch.setattr(files, "_fs_download_path", resolve)
@@ -3830,6 +3855,34 @@ async def test_automatic_remote_artifacts_probe_the_runtime_without_local_reads(
         assert response.status_code == 503
         assert KEY not in response.text
         assert "content-location" not in response.headers
+
+
+@run_async
+async def test_native_artifact_refuses_foreign_session_before_remote_inspection(app, monkeypatch):
+    from fastapi import HTTPException
+    from hermes_cli.web_routers import files, sessions
+
+    calls = []
+
+    async def session_detail(session_id, profile):
+        calls.append((session_id, profile))
+        raise HTTPException(404, KEY)
+
+    def backend(profile):
+        pytest.fail("A foreign session must be refused before selecting a file backend")
+
+    monkeypatch.setattr(sessions, "get_session_detail", session_detail)
+    monkeypatch.setattr(files, "_fs_backend", backend)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://dashboard.test"
+    ) as client:
+        response = await client.head(
+            "/api/plugins/chathermes/files/download",
+            params={"profile": "remote", "session_id": "foreign", "path": "~/report.txt"},
+        )
+        assert response.status_code == 404
+        assert "content-location" not in response.headers
+        assert calls == [("foreign", "remote")]
 
 
 @pytest.mark.parametrize("serving_profile", ["default", "alpha", ""])

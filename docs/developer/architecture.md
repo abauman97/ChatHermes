@@ -251,8 +251,8 @@ changes refresh the tree and selected hierarchy. No separate Project database,
 frontend path classifier, or active Project mutation exists. Project management
 and session moves remain in Desktop/CLI for this initial workflow.
 
-The shared wire types target Hermes 0.22.5 at
-`bf0203a794a07aac3ff764972ab9087baa4e4f4e`. Workspace
+The shared wire types target Hermes v0.23.0 at
+`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. Workspace
 creation sends `cwd_explicit: true` under the pinned native contract. Unsupported
 native creation fails closed; it is never retried after an ambiguous outcome. See the
 [source audit](../internal/plans/2026-10-01-projects.md),
