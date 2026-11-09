@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import type { Attachment } from "../../../types/hermes";
 import { useChat, conversationFocus } from "../context";
 import ChatComposer from "./ChatComposer.vue";
-const props = defineProps<{ showChat: boolean; hideComposer?: boolean; draftScope?: string }>();
+const props = defineProps<{ showChat: boolean; hideComposer?: boolean; composerKey?: string }>();
 const picker = ref<InstanceType<typeof ChatComposer>>();
 const transcript = ref<{ focusLatestMessage: () => void }>();
 provide(conversationFocus, transcript);
@@ -27,10 +27,10 @@ watch(
   },
   { flush: "post" },
 );
-async function sendMessage(text: string, attachments: Attachment[]) {
+async function sendMessage(text: string, attachments: Attachment[], recover: () => void) {
   focusConversation();
   try {
-    await actions.send(text, attachments);
+    await actions.send(text, attachments, recover);
   } finally {
     pendingFocus = false;
   }
@@ -168,7 +168,7 @@ const {
         @context-open="actions.setContextOpen"
         v-show="!hideComposer"
         :project-name="composer.projectName"
-        :key="JSON.stringify([profile, session, draftScope])"
+        :key="composerKey ?? JSON.stringify([profile, session])"
         :disabled="composer.disabled"
         :models="models"
         :providers="providers"

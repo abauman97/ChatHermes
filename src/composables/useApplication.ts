@@ -19,7 +19,7 @@ import type {
   Session,
   SessionTracking,
 } from "../types/hermes";
-import { projectSessions } from "../features/projects/utils/projects";
+import { projectRoot, projectSessions } from "../features/projects/utils/projects";
 import * as push from "../features/notifications/services/push";
 import { connectPushClient } from "../features/notifications/services/push-client";
 import ChatInterface from "../features/chat/components/ChatInterface.vue";
@@ -54,6 +54,14 @@ export function useApplication() {
     () =>
       (!isChat.value && !projectView.value) || queryString(route.query.profile) !== profile.value,
   );
+  const draftEpoch = ref(0);
+  const composerNavigation = ref(0);
+  const composerKey = computed(() =>
+    JSON.stringify([profile.value, composerNavigation.value, draftEpoch.value]),
+  );
+  const composerDraftKey = computed(() =>
+    projectView.value ? JSON.stringify([route.fullPath, draftEpoch.value]) : "",
+  );
   const settingsPage = computed(() => route.name === "settings");
   const scheduledPage = computed(() => route.meta.section === "scheduled");
   let scopeReady = false,
@@ -61,13 +69,18 @@ export function useApplication() {
   let profileWork: Promise<void> = Promise.resolve();
   let routeWork: Promise<void> = Promise.resolve();
   let drawerNavigationTarget = "";
+  let navigationRevision = 0;
+  let creationTransitionPath = "";
   let createRequest: AbortController | undefined;
   async function navigate(
     to: Parameters<typeof router.push>[0],
     replace = false,
     keepDrawer = false,
+    creationTransition = false,
   ) {
     createRequest?.abort();
+    if (creationTransition) creationTransitionPath = router.resolve(to).fullPath;
+    else creating.value = false;
     drawerNavigationTarget = keepDrawer ? router.resolve(to).fullPath : "";
     if (!keepDrawer) drawer.value = false;
     closeScreenMenu(false);
@@ -205,16 +218,105 @@ export function useApplication() {
     profileGeneration: () => profileGeneration,
     refreshActivity: activity.refresh,
   });
+  // Empty draft rows can exist in REST before gateway Project membership appears.
+  // Retain only associations created by this tab, keyed by profile and session.
+  const draftMemory = new Map<string, string>();
+  const draftRevision = ref(0);
+  const draftKey = (profile: string, id: string) =>
+    `chathermes.project-draft:${encodeURIComponent(profile)}:${encodeURIComponent(id)}`;
+  function draftProject(profile: string, id: string) {
+    void draftRevision.value;
+    const key = draftKey(profile, id);
+    if (draftMemory.has(key)) return draftMemory.get(key)!;
+    try {
+      return sessionStorage.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  }
+  function setDraftProject(profile: string, id: string, project: string) {
+    const key = draftKey(profile, id);
+    // Keep empty tombstones too: a failed remove must not revive stale storage.
+    draftMemory.set(key, project);
+    try {
+      if (project) sessionStorage.setItem(key, project);
+      else sessionStorage.removeItem(key);
+    } catch {
+      /* Storage can be unavailable in restricted browser contexts. */
+    }
+    draftRevision.value++;
+  }
+  const reconcilingDrafts = new Set<string>();
+  async function reconcileStoredDraft(p: string, id: string) {
+    const draft = draftProject(p, id),
+      key = draftKey(p, id),
+      owner = profileGeneration;
+    if (!draft || reconcilingDrafts.has(key) || p !== profile.value) return;
+    reconcilingDrafts.add(key);
+    try {
+      // Message persistence can precede the catalog read already in flight.
+      // Only a successful read started after that evidence can prove absence.
+      const catalog = await loadProjects();
+      if (
+        catalog &&
+        owner === profileGeneration &&
+        p === profile.value &&
+        draftProject(p, id) === draft
+      )
+        setDraftProject(p, id, "");
+    } finally {
+      reconcilingDrafts.delete(key);
+    }
+  }
   const contextProject = computed(() => {
-    if (session.value)
-      return (
-        projects.value.find(
-          (project) =>
-            project.sessionIds?.includes(session.value) ||
-            projectSessions(project).some((row) => row.id === session.value),
-        )?.id || ""
+    if (session.value) {
+      const member = projects.value.find(
+        (project) =>
+          project.sessionIds?.includes(session.value) ||
+          projectSessions(project).some((row) => row.id === session.value),
       );
+      if (member) return member.id;
+      const draft = draftProject(profile.value, session.value);
+      return projects.value.some((project) => project.id === draft) ? draft : "";
+    }
     return typeof route.params.projectId === "string" ? route.params.projectId : "";
+  });
+  watch(
+    [projects, profile],
+    ([catalog, p]) => {
+      if (queryString(route.query.profile) !== p) return;
+      for (const project of catalog) {
+        for (const id of [
+          ...(project.sessionIds || []),
+          ...projectSessions(project).map((row) => row.id),
+        ]) {
+          if (draftProject(p, id)) setDraftProject(p, id, "");
+        }
+      }
+    },
+    { flush: "sync" },
+  );
+  watch([projects, profile, session], async (_values, _previous, onCleanup) => {
+    const p = profile.value,
+      id = session.value;
+    if (
+      queryString(route.query.profile) !== p ||
+      !id ||
+      !draftProject(p, id) ||
+      reconcilingDrafts.has(draftKey(p, id))
+    )
+      return;
+    const controller = new AbortController();
+    onCleanup(() => controller.abort());
+    try {
+      // Empty rows remain ambiguous. Stored messages require a fresh catalog
+      // before retiring provisional scope, even outside the sidebar page.
+      const row = await api.session(p, id, controller.signal);
+      if (!controller.signal.aborted && row.id === id && (row.message_count ?? 0) > 0)
+        await reconcileStoredDraft(p, id);
+    } catch {
+      // A 404 or unavailable read is not proof: retain the draft for first send.
+    }
   });
   const native = useNativeSession(
     () => {
@@ -235,6 +337,7 @@ export function useApplication() {
     chatError,
     canStream,
     composerBlocked,
+    draftScope: composerDraftKey,
     projectView,
     selectedProject,
     creating,
@@ -248,7 +351,7 @@ export function useApplication() {
     suggestedPrompt,
     generation: () => generation,
     navigation: () => router.currentRoute.value,
-    createSession,
+    createSession: () => materializeSession(false, true),
     suggest,
     retryHistory: loadMessages,
     openBranch: async (id: string) => {
@@ -278,7 +381,7 @@ export function useApplication() {
     return chooseSession(id);
   }
   async function newChat() {
-    return await createSession(true);
+    return await materializeSession(true);
   }
   function invalidateSessionList() {
     listAbort?.abort();
@@ -304,6 +407,11 @@ export function useApplication() {
       ]);
       const tracked = trackingResult.value;
       if (controller !== listAbort || controller.signal.aborted || id !== profile.value) return;
+      // Tracking summaries and empty REST rows do not prove a first send.
+      for (const row of result.sessions) {
+        if ((row.message_count ?? 0) > 0 && draftProject(id, row.id))
+          void reconcileStoredDraft(id, row.id);
+      }
       const pending = tracking.value.filter((row) => trackingPending.value.has(row.session_id));
       if (tracked)
         tracking.value = [
@@ -480,11 +588,37 @@ export function useApplication() {
     if (nativeMode.value) await native.attach(p, id);
     else await loadMessages();
   }
-  async function createSession(unscoped = false) {
+  async function openProjectDraft() {
+    const selected = selectedProject.value;
     if (
       offline.value ||
       creating.value ||
-      (!unscoped && projectId.value && selectedProject.value?.archived)
+      !projectId.value ||
+      !selected ||
+      selected.id !== projectId.value ||
+      selected.archived ||
+      (!selected.isNoProject && !projectRoot(selected)) ||
+      queryString(route.query.profile) !== profile.value
+    )
+      return;
+    draftEpoch.value++;
+    await navigate({
+      name: "project-draft",
+      params: { projectId: projectId.value },
+      query: profile.value ? { profile: profile.value } : {},
+    });
+  }
+  async function materializeSession(unscoped = false, preserveComposer = false) {
+    if (
+      offline.value ||
+      creating.value ||
+      queryString(route.query.profile) !== profile.value ||
+      (!unscoped &&
+        projectId.value &&
+        (!selectedProject.value ||
+          selectedProject.value.id !== projectId.value ||
+          selectedProject.value.archived ||
+          (!selectedProject.value.isNoProject && !projectRoot(selectedProject.value))))
     )
       return;
     const id = profile.value,
@@ -509,9 +643,21 @@ export function useApplication() {
         revision !== router.currentRoute.value
       )
         return;
-      // RPC drafts have no DB row until the first prompt; their normal resume path
-      // can still hydrate them by stored ID. Keep the same chat components.
-      await chooseSession(made.id);
+      // RPC drafts can have empty REST rows before Project membership appears.
+      // Their normal resume path hydrates the stored ID using the same components.
+      if (scope) setDraftProject(id, made.id, scope);
+      const transitionRevision = navigationRevision;
+      await navigate(
+        {
+          name: "chat",
+          params: { sessionId: made.id },
+          query: id ? { profile: id } : {},
+        },
+        revision.name === "project-draft",
+        false,
+        preserveComposer,
+      );
+      if (navigationRevision !== transitionRevision + 1) return;
       refreshProjects();
       const trackingRead = ++trackingRevision;
       void api
@@ -542,13 +688,13 @@ export function useApplication() {
         else error.value = message;
       }
     } finally {
-      if (owner === profileGeneration) creating.value = false;
+      if (owner === profileGeneration && createRequest === request) creating.value = false;
     }
   }
   async function suggest(text: string) {
     const current = generation,
       p = profile.value,
-      id = await createSession();
+      id = await materializeSession();
     if (id && current + 1 === generation && p === profile.value && session.value === id)
       suggestedPrompt.value = text;
   }
@@ -581,6 +727,7 @@ export function useApplication() {
       if (action === "archive") await api.archive(p, id);
       else if (action === "delete") await api.deleteSession(p, id);
       else await api.moveSession(p, id, target);
+      setDraftProject(p, id, action === "project" && draftProject(p, id) ? target : "");
       if (owner !== profileGeneration || p !== profile.value) return;
       invalidateSessionList();
       if (action !== "project") {
@@ -682,6 +829,15 @@ export function useApplication() {
     () => {
       if (!route.matched.length) return;
       const revision = router.currentRoute.value;
+      navigationRevision++;
+      createRequest?.abort();
+      // First-send materialization changes the URL, but its cleared composer
+      // owns follow-up edits and attachment preparation made during creation.
+      if (route.fullPath !== creationTransitionPath) {
+        composerNavigation.value++;
+        creating.value = false;
+      }
+      creationTransitionPath = "";
       if (session.value !== attachedSession || queryString(route.query.profile) !== profile.value) {
         cancelChat();
         attachedSession = "";
@@ -1074,10 +1230,12 @@ export function useApplication() {
     recentSession,
     chooseSession,
     manageProject,
-    createSession,
+    openProjectDraft,
     creating,
   });
   return {
+    composerKey,
+    composerDraftKey,
     profile,
     session,
     sessions,
@@ -1112,7 +1270,7 @@ export function useApplication() {
     projectView,
     recentSession,
     chooseProfile,
-    createSession,
+    openProjectDraft,
     trackSession,
     newChat,
     loadSessions,

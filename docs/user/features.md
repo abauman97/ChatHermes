@@ -79,7 +79,7 @@ Choose **Archived projects** in the Projects **···** menu to browse archived
 workspaces. After opening one, use **Projects** in the sidebar to return to the
 archived list. Choose **Active projects** in the list menu to switch back.
 
-Use **New Project Chat** to create a distinct chat in the selected Project workspace. In an open chat, **New chat** starts an unscoped chat; on Project home it retains scoped creation. Home starts without a Project workspace. A Project without an available workspace cannot start a chat.
+Use **New Project Chat** to open an empty draft in the selected Project workspace. Its Project and profile remain selected after refresh; unsent text and attachments are cleared. The chat is created when you send the first message. In an open chat, **New chat** starts an unscoped chat; the screen-menu action on Project home opens a Project draft. Home starts without a Project workspace. A missing or archived Project, or one without an available workspace, cannot start a chat.
 
 Browsing another Project changes the view while retaining the current chat's workspace. Resuming an existing chat always uses its saved workspace. Use **New project** on the Projects page to create a Project, optionally supplying a folder path on the Hermes server. In a Project’s **···** menu, **Edit project** lets you change its details and folders; the primary folder is used for new chats. Saved Projects can be archived, restored, or deleted from that menu. Automatically discovered workspaces offer **Save project** before their details can be managed.
 

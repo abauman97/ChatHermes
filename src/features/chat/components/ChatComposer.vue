@@ -41,7 +41,7 @@ const emit = defineEmits<{
   stop: [];
   "context-open": [open: boolean];
   steer: [text: string];
-  send: [text: string, attachments: Attachment[]];
+  send: [text: string, attachments: Attachment[], recover: () => void];
   "update:model": [model: string];
   "update:reasoningEffort": [effort: ReasoningEffort | ""];
   "update:provider": [provider: string];
@@ -52,6 +52,16 @@ const value = ref(""),
   attachments = ref<Attachment[]>([]),
   attachmentError = ref(""),
   reading = ref(false);
+// Recovery belongs to this mounted composer and only its unchanged, cleared draft.
+let draftRevision = 0;
+let mounted = true;
+watch([value, attachments, activeMode, reading], () => draftRevision++, {
+  deep: true,
+  flush: "sync",
+});
+onBeforeUnmount(() => {
+  mounted = false;
+});
 const files = ref<HTMLInputElement>(),
   camera = ref<HTMLInputElement>();
 const textarea = ref<HTMLTextAreaElement>(),
@@ -285,11 +295,23 @@ function send() {
     return;
   const text = value.value.trim();
   if (text || attachments.value.length) {
-    emit("send", activeMode.value ? `/${activeMode.value}\n${text}` : text, [...attachments.value]);
+    const draft = {
+      text: value.value,
+      attachments: [...attachments.value],
+      mode: activeMode.value,
+    };
+    const submitted = activeMode.value ? `/${activeMode.value}\n${text}` : text;
     value.value = "";
     attachments.value = [];
     attachmentsOpen.value = false;
     activeMode.value = null;
+    const revision = draftRevision;
+    emit("send", submitted, draft.attachments, () => {
+      if (!mounted || draftRevision !== revision) return;
+      value.value = draft.text;
+      attachments.value = draft.attachments;
+      activeMode.value = draft.mode;
+    });
   }
 }
 async function fitImage(data: string): Promise<string> {

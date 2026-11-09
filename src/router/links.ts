@@ -7,6 +7,7 @@ export type RouteName =
   | "artifacts"
   | "projects"
   | "project"
+  | "project-draft"
   | "project-artifacts"
   | "project-settings"
   | "project-instructions"
@@ -39,7 +40,7 @@ export function safeReturn(value: unknown): string {
   const url = new URL(value, "https://plugin.invalid");
   if (
     url.pathname === "/settings" ||
-    !/^\/(?:chat\/[^/]+|inbox|kanban|artifacts|projects(?:\/[^/]+(?:\/(?:artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
+    !/^\/(?:chat\/[^/]+|inbox|kanban|artifacts|projects(?:\/[^/]+(?:\/(?:new|artifacts|settings|instructions))?)?|scheduled(?:\/[^/]+(?:\/[^/]+)?)?)?$/.test(
       url.pathname,
     )
   )

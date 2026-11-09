@@ -24,7 +24,7 @@ type Context = Pick<
   creating: Readonly<Ref<boolean>>;
   recentSession: (id: string) => Promise<void>;
   chooseSession: (id: string) => Promise<void>;
-  createSession: () => Promise<string | undefined>;
+  openProjectDraft: () => Promise<void>;
 };
 type ProjectContext = Context & {
   projectConfirmation: Ref<"delete" | "archive" | undefined>;

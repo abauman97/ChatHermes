@@ -18,7 +18,7 @@ describe("composer keyboard behavior", () => {
     const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
     input.element.dispatchEvent(enter);
     expect(enter.defaultPrevented).toBe(true);
-    expect(wrapper.emitted("send")).toEqual([["hello", []]]);
+    expect(wrapper.emitted("send")).toEqual([["hello", [], expect.any(Function)]]);
 
     const shifted = new KeyboardEvent("keydown", {
       key: "Enter",

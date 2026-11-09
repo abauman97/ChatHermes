@@ -44,7 +44,8 @@ const {
   projectView,
   recentSession,
   chooseProfile,
-  createSession,
+  openProjectDraft,
+  composerKey,
   trackSession,
   newChat,
   loadSessions,
@@ -385,7 +386,7 @@ const projectsLink = computed(() => {
                     (!selectedProject.isNoProject && !projectRoot(selectedProject))))
               "
               @click="
-                projectView ? createSession() : newChat();
+                projectView ? openProjectDraft() : newChat();
                 closeScreenMenu();
               "
             >
@@ -405,7 +406,7 @@ const projectsLink = computed(() => {
         @touchcancel="drawerSwipe.cancel"
         @click.capture="drawerSwipe.click"
         :show-chat="route.meta.chat === true"
-        :draft-scope="route.name === 'project' ? String(route.params.projectId) : ''"
+        :composer-key="composerKey"
         :hide-composer="route.meta.chat !== true && route.meta.composer !== 'project'"
       >
         <template #default>

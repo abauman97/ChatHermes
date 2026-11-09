@@ -43,6 +43,8 @@ describe("plugin routing", () => {
     ["/artifacts", "artifacts"],
     ["/projects", "projects"],
     ["/projects/p1", "project"],
+    ["/projects/p1/new", "project-draft"],
+    ["/projects/%2Fauto%2Frepo/new", "project-draft"],
     ["/projects/p1/artifacts", "project-artifacts"],
     ["/projects/p1/settings", "project-settings"],
     ["/projects/p1/instructions", "project-instructions"],
@@ -103,6 +105,14 @@ describe("plugin routing", () => {
     "/../login",
     "/chat/s1\\evil",
   ])("rejects unsafe Settings return %s", (value) => expect(safeReturn(value)).toBe("/"));
+  it("returns from Settings to a profile-scoped project draft", async () => {
+    const router = createChatHermesRouter(createMemoryHistory());
+    const target = "/projects/%2Fauto%2Frepo/new?profile=beta";
+    expect(safeReturn(target)).toBe(target);
+    await router.push(target);
+    expect(router.currentRoute.value.params.projectId).toBe("/auto/repo");
+    expect(router.currentRoute.value.query.profile).toBe("beta");
+  });
   it("rejects malformed routes, arrays, and duplicate navigation", async () => {
     const router = createChatHermesRouter(createMemoryHistory());
     await router.push("/chat/s1?profile=alpha&profile=beta");

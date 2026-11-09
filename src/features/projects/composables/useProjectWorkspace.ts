@@ -79,6 +79,7 @@ export function useProjectWorkspace(dependencies: {
       projects.value = result.projects;
       scopedSessionIds.value = result.scoped_session_ids || [];
       projectsLoaded.value = true;
+      return result.projects;
     } catch {
       if (controller === projectsAbort && !controller.signal.aborted)
         projectsError.value = "Could not load Projects.";
@@ -102,8 +103,10 @@ export function useProjectWorkspace(dependencies: {
         !controller.signal.aborted &&
         p === profile.value &&
         id === projectId.value
-      )
+      ) {
+        if (!result || result.id !== id) throw new Error("Invalid Hermes Project response");
         selectedProject.value = result;
+      }
     } catch (cause) {
       if (controller === projectAbort && !controller.signal.aborted)
         projectError.value =

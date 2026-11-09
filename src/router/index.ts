@@ -3,6 +3,7 @@ import KanbanActions from "../features/kanban/KanbanActions.vue";
 import InboxActions from "../features/inbox/components/InboxActions.vue";
 import ProjectConfirmation from "../features/projects/components/ProjectConfirmation.vue";
 import HomePage from "../features/chat/pages/HomePage.vue";
+import ProjectDraftPage from "../features/projects/pages/ProjectDraftPage.vue";
 import ChatPage from "../features/chat/pages/ChatPage.vue";
 import InboxPage from "../features/inbox/pages/InboxPage.vue";
 import ArtifactsPage from "../features/artifacts/pages/ArtifactsPage.vue";
@@ -69,6 +70,16 @@ export function createChatHermesRouter(
           dialogs: ProjectConfirmation,
         },
         meta: { section: "projects", composer: "project" },
+      },
+      {
+        path: "/projects/:projectId/new",
+        name: "project-draft",
+        components: {
+          default: ProjectDraftPage,
+          actions: ProjectActions,
+          dialogs: ProjectConfirmation,
+        },
+        meta: { chat: true, section: "projects", composer: "project" },
       },
       {
         path: "/projects/:projectId/artifacts",

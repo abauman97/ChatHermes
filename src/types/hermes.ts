@@ -8,6 +8,7 @@ export interface Session {
   updated_at?: string;
   cwd?: string | null;
   workspace_rpc?: boolean;
+  message_count?: number;
   profile?: string | null;
   last_active?: number;
   started_at?: number;

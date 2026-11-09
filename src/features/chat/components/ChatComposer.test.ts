@@ -35,7 +35,7 @@ describe("composer", () => {
         }
         await send.trigger("click");
         expect(submissions).toBe(1);
-        expect(wrapper.emitted("send")).toEqual([["focused draft", []]]);
+        expect(wrapper.emitted("send")).toEqual([["focused draft", [], expect.any(Function)]]);
         expect(area.element.value).toBe("");
       } finally {
         wrapper.unmount();
@@ -61,7 +61,7 @@ describe("composer", () => {
       await wrapper.vm.$nextTick();
       expect(attachment.isVisible()).toBe(false);
       await wrapper.get(".send-button").trigger("click");
-      expect(wrapper.emitted("send")).toEqual([["draft", []]]);
+      expect(wrapper.emitted("send")).toEqual([["draft", [], expect.any(Function)]]);
       outside.focus();
       await wrapper.vm.$nextTick();
       expect(attachment.isVisible()).toBe(true);
@@ -144,13 +144,21 @@ describe("composer", () => {
     expect(wrapper.get('[role="status"]').text()).toContain("Goal mode");
     await wrapper.get("textarea").setValue("finish the migration");
     await wrapper.get(".send-button").trigger("click");
-    expect(wrapper.emitted("send")?.[0]).toEqual(["/goal\nfinish the migration", []]);
+    expect(wrapper.emitted("send")?.[0]).toEqual([
+      "/goal\nfinish the migration",
+      [],
+      expect.any(Function),
+    ]);
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
     await wrapper.get('[aria-label="Attachment options"]').trigger("click");
     await wrapper.get('[data-mode="plan"]').trigger("click");
     await wrapper.get("textarea").setValue("refactor the parser");
     await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
-    expect(wrapper.emitted("send")?.[1]).toEqual(["/plan\nrefactor the parser", []]);
+    expect(wrapper.emitted("send")?.[1]).toEqual([
+      "/plan\nrefactor the parser",
+      [],
+      expect.any(Function),
+    ]);
     wrapper.unmount();
   });
   it("keeps modified and composing Enter to native newline handling", async () => {
@@ -183,7 +191,7 @@ describe("composer", () => {
       expect(area.element.value).toBe("hello\nworld");
       await area.trigger("compositionend");
       await area.trigger("keydown", { key: "Enter" });
-      expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
+      expect(wrapper.emitted("send")).toEqual([["hello\nworld", [], expect.any(Function)]]);
     } finally {
       wrapper.unmount();
     }
@@ -206,7 +214,7 @@ describe("composer", () => {
       area.element.dispatchEvent(event);
       await wrapper.vm.$nextTick();
       expect(event.defaultPrevented).toBe(true);
-      expect(wrapper.emitted("send")).toEqual([["hello\nworld", []]]);
+      expect(wrapper.emitted("send")).toEqual([["hello\nworld", [], expect.any(Function)]]);
       expect(area.element.value).toBe("");
       expect(document.activeElement).toBe(area.element);
       await area.trigger("keydown", { key: "Enter" });
@@ -234,7 +242,9 @@ describe("composer", () => {
       expect(area.element.value).toBe("draft while unavailable");
       await wrapper.setProps({ disabled: false, sending: false });
       await area.trigger("keydown", { key: "Enter" });
-      expect(wrapper.emitted("send")).toEqual([["draft while unavailable", []]]);
+      expect(wrapper.emitted("send")).toEqual([
+        ["draft while unavailable", [], expect.any(Function)],
+      ]);
     } finally {
       wrapper.unmount();
     }
@@ -315,6 +325,24 @@ describe("composer", () => {
   });
 });
 
+it("restores the unsent mode and original whitespace only once on rejected preparation", async () => {
+  const wrapper = mount(ChatComposer, { props: { disabled: false, sending: false } });
+  await wrapper.get('[aria-label="Attachment options"]').trigger("click");
+  await wrapper.get('[data-mode="plan"]').trigger("click");
+  await wrapper.get("textarea").setValue("  Keep this plan  ");
+  await wrapper.get(".send-button").trigger("click");
+  const recover = wrapper.emitted("send")![0]![2] as () => void;
+  recover();
+  await wrapper.vm.$nextTick();
+  expect(wrapper.get("textarea").element.value).toBe("  Keep this plan  ");
+  expect(wrapper.get('[role="status"]').text()).toContain("Plan mode");
+  await wrapper.get("textarea").setValue("A different plan");
+  recover();
+  await wrapper.vm.$nextTick();
+  expect(wrapper.get("textarea").element.value).toBe("A different plan");
+  wrapper.unmount();
+});
+
 describe("composer availability", () => {
   it("keeps text editable while sending is gated and blocks keyboard submissions", async () => {
     const wrapper = mount(ChatComposer, {
@@ -361,7 +389,7 @@ describe("composer availability", () => {
     await wrapper.setProps({ sending: false });
     expect(button.attributes("disabled")).toBeUndefined();
     await button.trigger("click");
-    expect(wrapper.emitted("send")).toEqual([["draft", []]]);
+    expect(wrapper.emitted("send")).toEqual([["draft", [], expect.any(Function)]]);
     wrapper.unmount();
   });
   it("releases the reading gate after an aborted attachment", async () => {
@@ -394,7 +422,7 @@ describe("composer availability", () => {
       expect(wrapper.get('[role="alert"]').text()).toContain("cancelled");
       expect(wrapper.get(".send-button").attributes("disabled")).toBeUndefined();
       await wrapper.get(".send-button").trigger("click");
-      expect(wrapper.emitted("send")).toEqual([["draft", []]]);
+      expect(wrapper.emitted("send")).toEqual([["draft", [], expect.any(Function)]]);
     } finally {
       wrapper.unmount();
       vi.unstubAllGlobals();
@@ -407,7 +435,7 @@ describe("composer availability", () => {
     });
     await wrapper.get("textarea").setValue("hello");
     await wrapper.get(".send-button").trigger("click");
-    expect(wrapper.emitted("send")?.[0]).toEqual(["hello", []]);
+    expect(wrapper.emitted("send")?.[0]).toEqual(["hello", [], expect.any(Function)]);
     expect(wrapper.emitted("steer")).toBeUndefined();
     wrapper.unmount();
   });
@@ -646,6 +674,7 @@ it("shares file staging, retains the draft and other files on upload failure, an
       { name: "one.txt", path: "/uploads/one.txt" },
       { name: "two.txt", path: "/uploads/two.txt" },
     ],
+    expect.any(Function),
   ]);
   expect(upload.mock.calls.every(([profile]) => profile === "work")).toBe(true);
   upload.mockRestore();

@@ -27,6 +27,7 @@ export function useChatController(
     chatError: Readonly<Ref<string>>;
     canStream: Readonly<Ref<boolean>>;
     composerBlocked: Readonly<Ref<boolean>>;
+    draftScope?: Readonly<Ref<string>>;
     projectView: Readonly<Ref<boolean>>;
     selectedProject: Readonly<Ref<Project | undefined>>;
     creating: Readonly<Ref<boolean>>;
@@ -70,7 +71,12 @@ export function useChatController(
   // its choice to the newly created session, never to another profile or chat.
   const efforts = ref(new Map<string, ReasoningEffort | "">());
   const modelChoices = ref(new Map<string, { model: string; provider: string }>());
-  const effortKey = () => JSON.stringify([profile.value || "default", session.value]);
+  const effortKey = () =>
+    JSON.stringify([
+      profile.value || "default",
+      session.value,
+      ...(!session.value && scope.draftScope?.value ? [scope.draftScope.value] : []),
+    ]);
   const resumed = computed(() => {
     const saved = native.settings.value;
     return saved?.profile === profile.value &&
@@ -142,7 +148,7 @@ export function useChatController(
   );
   const viewUnavailable = computed(() => native.uncertain.value);
   const viewActive = computed(() => native.busy.value);
-  async function sendNative(text: string, attachments: Attachment[]) {
+  async function sendNative(text: string, attachments: Attachment[], recover?: () => void) {
     if (
       composer.value.disabled ||
       branching.value ||
@@ -160,7 +166,19 @@ export function useChatController(
       draftModel = selectedModel.value,
       draftProvider = selectedProvider.value;
     if (!session.value) {
-      const created = await scope.createSession();
+      const owner = scope.generation(),
+        navigation = scope.navigation();
+      const sameDraft = () =>
+        owner === scope.generation() &&
+        navigation === scope.navigation() &&
+        draftKey === effortKey();
+      let created: string | undefined;
+      try {
+        created = await scope.createSession();
+      } catch {
+        if (sameDraft()) native.error.value = "Could not create session. Try again.";
+      }
+      if (!created && sameDraft()) recover?.();
       if (!created || profile.value !== draftProfile || session.value !== created) return;
       modelChoices.value.set(effortKey(), { model: draftModel, provider: draftProvider });
       if (draftKey !== effortKey()) modelChoices.value.delete(draftKey);
@@ -217,8 +235,8 @@ export function useChatController(
       }
     }
   }
-  async function send(text: string, attachments: Attachment[] = []) {
-    if (nativeMode.value) await sendNative(text, attachments);
+  async function send(text: string, attachments: Attachment[] = [], recover?: () => void) {
+    if (nativeMode.value) await sendNative(text, attachments, recover);
   }
   async function stopResponse() {
     const owner = scope.generation();

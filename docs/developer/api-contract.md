@@ -138,7 +138,18 @@ The plugin registers no WebSocket route.
 and the reviewed source pin. The browser checks this contract before enabling
 sending and probes the native gateway without admitting a prompt.
 
-Normal and Project drafts use native `session.create`. Projects first validate
+Project **New Project Chat** opens `/projects/:projectId/new?profile=…`, an empty
+route-owned composer. Opening, following a direct link, or reloading it creates
+no native session, tracking row or REST draft. The URL owns Project/profile
+selection; unsent text and attachments are local to that composer. Project detail
+is loaded under the URL profile, and missing, archived or workspace-less Projects
+cannot send. The first send creates exactly one native session, attaches it and
+submits once. It replaces the draft route with `/chat/:storedSessionId?profile=…`;
+no draft Project selector survives in the session URL. Navigation/profile changes
+invalidate pending creation and submission, including during attachment. Normal
+Home first-send and unscoped **New chat** behavior are unchanged.
+
+Normal and materialized Project drafts use native `session.create`. Projects first validate
 the authoritative workspace through `/projects/session?prepare=1`; callers
 cannot supply a Project cwd. The resulting stored ID is persisted through the
 existing authenticated profile session API. A creation viewer stays attached
@@ -314,6 +325,25 @@ Automatic Project IDs are literal repository paths, not database IDs. Detail and
 create routes carry them as encoded query values, including spaces and slashes;
 there is no client-side ID rewriting. The older path routes remain aliases for
 simple persisted IDs. Home's `__no_project__` ID is retained as returned by Hermes.
+
+If first-send Project preparation or native session creation fails before prompt
+dispatch, the mounted composer restores its text, attachments and mode for retry.
+Recovery applies only to the unchanged cleared draft under the same navigation
+and profile; edits, new attachment staging or navigation invalidate it. Staged
+upload paths are reused on retry.
+
+After first-send creation, workspace chats can already appear in REST detail and list responses with
+`message_count: 0` before the Project catalog includes them. The tab retains their
+provisional Project scope by profile and stored ID across navigation and reload.
+Authoritative catalog membership retires that association. A REST detail or list
+row with stored messages triggers a fresh catalog read before retiring provisional
+scope: keep the header and composer context while that read is pending or fails,
+and use its membership (or authoritative absence) once it succeeds. Empty REST
+rows and tracking summaries alone do not prove persistence. A successful move of
+a provisional draft replaces its association with the destination, including
+across reload; the pinned runtime accepts empty-session moves but still excludes
+them from the Project tree. Archive/delete clears the association. All reads and
+mutations remain profile-isolated. Project scope is never inferred from cwd.
 
 Persisted workspace chats reuse the existing paginated REST history. The native
 RPC display projection omits terminal and most other tool results; using REST for

@@ -98,7 +98,7 @@ and only clears that owner on disposal. Reused parameter routes stay reactive;
 late data or disposal from a departed page cannot replace the active header.
 Header context does not select composer scope.
 
-`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key is `[profile, session, draftProject]`, never busy/loading state.
+`ChatInterface` keeps its composer mounted below the default router outlet. Home shows a five-item global unread Inbox preview; chat pages compose `ChatConversation`. Other pages replace that route content. The composer key tracks profile, navigation and explicit new-draft selection, never busy/loading state. Successful first-send creation preserves that key during its canonical session transition, keeping newer text, attachments (including preparation in progress), mode and focus in the same composer. Other navigation resets it.
 Drafts, attachment reads, editing, sizing and focus remain composer-local; gate
 sending independently of editing. Keep standalone composer tests provider-free.
 
@@ -193,6 +193,7 @@ The registered pages are:
 | `/artifacts`                        | `artifacts/pages/ArtifactsPage.vue`          |
 | `/projects`                         | `projects/pages/ProjectsPage.vue`            |
 | `/projects/:projectId`              | `projects/pages/ProjectHomePage.vue`         |
+| `/projects/:projectId/new`          | `projects/pages/ProjectDraftPage.vue`        |
 | `/projects/:projectId/artifacts`    | `projects/pages/ProjectArtifactsPage.vue`    |
 | `/projects/:projectId/settings`     | `projects/pages/ProjectSettingsPage.vue`     |
 | `/projects/:projectId/instructions` | `projects/pages/ProjectInstructionsPage.vue` |
@@ -206,7 +207,8 @@ The registered pages are:
 Projects use Hermes's `projects.tree` gateway RPC, including automatic repository
 Projects and Home. Selecting a Project loads its fully hydrated
 `projects.project_sessions` hierarchy and displays its recent chats. The URL alone selects composer scope: `/chat/:sessionId` resumes an existing
-session, `/projects/:projectId` starts a fresh project draft, and `/` starts a fresh
+session, `/projects/:projectId` offers a Project composer,
+`/projects/:projectId/new` opens an empty Project chat draft, and `/` starts a fresh
 unscoped draft. Other routes hide the composer and select no session. Session and
 project query parameters have no scope meaning and are never propagated. Existing
 session membership comes from the backend Project catalog, including after refresh
@@ -229,9 +231,13 @@ selected hierarchy and direct navigation intact. If storage is unavailable, the
 preference remains usable for the current mount.
 
 **New Project Chat** appears on Project home and in an open chat with a selected
-Project. It creates a distinct chat in that selected Project. **New chat** in an
-open chat still starts an unscoped chat; on Project home it retains scoped creation.
-Scoped creation uses the Project path, then its first repository path, resolves the
+Project. It opens an empty `/projects/:projectId/new` draft with its profile in
+the URL. Direct entry and reload restore selection without creating a session.
+First send validates the selected Project and creates the native session, then
+replaces the draft URL with the canonical session URL before submitting once.
+Pending creation/attachment cannot submit after intervening navigation.
+**New chat** in an open chat still starts an unscoped chat; the screen-menu action
+on Project home opens a scoped draft. Scoped creation uses the Project path, then its first repository path, resolves the
 workspace with `config.get` under the owning profile, and creates a native
 `session.create` draft with `source: 'desktop'` and the resolved workspace `cwd`. No
 `project_id` is sent to session creation. A pathless Project cannot start a chat;

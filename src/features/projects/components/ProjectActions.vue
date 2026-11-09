@@ -9,7 +9,7 @@ const {
   projectBusy,
   offline,
   manageProject,
-  createSession,
+  openProjectDraft,
   creating,
   projectConfirmation,
 } = useProjects();
@@ -38,7 +38,7 @@ function confirmProject(action: "delete" | "archive") {
         selectedProject.archived ||
         !projectRoot(selectedProject)
       "
-      @click="createSession()"
+      @click="openProjectDraft()"
     >
       New Project Chat
     </button>
