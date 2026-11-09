@@ -13,14 +13,14 @@ npm ci
 uv sync --locked
 # Separate reviewed runtime source, ignored by Git and Ruff:
 git clone --no-checkout https://github.com/NousResearch/hermes-agent.git .hermes-source
-git -C .hermes-source checkout --detach bf0203a794a07aac3ff764972ab9087baa4e4f4e
+git -C .hermes-source checkout --detach 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
 ```
 
 Install uv using its linked installer before running these commands; `uv sync --locked` creates `.venv` and downloads the Python version in `.python-version` if needed. Do not create or activate a venv manually or install development tools with pip. The root non-packaged development project and committed `uv.lock` own tooling and test dependencies. The plugin's separate `pyproject.toml` remains a metadata-only runtime dependency package; development tools must not enter its runtime dependencies.
 
 Use `uv add --dev <package>` and `uv remove --dev <package>` for development dependencies. Use `uv lock --upgrade-package <package>` for a deliberate update, then `uv sync --locked` and validate. Include both root dependency files in the change. Runtime dependency changes belong in `plugin/chathermes/pyproject.toml`; regenerate the root lock with `uv lock` after editing that metadata.
 
-The Python contracts need the complete reviewed Hermes source at the [native contract pin](api-contract.md#native-chat-contract). The root dev group supplies dependencies used by these contracts, not the full Hermes application. ty resolves runtime imports from `.hermes-source` and the uv environment while checking first-party `plugin/`, `tests/`, and Python scripts. For a checkout elsewhere, pass `uv run ty check --extra-search-path /path/to/hermes-source`. Set `PYTHONPATH=.hermes-source:plugin` for tests (or substitute the absolute runtime checkout). Missing Hermes imports can skip profile/host contracts; inspect skips before claiming full coverage. Do not use personal Hermes state or credentials for deterministic tests.
+The Python contracts need the complete reviewed Hermes source at the [native contract pin](api-contract.md#native-chat-contract). The root dev group supplies dependencies used by these contracts, not the full Hermes application. This includes `psutil`, imported by v0.23.0's SSH file-sync helper when exercising native artifact downloads. ty resolves runtime imports from `.hermes-source` and the uv environment while checking first-party `plugin/`, `tests/`, and Python scripts. For a checkout elsewhere, pass `uv run ty check --extra-search-path /path/to/hermes-source`. Set `PYTHONPATH=.hermes-source:plugin` for tests (or substitute the absolute runtime checkout). Missing Hermes imports can skip profile/host contracts; inspect skips before claiming full coverage. Do not use personal Hermes state or credentials for deterministic tests.
 
 Follow [testing](testing.md) for checks and dashboard reproduction, then [deployment](deployment.md) to build and install into a development dashboard. Vite alone is not the supported product runtime; verify the React-mounted plugin in Hermes.
 

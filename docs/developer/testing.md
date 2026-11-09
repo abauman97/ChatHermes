@@ -55,6 +55,18 @@ The authoritative setup, rebuild, preparation, remote Docker, Android, failure i
 
 Build explicitly with `npm run test:env:build`; run `npm run test:integration` for desktop/mobile workflows or `npm run test:integration:android` on a KVM-capable daemon. Tests do not rebuild implicitly. Failures retain containers and state for inspection. Isolate concurrent work with distinct Compose project names and published ports.
 
+The reviewed release is Hermes v0.23.0, commit
+`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. The Docker fixture pins the
+official image by digest and verifies its install stamp at build and integration
+startup; local tests use the same commit in `.hermes-source`. Follow the
+[weekly compatibility procedure](../../tests/docker/README.md#first-run-and-explicit-rebuild)
+when changing the pin, and record failures and exit statuses separately for each
+validation command.
+The [initial v0.23.0 verification record](../internal/verification/2026-11-09-hermes-v023-compatibility.md)
+preserves the original blocked attempts. The [independent issue #252 review](../internal/verification/2026-11-09-issue252-review.md)
+records clean ChatHermes baseline reproductions, workflow corrections, and subsequent
+gate results. A pin update alone is not a claim that every workflow passes.
+
 For UI changes, inspect screenshots of the actual dashboard plugin at desktop and mobile sizes and check focus, scrolling, attachments, selects, and disclosure transitions before committing. Documentation-only changes do not need visual testing. Legacy visual suites remain available as documented in the environment guide.
 
 Real-provider testing is explicit opt-in through `npm run live:real` with root `.env` settings in a separate Compose project. `npm run live` uses deterministic inference. Never expose fixture ports publicly or share raw authentication traces.

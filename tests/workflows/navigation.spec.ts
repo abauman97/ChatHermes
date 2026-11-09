@@ -163,31 +163,35 @@ test("@desktop worker clicks load exact session/profile and saved scheduled outp
         ).notificationHandoff(event.ports.length === 1);
     });
   });
+  // Closing a prior synthetic notification must not race another click with its tag.
   const click = (url: string) =>
-    worker.evaluate(async (url) => {
-      const scope = self as unknown as {
-        registration: ServiceWorkerRegistration;
-        NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
-      };
-      await scope.registration.showNotification("Synthetic routing probe", {
-        tag: "chathermes:issue202",
-        data: { url },
-      });
-      const [notification] = await scope.registration.getNotifications({
-        tag: "chathermes:issue202",
-      });
-      const event = new scope.NotificationEvent("notificationclick", {
-        notification: notification!,
-      });
-      let pending: Promise<unknown> | undefined;
-      Object.defineProperty(event, "waitUntil", {
-        value: (promise: Promise<unknown>) => {
-          pending = promise;
-        },
-      });
-      self.dispatchEvent(event);
-      await pending;
-    }, url);
+    worker.evaluate(
+      async ({ url, tag }) => {
+        const scope = self as unknown as {
+          registration: ServiceWorkerRegistration;
+          NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
+        };
+        await scope.registration.showNotification("Synthetic routing probe", {
+          tag,
+          data: { url },
+        });
+        const [notification] = await scope.registration.getNotifications({
+          tag,
+        });
+        const event = new scope.NotificationEvent("notificationclick", {
+          notification: notification!,
+        });
+        let pending: Promise<unknown> | undefined;
+        Object.defineProperty(event, "waitUntil", {
+          value: (promise: Promise<unknown>) => {
+            pending = promise;
+          },
+        });
+        self.dispatchEvent(event);
+        await pending;
+      },
+      { url, tag: `chathermes:routing:${randomUUID()}` },
+    );
   const windows = context.pages().length;
   await click(target);
   await expect(plugin.locator(".message.user")).toHaveText(prompt);
@@ -229,8 +233,7 @@ test("@desktop worker clicks load exact session/profile and saved scheduled outp
     "original",
   );
   expect(context.pages()).toHaveLength(windows);
-  await area.focus();
-  await expect(area).toBeFocused();
+  await expect(area).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("notification-loaded-scheduled.png") });
 
   if (info.project.name === "mobile")

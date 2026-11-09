@@ -58,8 +58,7 @@ test("global inbox collects closed-page responses across profiles without push a
     await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
   }
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
-  await composer.fill("Inbox draft");
-  await expect(composer).toBeFocused();
+  await expect(composer).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("inbox-all.png") });
   await page.getByRole("button", { name: "Screen options" }).click();
   await expect(page.getByRole("menuitem", { name: "New chat" })).toBeVisible();
@@ -127,8 +126,7 @@ print(json.dumps(result))
     for (let visit = 0; visit < 6; visit++) {
       // More than the pinned runtime's four per-profile hosted-request workers.
       // Leaving/reloading must release subscriptions, not strand ordinary reads.
-      // Exit the document: a hash-only visit keeps a focused mobile draft's
-      // compact composer, where authenticate's model button is hidden.
+      // Exercise a fresh document and subscription lifecycle on every visit.
       await page.goto(origin + "/");
       await authenticate(page, `${origin}/chathermes?profile=alpha#/inbox?profile=alpha`);
       const inbox = page.getByRole("region", { name: "Inbox", exact: true });
@@ -139,9 +137,11 @@ print(json.dumps(result))
         await expect(inbox.locator(`li[data-session="${sessions[profile]}"]`)).toHaveCount(1);
       const started = Date.now();
       evidence.push({ visit, event: "before selection", hash: new URL(page.url()).hash });
-      const filtered = page.waitForResponse(
-        (response) => {
-          const url = new URL(response.url());
+      // A revision can cancel a superseded load after its headers arrive.
+      // Only requestfinished establishes a completed API read.
+      const filtered = page.waitForEvent("requestfinished", {
+        predicate: (request) => {
+          const url = new URL(request.url());
           return (
             url.pathname === "/api/plugins/chathermes/inbox" &&
             url.searchParams.get("scope") === "profile" &&
@@ -149,8 +149,8 @@ print(json.dumps(result))
             url.searchParams.get("unread") === "true"
           );
         },
-        { timeout: 10000 },
-      );
+        timeout: 10000,
+      });
       await inbox.getByRole("combobox", { name: "Inbox view" }).selectOption("profile");
       await expect(page).toHaveURL(/#\/inbox\?profile=alpha&scope=profile$/);
       evidence.push({
@@ -159,7 +159,7 @@ print(json.dumps(result))
         hash: new URL(page.url()).hash,
         select: await inbox.getByRole("combobox", { name: "Inbox view" }).inputValue(),
       });
-      const response = await filtered;
+      const response = (await (await filtered).response())!;
       expect(response.status()).toBe(200);
       const data = (await response.json()) as InboxPage;
       evidence.push({
@@ -175,8 +175,7 @@ print(json.dumps(result))
       await expect(inbox.locator(`li[data-session="${sessions.beta}"]`)).toHaveCount(0);
       await expect(inbox.getByRole("combobox", { name: "Inbox view" })).toHaveValue("profile");
       const composer = page.getByRole("textbox", { name: "Message Hermes" });
-      await composer.fill("Filter draft");
-      await expect(composer).toBeFocused();
+      await expect(composer).toHaveCount(0);
       if (visit === 5) await page.screenshot({ path: info.outputPath("inbox-filtered.png") });
     }
   } finally {

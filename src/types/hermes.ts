@@ -185,7 +185,7 @@ export interface ScheduledOutput {
   session_id?: string;
 }
 
-// Reviewed Hermes 0.22.5 hermes_constants.VALID_REASONING_EFFORTS, plus disabled.
+// Reviewed Hermes v0.23.0 hermes_constants.VALID_REASONING_EFFORTS, plus disabled.
 export const reasoningEfforts = [
   "none",
   "minimal",

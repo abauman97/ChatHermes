@@ -37,9 +37,12 @@ for (const profile of ["default", "alpha"]) {
       await expect(
         page.locator("article.message.assistant").nth(1).locator(".artifact-card"),
       ).toHaveCount(0);
+      // These paths were already delivered in the first block of this turn.
+      // Keep their prose, but never duplicate delivered cards across blocks.
       await expect(
         page.locator("article.message.assistant").nth(2).locator(".artifact-card"),
-      ).toHaveCount(2);
+      ).toHaveCount(0);
+      await expect(page.locator(".artifact-card")).toHaveCount(6);
       await expect(page.locator("article.message.assistant").nth(2)).toContainText("Pair:");
       for (const label of example.remaining.split("\n\n"))
         await expect(assistant).toContainText(label);

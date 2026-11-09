@@ -1,7 +1,9 @@
 import { test, expect } from "./fixtures";
 import { mockserverURL } from "../docker/compose.mjs";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { sessionFromUrl } from "../visual/login";
+import { runtime } from "./helpers";
 
 const complete = "First visible chunk. Second visible chunk. Stream complete.";
 
@@ -183,8 +185,43 @@ test("a real clarification resumes the same conversation after answering", async
 test("reasoning and tools share one collapsed history with the active stream below", async ({
   page,
 }, info) => {
+  const marker = `activity-${randomUUID()}`;
+  const gate = runtime(
+    "import json,os,pathlib,tempfile; p=pathlib.Path(tempfile.mkdtemp(prefix='chathermes-activity-'))/'release'; os.mkfifo(p); print(json.dumps(str(p)))",
+  ) as string;
+  // Keep the real terminal call active until its disclosure has been inspected.
+  // A two-second command races mobile screenshots and completion hides the row.
+  const fixtures = JSON.parse(
+    await readFile(new URL("../docker/fixtures/inference.json", import.meta.url), "utf8"),
+  );
+  const fixture = fixtures.find(
+    (entry: { id: string }) => entry.id === "chathermes-mixed-activity",
+  );
+  fixture.id = marker;
+  fixture.priority = 40;
+  fixture.httpRequest.body.jsonPath = `$[?(@.messages[-1].role == 'user' && @.messages[-1].content =~ /(?s).*${marker}.*/)]`;
+  fixture.httpResponse.body = fixture.httpResponse.body
+    .split("\n\n")
+    .map((line: string) => {
+      if (!line.startsWith("data: {")) return line;
+      const frame = JSON.parse(line.slice(6));
+      const call = frame.choices[0]?.delta?.tool_calls?.[0];
+      if (call)
+        call.function.arguments = JSON.stringify({
+          command: `printf workflow-tool-start; cat '${gate}'; printf workflow-tool-ok`,
+          timeout: 60,
+        });
+      return `data: ${JSON.stringify(frame)}`;
+    })
+    .join("\n\n");
+  const installed = await fetch(`${mockserverURL()}/mockserver/expectation`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fixture),
+  });
+  expect(installed.ok).toBe(true);
   const composer = page.getByRole("textbox", { name: "Message Hermes" });
-  await composer.fill(`[workflow-activity] ${randomUUID()}`);
+  await composer.fill(`[workflow-activity] ${marker}`);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   const work = page.locator(".turn-work");
   await expect(work).toHaveCount(1);
@@ -216,6 +253,15 @@ test("reasoning and tools share one collapsed history with the active stream bel
   await expect(liveTool.locator("pre")).toBeVisible();
   await expect(liveTool.locator("pre")).toContainText("workflow-tool-start");
   await page.screenshot({ path: info.outputPath("tool-streaming-expanded.png") });
+  await expect(page.getByRole("button", { name: "Guide this run", exact: true })).toBeEnabled();
+  await expect
+    .poll(() =>
+      runtime(
+        "import errno,json,os,sys\ntry:\n fd=os.open(sys.argv[1],os.O_WRONLY|os.O_NONBLOCK)\nexcept OSError as exc:\n if exc.errno != errno.ENXIO: raise\n print('false')\nelse:\n os.write(fd,b'released\\n'); os.close(fd); print('true')",
+        gate,
+      ),
+    )
+    .toBe(true);
   await expect(page.locator(".message.assistant").last()).toHaveText(
     "Tool completed: workflow-tool-ok.",
   );

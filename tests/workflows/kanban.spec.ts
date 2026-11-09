@@ -249,7 +249,7 @@ print(json.dumps({'task':task, 'session':sid}))
   );
   await page.goto(new URL(page.url()).origin + "/chathermes#/inbox?profile=default");
   const inbox = shell.getByRole("region", { name: "Inbox", exact: true });
-  await inbox.locator(`li[data-session="${worker.session}"]`).getByRole("button").click();
+  await inbox.locator(`li[data-session="${worker.session}"] .inbox-open`).click();
   await expect(viewer.getByRole("combobox", { name: "Kanban board", exact: true })).toHaveValue(
     marker,
   );

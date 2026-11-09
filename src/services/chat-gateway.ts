@@ -1,7 +1,7 @@
 // Read-only native support probe. It never dispatches a prompt.
 // Tickets are ephemeral and only sent in the host's supported subprotocol.
 export interface ChatCapabilities {
-  protocol: "hermes.native.bf0203a7";
+  protocol: "hermes.native.2bd378ed";
   reviewed_source: string;
   mode: "native-gateway";
   admission: true;
@@ -18,8 +18,8 @@ export function chatCapabilities(value: unknown): ChatCapabilities {
   if (
     !v ||
     typeof v !== "object" ||
-    v.protocol !== "hermes.native.bf0203a7" ||
-    v.reviewed_source !== "bf0203a794a07aac3ff764972ab9087baa4e4f4e" ||
+    v.protocol !== "hermes.native.2bd378ed" ||
+    v.reviewed_source !== "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19" ||
     v.mode !== "native-gateway" ||
     v.admission !== true ||
     !Array.isArray(v.operations) ||
