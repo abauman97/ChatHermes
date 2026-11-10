@@ -49,10 +49,15 @@ export function useApplication() {
   const router = useRouter(),
     route = useRoute();
   const isChat = computed(() => route.meta.chat === true);
-  const projectView = computed(() => route.meta.composer === "project");
+  const projectView = computed(
+    () => route.meta.composer === "project" || (route.name === "home" && !!route.query.project),
+  );
+  const draftRevision = ref(0);
   const composerBlocked = computed(
     () =>
-      (!isChat.value && !projectView.value) || queryString(route.query.profile) !== profile.value,
+      (!isChat.value && !projectView.value) ||
+      queryString(route.query.profile) !== profile.value ||
+      contextProject.value !== projectId.value,
   );
   const settingsPage = computed(() => route.name === "settings");
   const scheduledPage = computed(() => route.meta.section === "scheduled");
@@ -62,17 +67,24 @@ export function useApplication() {
   let routeWork: Promise<void> = Promise.resolve();
   let drawerNavigationTarget = "";
   let createRequest: AbortController | undefined;
+  let draftHandoff: { from: string; to: string; revision: number } | undefined;
   async function navigate(
     to: Parameters<typeof router.push>[0],
     replace = false,
     keepDrawer = false,
+    preserveDraft = false,
   ) {
+    const handoff = preserveDraft
+      ? { from: route.fullPath, to: router.resolve(to).fullPath, revision: draftRevision.value }
+      : undefined;
+    draftHandoff = handoff;
     createRequest?.abort();
     drawerNavigationTarget = keepDrawer ? router.resolve(to).fullPath : "";
     if (!keepDrawer) drawer.value = false;
     closeScreenMenu(false);
     await router[replace ? "replace" : "push"](to);
     await routeWork;
+    if (draftHandoff === handoff) draftHandoff = undefined;
     drawerNavigationTarget = "";
   }
   function screenLink(name: RouteName, extra: Record<string, string> = {}) {
@@ -214,7 +226,11 @@ export function useApplication() {
             projectSessions(project).some((row) => row.id === session.value),
         )?.id || ""
       );
-    return typeof route.params.projectId === "string" ? route.params.projectId : "";
+    return route.name === "home"
+      ? queryString(route.query.project)
+      : typeof route.params.projectId === "string"
+        ? route.params.projectId
+        : "";
   });
   const native = useNativeSession(
     () => {
@@ -270,6 +286,7 @@ export function useApplication() {
     chatLoading.value = false;
   }
   function cancel() {
+    createRequest?.abort();
     cancelChat();
     listAbort?.abort();
     loading.value = false;
@@ -277,8 +294,12 @@ export function useApplication() {
   function recentSession(id: string) {
     return chooseSession(id);
   }
-  async function newChat() {
-    return await createSession(true);
+  async function newChat(project = "") {
+    createRequest?.abort();
+    cancelChat();
+    suggestedPrompt.value = "";
+    draftRevision.value++;
+    await navigate(destination("home", profile.value, project ? { project } : {}));
   }
   function invalidateSessionList() {
     listAbort?.abort();
@@ -480,16 +501,17 @@ export function useApplication() {
     if (nativeMode.value) await native.attach(p, id);
     else await loadMessages();
   }
-  async function createSession(unscoped = false) {
+  async function createSession() {
     if (
       offline.value ||
       creating.value ||
-      (!unscoped && projectId.value && selectedProject.value?.archived)
+      (projectId.value && (!selectedProject.value || selectedProject.value.archived))
     )
       return;
     const id = profile.value,
-      scope = unscoped ? "" : projectId.value,
+      scope = projectId.value,
       selected = session.value,
+      draftOwner = draftRevision.value,
       revision = router.currentRoute.value,
       current = generation,
       owner = profileGeneration;
@@ -500,7 +522,9 @@ export function useApplication() {
         provider.value = providers.value.find((item) => item.is_current)?.slug || "";
         model.value = "";
       }
-      const made = scope ? await api.projectCreate(id, scope) : await api.create(id);
+      const made = scope
+        ? await api.projectCreate(id, scope, request.signal)
+        : await api.create(id, request.signal);
       if (
         request.signal.aborted ||
         current !== generation ||
@@ -511,7 +535,12 @@ export function useApplication() {
         return;
       // RPC drafts have no DB row until the first prompt; their normal resume path
       // can still hydrate them by stored ID. Keep the same chat components.
-      await chooseSession(made.id);
+      await navigate(
+        { name: "chat", params: { sessionId: made.id }, query: id ? { profile: id } : {} },
+        false,
+        false,
+        true,
+      );
       refreshProjects();
       const trackingRead = ++trackingRevision;
       void api
@@ -527,7 +556,8 @@ export function useApplication() {
         .catch(() => {
           if (owner === profileGeneration) error.value = "Could not load session tracking";
         });
-      if (profile.value !== id || session.value !== made.id) return;
+      if (profile.value !== id || session.value !== made.id || draftRevision.value !== draftOwner)
+        return;
       return made.id;
     } catch (cause) {
       if (
@@ -538,19 +568,14 @@ export function useApplication() {
         projectId.value === scope
       ) {
         const message = cause instanceof Error ? cause.message : "Could not create session";
-        if (scope) projectError.value = message;
-        else error.value = message;
+        native.error.value = message;
       }
     } finally {
       if (owner === profileGeneration) creating.value = false;
     }
   }
   async function suggest(text: string) {
-    const current = generation,
-      p = profile.value,
-      id = await createSession();
-    if (id && current + 1 === generation && p === profile.value && session.value === id)
-      suggestedPrompt.value = text;
+    suggestedPrompt.value = text;
   }
   async function rename(id: string, title: string) {
     const p = profile.value,
@@ -679,8 +704,19 @@ export function useApplication() {
   );
   watch(
     () => route.fullPath,
-    () => {
+    (path, previousPath) => {
       if (!route.matched.length) return;
+      // Only the creation-owned Home → stored-session transition keeps the live draft.
+      const handoff = draftHandoff;
+      draftHandoff = undefined;
+      if (
+        !handoff ||
+        handoff.from !== previousPath ||
+        handoff.to !== path ||
+        handoff.revision !== draftRevision.value
+      )
+        draftRevision.value++;
+      createRequest?.abort();
       const revision = router.currentRoute.value;
       if (session.value !== attachedSession || queryString(route.query.profile) !== profile.value) {
         cancelChat();
@@ -1074,7 +1110,10 @@ export function useApplication() {
     recentSession,
     chooseSession,
     manageProject,
-    createSession,
+    createSession: async () => {
+      await newChat(projectId.value);
+      return undefined;
+    },
     creating,
   });
   return {
@@ -1115,6 +1154,7 @@ export function useApplication() {
     createSession,
     trackSession,
     newChat,
+    draftRevision,
     loadSessions,
     manageSession,
     rename,

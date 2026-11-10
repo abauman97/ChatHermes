@@ -13,6 +13,20 @@ beforeEach(() =>
 );
 afterEach(() => vi.restoreAllMocks());
 describe("plugin routing", () => {
+  it("retains an encoded workspace Project on Home and rejects duplicate or unsafe scope", async () => {
+    const router = createChatHermesRouter(createMemoryHistory());
+    const project = "/workspace/a project";
+    await router.push(destination("home", "alpha", { project }));
+    expect(router.currentRoute.value).toMatchObject({
+      name: "home",
+      params: {},
+      query: { profile: "alpha", project },
+    });
+    await router.push("/?profile=alpha&project=p1&project=p2");
+    expect(router.currentRoute.value.query).toEqual({});
+    await router.push("/?profile=alpha&project=../foreign");
+    expect(router.currentRoute.value.query).toEqual({});
+  });
   it.each([
     "output:2025-01-01_00-00-00",
     "execution:" + "a".repeat(32),

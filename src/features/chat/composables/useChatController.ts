@@ -155,13 +155,18 @@ export function useChatController(
     )
       return;
     const draftKey = effortKey(),
+      navigation = scope.navigation(),
       effort = reasoningEffort.value,
       draftProfile = profile.value,
       draftModel = selectedModel.value,
       draftProvider = selectedProvider.value;
     if (!session.value) {
       const created = await scope.createSession();
-      if (!created || profile.value !== draftProfile || session.value !== created) return;
+      if (!created)
+        return navigation === scope.navigation() && profile.value === draftProfile
+          ? false
+          : undefined;
+      if (profile.value !== draftProfile || session.value !== created) return;
       modelChoices.value.set(effortKey(), { model: draftModel, provider: draftProvider });
       if (draftKey !== effortKey()) modelChoices.value.delete(draftKey);
       if (effort) {
@@ -210,15 +215,16 @@ export function useChatController(
         },
         preview,
       );
+      return true;
     } catch (cause) {
       if (current === scope.generation() && !native.uncertain.value) {
         native.error.value = cause instanceof Error ? cause.message : "Message not submitted";
-        suggestedPrompt.value = text;
+        return false;
       }
     }
   }
   async function send(text: string, attachments: Attachment[] = []) {
-    if (nativeMode.value) await sendNative(text, attachments);
+    if (nativeMode.value) return await sendNative(text, attachments);
   }
   async function stopResponse() {
     const owner = scope.generation();

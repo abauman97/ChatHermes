@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import type { Attachment } from "../../../types/hermes";
 import { useChat, conversationFocus } from "../context";
 import ChatComposer from "./ChatComposer.vue";
@@ -28,9 +28,14 @@ watch(
   { flush: "post" },
 );
 async function sendMessage(text: string, attachments: Attachment[]) {
+  const owner = picker.value;
   focusConversation();
   try {
-    await actions.send(text, attachments);
+    const sent = await actions.send(text, attachments);
+    if (sent === false) {
+      await nextTick();
+      if (owner === picker.value) picker.value?.restoreDraft(text, attachments);
+    }
   } finally {
     pendingFocus = false;
   }
@@ -168,7 +173,7 @@ const {
         @context-open="actions.setContextOpen"
         v-show="!hideComposer"
         :project-name="composer.projectName"
-        :key="JSON.stringify([profile, session, draftScope])"
+        :key="JSON.stringify([profile, draftScope])"
         :disabled="composer.disabled"
         :models="models"
         :providers="providers"

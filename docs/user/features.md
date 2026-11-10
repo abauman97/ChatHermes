@@ -2,7 +2,7 @@
 
 ## Chats and attachments
 
-Use the drawer to open a saved chat, or **New chat** to start another. Switch profiles to see that profile's conversations. Select the provider and model before sending; selections affect the session runtime.
+Use the drawer to open a saved chat, or **New chat** to open a fresh Home composer. A session is created only when you first send. Repeating **New chat** clears the draft and attachments. Switch profiles to see that profile's conversations. Select the provider and model before sending; selections affect the session runtime. You can draft a follow-up while the first message creates its session. If sending is rejected, the original text and files return to the composer. When you have already started a newer draft, open **Unsent message** to inspect the rejected message, then send or clear the current draft to enable **Restore unsent message**. Leaving the page or choosing **New chat** clears these drafts.
 
 The model picker also has a **Reasoning effort** select. Choose None, Minimal, Low, Medium, High, XHigh, Max, or Ultra before sending. Explicit choices apply to that chat after its model is selected; they do not change other chats or profile defaults. **Model default** uses the selected model’s configured reasoning setting without adding an explicit override. Hermes controls the model's supported levels and may map a requested level to a supported one or omit reasoning for models that do not support it. Unsent picker choices are held for the current page visit; saved chats restore their runtime model and reasoning settings.
 
@@ -79,9 +79,9 @@ Choose **Archived projects** in the Projects **···** menu to browse archived
 workspaces. After opening one, use **Projects** in the sidebar to return to the
 archived list. Choose **Active projects** in the list menu to switch back.
 
-Use **New Project Chat** to create a distinct chat in the selected Project workspace. In an open chat, **New chat** starts an unscoped chat; on Project home it retains scoped creation. Home starts without a Project workspace. A Project without an available workspace cannot start a chat.
+Use **New Project Chat** (or **New chat** on Project home) to open Home with that Project selected. Its URL preserves the Project and profile across refresh; sending creates the conversation. In an open chat, **New chat** starts an unscoped chat; on scoped Home it retains the Project. Unscoped Home starts without a Project workspace. A Project without an available workspace cannot start a chat.
 
-Browsing another Project changes the view while retaining the current chat's workspace. Resuming an existing chat always uses its saved workspace. Use **New project** on the Projects page to create a Project, optionally supplying a folder path on the Hermes server. In a Project’s **···** menu, **Edit project** lets you change its details and folders; the primary folder is used for new chats. Saved Projects can be archived, restored, or deleted from that menu. Automatically discovered workspaces offer **Save project** before their details can be managed.
+Browsing another Project leaves the conversation view. Resuming an existing chat always uses its saved workspace. Use **New project** on the Projects page to create a Project, optionally supplying a folder path on the Hermes server. In a Project’s **···** menu, **Edit project** lets you change its details and folders; the primary folder is used for new chats. Saved Projects can be archived, restored, or deleted from that menu. Automatically discovered workspaces offer **Save project** before their details can be managed.
 
 To add an existing chat to a Project, open the chat’s ellipsis menu in the drawer, choose **Add to project**, select the destination, and choose **Add**.
 

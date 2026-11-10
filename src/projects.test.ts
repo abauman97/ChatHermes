@@ -22,6 +22,8 @@ const mount: typeof vueMount = (component, options = {}) =>
     },
   });
 import App from "./App.vue";
+import SessionSidebar from "./features/sessions/components/SessionSidebar.vue";
+import ChatComposer from "./features/chat/components/ChatComposer.vue";
 import * as nativeSession from "./features/chat/runtime/native-session";
 import { api } from "./services/hermes-api";
 import { projectRoot, projectSessions } from "./features/projects/utils/projects";
@@ -144,6 +146,267 @@ function setup(
   return fetch;
 }
 describe("authoritative gateway Projects", () => {
+  it("keeps project context on Home across remount and resets repeated New chat without creation", async () => {
+    setup();
+    const create = vi.spyOn(api, "projectCreate");
+    history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+    let wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
+    await wrapper.get("textarea").setValue("Draft to discard");
+    await wrapper.get('[aria-label="Screen options"]').trigger("click");
+    await wrapper
+      .findAll('[role="menuitem"]')
+      .find((b) => b.text() === "New chat")!
+      .trigger("click");
+    await flushPromises();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("");
+    expect(routeUrl().searchParams.get("project")).toBe("p_a");
+    expect(create).not.toHaveBeenCalled();
+    wrapper.unmount();
+    wrapper = mount(App);
+    await flushPromises();
+    expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
+    expect(create).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+  it("retains a draft when project creation fails", async () => {
+    setup();
+    vi.spyOn(api, "projectCreate").mockRejectedValue(new Error("Creation unavailable"));
+    history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("textarea").setValue("Keep this draft");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(routeSession()).toBeNull();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("Keep this draft");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Creation unavailable");
+    wrapper.unmount();
+  });
+  it("restores a rejected first prompt after canonical handoff without inventing membership", async () => {
+    setup();
+    vi.spyOn(api, "projects").mockResolvedValue({
+      projects: [a],
+      scoped_session_ids: ["project_s1"],
+    });
+    history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+    const wrapper = mount(App);
+    await flushPromises();
+    vi.mocked(nativeOwner.submit).mockRejectedValue(new Error("Prompt rejected"));
+    vi.spyOn(api, "upload").mockResolvedValue({ path: "/uploads/recover.txt" });
+    const upload = wrapper.get('input[aria-label="Upload files"]');
+    Object.defineProperty(upload.element, "files", {
+      value: [new File(["draft attachment"], "recover.txt", { type: "text/plain" })],
+    });
+    await upload.trigger("change");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("Recover after handoff");
+    await vi.waitFor(() =>
+      expect(wrapper.get('[aria-label="Send message"]').attributes("disabled")).toBeUndefined(),
+    );
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(routeSession()).toBe("project_created");
+    expect(routeUrl().searchParams.has("project")).toBe(false);
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
+      "Recover after handoff",
+    );
+    expect(wrapper.get('[role="alert"]').text()).toContain("Prompt rejected");
+    expect(wrapper.findComponent(ChatComposer).text()).toContain("recover.txt");
+    expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+    wrapper.unmount();
+  });
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<T>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  }
+  async function stage(wrapper: ReturnType<typeof mount>, name: string) {
+    const composer = wrapper.findComponent(ChatComposer).vm as unknown as {
+      stageFiles: (files: File[]) => Promise<void>;
+    };
+    await composer.stageFiles([new File([name], name, { type: "text/plain" })]);
+  }
+  it.each([false, true])(
+    "keeps the exact follow-up draft and in-flight upload through its own handoff (Project: %s)",
+    async (project) => {
+      setup();
+      const creation = deferred<{ id: string }>();
+      vi.spyOn(api, project ? "projectCreate" : "create").mockReturnValue(creation.promise);
+      const upload = deferred<{ path: string }>();
+      vi.spyOn(api, "upload").mockReturnValue(upload.promise);
+      history.replaceState({}, "", "/chathermes#/?profile=alpha" + (project ? "&project=p_a" : ""));
+      const wrapper = mount(App, { attachTo: document.body });
+      await flushPromises();
+      const original = wrapper.get("textarea").element;
+      await wrapper.get("textarea").setValue("First prompt");
+      await wrapper.get("form").trigger("submit");
+      await wrapper.get("textarea").setValue("  exact follow-up\nwith whitespace  ");
+      (original as HTMLTextAreaElement).focus();
+      const staging = stage(wrapper, "follow-up.txt");
+      creation.resolve({ id: "project_created" });
+      await flushPromises();
+      expect(routeSession()).toBe("project_created");
+      expect(wrapper.get("textarea").element).toBe(original);
+      expect(document.activeElement).toBe(original);
+      expect((original as HTMLTextAreaElement).value).toBe("  exact follow-up\nwith whitespace  ");
+      upload.resolve({ path: "/uploads/follow-up.txt" });
+      await staging;
+      await flushPromises();
+      expect(wrapper.findComponent(ChatComposer).text()).toContain("follow-up.txt");
+      expect(nativeOwner.submit).toHaveBeenCalledOnce();
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      const content = vi.mocked(nativeOwner.submit).mock.calls[1]![1];
+      const parts = typeof content === "function" ? await content() : content;
+      expect(JSON.stringify(parts)).toContain("/uploads/follow-up.txt");
+      wrapper.unmount();
+    },
+  );
+  it.each(["creation", "submission"])(
+    "retains both rejected and newer text/files after %s rejection",
+    async (phase) => {
+      setup();
+      const creation = deferred<{ id: string }>();
+      const submission = deferred<void>();
+      vi.spyOn(api, "projectCreate").mockReturnValue(creation.promise);
+      vi.spyOn(api, "upload").mockImplementation(async (_profile, file) => ({
+        path: "/uploads/" + file.name,
+      }));
+      history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+      const wrapper = mount(App);
+      await flushPromises();
+      vi.mocked(nativeOwner.submit).mockReturnValue(submission.promise);
+      await stage(wrapper, "original.txt");
+      await wrapper.get("textarea").setValue("Original rejected prompt");
+      await wrapper.get("form").trigger("submit");
+      await wrapper.get("textarea").setValue("Newer draft");
+      await stage(wrapper, "newer.txt");
+      if (phase === "creation") creation.reject(new Error("Rejected creation"));
+      else {
+        creation.resolve({ id: "project_created" });
+        await flushPromises();
+        submission.reject(new Error("Rejected prompt"));
+      }
+      await flushPromises();
+      expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("Newer draft");
+      const recovery = wrapper.get(".composer details");
+      expect(recovery.text()).toContain("Original rejected prompt");
+      expect(recovery.text()).toContain("original.txt");
+      expect(recovery.get("button").attributes("disabled")).toBeDefined();
+      vi.mocked(api.projectCreate).mockResolvedValue({ id: "project_created" });
+      vi.mocked(nativeOwner.submit).mockResolvedValue(undefined);
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      const last = vi.mocked(nativeOwner.submit).mock.calls.at(-1)!;
+      expect(last[0]).toBe("Newer draft");
+      const content = last[1];
+      expect(JSON.stringify(typeof content === "function" ? await content() : content)).toContain(
+        "/uploads/newer.txt",
+      );
+      await wrapper.get(".composer details button").trigger("click");
+      expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
+        "Original rejected prompt",
+      );
+      expect(wrapper.findComponent(ChatComposer).text()).toContain("original.txt");
+      expect(wrapper.findComponent(ChatComposer).text()).not.toContain("newer.txt");
+      expect(wrapper.find(".composer details").exists()).toBe(false);
+      wrapper.unmount();
+    },
+  );
+  it.each(
+    ["creation", "submission"].flatMap((phase) =>
+      [
+        "/settings?profile=alpha",
+        "/chat/s1?profile=alpha",
+        "/?profile=beta",
+        "/?profile=alpha&project=p_b",
+        "new chat",
+      ].map((destination) => ({ phase, destination })),
+    ),
+  )(
+    "discards late $phase work after $destination and return navigation",
+    async ({ phase, destination }) => {
+      setup();
+      const creation = deferred<{ id: string }>();
+      const submission = deferred<void>();
+      vi.spyOn(api, "projectCreate").mockReturnValue(creation.promise);
+      vi.spyOn(api, "upload").mockResolvedValue({ path: "/uploads/old.txt" });
+      history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+      const wrapper = mount(App);
+      await flushPromises();
+      vi.mocked(nativeOwner.submit).mockReturnValue(submission.promise);
+      await stage(wrapper, "old.txt");
+      await wrapper.get("textarea").setValue("Old prompt");
+      await wrapper.get("form").trigger("submit");
+      await wrapper.get("textarea").setValue("Old follow-up");
+      if (phase === "submission") {
+        creation.resolve({ id: "project_created" });
+        await flushPromises();
+      }
+      if (destination === "new chat") {
+        wrapper.findComponent(SessionSidebar).vm.$emit("create");
+      } else await wrapper.vm.$router.push(destination);
+      await flushPromises();
+      await wrapper.vm.$router.push("/?profile=alpha&project=p_a");
+      await flushPromises();
+      await wrapper.get("textarea").setValue("Destination draft");
+      if (phase === "creation") creation.resolve({ id: "project_created" });
+      else submission.reject(new Error("Obsolete rejection"));
+      await flushPromises();
+      expect(routeSession()).toBeNull();
+      expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe(
+        "Destination draft",
+      );
+      expect(wrapper.findComponent(ChatComposer).text()).not.toContain("old.txt");
+      expect(wrapper.find(".composer details").exists()).toBe(false);
+      expect(wrapper.text()).not.toContain("Obsolete rejection");
+      expect(nativeOwner.submit).toHaveBeenCalledTimes(phase === "creation" ? 0 : 1);
+      wrapper.unmount();
+    },
+  );
+  it("does not submit an obsolete first prompt after leaving during attachment and returning to the same stored session", async () => {
+    setup();
+    history.replaceState({}, "", "/chathermes#/?profile=alpha&project=p_a");
+    const wrapper = mount(App);
+    await flushPromises();
+    const attachment = deferred<void>();
+    vi.mocked(nativeOwner.attach).mockImplementationOnce(async () => {
+      await attachment.promise;
+    });
+    await wrapper.get("textarea").setValue("Obsolete first prompt");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(routeSession()).toBe("project_created");
+    await wrapper.vm.$router.push("/settings?profile=alpha");
+    await flushPromises();
+    await wrapper.vm.$router.push("/chat/project_created?profile=alpha");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("New visit draft");
+    attachment.resolve();
+    await flushPromises();
+    expect(nativeOwner.submit).not.toHaveBeenCalled();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("New visit draft");
+    wrapper.unmount();
+  });
+  it("blocks an invalid project in its owning profile without creating a session", async () => {
+    setup(async () => json({}, 404));
+    const create = vi.spyOn(api, "projectCreate");
+    history.replaceState({}, "", "/chathermes#/?profile=beta&project=p_a");
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.get("textarea").setValue("Editable but unavailable");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("Project no longer exists");
+    expect(create).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   async function toggleAutomatic(wrapper: ReturnType<typeof mount>, checked: boolean) {
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
     const toggle = wrapper.get('[role="menuitemcheckbox"]');
@@ -549,6 +812,9 @@ describe("authoritative gateway Projects", () => {
     const fetch = setup();
     const wrapper = mount(App);
     await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
     await flushPromises();
@@ -569,7 +835,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     const home = wrapper.get('[aria-label="Selected Project"]');
     expect(home.find(".project-chats-heading").exists()).toBe(false);
-    expect(home.findAll("button").some((button) => button.text() === "New chat")).toBe(false);
+    expect(home.findAll("button").some((button) => button.text() === "New chat")).toBe(true);
     const row = home.get('[aria-label="Project chats"] button');
     expect(row.get(".project-chat-title").text()).toBe("Native worktree chat");
     expect(row.get(".project-chat-preview").text()).toBe("Actual workspace preview");
@@ -620,7 +886,12 @@ describe("authoritative gateway Projects", () => {
     await wrapper.get('[role="menuitem"]').trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(location.hash).toContain("/chat/project_created");
+    expect(routeUrl().pathname).toBe("/");
+    expect(routeUrl().searchParams.get("project")).toBe("p_a");
+    expect(fetch.mock.calls.some(([url]) => url.includes("/projects/session?"))).toBe(false);
+    await wrapper.get("textarea").setValue("Check this workspace");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
     expect(
       fetch.mock.calls.find(
         ([url, init]) =>
@@ -674,7 +945,13 @@ describe("authoritative gateway Projects", () => {
     await action.trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(create).toHaveBeenCalledExactlyOnceWith("alpha", "p_a");
+    expect(create).not.toHaveBeenCalled();
+    expect(routeUrl().pathname).toBe("/");
+    expect(routeUrl().searchParams.get("project")).toBe("p_a");
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(create).toHaveBeenCalledExactlyOnceWith("alpha", "p_a", expect.any(AbortSignal));
     expect(unscoped).not.toHaveBeenCalled();
     expect(routeProject()).toBeNull();
     expect(routeSession()).toBe("project_created");
@@ -774,9 +1051,9 @@ describe("authoritative gateway Projects", () => {
       .trigger("click");
     await flushPromises();
     await flushPromises();
-    expect(create).toHaveBeenCalledExactlyOnceWith("alpha");
+    expect(create).not.toHaveBeenCalled();
     expect(scoped).not.toHaveBeenCalled();
-    expect(routeSession()).toBe("other_created");
+    expect(routeSession()).toBeNull();
     expect(new URLSearchParams(routeUrl().search).has("project")).toBe(false);
     wrapper.unmount();
   });
@@ -798,6 +1075,10 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     await flushPromises();
     expect(events).toHaveBeenLastCalledWith("alpha", expect.any(Function));
+    expect(nativeOwner.attach).not.toHaveBeenCalled();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
     expect(nativeOwner.attach).toHaveBeenCalledWith("alpha", "project_created");
     wrapper.unmount();
     expect(close).toHaveBeenCalled();
@@ -826,6 +1107,9 @@ describe("authoritative gateway Projects", () => {
       .trigger("click");
     await flushPromises();
     await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
     await wrapper.get('[aria-label="Screen options"]').trigger("click");
     await flushPromises();
     expect(
@@ -838,7 +1122,7 @@ describe("authoritative gateway Projects", () => {
     await flushPromises();
     finish({ id: "late_project_session" });
     await flushPromises();
-    expect(create).toHaveBeenCalledWith("alpha", "p_a");
+    expect(create).toHaveBeenCalledWith("alpha", "p_a", expect.any(AbortSignal));
     expect(routeUrl().search).toContain("profile=beta");
     expect(routeUrl().search).not.toContain("late_project_session");
     wrapper.unmount();
@@ -862,6 +1146,9 @@ describe("authoritative gateway Projects", () => {
       .find((button) => button.text() === "New Project Chat")!
       .trigger("click");
     await flushPromises();
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     await flushPromises();
     await wrapper.get(".projects-nav").trigger("click");
     await flushPromises();
@@ -1152,7 +1439,7 @@ it("opens an automatic project whose gateway ID is a filesystem path", async () 
 
 describe("URL-authoritative composer context", () => {
   it.each([
-    ["/?session=project_s1&project=p_a", "", "Message Hermes…", "ChatHermes"],
+    ["/?session=project_s1&project=p_a", "", "Message Project A", "New chat"],
     ["/projects/p_a?session=project_s1&project=p_b", "", "Message Project A", "Projects"],
     [
       "/chat/project_s1?session=s1&project=p_b",
@@ -1171,7 +1458,7 @@ describe("URL-authoritative composer context", () => {
       expect(wrapper.get("#prompt").attributes("placeholder")).toBe(placeholder);
       expect(wrapper.get(".header-title").text()).toBe(title);
       expect(wrapper.find(".header-project-subtitle").exists()).toBe(
-        selected === "project_s1" || path.startsWith("/projects/p_a"),
+        selected === "project_s1" || path.startsWith("/projects/p_a") || path.startsWith("/?"),
       );
       if (!selected) expect(nativeOwner.attach).not.toHaveBeenCalled();
       else expect(nativeOwner.attach).toHaveBeenCalledExactlyOnceWith("", selected);
@@ -1204,19 +1491,25 @@ describe("URL-authoritative composer context", () => {
 
   it.each(["/", "/projects/p_a"])("submits the first draft once using %s", async (path) => {
     setup();
-    history.replaceState({}, "", `/chathermes#${path}?session=project_s1&project=p_b`);
+    history.replaceState({}, "", `/chathermes#${path}?session=project_s1`);
     const create = vi.spyOn(api, "create"),
       scoped = vi.spyOn(api, "projectCreate");
     const wrapper = mount(App);
     await flushPromises();
+    if (path !== "/") {
+      await wrapper.get(".project-home .project-back").trigger("click");
+      await flushPromises();
+      expect(routeUrl().pathname).toBe("/");
+      expect(routeUrl().searchParams.get("project")).toBe("p_a");
+    }
     await wrapper.get("#prompt").setValue("Initial submission");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
     if (path === "/") {
-      expect(create).toHaveBeenCalledExactlyOnceWith("");
+      expect(create).toHaveBeenCalledExactlyOnceWith("", expect.any(AbortSignal));
       expect(scoped).not.toHaveBeenCalled();
     } else {
-      expect(scoped).toHaveBeenCalledExactlyOnceWith("", "p_a");
+      expect(scoped).toHaveBeenCalledExactlyOnceWith("", "p_a", expect.any(AbortSignal));
       expect(create).not.toHaveBeenCalled();
     }
     expect(routeUrl().pathname).toBe(`/chat/${path === "/" ? "other_created" : "project_created"}`);

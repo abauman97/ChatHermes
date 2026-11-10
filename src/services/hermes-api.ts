@@ -241,14 +241,14 @@ export const api = {
   workspace(profile: string, id: string) {
     workspaceSessions.add(workspaceKey(profile, id));
   },
-  projectCreate: async (profile: string, id: string) => {
+  projectCreate: async (profile: string, id: string, signal?: AbortSignal) => {
     const prepared = await request<{ native_create?: Record<string, unknown> }>(
       profile,
       `/projects/session?project_id=${encodeURIComponent(id)}&prepare=1`,
-      { method: "POST", body: "{}" },
+      { method: "POST", body: "{}", signal },
     );
     const made = prepared.native_create
-      ? await NativeGatewayViewer.create(profile, prepared.native_create)
+      ? await NativeGatewayViewer.create(profile, prepared.native_create, signal)
       : unwrapSession(prepared);
     workspaceSessions.add(workspaceKey(profile, made.id));
     return made;

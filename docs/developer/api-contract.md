@@ -143,11 +143,20 @@ path; it does not attest runtime identity or compatibility with every host.
 The read-only gateway probe checks connectivity and supported response shape,
 not source provenance. Exact-release verification belongs to the test fixture.
 
-Normal and Project drafts use native `session.create`. Projects first validate
+New chat navigates to `/` (optionally `?project=…&profile=…`) without allocating
+a session. First Send creates unscoped and Project chats through native
+`session.create`. Projects first validate
 the authoritative workspace through `/projects/session?prepare=1`; callers
 cannot supply a Project cwd. The resulting stored ID is persisted through the
 existing authenticated profile session API. A creation viewer stays attached
 until the chat viewer resumes it, with a five-minute unopened draft limit.
+The stored session route drops the draft Project query; its context comes only
+from the authoritative Project catalog. There is no provisional browser membership
+map. Between creation and the catalog reflecting the persisted workspace, the
+Project subtitle can be absent. A pre-admission failure after creation can leave
+an empty canonical session; its saved workspace and membership remain Hermes-owned.
+Known failures restore composer text and attachments in the current scope. If newer input or an attachment read is present, the rejected text and files remain in an **Unsent message** disclosure; Restore becomes available after sending or clearing the current draft. Recovery never overwrites newer input and is cleared by navigation or New chat. The creation-owned canonical handoff preserves the mounted composer and its follow-up draft; other navigation invalidates ownership. Uncertain
+admissions retain the existing resolution flow and are never automatically retried.
 Existing sessions must pass `/chat/sessions/{id}/membership` against the selected
 profile's store before resume. Session creation via ordinary HTTP uses the
 existing gateway API, including from secondary plugin hosts.

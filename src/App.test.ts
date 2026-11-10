@@ -436,7 +436,7 @@ describe("settings page", () => {
     await flushPromises();
     await flushPromises();
     expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
-    expect(fake.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
+    expect(fake.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
     expect(document.activeElement).toBe(button.element);
     const removeListener = vi.spyOn(document, "removeEventListener");
     wrapper.unmount();
@@ -809,6 +809,9 @@ describe("profile navigation", () => {
     const wrapper = mount(App);
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
     create.reject(new Error("Stale create failed"));
     await flushPromises();
@@ -836,6 +839,9 @@ describe("profile navigation", () => {
     const wrapper = mount(App);
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     wrapper.findComponent(SessionSidebar).vm.$emit("select", "existing");
     create.resolve(json({ id: "new" }));
     await flushPromises();
@@ -871,6 +877,9 @@ describe("profile navigation", () => {
       await flushPromises();
       const sidebar = wrapper.findComponent(SessionSidebar);
       sidebar.vm.$emit("create");
+      await flushPromises();
+      await wrapper.get("textarea").setValue("First message");
+      await wrapper.get("form").trigger("submit");
       await flushPromises();
       expect(location.hash).toBe("#/chat/draft?profile=alpha");
       expect(sidebar.props("sessions")).toEqual([]);
@@ -976,6 +985,9 @@ describe("profile navigation", () => {
       const sidebar = wrapper.findComponent(SessionSidebar);
       sidebar.vm.$emit("create");
       await flushPromises();
+      await wrapper.get("textarea").setValue("First message");
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
       expect(sidebar.props("sessions")).toEqual([]);
       const [, onCreated, onTitle] = vi.mocked(nativeSession.useNativeSession).mock.calls.at(-1)!;
       rows = [{ id: "draft" }];
@@ -1006,7 +1018,7 @@ describe("profile navigation", () => {
     const alpha = deferred<Response>(),
       beta = deferred<Response>();
     mockFetch(async (input, init) => {
-      if (input.includes("/capabilities")) return json({});
+      if (input.includes("/capabilities")) return json(streaming);
       if (init?.method === "POST")
         return input.includes("profile=alpha") ? alpha.promise : beta.promise;
       return json({ sessions: [], total: 0 });
@@ -1014,9 +1026,15 @@ describe("profile navigation", () => {
     const wrapper = mount(App);
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     await wrapper.get(".profile-field").setValue("beta");
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     alpha.resolve(json({ id: "alpha-draft" }));
     await flushPromises();
     expect(wrapper.findComponent(SessionSidebar).props("busy")).toBe(true);
@@ -1044,6 +1062,9 @@ describe("profile navigation", () => {
     const wrapper = mount(App);
     await flushPromises();
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     await flushPromises();
     expect(location.hash).toBe("#/chat/new?profile=alpha");
     wrapper.unmount();
@@ -2042,6 +2063,9 @@ describe("manual session tracking", () => {
       sessions: [{ id: "new-chat", title: "Created in ChatHermes" }],
     });
     wrapper.findComponent(SessionSidebar).vm.$emit("create");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("First message");
+    await wrapper.get("form").trigger("submit");
     await flushPromises();
     expect(wrapper.find('[aria-label="Active"]').text()).toContain("Created in ChatHermes");
     wrapper.unmount();
