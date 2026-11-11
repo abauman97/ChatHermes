@@ -142,6 +142,7 @@ export function useChatController(
   );
   const viewUnavailable = computed(() => native.uncertain.value);
   const viewActive = computed(() => native.busy.value);
+  const requestDisabled = computed(() => !nativeMode.value || offline.value || viewReconnect.value);
   async function sendNative(text: string, attachments: Attachment[]) {
     if (
       composer.value.disabled ||
@@ -259,7 +260,7 @@ export function useChatController(
     return owner === scope.generation() && request.value?.id === id;
   }
   async function answer(id: string, result: RequestAnswer, owner: number) {
-    if (!nativeMode.value || viewReconnect.value || !requestCurrent(id, owner)) return;
+    if (requestDisabled.value || !requestCurrent(id, owner)) return;
     try {
       await native.answer(id, { ...result });
     } catch {
@@ -353,6 +354,7 @@ export function useChatController(
       unavailable: viewUnavailable,
       active: viewActive,
       request,
+      requestDisabled,
       connection: computed(() => native.connection.value),
       status: computed(() => (nativeMode.value ? native.status.value : "")),
     },

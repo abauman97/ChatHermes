@@ -124,6 +124,11 @@ fall back to selected options, and nonblank custom text takes precedence.
 Callbacks capture scope generation and envelope identity before dispatch. Late
 failures cannot overwrite a replacement request's state. Keep the first-open
 request policy and the existing runtime answer transport.
+Pending approval controls follow the exact request's lifetime, independently of
+parent turn activity: background children can still need consent after the parent
+completes or an idle session reconnects. Approval, clarification and secret forms
+disable submission while offline, reconnecting, unavailable or already submitting;
+only answering or withdrawing the matching envelope settles that request.
 
 ## Guidelines for changes and AI agents
 

@@ -5,7 +5,6 @@ import type { ApprovalChoice } from "../../../vendor/hermes/gateway-contract.gen
 const props = defineProps<{
   request: Extract<PendingRequest, { kind: "approval" }>;
   disabled: boolean;
-  active: boolean;
   answer: (answer: RequestAnswer) => Promise<void>;
 }>();
 const pending = ref(false);
@@ -21,7 +20,8 @@ async function submit(choice: ApprovalChoice) {
 </script>
 <template>
   <p>Approval required{{ request.params.command ? ": " + request.params.command : "" }}</p>
-  <div v-if="active" class="approval-choices grid grid-cols-1 gap-2 my-3">
+  <!-- The request can outlive its parent turn (for example, a background child). -->
+  <div class="approval-choices grid grid-cols-1 gap-2 my-3">
     <button
       v-for="choice in request.params.choices"
       :key="choice"
