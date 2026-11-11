@@ -4,7 +4,7 @@ import ApprovalRequest from "./ApprovalRequest.vue";
 import ClarificationRequest from "./ClarificationRequest.vue";
 import SecretRequest from "./SecretRequest.vue";
 const { view, scope, actions } = useChat();
-const { request, reconnect, active } = view;
+const { request, requestDisabled } = view;
 const { profile, session } = scope;
 // Each render captures the envelope identity, never the next request's ID.
 const answerFor = actions.answerFor;
@@ -19,20 +19,19 @@ const answerFor = actions.answerFor;
     <ApprovalRequest
       v-if="request.kind === 'approval'"
       :request="request"
-      :disabled="reconnect"
-      :active="active"
+      :disabled="requestDisabled"
       :answer="answerFor(request.id)"
     />
     <ClarificationRequest
       v-else-if="request.kind === 'clarify'"
       :request="request"
-      :disabled="reconnect"
+      :disabled="requestDisabled"
       :answer="answerFor(request.id)"
     />
     <SecretRequest
       v-else-if="request.kind === 'secret'"
       :request="request"
-      :disabled="reconnect"
+      :disabled="requestDisabled"
       :answer="answerFor(request.id)"
     />
     <p v-else>This request cannot be displayed. Open it in Hermes.</p>

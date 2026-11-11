@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({ answer: vi.fn().mockResolvedValue(undefined) }
 const request = ref<PendingRequest>();
 vi.mock("../context", () => ({
   useChat: () => ({
-    view: { request, reconnect: ref(false), active: ref(true) },
+    view: { request, requestDisabled: ref(false), active: ref(false) },
     scope: { profile: ref("default"), session: ref("session") },
     actions: { answerFor: () => state.answer },
   }),
