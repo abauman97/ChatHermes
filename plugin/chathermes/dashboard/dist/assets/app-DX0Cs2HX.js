@@ -10482,9 +10482,9 @@ function kg(e, t) {
 			E.value = !1;
 		}
 	}
-	let k = s, te = Z(() => k.value ? e.messages.value : i.value), ne = Z(() => e.busy.value || e.uncertain.value), re = Z(() => k.value ? e.loading.value : a.value), A = Z(() => k.value ? e.error.value : o.value), j = Z(() => !!e.approval.value), ie = Z(() => k.value && !!r.value && e.connection.value !== "ready"), M = Z(() => e.uncertain.value), ae = Z(() => e.busy.value);
-	async function oe(i, a) {
-		if (fe.value.disabled || E.value || ne.value || d.value || j.value || f.value || !s.value || h.value) return;
+	let k = s, te = Z(() => k.value ? e.messages.value : i.value), ne = Z(() => e.busy.value || e.uncertain.value), re = Z(() => k.value ? e.loading.value : a.value), A = Z(() => k.value ? e.error.value : o.value), j = Z(() => !!e.approval.value), ie = Z(() => k.value && !!r.value && e.connection.value !== "ready"), M = Z(() => e.uncertain.value), ae = Z(() => e.busy.value), oe = Z(() => !k.value || f.value || ie.value);
+	async function se(i, a) {
+		if (pe.value.disabled || E.value || ne.value || d.value || j.value || f.value || !s.value || h.value) return;
 		let o = S(), c = t.navigation(), l = w.value, u = n.value, p = ee.value, m = T.value;
 		if (!r.value) {
 			let e = await t.createSession();
@@ -10532,10 +10532,10 @@ function kg(e, t) {
 			if (g === t.generation() && !e.uncertain.value) return e.error.value = n instanceof Error ? n.message : "Message not submitted", !1;
 		}
 	}
-	async function se(e, t = []) {
-		if (k.value) return await oe(e, t);
+	async function ce(e, t = []) {
+		if (k.value) return await se(e, t);
 	}
-	async function ce() {
+	async function le() {
 		let n = t.generation();
 		if (k.value) {
 			try {
@@ -10546,7 +10546,7 @@ function kg(e, t) {
 			return;
 		}
 	}
-	async function le(n) {
+	async function ue(n) {
 		let r = t.generation();
 		if (k.value) {
 			try {
@@ -10557,7 +10557,7 @@ function kg(e, t) {
 			return;
 		}
 	}
-	let ue = Z(() => {
+	let de = Z(() => {
 		let t = e.approval.value;
 		return t && typeof t.request_id == "string" && typeof t.kind == "string" ? Dg({
 			id: t.request_id,
@@ -10565,29 +10565,29 @@ function kg(e, t) {
 			params: t
 		}) : void 0;
 	});
-	function de(e, n) {
-		return n === t.generation() && ue.value?.id === e;
+	function N(e, n) {
+		return n === t.generation() && de.value?.id === e;
 	}
-	async function N(t, n, r) {
-		if (k.value && !ie.value && de(t, r)) try {
+	async function fe(t, n, r) {
+		if (!oe.value && N(t, r)) try {
 			await e.answer(t, { ...n });
 		} catch {
-			de(t, r) && (e.error.value = ue.value?.kind === "clarify" ? "Clarification could not be settled." : ue.value?.kind === "secret" ? "Secret request could not be settled." : "Approval could not be settled.");
+			N(t, r) && (e.error.value = de.value?.kind === "clarify" ? "Clarification could not be settled." : de.value?.kind === "secret" ? "Secret request could not be settled." : "Approval could not be settled.");
 		}
 	}
-	let fe = Z(() => ({
+	let pe = Z(() => ({
 		projectName: !l.value && !u.value?.isNoProject ? u.value?.label : void 0,
 		disabled: !!(l.value || E.value || c.value && u.value?.archived || c.value && (!u.value || !u.value.isNoProject && !kl(u.value)) || f.value || d.value || h.value || re.value || j.value || M.value || ie.value || !s.value),
 		reason: l.value ? "Open a chat." : c.value && u.value?.archived ? "Restore this project to start a new chat." : c.value && u.value && !u.value.isNoProject && !kl(u.value) ? "This Project has no workspace." : f.value ? "Offline · sending is unavailable." : j.value ? "Approval is pending in Hermes." : s.value ? void 0 : "Streaming turns are unavailable for this profile."
-	})), pe = {
+	})), me = {
 		loadEarlier: () => e.loadEarlier(),
 		branch: O,
-		send: se,
-		stop: ce,
-		steer: le,
+		send: ce,
+		stop: le,
+		steer: ue,
 		answerFor: (e) => {
 			let n = t.generation();
-			return (t) => N(e, t, n);
+			return (t) => fe(e, t, n);
 		},
 		suggest: t.suggest,
 		setContextOpen: (t) => e.setContextOpen(t),
@@ -10627,12 +10627,13 @@ function kg(e, t) {
 			reconnect: ie,
 			unavailable: M,
 			active: ae,
-			request: ue,
+			request: de,
+			requestDisabled: oe,
 			connection: Z(() => e.connection.value),
 			status: Z(() => k.value ? e.status.value : "")
 		},
-		composer: fe,
-		actions: pe,
+		composer: pe,
+		actions: me,
 		scope: {
 			profile: n,
 			session: r,
@@ -14249,15 +14250,11 @@ var mx = ["open"], hx = {
 			"stroke-width": "2"
 		}, [J("path", { d: "M12 5v14m-7-7 7 7 7-7" })], -1)]])) : X("v-if", !0)]));
 	}
-}), nS = {
-	key: 0,
-	class: "approval-choices grid grid-cols-1 gap-2 my-3"
-}, rS = ["disabled", "onClick"], iS = /* @__PURE__ */ U({
+}), nS = { class: "approval-choices grid grid-cols-1 gap-2 my-3" }, rS = ["disabled", "onClick"], iS = /* @__PURE__ */ U({
 	__name: "ApprovalRequest",
 	props: {
 		request: {},
 		disabled: { type: Boolean },
-		active: { type: Boolean },
 		answer: { type: Function }
 	},
 	setup(e) {
@@ -14272,13 +14269,17 @@ var mx = ["open"], hx = {
 				}
 			}
 		}
-		return (t, i) => (K(), q(G, null, [J("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1), e.active ? (K(), q("div", nS, [(K(!0), q(G, null, W(e.request.params.choices, (t) => (K(), q("button", {
-			key: t,
-			class: fe(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
-			disabled: e.disabled || n.value,
-			onMousedown: i[0] ||= Do(() => {}, ["prevent"]),
-			onClick: (e) => r(t)
-		}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, rS))), 128))])) : X("v-if", !0)], 64));
+		return (t, i) => (K(), q(G, null, [
+			J("p", null, "Approval required" + L(e.request.params.command ? ": " + e.request.params.command : ""), 1),
+			X(" The request can outlive its parent turn (for example, a background child). "),
+			J("div", nS, [(K(!0), q(G, null, W(e.request.params.choices, (t) => (K(), q("button", {
+				key: t,
+				class: fe(["w-full rounded-xl bg-[#303030] px-[14px] py-[10px] text-left text-base leading-[1.5] text-white whitespace-normal break-words disabled:opacity-55", t === "deny" ? "text-red-500" : ""]),
+				disabled: e.disabled || n.value,
+				onMousedown: i[0] ||= Do(() => {}, ["prevent"]),
+				onClick: (e) => r(t)
+			}, L(t === "once" ? "Allow once" : t === "deny" ? "Deny" : t === "session" ? "Allow for session" : "Always allow"), 43, rS))), 128))])
+		], 64));
 	}
 }), aS = { class: "clarification-card" }, oS = ["disabled"], sS = {
 	key: 0,
@@ -14392,11 +14393,11 @@ var mx = ["open"], hx = {
 }), vS = { key: 3 }, yS = /*#__PURE__*/ k_(/* @__PURE__ */ U({
 	__name: "LiveRequest",
 	setup(e) {
-		let { view: t, scope: n, actions: r } = uh(), { request: i, reconnect: a, active: o } = t, { profile: s, session: c } = n, l = r.answerFor;
+		let { view: t, scope: n, actions: r } = uh(), { request: i, requestDisabled: a } = t, { profile: o, session: s } = n, c = r.answerFor;
 		return (e, t) => B(i) ? (K(), q("div", {
 			key: JSON.stringify([
+				B(o),
 				B(s),
-				B(c),
 				B(i).id
 			]),
 			class: "live-request notice px-5 py-3 text-sm",
@@ -14405,18 +14406,16 @@ var mx = ["open"], hx = {
 			key: 0,
 			request: B(i),
 			disabled: B(a),
-			active: B(o),
-			answer: B(l)(B(i).id)
+			answer: B(c)(B(i).id)
 		}, null, 8, [
 			"request",
 			"disabled",
-			"active",
 			"answer"
 		])) : B(i).kind === "clarify" ? (K(), Vi(pS, {
 			key: 1,
 			request: B(i),
 			disabled: B(a),
-			answer: B(l)(B(i).id)
+			answer: B(c)(B(i).id)
 		}, null, 8, [
 			"request",
 			"disabled",
@@ -14425,14 +14424,14 @@ var mx = ["open"], hx = {
 			key: 2,
 			request: B(i),
 			disabled: B(a),
-			answer: B(l)(B(i).id)
+			answer: B(c)(B(i).id)
 		}, null, 8, [
 			"request",
 			"disabled",
 			"answer"
 		])) : (K(), q("p", vS, "This request cannot be displayed. Open it in Hermes."))])) : X("v-if", !0);
 	}
-}), [["__scopeId", "data-v-f6a692d8"]]), bS = /* @__PURE__ */ U({
+}), [["__scopeId", "data-v-0e055492"]]), bS = /* @__PURE__ */ U({
 	__name: "ChatConversation",
 	setup(e) {
 		let { view: t, scope: n, actions: r } = uh(), { profile: i, session: a } = n, { messages: o, loading: s, busy: c, approvalPending: l, status: u } = t, d = /* @__PURE__ */ z(), f = Nn(dh);
