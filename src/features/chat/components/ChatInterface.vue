@@ -163,9 +163,30 @@ const {
       <slot />
     </div>
     <div class="composer-dock shrink-0">
+      <div
+        v-if="view.commandResults.value.length"
+        class="mx-auto max-h-48 w-[calc(100%-24px)] max-w-[760px] overflow-y-auto px-2 pb-2 text-sm"
+        aria-label="Command results"
+        role="region"
+      >
+        <details
+          v-for="(result, index) in view.commandResults.value"
+          :key="index"
+          :open="index === view.commandResults.value.length - 1"
+        >
+          <summary>{{ result.command }} · temporary result</summary>
+          <pre class="whitespace-pre-wrap break-words font-sans" role="status">{{
+            result.output
+          }}</pre>
+        </details>
+      </div>
       <ChatComposer
         ref="picker"
         :profile="profile"
+        :complete-slash="actions.completeSlash"
+        :slash-scope="
+          JSON.stringify([draftScope, composer.slashScope, nativeMode, connection, offline])
+        "
         :session-id="nativeMode ? session || undefined : undefined"
         :context-usage="view.contextUsage.value"
         :context-breakdown="view.contextBreakdown.value"
@@ -174,7 +195,7 @@ const {
         v-show="!hideComposer"
         :project-name="composer.projectName"
         :key="JSON.stringify([profile, draftScope])"
-        :disabled="composer.disabled"
+        :disabled="composer.disabled || view.commandRunning.value"
         :models="models"
         :providers="providers"
         :models-loading="modelsLoading"

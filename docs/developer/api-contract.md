@@ -566,3 +566,112 @@ need deterministic fixtures for their auxiliary-model and worker side effects
 before being exposed. Advanced execution controls and diagnostic actions likewise
 need real-worker lifecycle coverage. These remain follow-up work, not changes to
 Hermes core.
+
+### Native slash commands
+
+`commands.catalog` and `complete.slash` use the authenticated native socket and
+explicit profile. Existing sessions use their membership-checked viewer's runtime
+ID, never an ambient/previous session. Draft reads open a short-lived gateway
+viewer without `session.create` or `session.resume`. The wire schema rejects `cwd` and `cwd_explicit` on discovery (error 4000),
+even though an internal `_completion_cwd` helper reads those fields. Project
+drafts therefore show explicitly labeled profile-level suggestions only. On Send,
+the existing Project creation path first establishes the authoritative workspace;
+the command is resolved again against that session before execution. Project-local
+skill discovery before creation is an upstream contract limitation. Unknown/deleted
+profiles and untrusted project skills retain upstream refusal/trust behavior.
+
+The Vue completion owner discards stale text/scope responses, preserves native
+ranking, uses `replace_from` for argument insertion and keeps native metadata.
+Each edited request reloads the catalog rather than retaining a cross-profile
+cache; reopening/typing refreshes after external skill/plugin changes. No polling
+or frontend extension registry is introduced. Catalog warnings are shown in a
+sanitized generic form because upstream exception strings can contain host data.
+
+Composer argument stages follow catalog `argument_mode` with the pinned Desktop
+overrides for local compression, title, steering and reasoning. Command selection
+advances into finite/mixed arguments; text arguments close the menu. Exact typed
+matches win over implicit fuzzy highlights for Space/Enter, deliberate arrow
+selection wins, and Tab accepts the highlight. Mixed prose keeps Space/Enter's
+ordinary meanings unless Enter follows deliberate navigation. Completed finite
+arguments do not trap submission when the gateway omits their exact match.
+Directive pills replace the accepted invocation in the visible draft. The native
+textarea edits only its suffix; dispatch still uses the complete canonical draft.
+Activating a pill or pressing Backspace at the start restores the invocation and
+selects it for native editing/deletion. Scope changes invalidate chip metadata.
+Submission, IME, attachments and mobile newline behavior retain their existing paths.
+Mid-message completion offers native skill references only and preserves suffixes;
+it does not turn prose into a command invocation. Scope changes invalidate the
+presentation metadata as well as in-flight suggestions.
+
+`commands/slash.ts` classifies execution separately from discovery. The generated
+`gateway-parity.ts` is an execution boundary from the reviewed shared-gateway
+parity table, not a command catalog. Regenerate with
+`node scripts/sync-command-parity.mjs` after reviewing a new source pin; verify
+with `--check`. The legacy worker supports more terminal operations than that
+boundary, so catalog/Desktop availability and subcommand metadata further narrow
+execution. Commands requiring missing client UI remain visible with limitations.
+This does not claim complete Desktop parity or canonical runtime support.
+
+A small client mapping owns catalog help, native compression, legacy native retry
+resolution, title, stop and live reasoning reads/writes. `/reasoning` uses
+`config.get`; effort and display arguments use `config.set` (session effort by
+default, explicit `--global` supported). The pinned slash worker has no reasoning
+side-effect mirror. Only confirmed effort writes replace a pending composer
+effort; queries and display changes preserve it. Unsupported forms are refused.
+Other permitted built-ins use `slash.exec`; directive
+built-ins and extensions use `command.dispatch`. The pin's retry directive rewinds
+and resolves its previous prompt server-side; the canonical Desktop rewind path
+is not used on this supported legacy wire. Alias redirects are bounded. An RPC
+failure never triggers an execution fallback or retry. `send`/`skill` directives
+submit only through the existing upload/admission/retention path, with the gateway
+`display` (or invocation) as the optimistic bubble, never expanded skill content.
+The `/moa` directive already establishes a live one-turn route and post-turn
+restore. Its admission omits composer model/provider/effort writes so that route
+survives; the next ordinary turn applies the retained composer selections.
+`prefill` returns text to the existing draft suggestion path. Goal/Plan controls
+emit the same invocations. Session controls reconstruct authoritative settings and
+history through the normal viewer lifecycle and refresh sidebar state.
+
+An in-flight command coalesces Send. Profile, route, draft Project and session guards
+prevent a stale directive from submitting into a new scope. Existing sessions own
+their workspace in Hermes; late Project membership metadata does not invalidate
+their commands or clear temporary results. Busy sessions refuse
+slash Send; existing steering/Stop remain available. Attachments are preserved on
+refusal and allowed only for known prompt built-ins and catalog skills, since an
+exec-only result cannot consume them safely. `/help` and `/commands` also refuse
+staged attachments and restore the unsent draft. Command-only results are bounded,
+plain text and ephemeral; they create no transcript rows. A timed-out mutation is
+reported as potentially unknown and never replayed. Hermes persists only what its
+own operation persists, including any partial control effect before a later
+prompt admission fails.
+
+The reviewed legacy `command_discovery.slash_completions` exits its explicit
+home scope after capturing skills/bundles, before invoking plugin and dynamic
+argument providers in `hermes_cli/commands_completion.py`. ChatHermes filters
+non-skill root suggestions against the scoped catalog and takes their descriptions
+from that catalog, resolving aliases through its canonical keys. Missing or empty
+descriptions never fall back to the unscoped completion metadata. It does not request the legacy dynamic argument providers for
+`/skin`, `/personality`, `/tools` or `/handoff`; the menu explains the upstream
+profile-binding limitation. Static subcommands and scoped stacked-skill completion
+remain native. The gateway itself can still return unscoped plugin metadata in
+its raw completion response; this frontend filtering does not repair upstream
+RPC authorization or claim that the raw legacy API is profile-isolated.
+The pinned completer also omits quick commands: matching catalog entries supplement
+native results without reordering the native fuzzy matches.
+
+The transcript extension also applies Hermes's native
+`agent.skill_commands.describe_skill_invocation` to otherwise untyped user skill
+payloads (including text parts with images). This supplies the projection that
+native history has but Desktop REST omits. Typed/hidden rows retain their upstream
+meaning, model-facing SQLite content is unchanged, and row identity, pagination
+and mutation fences remain the same. No frontend skill-body parsing or local
+instruction assembly is introduced.
+
+Observed legacy retry limitation: a retried skill prompt can be persisted with an
+untyped `[System: …]` wrapper containing the original invocation/body. Both the
+pinned Desktop projection and this plugin hide that reserved scaffold row, so the
+retried answer can remain without a visible durable user bubble after hydration.
+The native retry still rewinds and submits its resolved prompt exactly once.
+ChatHermes does not fabricate a persistent replacement user row or strip an
+unknown wrapper to reconstruct the request. Native compression likewise owns the
+replacement transcript; visible row counts are not a client guarantee.

@@ -504,3 +504,89 @@ it("treats a deferred cold ack as omitted history while REST hydrates", async ()
     viewer.close();
   }
 });
+
+it("scopes command RPCs to the resumed runtime and never accepts caller ownership overrides", async () => {
+  const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+  try {
+    await viewer.ensure();
+    await viewer.command("commands.catalog", { session_id: "foreign", profile: "beta" });
+    await viewer.command("complete.slash", { text: "/", session_id: "foreign" });
+    await viewer.command("command.dispatch", { name: "work", arg: "task" });
+    await viewer.command("slash.exec", { command: "status" });
+    await viewer.command("session.compress", { focus_topic: "task" });
+    await viewer.command("config.get", {
+      key: "reasoning",
+      session_id: "foreign",
+      profile: "beta",
+    });
+    await viewer.command("config.set", {
+      key: "reasoning",
+      value: "high",
+      scope: "session",
+      session_id: "foreign",
+      profile: "beta",
+    });
+    for (const method of [
+      "commands.catalog",
+      "complete.slash",
+      "command.dispatch",
+      "slash.exec",
+      "session.compress",
+      "config.get",
+      "config.set",
+    ]) {
+      expect(frames.find((frame) => frame.method === method)?.params).toMatchObject({
+        profile: "alpha",
+        session_id: "runtime",
+      });
+    }
+    expect(() => viewer.command("session.delete")).toThrow("Unsupported command operation");
+  } finally {
+    viewer.close();
+  }
+});
+
+it("discovers for a new profile draft without creating or resuming a session", async () => {
+  await NativeGatewayViewer.discover("beta", "complete.slash", {
+    text: "/",
+  });
+  expect(frames.map((frame) => frame.method)).toEqual(["gateway.ping", "complete.slash"]);
+  expect(frames[1].params).toEqual({
+    profile: "beta",
+    text: "/",
+  });
+  expect(sockets[0]?.close).toHaveBeenCalledOnce();
+});
+
+it.each(["slash.exec", "config.set"])(
+  "keeps %s failures outcome-unknown without retrying or exposing gateway error bodies",
+  async (method) => {
+    const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
+    try {
+      await viewer.ensure();
+      beforeReply = (socket, frame) => {
+        if (frame.method === method)
+          socket.receive({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: { code: 5030, message: "private upstream diagnostic" },
+          });
+      };
+      await expect(
+        viewer.command(
+          method,
+          method === "slash.exec"
+            ? { command: "status" }
+            : { key: "reasoning", value: "high", scope: "session" },
+        ),
+      ).rejects.toMatchObject({
+        outcome: "unknown",
+        message: "Hermes could not complete this operation",
+      });
+      expect(frames.filter((frame) => frame.method === method)).toHaveLength(1);
+      expect(frames.filter((frame) => frame.method === "command.dispatch")).toHaveLength(0);
+    } finally {
+      viewer.close();
+    }
+  },
+);

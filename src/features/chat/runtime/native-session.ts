@@ -1063,6 +1063,14 @@ export function useNativeSession(
     reconnect,
     availability,
     stop: () => readyViewer().rpc("session.interrupt"),
+    command: <T>(method: string, params: Record<string, unknown> = {}) =>
+      readyViewer().command<T>(method, params),
+    refreshCommand: async () => {
+      stale();
+      await reconnect();
+      await hydrate();
+      onSettled();
+    },
     steer: (text: string) => readyViewer().rpc("session.steer", { text }),
     answer: (id: string, result: Record<string, unknown>) => readyViewer().answer(id, result),
   };
