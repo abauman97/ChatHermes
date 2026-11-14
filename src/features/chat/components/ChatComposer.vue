@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import ContextUsageIndicator from "./ContextUsageIndicator.vue";
+import SlashCommandMenu from "./SlashCommandMenu.vue";
+import { useSlashCompletion, type SlashComplete } from "../commands/useSlashCompletion";
+import { isSlash } from "../commands/slash";
 import type {
   Usage,
   SessionContextBreakdownResult,
@@ -17,6 +20,8 @@ const props = withDefaults(
   defineProps<{
     profile?: string;
     sessionId?: string;
+    slashScope?: string;
+    completeSlash?: SlashComplete;
     contextUsage?: Usage | null;
     contextBreakdown?: SessionContextBreakdownResult | null;
     contextLoading?: boolean;
@@ -67,6 +72,13 @@ const textarea = ref<HTMLTextAreaElement>(),
   form = ref<HTMLFormElement>(),
   editing = ref(false);
 const composing = ref(false);
+const slash = useSlashCompletion(
+  value,
+  () => JSON.stringify([props.profile, props.sessionId, props.slashScope]),
+  () => props.completeSlash,
+  textarea,
+);
+const directiveId = useId();
 let resizeObserver: ResizeObserver | undefined;
 function resizeInput() {
   const area = textarea.value;
@@ -97,7 +109,7 @@ function leaveComposer(event: FocusEvent) {
   if (!(event.relatedTarget instanceof Node) || !form.value?.contains(event.relatedTarget))
     editing.value = false;
 }
-watch(value, () => resizeInput(), { flush: "post" });
+watch(slash.input, () => resizeInput(), { flush: "post" });
 onMounted(() => {
   resizeInput();
   if (typeof ResizeObserver !== "undefined") {
@@ -260,6 +272,9 @@ const buttonDisabled = computed(() =>
       (!value.value.trim() && !attachments.value.length),
 );
 function composerKeydown(event: KeyboardEvent) {
+  if (composing.value || event.isComposing || event.keyCode === 229 || event.defaultPrevented)
+    return;
+  if (slash.keydown(event)) return;
   if (
     event.key !== "Enter" ||
     event.shiftKey ||
@@ -280,6 +295,10 @@ function composerKeydown(event: KeyboardEvent) {
 function send() {
   if (buttonDisabled.value) return;
   if (props.sending && value.value.trim()) {
+    if (isSlash(value.value.trim())) {
+      attachmentError.value = "Stop the current response before running a slash command.";
+      return;
+    }
     emit("steer", value.value.trim());
     value.value = "";
     return;
@@ -399,6 +418,7 @@ defineExpose({
     if (canRestore.value) {
       value.value = text;
       attachments.value = files;
+      void nextTick(slash.close);
     } else unsent.value.push({ text, files });
   },
 });
@@ -410,6 +430,15 @@ defineExpose({
     class="composer relative mx-auto mb-0 w-[calc(100%-24px)] max-w-[760px] shrink-0 rounded-[28px] border border-[#303030] bg-[#303030] p-3 focus-within:ring-1 focus-within:ring-[#525252] min-[701px]:w-[calc(100%-48px)]"
     @submit.prevent="send"
   >
+    <SlashCommandMenu
+      v-if="slash.open.value"
+      :id="slash.menuId"
+      :items="slash.items.value"
+      :selected="slash.selected.value"
+      :loading="slash.loading.value"
+      :error="slash.error.value"
+      @select="slash.accept"
+    />
     <div v-if="unsent.length" class="max-h-40 overflow-y-auto">
       <details v-for="(draft, index) in unsent" :key="index" class="px-2 pb-2 text-sm">
         <summary @mousedown="preserveInputFocus">Unsent message</summary>
@@ -470,12 +499,28 @@ defineExpose({
     <p v-if="attachmentError" class="px-2 text-sm text-red-300" role="alert">
       {{ attachmentError }}
     </p>
+    <button
+      v-if="slash.directive.value"
+      :id="directiveId"
+      type="button"
+      class="mb-1 max-w-full truncate rounded-lg border border-[#525252] px-2 py-1 text-base text-[#d4d4d4]"
+      :aria-label="`Edit ${slash.directive.value.kind.toLowerCase()} ${slash.directive.value.text}`"
+      @mousedown="preserveInputFocus"
+      @click="slash.editDirective"
+    >
+      {{ slash.directive.value.text }}
+    </button>
     <div class="composer-body">
       <label class="sr-only" for="prompt">Message Hermes</label>
       <textarea
         ref="textarea"
         id="prompt"
-        v-model="value"
+        v-model="slash.input.value"
+        aria-autocomplete="list"
+        :aria-describedby="slash.directive.value ? directiveId : undefined"
+        :aria-expanded="slash.open.value"
+        :aria-controls="slash.open.value ? slash.menuId : undefined"
+        :aria-activedescendant="slash.activeId.value"
         rows="1"
         maxlength="65536"
         :placeholder="projectName ? `Message ${projectName}` : 'Message Hermes…'"
@@ -483,6 +528,9 @@ defineExpose({
         @focus="focusInput"
         @blur="resizeOnFocusChange"
         @keydown="composerKeydown"
+        @input="slash.updateCursor"
+        @click="slash.updateCursor"
+        @keyup="slash.updateCursor"
         @compositionstart="composing = true"
         @compositionend="composing = false"
       />

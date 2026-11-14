@@ -400,3 +400,34 @@ def test_revision_rejects_rotation_and_cross_profile_lineage(db):
     with pytest.raises(HTTPException) as error:
         transcript.read_page(db, "rotated", "default")
     assert error.value.status_code == 404
+
+
+def test_native_skill_display_survives_paging_and_preserves_model_history(db):
+    from agent.skill_commands import describe_skill_invocation
+
+    content = (
+        '[IMPORTANT: The user has invoked the "work" skill. '
+        "The full skill content is loaded below.]\n\n"
+        "MODEL-ONLY-SKILL-BODY\n\n"
+        "The user has provided the following instruction alongside the skill invocation: "
+        "fix the title"
+    )
+    expected = describe_skill_invocation(content, separator=" ")
+    assert expected == "/work fix the title"
+    db.create_session("skill", source="desktop")
+    db.append_message("skill", "user", content)
+    db.append_message("skill", "assistant", "Done")
+    page = transcript.read_page(db, "skill", "default", limit=1, offset=1)
+    assert page["data"][0]["content"] == expected
+    assert page["data"][0]["display_kind"] == "skill_invocation"
+    assert "MODEL-ONLY-SKILL-BODY" not in str(page)
+    assert db.get_messages("skill")[0]["content"] == content
+    parts = [
+        {"type": "text", "text": content},
+        {"type": "image_url", "image_url": {"url": "synthetic-image"}},
+    ]
+    assert transcript._skill_display(parts) == [{"type": "text", "text": expected}, parts[1]]
+    db.append_message("skill", "user", content, display_kind="hidden")
+    hidden = transcript.read_page(db, "skill", "default", limit=1)["data"][0]
+    assert hidden["display_kind"] == "hidden"
+    assert hidden["content"] == ""

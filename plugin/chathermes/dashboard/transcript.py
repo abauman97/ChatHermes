@@ -19,6 +19,24 @@ def _revision(db, sid):
     ).hexdigest()
 
 
+def _skill_display(content):
+    # Desktop's REST projection omits the skill projection that native history
+    # applies. Use Hermes's own display parser; never return model scaffolding
+    # as a user bubble, including after reload or command-triggered hydration.
+    from agent.skill_commands import describe_skill_invocation
+
+    if isinstance(content, str):
+        return describe_skill_invocation(content, separator=" ") or content
+    if isinstance(content, list):
+        return [
+            {**part, "text": _skill_display(part["text"])}
+            if isinstance(part, dict) and part.get("type") == "text" and "text" in part
+            else part
+            for part in content
+        ]
+    return content
+
+
 def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
     from hermes_cli.web_routers.sessions import _history_profile_home, _project_for_display
 
@@ -73,6 +91,12 @@ def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
         clean = {key: display[key] for key in safe_keys if key in display}
         if "display_content" in clean:
             clean["content"] = clean["display_content"]
+        if clean.get("role") == "user" and not clean.get("display_kind"):
+            content = _skill_display(clean.get("content"))
+            if content != clean.get("content"):
+                clean.update(
+                    content=content, display_content=content, display_kind="skill_invocation"
+                )
         if isinstance(clean.get("content"), list):
             content = []
             for index, part in enumerate(clean["content"]):

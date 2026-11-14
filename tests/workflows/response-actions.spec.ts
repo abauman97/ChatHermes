@@ -102,6 +102,10 @@ test("response branches retain Project workspace and profile isolation", async (
   await page.goto(
     `${origin}/chathermes?profile=alpha#/projects/${encodeURIComponent(project)}?profile=alpha`,
   );
+  await page
+    .locator(".project-home")
+    .getByRole("button", { name: "New chat", exact: true })
+    .click();
   const plugin = page.locator(".chathermes-embedded");
   const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
   const prompt = `[workflow-stream] ${randomUUID()}`;

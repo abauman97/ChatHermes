@@ -1266,5 +1266,45 @@
       },
       "body": "{\"error\": {\"message\": \"Synthetic interrupted inference\", \"type\": \"invalid_request_error\"}}"
     }
+  },
+  {
+    "id": "chathermes-moa-reference",
+    "priority": 100,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON",
+        "json": "{\"model\":\"chathermes-moa-reference\"}",
+        "matchType": "ONLY_MATCHING_FIELDS"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["application/json"]
+      },
+      "body": "{\"id\":\"moa-reference\",\"object\":\"chat.completion\",\"created\":1,\"model\":\"chathermes-moa-reference\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Synthetic MoA reference.\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":8,\"total_tokens\":108}}"
+    }
+  },
+  {
+    "id": "chathermes-moa-aggregate",
+    "priority": 100,
+    "httpRequest": {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "body": {
+        "type": "JSON",
+        "json": "{\"model\":\"chathermes-moa-aggregate\"}",
+        "matchType": "ONLY_MATCHING_FIELDS"
+      }
+    },
+    "httpResponse": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": ["text/event-stream"]
+      },
+      "body": "data: {\"id\":\"moa-aggregate\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-moa-aggregate\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Synthetic MoA aggregate.\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"moa-aggregate\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"chathermes-moa-aggregate\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":8,\"total_tokens\":108}}\n\ndata: [DONE]\n\n"
+    }
   }
 ]

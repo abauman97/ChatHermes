@@ -7,9 +7,17 @@ import ChatInterface from "../components/ChatInterface.vue";
 import { api } from "../../../services/hermes-api";
 import { useChatController } from "./useChatController";
 import { useNativeSession } from "../runtime/native-session";
+import { NativeGatewayViewer } from "../runtime/native-gateway";
+import type { Project } from "../../../types/hermes";
 function setup() {
   const native = useNativeSession(() => {});
   native.connection.value = "ready";
+  native.settings.value = {
+    profile: "alpha",
+    session: "one",
+    info: {},
+    generation: native.generationRef.value,
+  };
   const scope = {
     profile: ref("alpha"),
     session: ref("one"),
@@ -19,7 +27,7 @@ function setup() {
     canStream: ref(true),
     composerBlocked: ref(false),
     projectView: ref(false),
-    selectedProject: ref(undefined),
+    selectedProject: ref<Project>(),
     creating: ref(false),
     offline: ref(false),
     models: ref([]),
@@ -507,4 +515,492 @@ it("projects context only for the selected profile/session and keeps usage react
   scope.session.value = "one";
   scope.profile.value = "beta";
   expect(controller.view.contextUsage.value).toBeNull();
+});
+
+describe("native slash dispatch", () => {
+  const catalog = {
+    pairs: [
+      ["/status", "Status"],
+      ["/work", "Skill"],
+    ],
+    canon: { "/ctx": "/context", "/compact": "/compress" },
+    commands: {
+      "/status": {},
+      "/context": {},
+      "/plan": {},
+      "/compress": {},
+      "/retry": {},
+      "/history": {},
+      "/moa": {},
+      "/reasoning": {},
+    },
+    skills: { "/work": {} },
+  };
+  it("preserves the native MoA route through admission, then uses composer choices on the next turn", async () => {
+    const { native, controller } = setup();
+    controller.actions.setModel("composer-model");
+    controller.actions.setProvider("composer-provider");
+    controller.actions.setReasoningEffort("low");
+    const command = vi
+      .spyOn(native, "command")
+      .mockImplementation(async (method) =>
+        method === "commands.catalog"
+          ? catalog
+          : { type: "send", message: "MoA task", notice: "MoA queued" },
+      );
+    const submit = vi.spyOn(native, "submit").mockResolvedValue();
+    expect(await controller.actions.send("/moa MoA task")).toBe(true);
+    expect(command).toHaveBeenCalledWith("command.dispatch", { name: "moa", arg: "MoA task" });
+    expect(submit.mock.calls[0]![2]).toEqual({});
+    expect(await (submit.mock.calls[0]![1] as () => Promise<unknown>)()).toBe("MoA task");
+    expect(await controller.actions.send("Next turn")).toBe(true);
+    expect(submit.mock.calls[1]![2]).toEqual({
+      model: "composer-model",
+      provider: "composer-provider",
+      reasoning_effort: "low",
+    });
+  });
+  it.each(["high", "none", "low --global", "--session ultra", "disabled"])(
+    "changes live reasoning for /reasoning %s",
+    async (arg) => {
+      const { native, controller } = setup();
+      controller.actions.setReasoningEffort("medium");
+      const value = arg === "disabled" ? "none" : arg.replace(/--\w+/g, "").trim();
+      const command = vi
+        .spyOn(native, "command")
+        .mockImplementation(async (method) =>
+          method === "commands.catalog" ? catalog : method === "config.get" ? { value } : {},
+        );
+      vi.spyOn(native, "refreshCommand").mockResolvedValue();
+      expect(await controller.actions.send(`/reasoning ${arg}`)).toBe(true);
+      expect(command).toHaveBeenCalledWith("config.set", {
+        key: "reasoning",
+        value: arg === "disabled" ? "disabled" : value,
+        scope: arg.includes("--global") ? "global" : "session",
+      });
+      expect(command).not.toHaveBeenCalledWith("slash.exec", expect.anything());
+      expect(controller.scope.reasoningEffort.value).toBe(value);
+    },
+  );
+  it.each(["", "show", "hide", "full", "clamp"])(
+    "retains a pending effort for /reasoning %s",
+    async (arg) => {
+      const { native, controller } = setup();
+      controller.actions.setReasoningEffort("low");
+      const command = vi
+        .spyOn(native, "command")
+        .mockImplementation(async (method) =>
+          method === "commands.catalog"
+            ? catalog
+            : method === "config.get"
+              ? { value: "high", display: "show" }
+              : {},
+        );
+      vi.spyOn(native, "refreshCommand").mockResolvedValue();
+      expect(await controller.actions.send(`/reasoning${arg ? ` ${arg}` : ""}`)).toBe(true);
+      expect(controller.scope.reasoningEffort.value).toBe("low");
+      if (!arg) expect(command).not.toHaveBeenCalledWith("config.set", expect.anything());
+      expect(command).not.toHaveBeenCalledWith("slash.exec", expect.anything());
+    },
+  );
+  it.each(["reset", "high extra", "--global"])(
+    "refuses unsupported reasoning args before mutation: %s",
+    async (arg) => {
+      const { native, controller } = setup();
+      controller.actions.setReasoningEffort("low");
+      const command = vi.spyOn(native, "command").mockResolvedValue(catalog);
+      expect(await controller.actions.send(`/reasoning ${arg}`)).toBe(false);
+      expect(command).toHaveBeenCalledTimes(1);
+      expect(controller.scope.reasoningEffort.value).toBe("low");
+    },
+  );
+  it("retains the effort when the live reasoning write cannot be confirmed", async () => {
+    const { native, controller } = setup();
+    controller.actions.setReasoningEffort("low");
+    vi.spyOn(native, "command").mockImplementation(async (method) =>
+      method === "commands.catalog" ? catalog : { value: "medium" },
+    );
+    expect(await controller.actions.send("/reasoning high")).toBe(false);
+    expect(controller.scope.reasoningEffort.value).toBe("low");
+  });
+  it("executes backend reads without creating fake conversation turns", async () => {
+    const { native, controller } = setup();
+    const command = vi
+      .spyOn(native, "command")
+      .mockImplementation(async (method) =>
+        method === "commands.catalog" ? catalog : { output: "Native status" },
+      );
+    const submit = vi.spyOn(native, "submit").mockResolvedValue();
+    const refresh = vi.spyOn(native, "refreshCommand").mockResolvedValue();
+    expect(await controller.actions.send("/status")).toBe(true);
+    expect(command).toHaveBeenCalledWith("slash.exec", { command: "status" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(native.messages.value).toEqual([]);
+    expect(controller.view.commandResults.value).toEqual([
+      { command: "/status", output: "Native status" },
+    ]);
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+  it("keeps an existing session command and results when Project metadata arrives late", async () => {
+    const { native, controller, scope } = setup();
+    let finish!: (value: object) => void;
+    vi.spyOn(native, "command").mockImplementation(async (method) =>
+      method === "commands.catalog"
+        ? catalog
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+    );
+    vi.spyOn(native, "refreshCommand").mockResolvedValue();
+    const sending = controller.actions.send("/status");
+    await flushPromises();
+    scope.selectedProject.value = {
+      id: "late-metadata",
+      label: "Project",
+      path: "/synthetic/project",
+      sessionCount: 1,
+      repos: [],
+    };
+    finish({ output: "Native status" });
+    expect(await sending).toBe(true);
+    expect(controller.view.commandResults.value).toEqual([
+      { command: "/status", output: "Native status" },
+    ]);
+    scope.selectedProject.value = undefined;
+    expect(controller.view.commandResults.value).toHaveLength(1);
+  });
+  it("still discards draft discovery when its Project changes", async () => {
+    const { controller, scope } = setup();
+    scope.session.value = "";
+    let finish!: (value: object) => void;
+    const discover = vi.spyOn(NativeGatewayViewer, "discover").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    try {
+      const sending = controller.actions.send("/help");
+      await flushPromises();
+      scope.selectedProject.value = {
+        id: "another-project",
+        label: "Project",
+        path: "/synthetic/project",
+        sessionCount: 0,
+        repos: [],
+      };
+      finish(catalog);
+      await sending;
+      expect(controller.view.commandResults.value).toEqual([]);
+      expect(scope.createSession).not.toHaveBeenCalled();
+    } finally {
+      discover.mockRestore();
+    }
+  });
+  it.each(["send", "skill"])(
+    "keeps %s directives inside native admission with a safe display",
+    async (type) => {
+      const { native, controller } = setup();
+      vi.spyOn(native, "command").mockImplementation(async (method) =>
+        method === "commands.catalog"
+          ? catalog
+          : { type, message: "private skill instructions", display: "/work task" },
+      );
+      const submit = vi.spyOn(native, "submit").mockResolvedValue();
+      expect(await controller.actions.send("/work task")).toBe(true);
+      expect(submit).toHaveBeenCalledWith("/work task", expect.any(Function), expect.any(Object), [
+        { type: "text", text: "/work task" },
+      ]);
+      const prepare = submit.mock.calls[0]![1] as () => Promise<unknown>;
+      expect(await prepare()).toBe("private skill instructions");
+      expect(controller.view.commandResults.value).toEqual([]);
+    },
+  );
+  it("routes retry to the pinned native dispatcher and compression to session.compress", async () => {
+    const { native, controller } = setup();
+    const command = vi
+      .spyOn(native, "command")
+      .mockImplementation(async (method) =>
+        method === "commands.catalog"
+          ? catalog
+          : method === "session.compress"
+            ? { compressed: false, summary: { headline: "Nothing to compress" } }
+            : { type: "send", message: "Previous native prompt" },
+      );
+    vi.spyOn(native, "submit").mockResolvedValue();
+    vi.spyOn(native, "refreshCommand").mockResolvedValue();
+    await controller.actions.send("/retry");
+    expect(command).toHaveBeenCalledWith("command.dispatch", { name: "retry", arg: "" });
+    await controller.actions.send("/compact focus");
+    expect(command).toHaveBeenCalledWith("session.compress", { focus_topic: "focus" });
+    expect(controller.view.commandResults.value.at(-1)?.output).toBe("Nothing to compress");
+  });
+  it("refuses unsupported built-ins and never falls through to an agent prompt", async () => {
+    const { native, controller, scope } = setup();
+    const command = vi.spyOn(native, "command").mockResolvedValue(catalog);
+    const submit = vi.spyOn(native, "submit").mockResolvedValue();
+    expect(await controller.actions.send("/history")).toBe(false);
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(scope.createSession).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+    expect(controller.view.commandResults.value[0]?.output).toContain("does not support");
+  });
+  it("does not retry uncertain execution, rejects duplicates and drops late scope results", async () => {
+    const { native, controller, switchScope } = setup();
+    let finish!: (value: object) => void;
+    const command = vi.spyOn(native, "command").mockImplementation(async (method) =>
+      method === "commands.catalog"
+        ? catalog
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+    );
+    const submit = vi.spyOn(native, "submit").mockResolvedValue();
+    const first = controller.actions.send("/work task");
+    await flushPromises();
+    expect(await controller.actions.send("/work task")).toBe(false);
+    switchScope();
+    finish({ type: "send", message: "Must never cross profiles" });
+    await first;
+    expect(submit).not.toHaveBeenCalled();
+    expect(controller.view.commandResults.value).toEqual([]);
+    expect(command).toHaveBeenCalledTimes(2);
+  });
+  it("keeps discovery failure from turning a command into a prompt", async () => {
+    const { native, controller } = setup();
+    vi.spyOn(native, "command").mockRejectedValue(new Error("Discovery unavailable"));
+    const submit = vi.spyOn(native, "submit").mockResolvedValue();
+    expect(await controller.actions.send("/work task")).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it("resolves aliases through Hermes with cycle bounds", async () => {
+    const { native, controller } = setup();
+    const command = vi
+      .spyOn(native, "command")
+      .mockImplementation(async (method) =>
+        method === "commands.catalog" ? catalog : { type: "alias", target: "cycle" },
+      );
+    expect(await controller.actions.send("/cycle")).toBe(false);
+    expect(command).toHaveBeenCalledTimes(9);
+    expect(controller.view.commandResults.value[0]?.output).toContain("outcome");
+  });
+});
+
+it("reports profile-only Project draft discovery without unsupported fields or touching the previous session", async () => {
+  const { native, scope, controller } = setup();
+  scope.session.value = "";
+  scope.selectedProject.value = {
+    id: "project",
+    label: "Project",
+    path: "/synthetic/project",
+    sessionCount: 0,
+    repos: [],
+  };
+  const rpc = vi.spyOn(native, "command");
+  const discover = vi
+    .spyOn(NativeGatewayViewer, "discover")
+    .mockImplementation(async (_profile, method) =>
+      method === "commands.catalog"
+        ? { pairs: [["/work", "Project skill"]] }
+        : { items: [{ text: "/work" }], replace_from: 1 },
+    );
+  try {
+    const result = await controller.actions.completeSlash("/wo");
+    expect(rpc).not.toHaveBeenCalled();
+    expect(scope.createSession).not.toHaveBeenCalled();
+    expect(discover).toHaveBeenCalledWith("alpha", "commands.catalog", {});
+    expect(discover).toHaveBeenCalledWith("alpha", "complete.slash", {
+      text: "/wo",
+    });
+    expect(result.notice).toContain("cannot discover project-local skills");
+  } finally {
+    discover.mockRestore();
+  }
+});
+
+it("creates the routed draft session before dispatch and retains its model/effort choice", async () => {
+  const { native, scope, controller } = setup();
+  scope.session.value = "";
+  controller.actions.setModel("chosen-model");
+  controller.actions.setProvider("chosen-provider");
+  controller.actions.setReasoningEffort("low");
+  const discover = vi
+    .spyOn(NativeGatewayViewer, "discover")
+    .mockResolvedValue({ pairs: [["/plan", "Plan"]], commands: { "/plan": {} } });
+  scope.createSession.mockImplementation(async () => {
+    scope.session.value = "new-scoped";
+    native.settings.value = {
+      profile: "alpha",
+      session: "new-scoped",
+      info: {},
+      generation: native.generationRef.value,
+    };
+    return "new-scoped";
+  });
+  const command = vi
+    .spyOn(native, "command")
+    .mockImplementation(async (method) =>
+      method === "commands.catalog"
+        ? { commands: { "/plan": {} } }
+        : { type: "send", message: "Native plan" },
+    );
+  const submit = vi.spyOn(native, "submit").mockResolvedValue();
+  try {
+    expect(await controller.actions.send("/plan task")).toBe(true);
+    expect(scope.createSession).toHaveBeenCalledOnce();
+    expect(command).toHaveBeenCalledWith("command.dispatch", { name: "plan", arg: "task" });
+    expect(submit.mock.calls[0]![2]).toEqual({
+      model: "chosen-model",
+      provider: "chosen-provider",
+      reasoning_effort: "low",
+    });
+  } finally {
+    discover.mockRestore();
+  }
+});
+
+it("supplements quick commands from native catalog without changing native ranking", async () => {
+  const { native, controller } = setup();
+  vi.spyOn(native, "command").mockImplementation(async (method) =>
+    method === "commands.catalog"
+      ? {
+          pairs: [
+            ["/status", "Status"],
+            ["/quick-test", "Profile quick command"],
+          ],
+        }
+      : { items: [{ text: "status", meta: "Status" }], replace_from: 1 },
+  );
+  const result = await controller.actions.completeSlash("/");
+  expect(result.items?.map((item) => item.text)).toEqual(["status", "/quick-test"]);
+});
+
+it("compares route ownership by identity without serializing mounted router records", async () => {
+  const { native, controller, scope } = setup();
+  const route: { mounted?: unknown } = {};
+  route.mounted = route;
+  scope.navigation.mockReturnValue(route as never);
+  vi.spyOn(native, "command").mockResolvedValue({ pairs: [["/status", "Status"]] });
+  expect(await controller.actions.send("/help")).toBe(true);
+  expect(controller.view.commandResults.value[0]?.output).toContain("/status");
+});
+
+it("refuses a ready viewer whose settings belong to the previously selected session", async () => {
+  const { native, scope, controller } = setup();
+  scope.session.value = "new-selection";
+  const command = vi.spyOn(native, "command");
+  const submit = vi.spyOn(native, "submit");
+  expect(await controller.actions.send("/status")).toBe(false);
+  expect(command).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it("filters unscoped plugin completions against the selected profile catalog", async () => {
+  const { native, controller } = setup();
+  vi.spyOn(native, "command").mockImplementation(async (method) =>
+    method === "commands.catalog"
+      ? {
+          pairs: [["/own-plugin", "Selected profile description"]],
+          commands: { "/own-plugin": {} },
+        }
+      : {
+          items: [
+            { text: "foreign-plugin", meta: "Other profile" },
+            { text: "own-plugin", meta: "Launch description" },
+            { text: "bound-skill", kind: "skill" },
+          ],
+          replace_from: 1,
+        },
+  );
+  const result = await controller.actions.completeSlash("/");
+  expect(result.items?.map((item) => item.text)).toEqual(["own-plugin", "bound-skill"]);
+  expect(result.items?.[0]?.meta).toBe("Selected profile description");
+});
+
+it.each(["Scoped context description", "", undefined])(
+  "uses only scoped canonical metadata for alias collisions (description: %s)",
+  async (description) => {
+    const { native, controller } = setup();
+    vi.spyOn(native, "command").mockImplementation(async (method) =>
+      method === "commands.catalog"
+        ? {
+            pairs: description === undefined ? [] : [["/context", description]],
+            canon: { "/ctx": "/context" },
+            commands: { "/context": {}, "/ctx": {} },
+          }
+        : {
+            items: [{ text: "ctx", kind: "command", meta: "Foreign plugin description" }],
+            replace_from: 1,
+          },
+    );
+    const result = await controller.actions.completeSlash("/ctx");
+    expect(result.items).toEqual([{ text: "ctx", kind: "command", meta: description ?? "" }]);
+  },
+);
+
+it.each(["help", "commands"])(
+  "rejects /%s with staged attachments and restores the draft",
+  async (name) => {
+    const { native, controller, scope } = setup();
+    const command = vi.spyOn(native, "command").mockResolvedValue({
+      pairs: [["/status", "Status"]],
+    });
+    const submit = vi.spyOn(native, "submit");
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          provideChat({ ...controller, sessions: ref([]) });
+          return () => h(ChatInterface);
+        },
+      }),
+    );
+    try {
+      const composer = wrapper.findComponent({ name: "ChatComposer" });
+      const text = `/${name}`;
+      const files = [
+        {
+          name: "notes.txt",
+          type: "text/plain",
+          data: "data:text/plain;base64,SGk=",
+          path: "/synthetic/notes.txt",
+        },
+      ];
+      composer.vm.$emit("send", text, files);
+      await flushPromises();
+      expect(wrapper.get("textarea").element.value).toBe(text);
+      expect(composer.text()).toContain("notes.txt");
+      expect(controller.view.commandResults.value[0]?.output).toContain("Remove them first");
+      expect(command).toHaveBeenCalledExactlyOnceWith("commands.catalog", {});
+      expect(submit).not.toHaveBeenCalled();
+      expect(scope.createSession).not.toHaveBeenCalled();
+      expect(await controller.actions.send(text)).toBe(true);
+      expect(controller.view.commandResults.value.at(-1)?.output).toContain("/status — Status");
+    } finally {
+      wrapper.unmount();
+    }
+  },
+);
+
+it("does not request unsafe legacy dynamic argument providers", async () => {
+  const { native, controller } = setup();
+  const command = vi
+    .spyOn(native, "command")
+    .mockResolvedValue({ commands: { "/personality": {} } });
+  const result = await controller.actions.completeSlash("/personality ");
+  expect(command).toHaveBeenCalledTimes(1);
+  expect(command).toHaveBeenCalledWith("commands.catalog", {});
+  expect(result.notice).toContain("not profile-bound");
+  expect(result.items).toEqual([]);
+});
+
+it("explains the local steering control without claiming an unknown execution", async () => {
+  const { native, controller } = setup();
+  const command = vi.spyOn(native, "command").mockResolvedValue({ commands: { "/steer": {} } });
+  const submit = vi.spyOn(native, "submit");
+  expect(await controller.actions.send("/steer change direction")).toBe(false);
+  expect(command).toHaveBeenCalledTimes(1);
+  expect(submit).not.toHaveBeenCalled();
+  expect(controller.view.commandResults.value[0]?.output).toBe(
+    "Use Guide this run in the composer while a response is active.",
+  );
 });

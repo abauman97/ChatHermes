@@ -151,3 +151,58 @@ board archive transfer, bulk operations, orchestration/profile configuration,
 AI-assisted specification/decomposition/estimation, dependency editing,
 review/scheduling handoffs, workspace/runtime/skills/goal configuration, and
 advanced diagnostic or execution controls, use Hermes Desktop or CLI.
+
+## Slash commands
+
+Type `/` at the start of a message to browse Hermes commands, skills and bundles.
+The menu uses Hermes's descriptions, ranking and argument suggestions. Use Up/Down
+and Tab to insert the highlighted suggestion; Enter or Space prefer the exact
+typed command unless you deliberately moved the highlight. Touch selection also
+inserts without executing. Choosing an argument-taking command advances to its
+argument suggestions. Accepted commands and finite arguments show an editable
+directive pill above the native text field. The field shows only the following
+free text. Select the pill, or press Backspace at the start of the field, to
+restore and select the invocation for editing or deletion. Sending includes the
+invocation exactly once.
+Free-text arguments remain ordinary text. For mixed commands such as `/goal`,
+Space keeps typing and desktop Enter submits prose; Tab or an explicitly arrowed
+Enter selects a subcommand. An exact argument with no remaining suggestions can
+submit directly. Escape closes the menu and preserves your draft. On mobile, ordinary
+Enter still inserts a newline once the menu is closed. A slash inside a word or
+path does not open the menu. Within prose, `/name` offers only skill
+references, preserving the text on both sides of the cursor.
+
+Send the completed command with the Send button (or desktop Enter with the menu
+closed). `/help` displays the current catalog without creating a conversation.
+Commands marked as client/terminal features remain discoverable, but may require
+Hermes terminal or existing dashboard controls. Listing a command does not mean
+ChatHermes can execute it. Unsupported commands show an explanation and retain
+the draft instead of becoming agent prompts.
+
+Discovery follows the chosen profile and conversation workspace. Project drafts show profile-level suggestions with an explanation: this Hermes
+version cannot discover project-local skills until a conversation exists. Sending
+a command creates the Project conversation first and resolves it in that workspace. Hermes still owns
+project-skill trust, collision rules and extension registration. Skills, bundles
+and prompt-producing commands run through normal chat admission and streaming;
+Goal and Plan controls use that same command path. `/retry` uses Hermes's native
+last-turn resolution; `/compress [topic]` uses native session compression. These
+commands require an existing conversation. Stop an active response before sending
+a slash command; ordinary Guide this run and Stop controls still work.
+
+Command-only output appears above the composer as a **temporary result**, separate
+from conversation messages. It disappears on navigation or reload and is not
+saved history. Commands are never automatically resent after a disconnect or
+unknown outcome: inspect the conversation and runtime state before trying again.
+Attachments work with normal messages and supported prompt/skill commands; remove
+them before running session controls or commands whose result type is unknown.
+
+On the reviewed Hermes version, argument suggestions for `/skin`, `/personality`,
+`/tools` and `/handoff` are unavailable because their dynamic providers do not bind
+the selected profile safely. The menu explains this limitation. Other native
+argument/subcommand suggestions remain available; command execution support is
+still checked separately.
+
+Hermes owns the saved transcript after retry and compression. In this version,
+retrying a skill can save a system wrapper that the native history projection
+hides, leaving the retried answer without a visible saved user bubble. ChatHermes
+preserves that history rather than creating replacement messages.

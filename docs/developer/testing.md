@@ -125,3 +125,19 @@ on failure. The suite needs the upstream Kanban plugin API active; a missing API
 is a failure rather than silently skipped coverage. Unit transport faults cover
 reconnect/polling; real active-worker execution and native device behavior remain
 separate verification work.
+
+Slash coverage lives in `ChatComposer.slash.test.ts`, the controller and native
+gateway regression suites, and `tests/workflows/slash-commands.spec.ts`. The real
+workflow seeds synthetic profile-local skills, bundles, quick commands and aliases
+through the existing runtime helper, then exercises the installed plugin's catalog,
+keyboard and touch selection, argument insertion, compact scrolling, skill turns,
+backend status, compression, unsupported-command draft retention, reload, Project
+workspace execution and profile isolation on desktop/mobile. It also reads live
+reasoning state through an independent authenticated viewer, checks that a
+reasoning query retains an unsent effort choice, and verifies MoA reference and
+aggregator inference in MockServer plus post-turn route restoration and the next
+ordinary turn. The MoA preset uses only synthetic fixture models and credentials.
+Run it with
+`npm run test:integration -- tests/workflows/slash-commands.spec.ts`; retain screenshots under
+`tests/visual-output/`. `node scripts/sync-command-parity.mjs --check` compares
+the execution boundary with the reviewed `.hermes-source` parity table.

@@ -29,6 +29,19 @@ const silentHooks: NativeHooks = {
  * remain in the host's single-use subprotocol; no plugin-host WS is involved.
  * Snapshots are authoritative but do not promise lossless replay. */
 export class NativeGatewayViewer {
+  static async discover<T>(
+    profile: string,
+    method: "commands.catalog" | "complete.slash",
+    params: Record<string, unknown> = {},
+  ) {
+    const viewer = new NativeGatewayViewer(profile, "", silentHooks);
+    try {
+      await viewer.ensure();
+      return await viewer.call<T>(method, params);
+    } finally {
+      viewer.close();
+    }
+  }
   static async create(profile: string, params: Record<string, unknown>, signal?: AbortSignal) {
     if (pendingDrafts.size >= 32) throw new NativeError("Too many unopened drafts", "rejected");
     const creator = new NativeGatewayViewer(profile, "", silentHooks);
@@ -315,7 +328,17 @@ export class NativeGatewayViewer {
       if (error instanceof JsonRpcGatewayError)
         throw new NativeError(
           "Hermes could not complete this operation",
-          method === "prompt.submit" ? "unknown" : "rejected",
+          method === "prompt.submit" ||
+            ([
+              "slash.exec",
+              "command.dispatch",
+              "session.compress",
+              "session.title",
+              "config.set",
+            ].includes(method) &&
+              ![-32601, 4001, 4004, 4009, 4064].includes(error.code ?? 0))
+            ? "unknown"
+            : "rejected",
         );
       throw error;
     }
@@ -361,6 +384,22 @@ export class NativeGatewayViewer {
     return this.call<SessionContextBreakdownResult>("session.context_breakdown", {
       session_id: this.runtime,
     });
+  }
+  command<T>(method: string, params: Record<string, unknown> = {}) {
+    if (
+      ![
+        "commands.catalog",
+        "complete.slash",
+        "command.dispatch",
+        "slash.exec",
+        "session.compress",
+        "session.title",
+        "config.get",
+        "config.set",
+      ].includes(method)
+    )
+      throw new NativeError("Unsupported command operation", "rejected");
+    return this.call<T>(method, { ...params, session_id: this.runtime });
   }
   private async submit(params: Record<string, unknown>) {
     if (this.preparing) throw new NativeError("Submission already in progress", "rejected");
