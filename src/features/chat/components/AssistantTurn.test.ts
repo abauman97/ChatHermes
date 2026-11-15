@@ -475,3 +475,57 @@ it("keeps explicit tool delivery when an automatic text candidate is unavailable
   expect(wrapper.findAll(".artifact-card")).toHaveLength(1);
   wrapper.unmount();
 });
+
+it("threads explicit artifacts through prose during streaming and saved history", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  const turn = reactive(createTurn());
+  const entry = () => ({
+    kind: "turn" as const,
+    key: "inline",
+    working: true,
+    blocks: turn.blocks,
+  });
+  const wrapper = mount(AssistantTurn, {
+    props: { entry: entry(), profile: "alpha", sessionId: "session" },
+    global: {
+      stubs: {
+        ArtifactCard: {
+          props: ["file"],
+          template: '<div class="artifact-stub">{{ file.name }}</div>',
+        },
+      },
+    },
+  });
+  const chunks = [
+    "Desktop **description**:\nMEDIA:/opt/data/desktop.png\n\n",
+    "Mobile description:\nMEDIA:/opt/data/mobile.png\n\n",
+    "Before [report](MEDIA:/opt/data/report.pdf) after.\n\n",
+    "Pair: MEDIA:/opt/data/first.txt MEDIA:/opt/data/second.txt\n\n",
+    "![Again](MEDIA:/opt/data/desktop.png)\n\nFinished [docs](https://example.test/docs).",
+  ];
+  const order = () =>
+    Array.from(wrapper.get("article.message.assistant").element.children)
+      .map((child) => child.textContent!.replace(/\s+/g, " ").trim())
+      .join(" ");
+  const expected = [
+    "Desktop description: desktop.png",
+    "Mobile description: mobile.png",
+    "Before report.pdf after.",
+    "Pair: first.txt second.txt",
+    "Finished docs.",
+  ];
+  for (const [index, text] of chunks.entries()) {
+    reduceNativeTurn(turn, "message.delta", { text });
+    await wrapper.setProps({ entry: entry() });
+    expect(order()).toBe(expected.slice(0, index + 1).join(" "));
+  }
+  const saved = historyBlocks([{ role: "assistant", content: chunks.join("") }]);
+  await wrapper.setProps({ entry: { kind: "turn", key: "inline", working: false, blocks: saved } });
+  expect(order()).toBe(expected.join(" "));
+  expect(wrapper.findAll(".artifact-stub")).toHaveLength(5);
+  expect(wrapper.get("strong").text()).toBe("description");
+  expect(wrapper.get('a[href="https://example.test/docs"]').attributes("rel")).toBe(
+    "noopener noreferrer",
+  );
+  wrapper.unmount();
+});

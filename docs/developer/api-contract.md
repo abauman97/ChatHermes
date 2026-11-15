@@ -386,6 +386,22 @@ Home expansion, sandbox translation, remote adapters, profile/session checks and
 sensitive-path restrictions belong to the runtime. Preview and download recheck
 access, so later filesystem changes can still make a delivered file unavailable.
 Live, resumed and saved assistant turns use the same parser and validation.
+Accepted references retain their positions in assistant response text: description,
+artifact, next description, next artifact. Explicit Markdown deliveries replace
+the reference at its original position; validated automatic paths and links retain
+their visible text and insert the card immediately afterward. Repeated references
+and canonical aliases still produce one card per turn at the first eligible
+position. Rendering preserves Markdown context across cards, including emphasis
+and reference-style links. Tool deliveries stay at their tool position unless the
+response already supplies the same artifact; multipart images without textual
+references remain after their text block.
+Replacing an explicit reference consumes its entire label, including nested
+deliveries. Card boundaries preserve the cleaned response's Markdown block
+structure, including indented paragraph continuations and reference definitions.
+Boundaries are projected onto finished Markdown tokens after parsing; private
+marker text never participates in delimiter classification or inline grammar.
+Escapes, entities, code spans, emphasis nesting and link targets keep the cleaned
+response’s semantics, including deliveries immediately beside emphasis delimiters.
 
 Explicit `MEDIA:` delivery directives and existing `Attached file` /
 `Attached image` annotations retain their existing behavior. Markdown images with explicit `MEDIA:` sources

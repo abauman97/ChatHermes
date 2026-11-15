@@ -13,6 +13,7 @@ import {
   messageArtifacts,
   previewKind,
   textArtifacts,
+  textArtifactDelivery,
   toolArtifacts,
   uploadedArtifacts,
 } from "./artifacts";
@@ -573,3 +574,48 @@ it.each(deliveryFixtures.automaticDeliveries)("shared automatic delivery: $name"
   const message = { role: testCase.role, content: testCase.content } as Message;
   expect(messageArtifacts(message).map((file) => file.path)).toEqual(testCase.paths);
 });
+
+it.each([
+  [
+    "Desktop description:\nMEDIA:/tmp/desktop.png\n\nMobile description:\nMEDIA:/tmp/mobile.png",
+    ["Desktop description:", "\n\nMobile description:", ""],
+  ],
+  ["Before [report](MEDIA:/tmp/report.pdf) after.", ["Before ", " after."]],
+  [
+    "Before ![one](MEDIA:/tmp/one.png) between ![two](MEDIA:/tmp/two.png) after.",
+    ["Before ", " between ", " after."],
+  ],
+  ["Pair: MEDIA:/tmp/one.txt MEDIA:/tmp/two.txt", ["Pair:", "", ""]],
+  ["MEDIA:/tmp/one.txt\nAfter", ["", "After"]],
+  ["/tmp/one.txt\n\nAfter", ["/tmp/one.txt", "\n\nAfter"]],
+])("retains accepted delivery positions: %s", (text, chunks) => {
+  const delivery = textArtifactDelivery(text as string);
+  const offsets = [0, ...delivery.placements.map((item) => item.offset), delivery.text.length];
+  expect(offsets.slice(1).map((end, index) => delivery.text.slice(offsets[index], end))).toEqual(
+    chunks,
+  );
+  expect({ text: delivery.text, files: delivery.files }).toEqual(textArtifacts(text as string));
+});
+
+it.each(quotedDeliveries)(
+  "never assigns card positions to quoted or untrusted text: %s",
+  (text) => {
+    expect(textArtifactDelivery(text).placements).toEqual([]);
+  },
+);
+
+it.each(["MEDIA:/tmp/b.txt", "/tmp/b.txt"])(
+  "keeps nested deliveries ordered when the outer destination is %s",
+  (destination) => {
+    const delivery = textArtifactDelivery(
+      `Before [x ![a](MEDIA:/tmp/a.png) y](${destination}) after`,
+    );
+    const explicit = destination.startsWith("MEDIA:");
+    expect(delivery.files.map((file) => file.path)).toEqual(
+      explicit ? ["/tmp/b.txt"] : ["/tmp/a.png", "/tmp/b.txt"],
+    );
+    const offsets = delivery.placements.map((item) => item.offset);
+    expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
+    expect(delivery.text).toBe(explicit ? "Before  after" : "Before [x  y](/tmp/b.txt) after");
+  },
+);
