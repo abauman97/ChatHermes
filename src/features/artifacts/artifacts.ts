@@ -87,14 +87,30 @@ for (const name of ["image", "link"]) {
     return matched;
   });
 }
-function collectMediaReferences(
-  line: string,
-  add: (path: string, name?: string, automatic?: boolean) => boolean,
-  automatic = false,
-  env = {},
-) {
+type AddArtifact = (
+  path: string,
+  name?: string,
+  automatic?: boolean,
+  column?: number,
+  block?: boolean,
+) => boolean;
+
+function collectMediaReferences(line: string, add: AddArtifact, automatic = false, env = {}) {
   automatic = automatic && !/^\s*["'“‘].*["'”’]\s*$/.test(line);
   const tokens = mediaMarkdown.parseInline(line, env)[0]?.children || [];
+  // Explicit references replace their whole range; retained automatic links
+  // place their card after it. Visit those insertion points in source order,
+  // including an explicit image inside a retained automatic link's label.
+  const insertionPoint = (token: (typeof tokens)[number]) => {
+    const range = token.meta?.deliveryRange as [number, number] | undefined;
+    const href = token.attrGet("href");
+    return range
+      ? range[
+          (typeof href === "string" && href.startsWith("MEDIA:")) || token.type === "image" ? 0 : 1
+        ]
+      : Infinity;
+  };
+  tokens.sort((a, b) => insertionPoint(a) - insertionPoint(b));
   let removed = 0;
   let consumed = 0;
   for (const token of tokens) {
@@ -121,10 +137,21 @@ function collectMediaReferences(
       continue;
     if (!token.meta?.deliveryRange || token.meta.escapedImage) continue;
     const [start, end] = token.meta.deliveryRange as [number, number];
-    if (!add(path, undefined, !src.startsWith("MEDIA:"))) continue;
+    // An enclosing explicit delivery already removed this token's label.
+    // Reject it before add() can register a file or a stale placement.
+    if (end <= consumed) continue;
+    if (
+      !add(
+        path,
+        undefined,
+        !src.startsWith("MEDIA:"),
+        src.startsWith("MEDIA:") ? start - removed : end - removed,
+        false,
+      )
+    )
+      continue;
     // Keep automatic references visible so failed validation never erases response text.
     if (!src.startsWith("MEDIA:")) continue;
-    if (start < consumed) continue;
     line = line.slice(0, start - removed) + line.slice(end - removed);
     removed += end - start;
     consumed = end;
@@ -149,7 +176,7 @@ function collectMedia(text: string, add: (path: string) => boolean) {
 }
 // A plain label followed exclusively by directives asserts delivery. Do not
 // scan arbitrary prose for markers or weaken Markdown quotation boundaries.
-function collectLabeledMedia(line: string, add: (path: string) => boolean) {
+function collectLabeledMedia(line: string, add: AddArtifact) {
   const label = line.match(/^([A-Za-z][A-Za-z0-9 ()/_-]{0,79}:)[ \t]+(?=MEDIA:)/);
   if (!label) return line;
   const files: string[] = [];
@@ -163,7 +190,7 @@ function collectLabeledMedia(line: string, add: (path: string) => boolean) {
     return true;
   });
   if (remainder || !files.length) return line;
-  files.forEach((path) => add(path));
+  files.forEach((path) => add(path, undefined, false, label[1]!.length));
   return label[1]!;
 }
 export function extension(name: string) {
@@ -255,16 +282,36 @@ export function automaticPath(path: string, linked = false): boolean {
   );
 }
 
-export function textArtifacts(text: string, automatic = true): { text: string; files: Artifact[] } {
+export interface ArtifactPlacement {
+  path: string;
+  offset: number;
+  block: boolean;
+}
+
+// Positions refer to cleaned response text, collected only by the accepted-delivery
+// parser. Rendering must not rescan prose or quoted/tool data for file paths.
+export function textArtifactDelivery(
+  text: string,
+  automatic = true,
+): {
+  text: string;
+  files: Artifact[];
+  placements: ArtifactPlacement[];
+} {
   const files: Artifact[] = [];
-  if (!/MEDIA:|Attached (?:image|file) |\//.test(text)) return { text, files };
-  const add = (path: string, name?: string, automatic = false) => {
+  const placements: ArtifactPlacement[] = [];
+  if (!/MEDIA:|Attached (?:image|file) |\//.test(text)) return { text, files, placements };
+  let sourceLine = 0;
+  const positions: { path: string; line: number; column: number; block: boolean }[] = [];
+  const add: AddArtifact = (path, name, automatic = false, column = 0, block = true) => {
     const file = artifact(path, name);
     if (!file) return false;
     if (automatic) file.automatic = true;
     const existing = files.findIndex((item) => item.path === file.path);
-    if (existing < 0) files.push(file);
-    else if (files[existing]?.automatic && !automatic) files[existing] = file;
+    if (existing < 0) {
+      files.push(file);
+      positions.push({ path: file.path, line: sourceLine, column, block });
+    } else if (files[existing]?.automatic && !automatic) files[existing] = file;
     return true;
   };
   const originalLines = text.split("\n");
@@ -326,6 +373,7 @@ export function textArtifacts(text: string, automatic = true): { text: string; f
     }
     for (let index = token.map[0]; index < token.map[1]; index++) {
       if (untrustedLines.has(index) || quotedLines.has(index)) continue;
+      sourceLine = index;
       const line = lines[index]!;
       const attachment = line.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
       if (attachment && add(attachment[2]!.trim(), attachment[1])) {
@@ -336,20 +384,39 @@ export function textArtifacts(text: string, automatic = true): { text: string; f
       } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
       else {
         lines[index] = collectMediaReferences(collectLabeledMedia(line, add), add, automatic, env);
-        if (automatic && automaticPath(line.trim())) add(line.trim(), undefined, true);
+        if (automatic && automaticPath(line.trim())) add(line.trim(), undefined, true, line.length);
       }
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";
-  return {
-    text: files.some((file) => !file.automatic)
-      ? lines
-          .filter((line, index) => line !== "" || originalLines[index] === "")
-          .join("\n")
-          .trim()
-      : text,
-    files,
-  };
+  const explicit = files.some((file) => !file.automatic);
+  let cleaned = "";
+  let retained = 0;
+  const starts: number[] = [];
+  for (const [index, line] of lines.entries()) {
+    const keep = !explicit || line !== "" || originalLines[index] === "";
+    starts[index] = cleaned.length + (keep && retained ? 1 : 0);
+    if (!keep) continue;
+    if (retained++) cleaned += "\n";
+    cleaned += line;
+  }
+  const leading = explicit ? cleaned.length - cleaned.trimStart().length : 0;
+  if (explicit) cleaned = cleaned.trim();
+  for (const position of positions)
+    placements.push({
+      path: position.path,
+      block: position.block,
+      offset: Math.max(
+        0,
+        Math.min(cleaned.length, starts[position.line]! + position.column - leading),
+      ),
+    });
+  return { text: cleaned, files, placements };
+}
+
+export function textArtifacts(text: string, automatic = true): { text: string; files: Artifact[] } {
+  const { text: cleaned, files } = textArtifactDelivery(text, automatic);
+  return { text: cleaned, files };
 }
 export function toolArtifacts(block: TurnBlock): Artifact[] {
   if (block.kind !== "tool" || !block.complete || block.state === "failed") return [];

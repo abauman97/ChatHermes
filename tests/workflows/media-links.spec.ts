@@ -28,7 +28,8 @@ test("MEDIA links preserve prose, authenticated file actions and resume", async 
     const cards = plugin.locator(".artifact-card");
     await expect(cards).toHaveCount(2);
     const assistant = plugin.locator("article.message.assistant");
-    await expect(assistant).toContainText("Here is for review.");
+    await expect(assistant.locator(".markdown-content").first()).toHaveText("Here is");
+    await expect(assistant.locator(".markdown-content").nth(1)).toContainText("for review.");
     await expect(
       assistant.getByRole("link", { name: "documentation", exact: true }),
     ).toHaveAttribute("href", "https://example.test/docs");
