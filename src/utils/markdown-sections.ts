@@ -6,14 +6,16 @@ import { renderMarkdown } from "./markdown";
 export function renderMarkdownSections(
   text: string,
   boundaries: { offset: number; block: boolean }[],
+  projection?: { source: string; hidden: [number, number][] },
 ): string[] {
-  const original = renderMarkdown(text);
+  text = projection?.source ?? text;
+  const original = renderMarkdown(text, undefined, undefined, projection?.hidden);
   if (!boundaries.length) return [original];
   let prefix = "CHATHERMESARTIFACTBOUNDARY";
   // Also check rendered text: entities must not be able to forge a boundary.
   while (text.includes(prefix) || original.includes(prefix)) prefix += "X";
   const template = document.createElement("template");
-  template.innerHTML = renderMarkdown(text, prefix, boundaries);
+  template.innerHTML = renderMarkdown(text, prefix, boundaries, projection?.hidden);
   const sections: DocumentFragment[] = [document.createDocumentFragment()];
   const ancestors: Element[] = [];
   let containers: Node[] = [sections[0]!];

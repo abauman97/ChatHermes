@@ -1,21 +1,22 @@
 import type { Message } from "../../../types/hermes";
 import { messageText } from "../../../services/hermes-api";
 import { uploadedArtifacts } from "../../artifacts/artifacts";
+import {
+  assistantTextSource,
+  memoryContextSlice,
+  memoryContextRanges,
+} from "../../../utils/memory-context";
 import { transcriptEntries } from "./transcript-entries";
 
-// Native file.attach appends @file references to the authenticated upload path.
+// Native file.attach adds staged @file refs alongside the original upload identity.
 // Compare the same prose and file identities that UserMessage renders.
 export function userProjection(message: Message): string {
-  let text = messageText(message.content);
-  const files = uploadedArtifacts(text).files;
-  if (files.length) {
-    // Hermes resolves @file directives into a model-facing context footer.
-    // Require an attachment directive immediately before that footer, and keep
-    // the original prompt plus the authenticated upload identities for matching.
-    text = text.replace(/\n@file:[^\n]+\n\n--- Attached Context ---\n[\s\S]*$/, "");
-  }
-  const upload = uploadedArtifacts(text);
-  return JSON.stringify([upload.text, upload.files.map((file) => file.path).sort()]);
+  const upload = uploadedArtifacts(messageText(message.content));
+  const raw = messageText(message.content);
+  // Display truncation is lossy. Without producer provenance, differing hidden
+  // suffixes cannot establish a durable conversation identity.
+  const suffix = raw.match(/(?:^|\n)--- (?:Attached Context|Context Warnings) ---[\s\S]*$/)?.[0];
+  return JSON.stringify([upload.text, upload.files.map((file) => file.path).sort(), suffix]);
 }
 
 /** Branch only when the entire ordered visible conversation agrees with saved
@@ -37,10 +38,16 @@ export function savedResponseTargets(
           },
         ];
       if (entry.kind !== "turn") return [];
-      const text = entry.blocks
-        .filter((block) => block.kind === "text")
-        .map((block) => block.content)
-        .join("\n\n");
+      const source = assistantTextSource(
+        entry.blocks.filter((block) => block.kind === "text").map((block) => block.content),
+      );
+      const text = memoryContextSlice(
+        source.text,
+        0,
+        source.text.length,
+        false,
+        memoryContextRanges(source.text, false, source.boundaries),
+      ).trim();
       return text.trim() ? [{ kind: "turn", text, key: entry.key, id: entry.responseId }] : [];
     });
   const current = prose(projected),

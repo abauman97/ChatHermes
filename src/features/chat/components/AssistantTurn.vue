@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { assistantTextSource } from "../../../utils/memory-context";
 import ArtifactCard from "../../artifacts/components/ArtifactCard.vue";
 import {
   automaticPath,
   fileUrl,
-  textArtifacts,
+  assistantArtifactProjections,
   toolArtifacts,
   type Artifact,
 } from "../../artifacts/artifacts";
@@ -19,13 +20,44 @@ const props = defineProps<{
   profile?: string;
   sessionId?: string;
 }>();
+// Raw runtime blocks remain authoritative. All prose, copy and artifact discovery
+// below use this disposable display projection, including replacement snapshots.
+const source = computed(() =>
+  assistantTextSource(
+    props.entry.blocks.filter((block) => block.kind === "text").map((block) => block.content),
+  ),
+);
+const projected = computed(() => {
+  const projections = assistantArtifactProjections(source.value, !!props.entry.working);
+  let textIndex = 0;
+  return props.entry.blocks.map((block) => {
+    if (block.kind !== "text") return { block };
+    const projection = projections[textIndex++]!;
+    return {
+      block: {
+        ...block,
+        content: projection.content,
+      },
+      delivery: projection.delivery,
+    };
+  });
+});
+const displayBlocks = computed(() => projected.value.map((item) => item.block));
+const deliveries = computed(
+  () =>
+    new Map(
+      projected.value.flatMap((item) =>
+        item.delivery ? [[item.block.id, item.delivery] as const] : [],
+      ),
+    ),
+);
 const validatedFiles = ref<Record<string, Artifact>>({});
 const candidates = computed(() => {
   const files = new Map<string, Artifact>();
   let automatic = false;
-  for (const block of props.entry.blocks) {
+  for (const block of displayBlocks.value) {
     if (block.kind !== "text") continue;
-    for (const file of textArtifacts(block.content).files) {
+    for (const file of deliveries.value.get(block.id)!.files) {
       automatic ||= !!file.automatic;
       files.set(file.path, file);
     }
@@ -96,9 +128,10 @@ watch(
   { immediate: true },
 );
 const textPaths = computed(() =>
-  props.entry.blocks.flatMap((block) =>
+  displayBlocks.value.flatMap((block) =>
     block.kind === "text"
-      ? textArtifacts(block.content)
+      ? deliveries.value
+          .get(block.id)!
           .files.filter((file) => !file.automatic || !!validatedFiles.value[file.path])
           .map((file) => validatedFiles.value[file.path]?.path || file.path)
       : [],
@@ -107,10 +140,10 @@ const textPaths = computed(() =>
 const priorTextPaths = computed(() => {
   const seen = new Set<string>();
   const exclusions = new Map<string, string[]>();
-  for (const block of props.entry.blocks) {
+  for (const block of displayBlocks.value) {
     if (block.kind !== "text") continue;
     exclusions.set(block.id, [...seen]);
-    textArtifacts(block.content).files.forEach((file) => {
+    deliveries.value.get(block.id)!.files.forEach((file) => {
       if (file.automatic && !validatedFiles.value[file.path]) return;
       seen.add(file.path);
       const canonical = validatedFiles.value[file.path]?.path;
@@ -119,11 +152,11 @@ const priorTextPaths = computed(() => {
   }
   return exclusions;
 });
-const parts = computed(() => activityRuns(props.entry.blocks));
+const parts = computed(() => activityRuns(displayBlocks.value));
 const filesByTool = computed(() => {
   const seen = new Set(textPaths.value);
   const files = new Map<string, ReturnType<typeof toolArtifacts>>();
-  for (const block of props.entry.blocks) {
+  for (const block of displayBlocks.value) {
     if (block.kind !== "tool") continue;
     files.set(
       block.id,
@@ -140,7 +173,7 @@ const toolFiles = (activity: Activity) => filesByTool.value.get(activity.id) || 
 const emit = defineEmits<{ imageLoad: []; branch: [responseId: string] }>();
 const copyStatus = ref("");
 const responseText = computed(() =>
-  props.entry.blocks
+  displayBlocks.value
     .filter((block) => block.kind === "text")
     .map((block) => block.content)
     .join("\n\n"),
@@ -176,6 +209,7 @@ async function copyResponse() {
       <AssistantTextBlock
         v-else
         :block="part.block"
+        :delivery="deliveries.get(part.block.id)"
         :excluded-paths="priorTextPaths.get(part.block.id)"
         :validated-files="validatedFiles"
         :profile="profile"

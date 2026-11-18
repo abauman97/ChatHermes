@@ -127,7 +127,7 @@ def modification(session):
     # last_active is the pinned runtime's latest message timestamp. Metadata is
     # included so title/membership changes are reflected without waiting for audit.
     return json.dumps(
-        ["automatic-paths-v1"]
+        ["source-projection-v11"]
         + [
             session.get(key)
             for key in (

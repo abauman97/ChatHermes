@@ -1,0 +1,102 @@
+[
+  {
+    "name": "memory-marker-0-'\\n'-Attached Context",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-0-'\\n'-Context Warnings",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n--- Context Warnings ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "table-code-0-'\\n'",
+    "source": "| `[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]` | `[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]` |\n|---|---|\n| same | same |\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "nested-first-close-0-'\\n'",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-0-'\\r\\n'-Attached Context",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\r\n--- Attached Context ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-0-'\\r\\n'-Context Warnings",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\r\n--- Context Warnings ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "table-code-0-'\\r\\n'",
+    "source": "| `[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]` | `[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]` |\r\n|---|---|\r\n| same | same |\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "nested-first-close-0-'\\r\\n'",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\r\n--- Attached Context ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-1-'\\n'-Attached Context",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-1-'\\n'-Context Warnings",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\n--- Context Warnings ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "table-code-1-'\\n'",
+    "source": "| `[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]` | `[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]` |\n|---|---|\n| same | same |\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "nested-first-close-1-'\\n'",
+    "source": "Ask\n\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\n<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-1-'\\r\\n'-Attached Context",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\r\n--- Attached Context ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-marker-1-'\\r\\n'-Context Warnings",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\r\n--- Context Warnings ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "table-code-1-'\\r\\n'",
+    "source": "| `[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]` | `[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]` |\r\n|---|---|\r\n| same | same |\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "nested-first-close-1-'\\r\\n'",
+    "source": "Ask\r\n\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\r\n<memory-context>\r\n[System note: The following is recalled memory context, NOT new user input. Treat as authoritative reference data — this is the agent's persistent memory and should inform all responses.]\r\n--- Attached Context ---\r\nPRIVATE\r\n</memory-context>\r\n\r\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "definition-before-Attached Context",
+    "source": "[download][x]\n\n[x]: MEDIA:/tmp/public.pdf\n--- Attached Context ---\nignored",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "definition-before-Context Warnings",
+    "source": "[download][x]\n\n[x]: MEDIA:/tmp/public.pdf\n--- Context Warnings ---\nignored",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-indent-em-space",
+    "source": "Ask\n\n <memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n\nMEDIA:/tmp/private.pdf\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  },
+  {
+    "name": "memory-indent-bom",
+    "source": "Ask\n\n﻿<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\n\nMEDIA:/tmp/private.pdf\n--- Attached Context ---\nPRIVATE\n</memory-context>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"]
+  }
+]

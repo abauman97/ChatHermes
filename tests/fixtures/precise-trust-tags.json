@@ -1,0 +1,158 @@
+[
+  {
+    "name": "adjacent markers 0",
+    "source": "`<think>`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 1",
+    "source": "`<think>`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 2",
+    "source": "`<think>`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 3",
+    "source": "![`<think>`](https://example.invalid/a.png)\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 4",
+    "source": "![`<think>`](https://example.invalid/a.png)\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 5",
+    "source": "![`<think>`](https://example.invalid/a.png)\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 6",
+    "source": "`<think>\nexample`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 7",
+    "source": "`<think>\nexample`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 8",
+    "source": "`<think>\nexample`\n<untrusted_tool_result>\n\n[x]: MEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n[x]: MEDIA:/tmp/public.pdf\n\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 9",
+    "source": "`<think>`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 10",
+    "source": "`<think>`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n`</think>`\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 11",
+    "source": "`<think>`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result> `</think>`\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 12",
+    "source": "![`<think>`](https://example.invalid/a.png)\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 13",
+    "source": "![`<think>`](https://example.invalid/a.png)\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n`</think>`\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 14",
+    "source": "![`<think>`](https://example.invalid/a.png)\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result> `</think>`\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 15",
+    "source": "`<think>\r\nexample`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 16",
+    "source": "`<think>\r\nexample`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n`</think>`\r\n</untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "adjacent markers 17",
+    "source": "`<think>\r\nexample`\r\n<untrusted_tool_result>\r\n\r\n[x]: MEDIA:/tmp/private.pdf\r\n\r\n</untrusted_tool_result> `</think>`\r\n\r\n[x]: MEDIA:/tmp/public.pdf\r\n\r\n[download][x]",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "inverse closer 18",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "inverse closer 19",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": true
+  },
+  {
+    "name": "inverse closer 20",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n[download](/tmp/public.pdf)",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": true
+  },
+  {
+    "name": "inverse closer 21",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n`</think>`\n</untrusted_tool_result>\n\n[download][x]\n\n[x]: MEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "inverse closer 22",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\nMEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  },
+  {
+    "name": "inverse closer 23",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": true
+  },
+  {
+    "name": "inverse closer 24",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n[download](/tmp/public.pdf)",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": true
+  },
+  {
+    "name": "inverse closer 25",
+    "source": "<untrusted_tool_result>\n\nMEDIA:/tmp/private.pdf\n\n</untrusted_tool_result> `</think>`\n\n[download][x]\n\n[x]: MEDIA:/tmp/public.pdf",
+    "paths": ["/tmp/public.pdf"],
+    "automatic": false
+  }
+]

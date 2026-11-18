@@ -1,0 +1,7 @@
+{
+  "path": "/srv/hermes/uploads/chathermes/0123456789abcdef0123456789abcdef.pdf",
+  "prompt": "Please summarize this PDF. Keep --- Attached Context --- in this sentence.",
+  "binary": "📎 @file:/srv/hermes/uploads/chathermes/0123456789abcdef0123456789abcdef.pdf (application/pdf, 14 B) — binary file, not inlined as text. It is available on disk at `/srv/hermes/uploads/chathermes/0123456789abcdef0123456789abcdef.pdf`. Use your tools to work with it (read or convert it, extract its text, or view/render it as needed); do not tell the user the file type is unsupported.",
+  "warning": "- @ context injection warning: {tokens} tokens exceeds the 25% soft limit ({limit}).",
+  "exceptionWarning": "- @url:https://example.invalid/context: upstream failed\nunindented exception continuation\n\nfinal exception paragraph"
+}
