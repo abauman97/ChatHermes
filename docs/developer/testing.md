@@ -40,6 +40,46 @@ runtime dependency. `tests/workflows/automatic-artifacts.spec.ts` exercises live
 streaming, native resume, saved history, preview/download and library indexing in
 the real plugin at desktop and mobile sizes.
 
+`tests/fixtures/delivery-quotation.json` also covers closing trust tags quoted in
+image-alt code, nested labels, LF/CRLF, literal openers and first eligible duplicate
+reference definitions. Both extractors check original-source offsets. Reference
+scaling tests exercise 2k/4k/8k definitions with wall-clock and growth budgets;
+run them without competing benchmarks when investigating timings. The mounted
+source-projection workflow checks quoted trust closures and duplicate reference
+authority through resume/reload and the authenticated Library. Index revision
+changes reconcile previously registered private paths without altering history.
+`tests/fixtures/precise-trust-tags.json` adds adjacent real/quoted openers and
+closers, nested image labels, LF/CRLF, native parts and explicit/automatic
+deliveries. User uploads retain their explicit-only authority. Renderer tests
+exercise 8k definitions with hidden ranges and duplicate eligibility. The mounted
+`precise-trust-tags` workflow checks both marker directions, authenticated public
+downloads, profile isolation, reload, focus, scrolling and Library exclusion.
+
+`tests/fixtures/attached-context.json` captures the native PDF disk-path footer.
+`tests/transcript.test.py` generates it with the pinned producer and checks
+SQLite/history retention, actual soft-limit and multiline exception warning
+placement and profile rejection.
+The frontend attachment-context tests cover rendering, saved-response identity,
+original upload cards, assistant/tool isolation and reference provenance,
+including multiline code whose closing delimiter is removed by attachment or
+warning truncation. Mounted workflows check those exact examples alongside
+legitimate retained cards and profile-isolated downloads. The
+attachment review regressions additionally assert that
+`![pixel](https://attacker.invalid/x)` stays inline code when its closing backtick
+is discarded, and that `@file:![pixel](https://attacker.invalid/x)` recovered from
+a discarded fence stays literal. Component and projection tests reject image/link
+elements; the mounted workflow counts attempted attacker-origin requests across
+resume/reload while retaining a real image, link, tool reference and download.
+The Desktop comparison executes the actual pinned hydration helper across diverse
+marker, warning, quoting, reference and newline forms, including authored text
+that Desktop intentionally truncates. This requires the reviewed `.hermes-source`
+checkout; the comparison is skipped when it is absent.
+Run `npm run test:integration -- tests/workflows/attachment-context.spec.ts` for
+real PDF upload/staging with and without a native missing-file warning, live and
+resumed bubbles, downloads, profile rejection, focus, model controls, disclosure
+inspection and desktop/mobile screenshots. Warnings remain in raw history and
+are hidden from user bubbles, matching Desktop.
+
 Prefer observable user contracts. Retain focused protocol, security, deduplication, and pure-logic tests until replacements pass. See the [coverage migration audit](../../tests/test-audit.md).
 
 Sidebar activity regressions in `useSessionActivity.test.ts` cover verified
@@ -141,3 +181,102 @@ Run it with
 `npm run test:integration -- tests/workflows/slash-commands.spec.ts`; retain screenshots under
 `tests/visual-output/`. `node scripts/sync-command-parity.mjs --check` compares
 the execution boundary with the reviewed `.hermes-source` parity table.
+
+Recalled-memory display regressions live in `src/components/memory-context.test.ts`,
+`src/utils/memory-context.test.ts` and the native-session reconnect tests. They
+exercise client-side raw memory, tool-separated text blocks, rendering/copy/file
+suppression, source trust boundaries, exact inline code spans, authored XML,
+character-split deltas, pending prefixes and replacement/profile isolation.
+The utility contract executes the pinned Hermes producer/load lens through uv;
+it skips when `.hermes-source` is unavailable. `tests/artifacts.test.py` exercises
+the real Python extractor, SQLite Library store and checkpoint reconciliation,
+including previously indexed memory records and multipart/tool-separated content.
+The continuation matrix covers every split prefix of both exact producer notes
+and the opener/note sequence with LF and CRLF, matching continuations, unrelated
+`Answer [`/`Answer <` prefixes, paragraph padding, and user/system turn resets.
+The real indexer worker reconciles stale metadata through the SQLite store;
+frontend projections and component copy/render contracts check the same boundary.
+The mounted prefix regression seeds the pinned producer across real tool rows
+and checks resume/reload, external-request suppression and the background index.
+
+Run `npm run test:integration -- tests/workflows/memory-context.spec.ts
+ tests/workflows/attachment-context.spec.ts` for authenticated desktop/mobile
+resume/reload, the mounted Library, upload authorization, composer focus and
+attachment/select/disclosure contracts. The streaming workflow records only
+synthetic assistant `message.delta` and `message.complete` text: the pinned upstream scrubber removes
+the split XML block **before** native delivery. That browser scenario establishes
+upstream block suppression in deltas, client suppression of arriving split notes,
+and client suppression of the raw generated block delivered in `message.complete`.
+It does not establish client handling of raw split block tags in live deltas.
+Component and native-session tests supply raw blocks directly for that path.
+These are Chromium viewports, not native-device or Electron tests. Raw multipart
+history and stored/model fixture payloads are checked separately from presentation.
+
+The boundary follow-up adds post-tool memory without a preceding newline, every
+split position inside the memory opener, hidden assistant reference definitions,
+and an 80k-character single-line timing regression. Python contracts execute the
+pinned URL context expander with a synthetic MEDIA body and retain original-source
+quotation checks around truncated context. Durable matching declines differing
+raw attachment/warning suffixes. The memory workflow seeds these boundaries in
+real Hermes history and checks authenticated indexing plus the mounted Library.
+
+Reference-definition provenance regressions in `artifacts.test.ts`,
+`memory-context.test.ts` and `tests/artifacts.test.py` cover untrusted wrappers,
+blockquotes and lists before/after visible links, including tool-separated
+assistant messages. The actual Python `Service.worker` reconciles stale SQLite
+records and checks link-message ownership for legitimate references in both
+orders and profile isolation. The mounted memory boundary workflow seeds
+untrusted and blockquoted definitions around tool events and verifies cards and
+the authenticated Library after resume/reload.
+
+The independent block review adds unmatched cross-tool backticks around an
+untrusted reference definition, an external image delivery and an exact producer
+memory block, plus legitimate link → tool → definition delivery. The pure
+`turn-parsing.test.ts` contract bounds parsed input bytes and times 200/400-block
+turns; Python checks linear block-parse counts and the same timing sizes. The
+mounted memory workflow seeds all four cases in real multipart history and
+checks resume/reload cards, downloads and authenticated Library parity.
+
+The shared `tests/fixtures/memory-note-deliveries.json` cases assert frontend/Python
+parity for note deletion inside directives, destinations, annotations, Markdown
+links and automatic paths, with both exact producer notes and legitimate delivery
+controls. Actual transcript components cover history, turn blocks, copy and
+character-by-character native deltas. The memory workflow checks the exact legacy
+note repros on resume/reload in the mounted desktop/mobile plugin, preserves visible
+prose and a real downloadable public control, and rejects cards, external image
+requests and background Library entries for the manufactured deliveries.
+
+Original-source span regressions are in `src/utils/source-projection.test.ts` and
+`tests/fixtures/source-projection.json`, shared with `tests/artifacts.test.py`.
+They cover hidden table cells and automatic images, retained code across context
+truncation, memory-contained attachment/warning markers, both producer notes,
+CRLF offsets, nested blocks, escaped pipes, repeated cells, authored code notes,
+headings with closing hashes and table trust boundaries. Rendering is compared
+with an independent unmodified Markdown parser for retained block grammar.
+
+`src/utils/independent-review.test.ts` independently checks hidden autolinks,
+astral/multi-code-point entities, overlapping spans, nested image-label code,
+explicit versus automatic nested delivery consumption, and 1,000/2,000/4,000
+disjoint hidden notes. Python checks both nested-delivery order and image-label
+code provenance, including reconciliation from the previous parser checkpoint.
+The mounted source-projection workflow also exercises these atomic leaks and
+nested delivery controls through real history and Library indexing.
+
+Run `npm run test:integration -- tests/workflows/source-projection.spec.ts
+ tests/workflows/attachment-context.spec.ts tests/workflows/memory-context.spec.ts
+ tests/workflows/markdown-context.spec.ts` against an explicitly rebuilt retained
+Compose environment. The new scenario checks authenticated multipart history,
+resume/reload, original upload bytes, wrong-profile 404s, Library indexing,
+retained code, composer focus, scrolling, screenshots and attempted attacker
+requests at desktop/mobile sizes. Existing memory/attachment workflows supply
+native streaming/reconnect, selects and disclosure interaction coverage. Do not
+run asset-serving API tests concurrently with `npm run build`: build replaces the
+generated asset directory, so a concurrent request can observe an absent manifest.
+
+`tests/fixtures/delivery-quotation.json` supplies frontend/Library parity cases for
+multiline code in image labels, nested labels, line offsets, LF/CRLF and eligible
+adjacent deliveries. Artifact tests include 8k/16k/32k disjoint-note extraction
+budgets (4 seconds per size); these local wall-clock checks allow ordinary runner
+variation and do not establish a production latency guarantee. The mounted
+`source-projection.spec.ts` scenario checks that a real private file named in
+nested image-alt code creates neither a transcript card nor a Library entry.

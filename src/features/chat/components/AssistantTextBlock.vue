@@ -6,17 +6,18 @@ import type { TextBlock } from "../types/chat-ui";
 import { renderMarkdownSections } from "../../../utils/markdown-sections";
 const props = defineProps<{
   block: TextBlock;
+  delivery?: ReturnType<typeof textArtifactDelivery>;
   profile?: string;
   sessionId?: string;
   excludedPaths?: string[];
   validatedFiles?: Record<string, Artifact>;
 }>();
-const delivery = computed(() => textArtifactDelivery(props.block.content));
+const delivery = computed(() => props.delivery ?? textArtifactDelivery(props.block.content));
 const parts = computed(() => {
   const unique = new Set<string>();
   const candidates = new Map(delivery.value.files.map((file) => [file.path, file]));
   const selected: { file: Artifact; offset: number; block: boolean }[] = [];
-  for (const placement of delivery.value.placements) {
+  for (const placement of delivery.value.markdown?.placements ?? delivery.value.placements) {
     const candidate = candidates.get(placement.path)!;
     const validated = props.validatedFiles?.[candidate.path];
     const file = candidate.automatic
@@ -28,7 +29,7 @@ const parts = computed(() => {
     unique.add(file.path);
     selected.push({ file, offset: placement.offset, block: placement.block });
   }
-  const sections = renderMarkdownSections(delivery.value.text, selected);
+  const sections = renderMarkdownSections(delivery.value.text, selected, delivery.value.markdown);
   const parts: (
     | { kind: "text"; html: string; key: string }
     | { kind: "file"; file: Artifact; key: string }

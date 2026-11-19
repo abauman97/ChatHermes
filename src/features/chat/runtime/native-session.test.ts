@@ -1485,3 +1485,52 @@ it.each(["complete", "error"])(
     }
   },
 );
+
+it("renders recalled context through reconnect snapshots without rewriting the recovered runtime or accepting old-profile snapshots", async () => {
+  const { mount } = await import("@vue/test-utils");
+  const { default: ChatTranscript } = await import("../../../components/ChatTranscript.vue");
+  vi.spyOn(api, "messages").mockResolvedValue([]);
+  const session = useNativeSession(vi.fn());
+  await session.attach("alpha", "one");
+  const old = fake.hooks!;
+  const memory =
+    "<memory-context>\n[System note: The following is recalled memory context, NOT new user input. Treat as informational background data.]\nRECONNECT_PRIVATE\n</memory-context>";
+  const snapshot = {
+    messages: [
+      { row_id: 1, role: "user", text: `Question\n${memory}` },
+      { row_id: 2, role: "assistant", text: `Answer\n${memory}` },
+    ],
+    running: true,
+    inflight: { user: `Question\n${memory}`, assistant: `Answer\n${memory}` },
+    recovery: { complete: false, base_row_ids: null },
+  };
+  const props = () => ({
+    messages: session.messages.value,
+    loading: false,
+    draft: "",
+    progress: [],
+    working: session.busy.value,
+  });
+  old.snapshot(snapshot as any);
+  old.recovered();
+  const wrapper = mount(ChatTranscript, { props: props() });
+  try {
+    expect(wrapper.text()).toContain("Question");
+    expect(wrapper.text()).toContain("Answer");
+    expect(wrapper.text()).not.toContain("RECONNECT_PRIVATE");
+    expect(JSON.stringify(session.messages.value)).toContain("RECONNECT_PRIVATE");
+    old.snapshot(snapshot as any);
+    old.recovered();
+    await wrapper.setProps(props());
+    expect(wrapper.findAll(".message.user")).toHaveLength(1);
+    expect(wrapper.text()).not.toContain("RECONNECT_PRIVATE");
+    await session.attach("beta", "two");
+    old.snapshot(snapshot as any);
+    await wrapper.setProps(props());
+    expect(wrapper.text()).not.toContain("Question");
+    expect(wrapper.text()).not.toContain("Answer");
+  } finally {
+    wrapper.unmount();
+    session.close();
+  }
+});

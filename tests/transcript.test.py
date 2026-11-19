@@ -431,3 +431,66 @@ def test_native_skill_display_survives_paging_and_preserves_model_history(db):
     hidden = transcript.read_page(db, "skill", "default", limit=1)["data"][0]
     assert hidden["display_kind"] == "hidden"
     assert hidden["content"] == ""
+
+
+@pytest.mark.parametrize("warning_kind", ["none", "soft-limit", "exception"])
+def test_native_binary_attachment_expansion_survives_persistence_and_history(
+    db, tmp_path, monkeypatch, warning_kind
+):
+    """The shared browser fixture is the actual pinned producer's PDF format.
+
+    Display filtering must not remove the model's persisted attachment context.
+    The fixture uses synthetic paths/content and never reads profile state.
+    """
+    import asyncio
+    import json
+
+    from agent.context_references import preprocess_context_references_async
+    from agent.model_metadata import estimate_tokens_rough
+
+    fixture = json.loads((ROOT / "tests/fixtures/attached-context.json").read_text())
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("TERMINAL_ENV", "local")
+    path = tmp_path / "uploads/chathermes" / Path(fixture["path"]).name
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"%PDF-\x00fixture\n")
+    prompt = fixture["prompt"]
+    original = f'{prompt}\nAttached file report.pdf: {path}\nMEDIA:"{path}"\n@file:{path}'
+    exception_prefix = "- @url:https://example.invalid/context: "
+    if warning_kind == "exception":
+        original += "\n@url:https://example.invalid/context"
+
+    def failed_fetch(_url):
+        raise RuntimeError(fixture["exceptionWarning"].removeprefix(exception_prefix))
+
+    expected = fixture["binary"].replace(fixture["path"], str(path))
+    tokens = estimate_tokens_rough(expected)
+    context_length = tokens * 3 if warning_kind == "soft-limit" else 100_000
+    result = asyncio.run(
+        preprocess_context_references_async(
+            original,
+            cwd=tmp_path,
+            context_length=context_length,
+            plugins=False,
+            url_fetcher=failed_fetch,
+        )
+    )
+    warnings = (
+        "\n\n--- Context Warnings ---\n"
+        + fixture["warning"].format(tokens=tokens, limit=int(context_length * 0.25))
+        if warning_kind == "soft-limit"
+        else ""
+    )
+    if warning_kind == "exception":
+        warnings = "\n\n--- Context Warnings ---\n" + fixture["exceptionWarning"]
+    assert result.expanded and not result.blocked
+    assert result.message == original + warnings + "\n\n--- Attached Context ---\n\n" + expected
+    db.create_session("attachment-context", source="desktop", profile_name="default")
+    db.append_message("attachment-context", "user", result.message)
+    db.append_message("attachment-context", "assistant", "PDF received")
+    assert db.get_messages("attachment-context")[0]["content"] == result.message
+    history = transcript.read_page(db, "attachment-context", "default")
+    assert history["data"][0]["content"] == result.message
+    with pytest.raises(HTTPException) as error:
+        transcript.read_page(db, "attachment-context", "beta")
+    assert error.value.status_code == 404

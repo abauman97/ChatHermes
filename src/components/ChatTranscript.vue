@@ -5,6 +5,7 @@ import { transcriptEntries } from "../features/chat/utils/transcript-entries";
 import UserMessage from "../features/chat/components/UserMessage.vue";
 import AssistantTurn from "../features/chat/components/AssistantTurn.vue";
 import TurnWork from "./TurnWork.vue";
+import { memoryContextRanges } from "../utils/memory-context";
 import { renderMarkdown } from "../utils/markdown";
 const props = withDefaults(
   defineProps<{
@@ -274,7 +275,9 @@ watch(
         >
           <div
             class="message-content markdown-content break-words text-base leading-7"
-            v-html="renderMarkdown(draft)"
+            v-html="
+              renderMarkdown(draft, undefined, undefined, memoryContextRanges(draft, !!working))
+            "
           />
         </article>
       </div>

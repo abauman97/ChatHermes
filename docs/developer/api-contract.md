@@ -364,6 +364,39 @@ filename and retrieval reference in durable history. Every submitted upload also
 includes a standalone `MEDIA:"<uploaded path>"` direct reference. User history
 uses the same explicit artifact parser as generated delivery, deduplicating the
 reference and filename annotation while preserving quotation/untrusted boundaries.
+User bubble text follows the pinned Hermes Desktop
+attachment-context presentation rules. The first line-start `--- Attached Context ---`
+followed by optional whitespace and a newline truncates the suffix, regardless of its
+contents, upload presence or Markdown quotation. A line-start
+`--- Context Warnings ---` removes the remaining warning section, including when
+there is no attachment marker. Both paths trim the retained text. This intentionally
+accepts Desktop's tradeoff: authored marker examples may be truncated too.
+Markdown rendering parses the original user source before suppressing truncated
+context, so a closing backtick in discarded context cannot activate an image in
+the retained prefix. Recovered references render through a separate literal text
+channel; their Markdown punctuation and URLs never create images or links.
+Legitimate retained Markdown and authenticated upload cards remain available.
+
+The attachment suffix is scanned for file/folder/url/image/tool/terminal refs
+using Desktop's bare and quoted grammar. Exact duplicates collapse; refs absent
+from the retained prose are prepended in encounter order. Line/session refs are
+not recovered by this helper, matching the pin. Recovered refs remain presentation
+text and cannot establish downloadable cards. Existing upload annotations and
+MEDIA in the retained prefix supply original cards, names and paths through the
+existing explicit-delivery parser; staged file-only lines disappear alongside
+those cards. Quotation classification uses the complete original message, so
+discarding a closing multiline code delimiter cannot promote a quoted example
+in the retained prefix into a card. Only retained deliveries are eligible, including in the Python Library index.
+Durable response matching also compares raw attachment/warning suffixes. When
+those suffixes differ or exist on only one side, display equality cannot establish
+identity and no response target is inferred. This can defer branch availability
+until authoritative saved history arrives, including after native expansion.
+Folder, URL, image, tool and terminal references retain textual
+presentation rather than gaining Desktop's broader chip/thumbnail UI.
+This is presentation only: assistant/tool filtering, native submission, durable
+model context and authenticated retrieval retain their existing behavior and
+profile/session checks. Expanded file bodies, warnings and recovered refs never
+supply new artifact provenance or authorize arbitrary path access.
 Images retain the existing
 validated multipart prompt mechanism rather than a session-wide attachment queue.
 
@@ -691,3 +724,119 @@ The native retry still rewinds and submits its resolved prompt exactly once.
 ChatHermes does not fabricate a persistent replacement user row or strip an
 unknown wrapper to reconstruct the request. Native compression likewise owns the
 replacement transcript; visible row counts are not a client guarantee.
+
+### Recalled memory presentation
+
+ChatHermes removes recalled memory from user/assistant prose and assistant copy.
+A block requires the exact line-start `<memory-context>` opening, a newline,
+and the pinned producer's exact current or legacy recalled-memory note immediately
+after that newline. Leading line whitespace uses the same browser whitespace
+predicate in Python and the frontend; the hidden range begins at the opener. It ends at `</memory-context>` or the end of the assistant
+turn. Ordinary multiline XML without that note remains authored content. Exact
+standalone recalled-memory notes are also removed; other `[System note: ...]`
+text remains visible. Fenced/indented code and actual inline code spans are
+preserved, without protecting adjacent prose or unrelated paragraphs.
+
+Assistant text blocks share one source across intervening tool events. Distinct
+text events retain independent Markdown boundaries, including unmatched backticks
+and fences. Recognized memory/trust tags or exact recalled-note prefixes interrupted
+by an event are rejoined only when the next text continues that same marker;
+unrelated trailing `[` or `<` prose keeps a paragraph boundary before a new block.
+Classification compares only the missing marker bytes; a producer opener and its required newline stay
+adjacent to the note. Trust and memory state continue across tool events.
+Rendering, copying, saved-response matching and artifact discovery use projections
+of that source, recomputed after snapshots or scope changes. Tool/reasoning bodies
+remain separate data. During generation, potential opening/note prefixes are
+withheld until they match or diverge. On completion an unconfirmed prefix is
+released; a block confirmed by its producer note remains hidden if unfinished.
+
+Markdown rendering also consumes the original source before suppressing context.
+Source ranges remove hidden text from the finished tokens; visible fragments are
+never concatenated and reparsed. Thus `!` followed by an exact hidden note and a
+Markdown link remains literal `!` plus a link, rather than acquiring automatic
+image-request authority. Hidden reference definitions cannot authorize visible
+links or images. Legitimate inline images retain their original authority. This
+applies to history, live text blocks, user uploads and the draft fallback; copy
+continues to use the plain-text projection and raw runtime data is unchanged.
+
+Artifact classification consumes original source trust and quotation boundaries
+before excluding memory offsets. Multiline inline code inside image labels,
+including nested labels, protects its original source lines in both the frontend
+and Library extractor. A directive in that code cannot register a file; eligible
+deliveries before and after the example remain available. Every projected delivery must also be accepted
+from its original line, with the same destination and delivery mode. Deleting an
+exact producer note can change visible prose but cannot join directive fragments,
+attachment annotations or path bytes into retrieval authority. Hidden trust openers still protect later tool
+data; reference definitions in memory, untrusted wrappers, blockquotes, lists
+and code are excluded from file destinations. Visible links cannot borrow those
+destinations across assistant messages or intervening tools. Eligible authored
+references resolve in both directions across tool events; the link message owns
+the resulting file. Assistant turns share one trust/memory/reference classification
+pass, with local delivery projections, rather than reparsing the full turn for
+every text block. Discarded user-context suffixes still cannot supply definitions. The Python
+Library extractor applies the same producer grammar across assistant messages in
+a user turn, excluding hidden assistant rows from reference definitions. Its
+versioned reconciliation checkpoint replaces previously indexed context-body records without changing profile/session file authorization, native
+image handling, validation or deletion records. Actual image parts and original
+authenticated uploads keep their existing handling.
+
+The pinned SessionDB sanitizes string user/assistant content on load but retains
+multipart content. Desktop's general hydration does not scrub memory; its
+`attachment-turn.ts` memory regex supports attachment matching. This plugin does
+not rewrite submission, reducers, persisted messages, REST history or model
+context. Producer-rewritten fences outside the exact grammar are not covered.
+Without provenance, an authored byte-identical copy of a generated block or exact
+note is irreducibly ambiguous and is suppressed. The producer note is a grammar
+signal, not authenticated provenance; this is a presentation rule, not a secrecy
+boundary. Upstream string sanitization can already have removed authored XML
+before the plugin receives it.
+
+### Original-source Markdown projection
+
+The display projection retains the original source and hides original-coordinate
+spans after Markdown parsing. Block provenance is captured while the parser still
+has container-adjusted positions: paragraphs, ATX/setext headings, table cells,
+fenced/indented code, lists, quotes and rules retain their original grammar.
+Table cells have individual spans, including escaped pipes and repeated text;
+line-wide substring matching cannot stand in for cell provenance. CRLF offsets
+translate through Markdown's newline normalization. A partly retained code block
+keeps its visible code as literal code; hiding its closing fence does not discard
+the retained body or turn it into executable Markdown. Fully hidden structures
+are removed as balanced token subtrees.
+
+Accepted delivery syntax also supplies original spans. Card placement and removal
+never require parsing the concatenation of the remaining text. Hidden atomic
+images lose image authority; links with hidden syntax retain surviving label
+text without their destination. Reference eligibility is checked while consuming
+original definitions, including duplicate definitions and native block boundaries;
+whitespace masking is not a second Markdown source. Code, table, list and quote
+examples cannot alter trust for later delivery lines.
+
+Decoded entities and normalized automatic links retain atomic source spans;
+hiding any part of an atom suppresses all its output units, including surrogate
+pairs. Code spans inside image labels retain their original nested-label offsets
+and protect exact producer notes as authored code. An accepted explicit outer
+delivery consumes references in its label; an automatic outer link keeps its
+label and can retain an explicit inner image delivery. Frontend cards and Python
+Library extraction use this same consumption order. Quoted trust markers protect
+only their original code spans; adjacent real openers and closers still change
+trust depth, including within the same line or paragraph and across native text
+parts. Reference rendering parses each definition into a scratch map and merges
+only the first eligible definition, so hidden ranges do not require copying all
+previous definitions.
+
+User attachment/warning markers use the existing Desktop grammar over the
+memory-excluded presentation, with source positions preserved. A marker inside a
+recognized memory block cannot discard a real upload after the block. Python
+Library extraction uses that same order; the `source-projection-v11` checkpoint
+reconciles metadata indexed by previous extractors. The Desktop helper itself,
+raw messages, model context, profile/session file authorization, image parts,
+native runtime and reconnect protocol are unchanged. Exact Desktop marker
+behavior still applies to authored markers in code. Recovered references remain
+literal text and confer no file authority.
+
+The memory producer grammar remains exact (LF or CRLF after the opener); it is
+not widened to arbitrary provider rewrites. Byte-identical authored producer
+notes/blocks remain indistinguishable from generated ones without runtime
+provenance. Suppression is presentation filtering: original history and model
+context remain available to the authenticated runtime.

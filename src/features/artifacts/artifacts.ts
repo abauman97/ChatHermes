@@ -1,7 +1,16 @@
+import { trackBlockSources, blockSources } from "../../utils/markdown-source";
 import { isMessageImage } from "../../utils/message-image";
 import MarkdownIt from "markdown-it";
 import { messageText } from "../../services/hermes-api";
 import type { Message, TurnBlock } from "../../types/hermes";
+import {
+  memoryContextSlice,
+  memoryContextRanges,
+  boundaryTokens,
+  memoryContextMasked,
+  type Range,
+} from "../../utils/memory-context";
+import { attachedContextProjection } from "./attached-context";
 
 export interface Artifact {
   path: string;
@@ -95,7 +104,14 @@ type AddArtifact = (
   block?: boolean,
 ) => boolean;
 
-function collectMediaReferences(line: string, add: AddArtifact, automatic = false, env = {}) {
+type RemoveRange = (start: number, end: number) => void;
+function collectMediaReferences(
+  line: string,
+  add: AddArtifact,
+  automatic = false,
+  env = {},
+  remove?: RemoveRange,
+) {
   automatic = automatic && !/^\s*["'“‘].*["'”’]\s*$/.test(line);
   const tokens = mediaMarkdown.parseInline(line, env)[0]?.children || [];
   // Explicit references replace their whole range; retained automatic links
@@ -152,6 +168,7 @@ function collectMediaReferences(line: string, add: AddArtifact, automatic = fals
       continue;
     // Keep automatic references visible so failed validation never erases response text.
     if (!src.startsWith("MEDIA:")) continue;
+    remove?.(start, end);
     line = line.slice(0, start - removed) + line.slice(end - removed);
     removed += end - start;
     consumed = end;
@@ -250,6 +267,43 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
 // Block tokens keep backtick/tilde fences (including incomplete fences),
 // indented code, blockquotes and lists out of the delivery channel.
 const deliveryMarkdown = new MarkdownIt({ html: true });
+trackBlockSources(deliveryMarkdown);
+const definitionEntry = deliveryMarkdown.block.ruler.__rules__.find(
+  (rule) => rule.name === "reference",
+)!;
+const definitionRule = definitionEntry.fn;
+deliveryMarkdown.block.ruler.at(
+  "reference",
+  (state, start, end, silent) => {
+    const allowed = state.env.definitionAllowed as ((a: number, b: number) => boolean) | undefined;
+    if (!allowed || silent) return definitionRule(state, start, end, silent);
+    // Parse into a one-definition map. Copying the accumulated map here makes
+    // a document with N definitions quadratic, even when every one is trusted.
+    const references = (state.env.references ??= Object.create(null));
+    state.env.references = Object.create(null);
+    let matched: boolean;
+    let definition: typeof references;
+    try {
+      matched = definitionRule(state, start, end, silent);
+      definition = state.env.references;
+    } finally {
+      state.env.references = references;
+    }
+    const offset = (state.env.sourceOffset as number | undefined) ?? 0;
+    const edges = state.env.sourceEdges as number[];
+    if (
+      matched &&
+      allowed(
+        offset + edges[state.bMarks[start]!]!,
+        offset + edges[state.bMarks[state.line] ?? state.src.length]!,
+      )
+    )
+      for (const [label, value] of Object.entries(definition))
+        if (!Object.hasOwn(references, label)) references[label] = value;
+    return matched;
+  },
+  { alt: definitionEntry.alt },
+);
 // Record source lines using MarkdownIt's own code-span rule so escapes, HTML,
 // links and differently sized delimiters keep the parser's quotation semantics.
 const codeSpanRule = deliveryMarkdown.inline.ruler.__rules__.find(
@@ -262,11 +316,41 @@ deliveryMarkdown.inline.ruler.at("backticks", (state, silent) => {
   const token = state.tokens.at(-1);
   if (!silent && state.tokens.length > count && token?.type === "code_inline") {
     token.meta = {
+      sourceRange: [start, state.pos],
       deliveryLines: [
         state.src.slice(0, start).split("\n").length - 1,
         state.src.slice(0, state.pos).split("\n").length - 1,
       ],
     };
+  }
+  return matched;
+});
+
+// Image labels have their own inline parser input. Rebase every nested code
+// span's line coordinates before the paragraph quotation check consumes them.
+type DeliveryToken = ReturnType<InstanceType<typeof deliveryMarkdown.inline.State>["push"]>;
+function* deliveryDescendants(tokens: DeliveryToken[]): Generator<DeliveryToken> {
+  for (const token of tokens) {
+    yield token;
+    yield* deliveryDescendants(token.children || []);
+  }
+}
+const deliveryImageRule = deliveryMarkdown.inline.ruler.__rules__.find(
+  (rule) => rule.name === "image",
+)!.fn;
+deliveryMarkdown.inline.ruler.at("image", (state, silent) => {
+  const start = state.pos,
+    count = state.tokens.length;
+  const matched = deliveryImageRule(state, silent);
+  if (matched && !silent) {
+    const line = state.src.slice(0, start + 2).split("\n").length - 1;
+    for (const child of deliveryDescendants(state.tokens.slice(count))) {
+      if (child.type !== "code_inline") continue;
+      const [a, b] = child.meta!.sourceRange as Range;
+      child.meta!.sourceRange = [a + start + 2, b + start + 2];
+      const [first, last] = child.meta!.deliveryLines as Range;
+      child.meta!.deliveryLines = [first + line, last + line];
+    }
   }
   return matched;
 });
@@ -290,56 +374,55 @@ export interface ArtifactPlacement {
 
 // Positions refer to cleaned response text, collected only by the accepted-delivery
 // parser. Rendering must not rescan prose or quoted/tool data for file paths.
-export function textArtifactDelivery(
+export function prepareArtifactSource(
   text: string,
-  automatic = true,
-): {
-  text: string;
-  files: Artifact[];
-  placements: ArtifactPlacement[];
-} {
-  const files: Artifact[] = [];
-  const placements: ArtifactPlacement[] = [];
-  if (!/MEDIA:|Attached (?:image|file) |\//.test(text)) return { text, files, placements };
-  let sourceLine = 0;
-  const positions: { path: string; line: number; column: number; block: boolean }[] = [];
-  const add: AddArtifact = (path, name, automatic = false, column = 0, block = true) => {
-    const file = artifact(path, name);
-    if (!file) return false;
-    if (automatic) file.automatic = true;
-    const existing = files.findIndex((item) => item.path === file.path);
-    if (existing < 0) {
-      files.push(file);
-      positions.push({ path: file.path, line: sourceLine, column, block });
-    } else if (files[existing]?.automatic && !automatic) files[existing] = file;
-    return true;
-  };
+  pending = false,
+  boundaries = [0],
+  referenceEnd = text.length,
+) {
   const originalLines = text.split("\n");
-  const lines = [...originalLines];
-  let hasAttachment = false;
-  const references: number[] = [];
+  const hidden = memoryContextRanges(text, pending, boundaries);
+  const tokens = boundaryTokens(deliveryMarkdown, text, boundaries);
   const env = {};
-  const tokens = deliveryMarkdown.parse(text, env);
   const literalLines = new Set<number>();
+  const quotedTags: Range[] = [];
   for (const token of tokens) {
     if (!token.map) continue;
     if (
-      ["fence", "code_block", "blockquote_open", "bullet_list_open", "ordered_list_open"].includes(
-        token.type,
-      ) ||
-      token.children?.some(
-        (child) =>
-          child.type === "code_inline" &&
-          /untrusted_tool_result|<\/?(?:think|thinking|reasoning|analysis|pre|code|script|style)\b/i.test(
-            child.content,
-          ),
-      )
+      [
+        "fence",
+        "code_block",
+        "table_open",
+        "blockquote_open",
+        "bullet_list_open",
+        "ordered_list_open",
+      ].includes(token.type)
     )
       for (let index = token.map[0]; index < token.map[1]; index++) literalLines.add(index);
   }
+  // Inline code protects only its original span. A real trust marker beside
+  // a quoted marker must still change depth, even in the same paragraph/line.
+  for (const token of tokens) {
+    const spans = blockSources.get(token);
+    if (!spans) continue;
+    for (const child of deliveryDescendants(token.children || [])) {
+      if (child.type !== "code_inline") continue;
+      const [a, b] = child.meta!.sourceRange as Range;
+      if (spans[a] && spans[b - 1]) quotedTags.push([spans[a]![0], spans[b - 1]![1]]);
+    }
+  }
+  quotedTags.sort(([a], [b]) => a - b);
+  let quotedIndex = 0;
+  const quotedAt = (offset: number) => {
+    while (quotedIndex < quotedTags.length && quotedTags[quotedIndex]![1] <= offset) quotedIndex++;
+    return (quotedTags[quotedIndex]?.[0] ?? Infinity) <= offset;
+  };
+  let sourceOffset = 0;
   const untrustedLines = new Set<number>();
   let untrustedDepth = 0;
   for (const [index, line] of originalLines.entries()) {
+    const lineStart = sourceOffset;
+    sourceOffset += line.length + 1;
     if (untrustedDepth) untrustedLines.add(index);
     if (
       literalLines.has(index) ||
@@ -351,15 +434,193 @@ export function textArtifactDelivery(
     for (const tag of line.matchAll(
       /<(\/?)(?:untrusted_tool_result|think|thinking|reasoning|analysis|pre|code|script|style)\b[^>]*(?:>|$)/gi,
     )) {
+      if (quotedAt(lineStart + tag.index!)) continue;
       untrustedLines.add(index);
       untrustedDepth = tag[1] ? Math.max(0, untrustedDepth - 1) : untrustedDepth + 1;
     }
   }
+  // Resolve references only from eligible definitions. Original tokens still
+  // govern quotation/trust, including delimiters beyond presentation truncation.
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
+  // Index original-source exclusions once. Prefix maximum ends allow overlap
+  // queries in O(log N), including overlapping memory and trust intervals.
+  const excluded: Range[] = hidden.filter(([a]) => text.startsWith("<memory-context>", a));
+  for (const line of starts.keys())
+    if (literalLines.has(line) || untrustedLines.has(line))
+      excluded.push([starts[line]!, starts[line + 1] ?? text.length]);
+  excluded.sort((a, b) => a[0] - b[0]);
+  const maxEnds: number[] = [];
+  for (const [, end] of excluded) maxEnds.push(Math.max(end, maxEnds.at(-1) ?? 0));
+  Object.assign(env, {
+    definitionAllowed: (a: number, b: number) => {
+      // Definition maps include their final line ending; Desktop's cutoff
+      // starts at that newline. It carries no destination/title authority.
+      while (b > a && /[\r\n]/.test(text[b - 1]!)) b--;
+      let lo = 0,
+        hi = excluded.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (excluded[mid]![0] < b) lo = mid + 1;
+        else hi = mid;
+      }
+      return b <= referenceEnd && (lo === 0 || maxEnds[lo - 1]! <= a);
+    },
+  });
+  // Parse identical bytes again with definition eligibility, never whitespace
+  // substitutes that could turn a paragraph continuation into a definition.
+  boundaryTokens(deliveryMarkdown, text, boundaries, env);
+  return { hidden, tokens, untrustedLines, env };
+}
+
+/** Partition one turn classification into local sources without reparsing the
+ * turn for every card. Reference authority is shared; Markdown boundaries are not. */
+export function assistantArtifactProjections(
+  source: { text: string; ranges: Range[]; boundaries: number[] },
+  pending = false,
+) {
+  const prepared = prepareArtifactSource(source.text, pending, source.boundaries);
+  let line = 0,
+    offset = 0,
+    hiddenIndex = 0;
+  return source.ranges.map(([start, end]) => {
+    line += source.text.slice(offset, start).split("\n").length - 1;
+    const text = source.text.slice(start, end);
+    const lastLine = line + text.split("\n").length;
+    const tokens = deliveryMarkdown.parse(text, {});
+    while (hiddenIndex < prepared.hidden.length && prepared.hidden[hiddenIndex]![1] <= start)
+      hiddenIndex++;
+    const hidden: Range[] = [];
+    for (let i = hiddenIndex; i < prepared.hidden.length && prepared.hidden[i]![0] < end; i++) {
+      const [a, b] = prepared.hidden[i]!;
+      hidden.push([Math.max(0, a - start), Math.min(end, b) - start]);
+    }
+    const untrustedLines = new Set<number>();
+    for (let i = line; i < lastLine; i++)
+      if (prepared.untrustedLines.has(i)) untrustedLines.add(i - line);
+    const context = { tokens, hidden, untrustedLines, env: prepared.env };
+    offset = end;
+    line = lastLine - 1;
+    return {
+      content: memoryContextSlice(text, 0, text.length, pending, hidden),
+      delivery: textArtifactDelivery(text, true, text.length, 0, pending, context),
+    };
+  });
+}
+
+// Run delivery grammar against source bytes before projecting presentation. A
+// hidden producer note may split any directive, annotation or destination.
+function classifyDeliveryLine(
+  line: string,
+  add: AddArtifact,
+  automatic: boolean,
+  env: object,
+  remove?: RemoveRange,
+) {
+  const attachment = line.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
+  if (attachment && add(attachment[2]!.trim(), attachment[1])) {
+    remove?.(0, line.length);
+    return { text: "", attachment: true };
+  }
+  if (/^@file:(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line))
+    return { text: line, reference: true };
+  if (line.startsWith("MEDIA:")) {
+    const text = collectMedia(line, add);
+    if (!text) remove?.(0, line.length);
+    return { text };
+  }
+  const labeled = collectLabeledMedia(line, add);
+  if (labeled !== line) remove?.(labeled.length, line.length);
+  const text = collectMediaReferences(labeled, add, automatic, env, remove);
+  if (automatic && automaticPath(line.trim())) add(line.trim(), undefined, true, line.length);
+  return { text };
+}
+
+export function textArtifactDelivery(
+  text: string,
+  automatic = true,
+  retainedLength = text.length,
+  retainedStart = 0,
+  pending = false,
+  prepared?: ReturnType<typeof prepareArtifactSource>,
+): {
+  text: string;
+  files: Artifact[];
+  placements: ArtifactPlacement[];
+  markdown?: { source: string; hidden: Range[]; placements: ArtifactPlacement[] };
+} {
+  const files: Artifact[] = [];
+  const placements: ArtifactPlacement[] = [];
+  const context = prepared ?? prepareArtifactSource(text, pending, [0], retainedLength);
+  const retained = memoryContextSlice(text, retainedStart, retainedLength, pending, context.hidden);
+  if (!/MEDIA:|Attached (?:image|file) |\/|\[/.test(retained))
+    return {
+      text: retained,
+      files,
+      placements,
+      ...(context.hidden.length || retainedStart > 0 || retainedLength < text.length
+        ? {
+            markdown: {
+              source: text,
+              hidden: [...context.hidden, [0, retainedStart], [retainedLength, text.length]].filter(
+                ([a, b]) => b! > a!,
+              ) as Range[],
+              placements,
+            },
+          }
+        : {}),
+    };
+  let sourceLine = 0;
+  const accepted = new Set<string>();
+  const positions: { path: string; line: number; column: number; block: boolean }[] = [];
+  const add: AddArtifact = (path, name, automatic = false, column = 0, block = true) => {
+    const file = artifact(path, name);
+    if (!file) return false;
+    accepted.add(JSON.stringify([sourceLine, file.path, automatic]));
+    if (automatic) file.automatic = true;
+    const existing = files.findIndex((item) => item.path === file.path);
+    if (existing < 0) {
+      files.push(file);
+      positions.push({ path: file.path, line: sourceLine, column, block });
+    } else if (files[existing]?.automatic && !automatic) files[existing] = file;
+    return true;
+  };
+  const originalLines = text.split("\n");
+  const hidden = context.hidden;
+  let sourceOffset = 0,
+    hiddenIndex = 0;
+  let firstLine = 0,
+    lastLine = 0;
+  const lines = originalLines.map((line, index) => {
+    const start = sourceOffset,
+      end = start + line.length;
+    sourceOffset = end + 1;
+    if (start < retainedStart) firstLine = index;
+    if (start <= retainedLength) lastLine = index;
+    const a = Math.max(start, retainedStart),
+      b = Math.min(end, retainedLength);
+    if (b < a) return "";
+    let visible = "",
+      cursor = a;
+    // Lines and producer ranges are ordered. Advance past each hidden range
+    // once, then visit only ranges overlapping this line (including long blocks).
+    while (hiddenIndex < hidden.length && hidden[hiddenIndex]![1] <= a) hiddenIndex++;
+    for (let i = hiddenIndex; i < hidden.length && hidden[i]![0] < b; i++) {
+      const [x, y] = hidden[i]!;
+      visible += text.slice(cursor, Math.max(cursor, x));
+      cursor = Math.min(b, y);
+    }
+    return visible + text.slice(cursor, b);
+  });
+  let hasAttachment = false;
+  const references: number[] = [];
+  const { env, tokens, untrustedLines } = context;
+
   for (const [position, token] of tokens.entries()) {
     if (token.type !== "paragraph_open" || token.level !== 0 || !token.map) continue;
     // A code example protects its own lines, not every delivery in the paragraph.
     const quotedLines = new Set<number>();
-    for (const child of tokens[position + 1]?.children || []) {
+    for (const child of deliveryDescendants(tokens[position + 1]?.children || [])) {
       const deliveryLines = child.meta?.deliveryLines as [number, number] | undefined;
       if (
         child.type !== "code_inline" ||
@@ -371,33 +632,47 @@ export function textArtifactDelivery(
       const [first, last] = deliveryLines;
       for (let line = first; line <= last; line++) quotedLines.add(token.map[0] + line);
     }
-    for (let index = token.map[0]; index < token.map[1]; index++) {
+    for (let index = token.map[0]; index < Math.min(token.map[1], lines.length); index++) {
       if (untrustedLines.has(index) || quotedLines.has(index)) continue;
       sourceLine = index;
       const line = lines[index]!;
-      const attachment = line.match(/^Attached (?:image|file) ([^\n]+?): ([^\n]+?)\r?$/);
-      if (attachment && add(attachment[2]!.trim(), attachment[1])) {
-        hasAttachment = true;
-        lines[index] = "";
-      } else if (/^@file:(?:"[^"\n]+"|'[^'\n]+'|[^\s<>]+)\r?$/.test(line)) {
-        references.push(index);
-      } else if (line.startsWith("MEDIA:")) lines[index] = collectMedia(line, add);
-      else {
-        lines[index] = collectMediaReferences(collectLabeledMedia(line, add), add, automatic, env);
-        if (automatic && automaticPath(line.trim())) add(line.trim(), undefined, true, line.length);
+      // Presentation deletion cannot establish authority. Only candidates also
+      // accepted from this original line may remove text or create placements.
+      const original = originalLines[index]!;
+      let eligible = add;
+      if (original !== line) {
+        const candidates = new Set<string>();
+        const key = (path: string, automatic = false) => JSON.stringify([path, automatic]);
+        classifyDeliveryLine(
+          original,
+          (path, _name, automatic = false) => {
+            if (!artifact(path)) return false;
+            candidates.add(key(path, automatic));
+            return true;
+          },
+          automatic,
+          env,
+        );
+        eligible = (path, name, automatic = false, column = 0, block = true) =>
+          candidates.has(key(path, automatic)) && add(path, name, automatic, column, block);
       }
+      const result = classifyDeliveryLine(line, eligible, automatic, env);
+      lines[index] = result.text;
+      if (result.attachment) hasAttachment = true;
+      if (result.reference) references.push(index);
     }
   }
   if (hasAttachment) for (const index of references) lines[index] = "";
   const explicit = files.some((file) => !file.automatic);
   let cleaned = "";
-  let retained = 0;
+  let retainedLines = 0;
   const starts: number[] = [];
   for (const [index, line] of lines.entries()) {
+    if (index < firstLine || index > lastLine) continue;
     const keep = !explicit || line !== "" || originalLines[index] === "";
-    starts[index] = cleaned.length + (keep && retained ? 1 : 0);
+    starts[index] = cleaned.length + (keep && retainedLines ? 1 : 0);
     if (!keep) continue;
-    if (retained++) cleaned += "\n";
+    if (retainedLines++) cleaned += "\n";
     cleaned += line;
   }
   const leading = explicit ? cleaned.length - cleaned.trimStart().length : 0;
@@ -411,7 +686,57 @@ export function textArtifactDelivery(
         Math.min(cleaned.length, starts[position.line]! + position.column - leading),
       ),
     });
-  return { text: cleaned, files, placements };
+  {
+    const removals: Range[] = [...hidden, [0, retainedStart], [retainedLength, text.length]];
+    const markdownPlacements: ArtifactPlacement[] = [];
+    let offset = 0;
+    for (const [index, original] of originalLines.entries()) {
+      const lineOffset = offset;
+      offset += original.length + 1;
+      if (index < firstLine || index > lastLine || untrustedLines.has(index)) continue;
+      if (hasAttachment && references.includes(index)) {
+        removals.push([lineOffset, lineOffset + original.length]);
+        continue;
+      }
+      // Only deliveries already accepted by the original trust classification
+      // can be removed here. Keep original bytes for Markdown parsing.
+      const lineRemovals: Range[] = [];
+      classifyDeliveryLine(
+        original,
+        (path, _name, automatic = false, column = 0, block = true) => {
+          const normalized = artifact(path)?.path;
+          if (!normalized || !accepted.has(JSON.stringify([index, normalized, automatic])))
+            return false;
+          if (!markdownPlacements.some((placement) => placement.path === normalized))
+            markdownPlacements.push({
+              path: normalized,
+              offset:
+                lineOffset +
+                column +
+                lineRemovals.reduce((sum, [a, b]) => (a <= column + sum ? sum + b - a : sum), 0),
+              block,
+            });
+          return true;
+        },
+        automatic,
+        env,
+        (a, b) => {
+          lineRemovals.push([a, b]);
+          removals.push([lineOffset + a, lineOffset + b]);
+        },
+      );
+    }
+    return {
+      text: cleaned,
+      files,
+      placements,
+      markdown: {
+        source: text,
+        hidden: removals.filter(([a, b]) => b > a),
+        placements: markdownPlacements,
+      },
+    };
+  }
 }
 
 export function textArtifacts(text: string, automatic = true): { text: string; files: Artifact[] } {
@@ -456,10 +781,39 @@ export function toolArtifacts(block: TurnBlock): Artifact[] {
     return file;
   });
 }
-export function uploadedArtifacts(text: string): { text: string; files: Artifact[] } {
+export function uploadedArtifacts(
+  text: string,
+  forRendering = false,
+): {
+  text: string;
+  files: Artifact[];
+  markdown?: { source: string; hidden: Range[]; refs: string[] };
+} {
   // Uploads share the explicit delivery parser, including its quotation and
   // untrusted-content boundaries. Legacy annotations retain original names.
-  return textArtifacts(text, false);
+  const visible = attachedContextProjection(memoryContextMasked(text));
+  // Only retained, explicit delivery can establish cards. Hoisted references
+  // remain presentation data, never authority to retrieve arbitrary paths.
+  // Classify before truncation and trim; only retained deliveries are eligible.
+  const original = textArtifactDelivery(text, false, visible.prefix.length);
+  const refs = visible.refs.filter((ref) => {
+    if (!ref.startsWith("@file:")) return true;
+    const path = ref.slice(6).replace(/^([`"'])(.*)\1$/, "$2");
+    return !original.files.some((file) => file.path === path);
+  });
+  return {
+    text: [refs.join("\n"), original.text.trim()].filter(Boolean).join("\n\n"),
+    files: original.files,
+    ...(forRendering
+      ? {
+          markdown: {
+            source: original.markdown?.source ?? original.text,
+            hidden: original.markdown?.hidden ?? [],
+            refs,
+          },
+        }
+      : {}),
+  };
 }
 export function messageArtifacts(message: Message): Artifact[] {
   if (message.role !== "user" && message.role !== "assistant") return [];
