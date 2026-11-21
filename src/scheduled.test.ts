@@ -147,7 +147,7 @@ it.each([
   { messages: [], output: "Saved output without a session" },
   { messages: [] },
   { messages: [], session_id: "" },
-])("does not offer Resume session without a persisted session: %j", async (output) => {
+])("disables and explains Resume Session without a persisted session: %j", async (output) => {
   setup();
   vi.spyOn(api, "scheduledOutput").mockResolvedValue(output);
   history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
@@ -155,7 +155,14 @@ it.each([
   await flushPromises();
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(
+    wrapper.get('[data-test="resume-scheduled-session"]').attributes("disabled"),
+  ).toBeDefined();
+  expect(wrapper.get("#scheduled-resume-unavailable").text()).toContain("No associated session");
+  const create = vi.spyOn(api, "create");
+  await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
+  expect(routeUrl().pathname).toContain("/scheduled/audit/output:");
+  expect(create).not.toHaveBeenCalled();
   expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   await wrapper.get('[aria-label="Screen options"]').trigger("keydown", { key: "Escape" });
   expect(wrapper.find('[role="menu"]').isVisible()).toBe(false);
@@ -194,7 +201,7 @@ it("offers exactly one action for the output session, preserving its profile wit
   wrapper.unmount();
 });
 
-it("hides resume and disables refresh while output loads, then clears a previously persisted session", async () => {
+it("disables resume and refresh while output loads, then clears a previously persisted session", async () => {
   setup();
   let finish!: (output: { messages: []; session_id?: string }) => void;
   const output = vi.spyOn(api, "scheduledOutput").mockImplementationOnce(
@@ -207,7 +214,9 @@ it("hides resume and disables refresh while output loads, then clears a previous
   const wrapper = mount(App);
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(
+    wrapper.get('[data-test="resume-scheduled-session"]').attributes("disabled"),
+  ).toBeDefined();
   expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
   expect(wrapper.get(".composer textarea").attributes("disabled")).toBeUndefined();
   finish({ messages: [], session_id: "persisted_audit_session" });
@@ -222,11 +231,15 @@ it("hides resume and disables refresh while output loads, then clears a previous
   await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
   await flushPromises();
   await wrapper.get('[aria-label="Screen options"]').trigger("click");
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(
+    wrapper.get('[data-test="resume-scheduled-session"]').attributes("disabled"),
+  ).toBeDefined();
   expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeDefined();
   finish({ messages: [] });
   await flushPromises();
-  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  expect(
+    wrapper.get('[data-test="resume-scheduled-session"]').attributes("disabled"),
+  ).toBeDefined();
   expect(wrapper.get('[data-test="refresh-scheduled"]').attributes("disabled")).toBeUndefined();
   wrapper.unmount();
 });

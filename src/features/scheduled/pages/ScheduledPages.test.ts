@@ -30,7 +30,10 @@ const ScheduledPage = defineComponent({
   },
 });
 import { api } from "../../../services/hermes-api";
-beforeEach(() => history.replaceState({}, "", "/chathermes#/scheduled"));
+beforeEach(() => {
+  recentSession.mockClear();
+  history.replaceState({}, "", "/chathermes#/scheduled");
+});
 const job = {
   id: "audit",
   name: "Security Audit",
@@ -211,6 +214,68 @@ it("prefers the final assistant message to stale saved output when both exist", 
   expect(wrapper.text()).toContain("Final transcript result");
   expect(wrapper.text()).not.toContain("Stale cached output");
   expect(wrapper.text()).not.toContain("Intermediate response");
+  wrapper.unmount();
+});
+
+it("keeps resume visible and explained for results without sessions, without inferring an ID", async () => {
+  setup();
+  history.replaceState({}, "", "/chathermes#/scheduled/audit/output:2026-01-01_00-00-00");
+  const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  const resume = wrapper.get('[data-test="resume-scheduled-session"]');
+  expect(resume.attributes("disabled")).toBeDefined();
+  expect(resume.attributes("aria-describedby")).toBe("scheduled-resume-unavailable");
+  expect(wrapper.get("#scheduled-resume-unavailable").text()).toContain("No associated session");
+  await resume.trigger("click");
+  expect(recentSession).not.toHaveBeenCalled();
+  await wrapper.vm.$router.push({ name: "scheduled-job", params: { jobId: "audit" } });
+  await flushPromises();
+  expect(wrapper.find('[data-test="resume-scheduled-session"]').exists()).toBe(false);
+  wrapper.unmount();
+});
+
+it("resumes only the loaded exact run and invalidates identity on run/profile changes and errors", async () => {
+  setup();
+  const first = "cron_audit_20260101_000000";
+  const second = "cron_audit_20260102_000000";
+  vi.mocked(api.scheduledOutput).mockResolvedValue({ session_id: first, messages: [] });
+  history.replaceState({}, "", `/chathermes#/scheduled/audit/${first}`);
+  const wrapper = mount(ScheduledPage, { props: { profile: "beta" } });
+  await flushPromises();
+  await wrapper.get('[data-test="resume-scheduled-session"]').trigger("click");
+  expect(recentSession).toHaveBeenLastCalledWith(first);
+  let finish!: (value: { session_id: string; messages: [] }) => void;
+  vi.mocked(api.scheduledOutput).mockImplementation(
+    () => new Promise((resolve) => (finish = resolve)),
+  );
+  await wrapper.vm.$router.push({
+    name: "scheduled-run",
+    params: { jobId: "audit", runId: second },
+  });
+  await flushPromises();
+  const resume = () => wrapper.get('[data-test="resume-scheduled-session"]');
+  expect(resume().attributes("disabled")).toBeDefined();
+  const stale = finish;
+  await wrapper.setProps({ profile: "alpha" });
+  await flushPromises();
+  stale({ session_id: first, messages: [] });
+  await flushPromises();
+  expect(resume().attributes("disabled")).toBeDefined();
+  finish({ session_id: second, messages: [] });
+  await flushPromises();
+  expect(api.scheduledOutput).toHaveBeenLastCalledWith(
+    "alpha",
+    "audit",
+    second,
+    expect.any(AbortSignal),
+  );
+  await resume().trigger("click");
+  expect(recentSession.mock.calls).toEqual([[first], [second]]);
+  vi.mocked(api.scheduledOutput).mockRejectedValue(new Error("unavailable"));
+  await wrapper.get('[data-test="refresh-scheduled"]').trigger("click");
+  await flushPromises();
+  expect(resume().attributes("disabled")).toBeDefined();
+  expect(wrapper.get("#scheduled-resume-unavailable").text()).toContain("could not be checked");
   wrapper.unmount();
 });
 

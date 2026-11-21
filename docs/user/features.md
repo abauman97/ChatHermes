@@ -105,7 +105,7 @@ Artifacts come from delivered-file references and uploads in saved history. Assi
 
 Open **Scheduled** in the drawer and select Active, Paused, or Completed. Select a job, then a dated run to read its final assistant response. Runs appear newest first; load older pages as needed. Intermediate responses, thinking and tool activity are hidden. Length-framed saved agent documents show only their response, without the job header or assembled prompt. Older unframed archives, including failed-run diagnostics, show a boundary warning because their contents cannot be safely separated; inspect the original archive on the Hermes server. Script runs show their saved output.
 
-If the run has an associated session, choose **Resume Session** in the **···** menu to open that conversation. Runs with saved output only do not offer this action. Create, schedule, pause, or modify jobs in Hermes's native dashboard. Deleted jobs and pruned output cannot be recovered.
+If the run has an associated session, choose **Resume Session** in the **···** menu to open that exact conversation in its owning profile. If no associated session is available (including saved-output-only runs), the action remains visible but disabled with an explanation. Create, schedule, pause, or modify jobs in Hermes's native dashboard. Deleted jobs and pruned output cannot be recovered.
 
 ![Mobile Scheduled page showing a saved workshop preparation report](images/scheduled-mobile.png)
 

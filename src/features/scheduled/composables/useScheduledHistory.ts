@@ -1,4 +1,5 @@
 import {
+  computed,
   inject,
   onScopeDispose,
   provide,
@@ -55,10 +56,10 @@ export function useScheduledHistory(
     route = useRoute();
   const loading = ref(false),
     error = ref(""),
-    sessionId = ref<string>();
+    sessionId = ref<string>(),
+    loaded = ref("");
   let controller: AbortController | undefined,
     work: Promise<void> = Promise.resolve(),
-    loaded = "",
     disposed = false;
   const destination = () =>
     JSON.stringify([context.profile.value, route.params.jobId, route.params.runId]);
@@ -68,7 +69,7 @@ export function useScheduledHistory(
       target = destination();
     loading.value = true;
     error.value = "";
-    loaded = "";
+    loaded.value = "";
     sessionId.value = undefined;
     work = (async () => {
       try {
@@ -78,7 +79,7 @@ export function useScheduledHistory(
           String(route.params.jobId || ""),
           String(route.params.runId || ""),
         );
-        if (!request.signal.aborted) loaded = target;
+        if (!request.signal.aborted) loaded.value = target;
       } catch (cause) {
         if (!request.signal.aborted)
           error.value =
@@ -95,6 +96,20 @@ export function useScheduledHistory(
     loading,
     error,
     sessionId,
+    canResume: computed(
+      () =>
+        !!sessionId.value &&
+        loaded.value === destination() &&
+        !loading.value &&
+        !error.value &&
+        !context.offline.value &&
+        !context.creating.value,
+    ),
+    resume() {
+      // Only an authenticated output read for this exact route/profile may
+      // supply identity. Never infer it from a timestamp, job or nearby run.
+      if (state.canResume.value && sessionId.value) context.recentSession(sessionId.value);
+    },
     retry,
     async whenLoaded() {
       const target = destination();
@@ -103,7 +118,7 @@ export function useScheduledHistory(
         pending = work;
         await pending;
       } while (pending !== work);
-      return !disposed && !error.value && loaded === target;
+      return !disposed && !error.value && loaded.value === target;
     },
   };
   context.current.value = state;
