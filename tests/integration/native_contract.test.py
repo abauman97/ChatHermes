@@ -95,7 +95,10 @@ def test_completion_watermark_uses_real_profile_database(tmp_path, monkeypatch):
     from pathlib import Path
 
     from hermes_cli import web_server_sessions
-    from hermes_state import SessionDB
+    from persistence import SessionId
+    from persistence.conversation.messages import NewMessage
+    from persistence.conversation.sessions import NewSession
+    from persistence_assembly import open_persistence, open_persistence_reader, profile_scope
 
     source = Path("/opt/plugins-src/chathermes/dashboard/execution_viewer.py")
     spec = importlib.util.spec_from_file_location("native_completion_contract", source)
@@ -104,25 +107,25 @@ def test_completion_watermark_uses_real_profile_database(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     paths = {}
     for profile in ("alpha", "beta"):
-        path = paths[profile] = tmp_path / (profile + ".db")
-        db = SessionDB(db_path=path)
+        path = paths[profile] = tmp_path / profile
+        db = open_persistence(profile_scope(home=path), eager=True)
         try:
-            db.create_session("same-id", source="desktop")
-            db.append_message("same-id", "user", "First")
-            db.append_message("same-id", "assistant", profile + " final")
+            db.sessions.create(NewSession(session_id=SessionId("same-id"), source="desktop"))
+            db.messages.append("same-id", NewMessage(role="user", content="First"))
+            db.messages.append("same-id", NewMessage(role="assistant", content=profile + " final"))
         finally:
             db.close()
     monkeypatch.setattr(
         web_server_sessions,
         "_open_session_db_for_profile",
-        lambda profile, *, read_only: SessionDB(db_path=paths[profile], read_only=read_only),
+        lambda profile, *, read_only: open_persistence_reader(paths[profile]),
     )
     before = module.watermark("alpha", "same-id")
     assert module.committed_completion("alpha", "same-id", before, "alpha final") is None
-    db = SessionDB(db_path=paths["alpha"])
+    db = open_persistence(profile_scope(home=paths["alpha"]), eager=True)
     try:
-        db.append_message("same-id", "user", "Second")
-        db.append_message("same-id", "assistant", "alpha final")
+        db.messages.append("same-id", NewMessage(role="user", content="Second"))
+        db.messages.append("same-id", NewMessage(role="assistant", content="alpha final"))
     finally:
         db.close()
     committed = module.committed_completion("alpha", "same-id", before, "alpha final")

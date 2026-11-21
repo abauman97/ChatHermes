@@ -1095,20 +1095,30 @@ def scheduled(monkeypatch, tmp_path):
     class DB:
         def __init__(self, profile):
             self.profile = profile
+            self.sessions = self.messages = self.lineage = self
 
-        def list_cron_job_runs(self, job, limit, offset):
-            return history[self.profile][offset : offset + limit]
+        def list_cron_job_runs(self, job, window):
+            limit, offset = window.limit, window.offset
+            return [
+                types.SimpleNamespace(as_cron_row=lambda row=row: row)
+                for row in history[self.profile][offset : offset + limit]
+            ]
 
-        def get_session(self, run):
-            return next((row for row in history[self.profile] if row["id"] == run), None)
+        def get(self, run):
+            row = next((row for row in history[self.profile] if row["id"] == run), None)
+            return types.SimpleNamespace(**row, as_session_row=lambda: row) if row else None
 
         def get_messages(self, run):
             return messages.get((self.profile, run), [])
 
-        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
-            return conversations.get((self.profile, run), self.get_messages(run))
+        def read_conversation(self, run, request):
+            assert request.include_lineage
+            return [
+                types.SimpleNamespace(as_openai_message=lambda row=row: row)
+                for row in conversations.get((self.profile, run), self.get_messages(run))
+            ]
 
-        def resolve_resume_session_id(self, run):
+        def resolve_resume_target(self, run):
             return tips.get((self.profile, run), run)
 
         def close(self):
@@ -1571,7 +1581,7 @@ async def test_scheduled_distinct_failed_attempts_are_never_deduplicated(
                 "DB",
                 (),
                 {
-                    "list_cron_job_runs": lambda self, job, limit, offset: [],
+                    "sessions": types.SimpleNamespace(list_cron_job_runs=lambda job, window: []),
                     "close": lambda self: None,
                 },
             )()
@@ -1594,18 +1604,24 @@ async def test_scheduled_reads_complete_compressed_run_lineage(app, scheduled, m
     child = root + "_child"
 
     class DB:
-        def get_session(self, run):
+        def __init__(self):
+            self.sessions = self.lineage = self.messages = self
+
+        def get(self, run):
+            row = {"id": run, "source": "cron", "started_at": 100}
             return (
-                {"id": run, "source": "cron", "started_at": 100} if run in (root, child) else None
+                types.SimpleNamespace(**row, as_session_row=lambda: row)
+                if run in (root, child)
+                else None
             )
 
-        def resolve_resume_session_id(self, run):
+        def resolve_resume_target(self, run):
             assert run == root
             return child
 
-        def get_messages_as_conversation(self, run, include_ancestors, include_compacted):
-            assert run == child and include_ancestors and include_compacted
-            return [
+        def read_conversation(self, run, request):
+            assert run == child and request.include_lineage and request.view.value == "display"
+            rows = [
                 {"role": "system", "content": "hidden"},
                 {"role": "tool", "tool_name": "terminal", "content": "Earlier audit checks"},
                 {
@@ -1614,6 +1630,7 @@ async def test_scheduled_reads_complete_compressed_run_lineage(app, scheduled, m
                     "reasoning_content": "Audited dependencies",
                 },
             ]
+            return [types.SimpleNamespace(as_openai_message=lambda row=row: row) for row in rows]
 
         def close(self):
             pass
@@ -2715,7 +2732,7 @@ async def test_native_contract_is_pinned_read_only_and_has_no_plugin_websocket(a
         response = await client.get("/api/plugins/chathermes/chat/capabilities")
     assert response.status_code == 200
     body = response.json()
-    assert body["protocol"] == "hermes.native.2bd378ed"
+    assert body["protocol"] == "hermes.native.caafe538"
     assert body["reviewed_source"] == plugin._execution_viewer.PIN
     assert body["mode"] == "native-gateway"
     assert body["admission"] is True
@@ -2738,6 +2755,7 @@ async def test_native_contract_is_pinned_read_only_and_has_no_plugin_websocket(a
         "lossless_snapshot_replay": False,
     }
     assert all(not method.startswith("chat.") for method in body["operations"])
+    assert "session.events.since" in body["operations"]
 
 
 @run_async
@@ -2948,9 +2966,14 @@ def test_response_branch_ordinal_includes_hidden_prose_but_not_tools(monkeypatch
     ]
 
     class DB:
-        def get_resume_conversations(self, stored):
+        def __init__(self):
+            self.messages = self
+
+        def read_resume_conversations(self, stored):
             assert stored == "stored"
-            return [], rows
+            return SimpleNamespace(
+                display=[SimpleNamespace(as_openai_message=lambda row=row: row) for row in rows]
+            )
 
         def close(self):
             closed.append(True)
@@ -3568,7 +3591,8 @@ async def test_inbox_api_global_profile_pages_read_delete_and_host_boundary(app,
 
 def test_live_inbox_filters_delegated_sessions_and_uses_committed_time(app, monkeypatch, tmp_path):
     from hermes_cli import web_server_sessions
-    from hermes_state import SessionDB
+
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     path = tmp_path / "native.db"
     db = SessionDB(db_path=path)
@@ -3650,7 +3674,8 @@ async def test_transcript_route_preserves_real_desktop_ids_and_profile_isolation
 ):
     from hermes_cli import web_server_sessions
     from hermes_cli.web_routers import sessions
-    from hermes_state import SessionDB
+
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     monkeypatch.setattr(sessions, "_history_profile_home", lambda profile: tmp_path)
     path = tmp_path / "history.db"
@@ -3815,6 +3840,9 @@ async def test_automatic_remote_artifacts_probe_the_runtime_without_local_reads(
     seen = []
 
     class Backend:
+        def normalize(self, path):
+            return path
+
         def inspect_file(self, path):
             seen.append(("inspect", path))
             return "/remote/reports/report.txt", 100
@@ -3828,6 +3856,7 @@ async def test_automatic_remote_artifacts_probe_the_runtime_without_local_reads(
             yield b"HEAD must not stream the remote file"
 
     backend = Backend()
+    monkeypatch.setattr(files, "_is_host_file", lambda path, profile: False)
     monkeypatch.setattr(
         files, "_fs_backend", lambda profile: backend if profile == "remote" else None
     )

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { test, expect } from "./fixtures";
 import { api, runtime } from "./helpers";
 import { mockserverURL } from "../docker/compose.mjs";
@@ -19,7 +20,7 @@ test("memory context stays out of rendered authenticated history and resumed sna
   ];
   const answer = [{ type: "text", text: `Answer\n${note}\n${ordinary}\n${memory}` }];
   runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,user,answer=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Memory regression upload'); pathlib.Path(path+'.private.pdf').write_text('Synthetic memory artifact'); db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api',cwd=str(p.parent)); db.append_message(sid,'user',json.loads(user)); db.append_message(sid,'assistant',json.loads(answer)); db.close(); print('true')",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,user,answer=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Memory regression upload'); pathlib.Path(path+'.private.pdf').write_text('Synthetic memory artifact'); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api',cwd=str(p.parent)); db.append_message(sid,'user',json.loads(user)); db.append_message(sid,'assistant',json.loads(answer)); db.close(); print('true')",
     identity,
     path,
     JSON.stringify(content),
@@ -71,7 +72,7 @@ test("memory context stays out of rendered authenticated history and resumed sna
   }
   // Inspect only this synthetic fixture's stored payloads, not a user profile.
   const stored = runtime(
-    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; db=_open_session_db_for_profile('default',read_only=True); rows=db._read_all('SELECT content FROM messages WHERE session_id = ? ORDER BY id',(sys.argv[1],)); print(json.dumps([db._decode_content(r[0]) for r in rows])); db.close()",
+    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; db=FixtureStore(store=_open_session_db_for_profile('default',read_only=True)); rows=db._read_all('SELECT content FROM messages WHERE session_id = ? ORDER BY id',(sys.argv[1],)); print(json.dumps([db._decode_content(r[0]) for r in rows])); db.close()",
     identity,
   );
   expect(stored).toEqual([content, answer]);
@@ -124,16 +125,35 @@ test("native deltas omit split blocks; client projects split notes and raw termi
   const deltas: string[] = [];
   const completions: string[] = [];
   const snapshots: string[] = [];
+  const wire: { socket: number; type: string; text: string; seq?: number }[] = [];
+  let sockets = 0;
   page.on("websocket", (socket) => {
+    const source = sockets++;
     socket.on("framereceived", ({ payload }) => {
       for (const line of String(payload).split("\n").filter(Boolean)) {
         const frame = JSON.parse(line);
-        if (frame.method === "event" && frame.params.type === "message.delta")
+        if (frame.method === "event" && frame.params.type === "message.delta") {
           deltas.push(frame.params.payload.text || "");
-        if (frame.method === "event" && frame.params.type === "message.complete")
+          wire.push({
+            socket: source,
+            type: "delta",
+            text: frame.params.payload.text || "",
+            seq: frame.params.seq,
+          });
+        }
+        if (frame.method === "event" && frame.params.type === "message.complete") {
           completions.push(frame.params.payload.text || "");
-        if (typeof frame.result?.inflight?.assistant === "string")
+          wire.push({
+            socket: source,
+            type: "complete",
+            text: frame.params.payload.text || "",
+            seq: frame.params.seq,
+          });
+        }
+        if (typeof frame.result?.inflight?.assistant === "string") {
           snapshots.push(frame.result.inflight.assistant);
+          wire.push({ socket: source, type: "snapshot", text: frame.result.inflight.assistant });
+        }
       }
     });
   });
@@ -156,8 +176,13 @@ test("native deltas omit split blocks; client projects split notes and raw termi
         characterData: true,
       });
     });
-  const assertSamples = async () => {
+  const assertSamples = async (phase: string) => {
     const samples = await page.evaluate(() => (window as any).memorySamples as string[]);
+    // Retain only synthetic assistant text, never raw frames, tickets or params.
+    await writeFile(
+      info.outputPath("synthetic-memory-observations.json"),
+      JSON.stringify({ phase, samples, wire }, null, 2),
+    );
     expect(samples.length).toBeGreaterThan(0);
     for (const text of samples) {
       expect(text).not.toContain("STREAM_PRIVATE");
@@ -176,7 +201,7 @@ test("native deltas omit split blocks; client projects split notes and raw termi
   expect(deltas.join("")).not.toContain("STREAM_PRIVATE");
   expect(deltas.join("")).not.toContain("<memory-");
   expect(deltas.some((text) => text.includes("[System") && !text.includes(note))).toBe(true);
-  await assertSamples();
+  await assertSamples("before-reload");
   await page.screenshot({ path: info.outputPath("memory-stream-active.png") });
   await page.reload();
   await expect(plugin).toBeVisible();
@@ -187,12 +212,31 @@ test("native deltas omit split blocks; client projects split notes and raw termi
     body: JSON.stringify({ deltas, completions, snapshots }, null, 2),
     contentType: "application/json",
   });
-  expect(completions.join("")).toContain("STREAM_PRIVATE");
-  expect(completions.join("")).toContain(note);
-  await assertSamples();
+  // Completion can occur while reload disconnects the first viewer. Every
+  // captured payload must be safe, but that turn need not emit a live terminal
+  // event to this socket. Exercise terminal delivery on a second, connected turn.
+  expect(completions.join("")).not.toContain("STREAM_PRIVATE");
+  await assertSamples("after-reload");
   await expect(plugin.locator(".message.user")).toContainText(ordinary);
   await expect(plugin).not.toContainText("STREAM_PRIVATE");
   await expect(plugin).not.toContainText("The following is recalled");
+  expect(deltas.join("")).not.toContain("STREAM_PRIVATE");
+  expect(deltas.join("")).not.toContain("<memory-");
+  completions.length = 0;
+  await plugin
+    .getByRole("textbox", { name: "Message Hermes" })
+    .fill(`[workflow-memory] ${randomUUID()} ${ordinary}`);
+  await plugin.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect.poll(() => completions.join("")).toContain("Memory stream complete.");
+  // The pinned native terminal payload omits the fenced block but retains the
+  // producer note. Raw storage/model checks remain separate from presentation.
+  expect(completions.join("")).not.toContain("STREAM_PRIVATE");
+  expect(completions.join("")).toContain(note);
+  await expect(plugin.locator(".message.assistant").last()).toContainText(
+    "Memory stream complete.",
+  );
+  await expect(plugin.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0);
+  await assertSamples("connected-terminal");
   expect(deltas.join("")).not.toContain("STREAM_PRIVATE");
   expect(deltas.join("")).not.toContain("<memory-");
   await page.screenshot({ path: info.outputPath("memory-stream-complete.png") });
@@ -218,7 +262,7 @@ expanded=asyncio.run(preprocess_context_references_async(
     'Question @url:https://example.invalid/context\\nAttached file retained.txt: '+path,
     cwd=p.parent,context_length=100000,plugins=False,
     url_fetcher=lambda _: 'MEDIA:https://attacker.invalid/expanded.png'))
-db=_open_session_db_for_profile('default',read_only=False)
+db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False))
 db.create_session(sid,'api',cwd=str(p.parent))
 db.append_message(sid,'user',[{'type':'text','text':expanded.message}])
 def assistant(text, **kw):
@@ -314,7 +358,7 @@ sid,path=sys.argv[1:]
 p=pathlib.Path(path)
 p.parent.mkdir(parents=True,exist_ok=True)
 p.write_text('Synthetic public delivery')
-db=_open_session_db_for_profile('default',read_only=False)
+db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False))
 db.create_session(sid,'api',cwd=str(p.parent))
 for kind in ('reference','image','memory','forward'):
     db.append_message(sid,'user','Review '+kind)
@@ -397,7 +441,7 @@ sid=sys.argv[1]
 p=pathlib.Path('/opt/data/workflow-tests')/sid/'public.txt'
 p.parent.mkdir(parents=True,exist_ok=True)
 p.write_text('Public prefix delivery')
-db=_open_session_db_for_profile('default',read_only=False)
+db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False))
 db.create_session(sid,'api')
 block=build_memory_context_block('PREFIX_PRIVATE\\nMEDIA:https://attacker.invalid/private.png')
 cases=[('Answer '+prefix, block) for prefix in ('[','<','<memory-con','[System note:')]
@@ -474,7 +518,7 @@ sid,path,sources=sys.argv[1:]
 p=pathlib.Path(path)
 p.parent.mkdir(parents=True,exist_ok=True)
 p.write_text('Original public attachment')
-db=_open_session_db_for_profile('default',read_only=False)
+db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False))
 db.create_session(sid,'api',cwd=str(p.parent))
 for i,source in enumerate(json.loads(sources)):
     db.append_message(sid,'user','Original authority case '+str(i))

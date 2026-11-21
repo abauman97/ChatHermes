@@ -29,6 +29,14 @@ test("branching an earlier tool response preserves attachments and parent histor
   await expect(plugin.locator(".message.assistant")).toHaveText(
     "Tool completed: workflow-tool-ok.",
   );
+  // Expanded attachment context differs from the optimistic prompt. Until a
+  // durable receipt is available, matching only its visible prefix is unsafe.
+  await expect(plugin.getByRole("button", { name: "Stop response", exact: true })).toHaveCount(0);
+  await expect(branches).toHaveCount(0);
+  await page.reload();
+  await expect(plugin.locator(".message.assistant")).toHaveText(
+    "Tool completed: workflow-tool-ok.",
+  );
   await expect(branches).toBeEnabled();
   const parent = sessionFromUrl(page.url());
   expect(parent).toBeTruthy();

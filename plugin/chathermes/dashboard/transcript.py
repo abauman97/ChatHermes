@@ -15,7 +15,7 @@ def _revision(db, sid):
     # Hermes owns mutation detection as well as history selection. This stamp
     # fences offsets; it never participates in row selection or ordering.
     return hashlib.sha256(
-        json.dumps(db.conversation_revision(sid, include_ancestors=True)).encode()
+        json.dumps(db.messages.conversation_revision(sid, include_lineage=True).as_tuple()).encode()
     ).hexdigest()
 
 
@@ -23,7 +23,7 @@ def _skill_display(content):
     # Desktop's REST projection omits the skill projection that native history
     # applies. Use Hermes's own display parser; never return model scaffolding
     # as a user bubble, including after reload or command-triggered hydration.
-    from agent.skill_commands import describe_skill_invocation
+    from session_rules.turns import describe_skill_invocation
 
     if isinstance(content, str):
         return describe_skill_invocation(content, separator=" ") or content
@@ -41,29 +41,36 @@ def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
     from hermes_cli.web_routers.sessions import _history_profile_home, _project_for_display
 
     owner = profile or "default"
-    session = db.get_session(session_id)
-    if not session or session.get("profile_name") not in (None, owner):
+    session = db.sessions.get(session_id)
+    if not session or session.profile_name not in (None, owner):
         raise HTTPException(404, "Session not found")
-    sid = db.resolve_resume_session_id(session_id)
-    session = db.get_session(sid)
-    if not session or session.get("profile_name") not in (None, owner):
+    sid = db.lineage.resolve_resume_target(session_id)
+    session = db.sessions.get(sid)
+    if not session or session.profile_name not in (None, owner):
         raise HTTPException(404, "Session not found")
     if any(
-        db.get_session(segment).get("profile_name") not in (None, owner)
-        for segment in db._resume_lineage_ids(sid)
+        (member := db.sessions.get(segment)) is None or member.profile_name not in (None, owner)
+        for segment in db.lineage.resume_lineage_ids(sid)
     ):
         raise HTTPException(404, "Session not found")
     stamp = _revision(db, sid)
     if revision and revision != stamp:
         raise HTTPException(409, "Transcript changed; refresh before loading earlier messages")
-    rows = db.get_messages(
-        sid,
-        limit=limit + 1,
-        offset=offset,
-        latest=True,
-        include_compacted=True,
-        include_ancestors=True,
-    )
+    from persistence.conversation.messages import TranscriptRead, TranscriptView
+
+    rows = [
+        row.as_wire_row()
+        for row in db.messages.read_transcript(
+            sid,
+            TranscriptRead(
+                view=TranscriptView.DISPLAY,
+                limit=limit + 1,
+                offset=offset,
+                latest=True,
+                include_lineage=True,
+            ),
+        )
+    ]
     has_more = len(rows) > limit
     if has_more:
         rows.pop(0)
@@ -118,7 +125,7 @@ def read_page(db, session_id, profile, limit=120, offset=0, revision=None):
             clean["content"] = ""
         result.append(clean)
     after = _revision(db, sid)
-    if after != stamp or db.resolve_resume_session_id(session_id) != sid:
+    if after != stamp or db.lineage.resolve_resume_target(session_id) != sid:
         raise HTTPException(409, "Transcript changed during read; refresh and retry")
     return {
         "session_id": sid,
@@ -145,24 +152,33 @@ def read_inline_image(profile, session_id, message_id, part_index):
 
     db = _open_session_db_for_profile(profile or None, read_only=True)
     try:
-        session = db.get_session(session_id)
-        if not session or session.get("profile_name") not in (None, profile or "default"):
+        session = db.sessions.get(session_id)
+        if not session or session.profile_name not in (None, profile or "default"):
             raise ValueError("Session not found")
-        sid = db.resolve_resume_session_id(session_id)
-        lineage = db._resume_lineage_ids(sid)
+        sid = db.lineage.resolve_resume_target(session_id)
+        lineage = db.lineage.resume_lineage_ids(sid)
         if any(
-            db.get_session(segment).get("profile_name") not in (None, profile or "default")
+            (member := db.sessions.get(segment)) is None
+            or member.profile_name not in (None, profile or "default")
             for segment in lineage
         ):
             raise ValueError("Session not found")
-        slots = ",".join("?" for _ in lineage)
-        raw = db._read_one(
-            f"SELECT * FROM messages WHERE id = ? AND session_id IN ({slots}) AND (active = 1 OR compacted = 1)",
-            (message_id, *lineage),
-        )
-        if raw is None:
+        from dataclasses import asdict
+
+        from persistence import RowVisibility
+
+        state = db.messages.message_storage_state(int(message_id))
+        if (
+            state is None
+            or state.session_id not in lineage
+            or state.visibility is RowVisibility.REWOUND
+        ):
             raise ValueError("Image not found")
-        row = db._row_to_message_dict(raw, warn_context="inline image", summary_flag=True)
+        around = db.messages.read_around(state.session_id, int(message_id), window=0)
+        if len(around.window) != 1 or around.window[0].visibility is RowVisibility.REWOUND:
+            raise ValueError("Image not found")
+        row = asdict(around.window[0])
+        row["_compressed_summary"] = row.pop("compressed_summary")
         display = _project_for_display(
             [row], home=_history_profile_home(profile or None), inline_images=True
         )[0]

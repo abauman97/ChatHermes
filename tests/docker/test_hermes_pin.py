@@ -23,7 +23,7 @@ PIN = json.loads(Path(__file__).with_name("hermes-pin.json").read_text())
 def test_fixture_and_capabilities_use_the_reviewed_image():
     from chathermes.dashboard.execution_viewer import PIN as reviewed
 
-    assert PIN["commit"] == reviewed == "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
+    assert PIN["commit"] == reviewed == "caafe5389ae585ef77387a962aee05b1bcf17029"
     assert "FROM " + PIN["image"] + "\n" in (ROOT / "tests/docker/Dockerfile").read_text()
     assert "@sha256:" in PIN["image"]
 

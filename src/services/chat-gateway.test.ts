@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { chatCapabilities, probeChatGateway } from "./chat-gateway";
 const contract = {
-  protocol: "hermes.native.2bd378ed",
+  protocol: "hermes.native.caafe538",
   mode: "native-gateway",
   admission: true,
-  reviewed_source: "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19",
+  reviewed_source: "caafe5389ae585ef77387a962aee05b1bcf17029",
   operations: ["gateway.ping"],
   blockers: ["snapshot_replay_boundary"],
   guarantees: {

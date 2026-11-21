@@ -32,7 +32,7 @@ def registry(monkeypatch, tmp_path):
     monkeypatch.setattr(
         server, "_session_pending_kind", lambda sid: "approval" if sid == "wait" else ""
     )
-    from hermes_state import SessionDB
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     db = SessionDB(db_path=tmp_path / "state.db")
 
@@ -186,7 +186,7 @@ def stale_sibling(db):
 def test_verified_lineage_remains_complete_when_later_ledger_check_fails(
     registry, monkeypatch, runtime, running, status
 ):
-    import hermes_state_local
+    from persistence.sqlite.conversation._store import local as hermes_state_local
 
     server, home = registry
     record = {"profile_home": home, "session_key": "tip", "running": running}
@@ -210,7 +210,7 @@ def test_verified_lineage_remains_complete_when_later_ledger_check_fails(
 
 
 def owner_receipt(db, owner, lineage):
-    from hermes_state_local import POLICY_PREFIX
+    from persistence.sqlite.conversation._store.local import POLICY_PREFIX
 
     db._execute_write(
         lambda conn: conn.execute(
@@ -223,7 +223,7 @@ def owner_receipt(db, owner, lineage):
 @pytest.mark.parametrize("key", ["root", "tip"])
 @pytest.mark.parametrize("target", ["root", "canonical-owner"])
 def test_stale_sibling_preserves_root_pending_work_in_own_profile(registry, key, target):
-    from hermes_state_runtime import admit_session_input, begin_runtime_epoch
+    from tests.fixtures.runtime_authority import admit_session_input, begin_runtime_epoch
 
     server, home = registry
     record = {"profile_home": home, "session_key": key, "running": False}
@@ -286,8 +286,9 @@ def test_unrelated_children_cannot_alias_compressed_parent(registry, kind):
 @pytest.mark.parametrize("key", ["root", "tip", "stale", "tool"])
 @pytest.mark.parametrize("receipt", ["missing", "malformed", "unrelated", "valid"])
 def test_inherited_chat_id_requires_receipt_membership(registry, key, receipt):
-    from hermes_state_local import POLICY_PREFIX
-    from hermes_state_runtime import admit_session_input, begin_runtime_epoch
+    from persistence.sqlite.conversation._store.local import POLICY_PREFIX
+
+    from tests.fixtures.runtime_authority import admit_session_input, begin_runtime_epoch
 
     server, home = registry
     record = {"profile_home": home, "session_key": key, "running": False}
@@ -326,7 +327,7 @@ def test_inherited_chat_id_requires_receipt_membership(registry, key, receipt):
 @pytest.mark.parametrize("native", ["working", "waiting", "idle", "starting"])
 @pytest.mark.parametrize("ledger", ["pending", "open-error", "read-error"])
 def test_ledger_uncertainty_preserves_confirmed_native_busy(registry, monkeypatch, native, ledger):
-    from hermes_state_runtime import admit_session_input, begin_runtime_epoch
+    from tests.fixtures.runtime_authority import admit_session_input, begin_runtime_epoch
 
     server, home = registry
     runtime = "wait" if native == "waiting" else "runtime"
@@ -356,7 +357,7 @@ def test_ledger_uncertainty_preserves_confirmed_native_busy(registry, monkeypatc
                 raise OSError("private database path")
                 yield
 
-            monkeypatch.setattr(db, "_read_ctx", broken_read)
+            monkeypatch.setattr(db._holder, "_read_ctx", broken_read)
     if ledger == "open-error":
 
         @contextmanager
@@ -374,8 +375,9 @@ def test_ledger_uncertainty_preserves_confirmed_native_busy(registry, monkeypatc
 
 def test_duplicate_lineages_keep_profile_ledgers_isolated(registry, monkeypatch, tmp_path):
     from hermes_cli import web_server_profiles
-    from hermes_state import SessionDB
-    from hermes_state_runtime import admit_session_input, begin_runtime_epoch
+
+    from tests.fixtures.runtime_authority import admit_session_input, begin_runtime_epoch
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     server, home = registry
     beta_home = home.parent / "beta"
@@ -467,8 +469,8 @@ def test_cyclic_lineage_fails_closed_without_partial_aliases_or_open_transaction
 def test_rotation_and_admission_during_read_use_one_database_snapshot(
     registry, monkeypatch, target
 ):
-    from hermes_state import SessionDB
-    from hermes_state_runtime import admit_session_input, begin_runtime_epoch
+    from tests.fixtures.runtime_authority import admit_session_input, begin_runtime_epoch
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     server, home = registry
     record = {"profile_home": home, "session_key": "tip", "running": False}
@@ -517,10 +519,13 @@ def test_rotation_and_admission_during_read_use_one_database_snapshot(
             def __init__(self, conn):
                 self.conn = conn
 
+            def __getattr__(self, name):
+                return getattr(self.conn, name)
+
             def execute(self, sql, params=()):
                 nonlocal rotated
                 result = self.conn.execute(sql, params)
-                if not rotated and sql.startswith("SELECT parent_session_id"):
+                if not rotated and sql.startswith("SELECT s.*"):
                     rotated = True
                     # WAL permits a commit inside this read; rollback-journal
                     # mode queues the writer until the snapshot is released.
@@ -533,13 +538,22 @@ def test_rotation_and_admission_during_read_use_one_database_snapshot(
         @contextmanager
         def racing_read(**kwargs):
             with read_ctx(**kwargs) as conn:
-                yield RacingConnection(conn)
+                yield RacingConnection(conn) if conn is not None else None
+            if rotated and not db._wal_active and threading.current_thread() is not thread:
+                assert finished.wait(10)
 
-        monkeypatch.setattr(db, "_read_ctx", racing_read)
+        monkeypatch.setattr(db._holder, "_read_ctx", racing_read)
         first = activity.snapshot("alpha")["sessions"][0]
         assert rotated
-        assert first["session_keys"] == ["root", "tip"]
-        assert first["status"] == "idle"
+        if db._wal_active:
+            assert first["session_keys"] == ["root", "tip"]
+            assert first["status"] == "idle"
+        else:
+            # The public storage snapshot deliberately does not pin rollback
+            # readers. A landed write invalidates the combined read instead.
+            assert first["session_keys"] == ["tip"]
+            assert first["session_keys_complete"] is False
+            assert first["status"] == "unknown"
         thread.join(10)
         assert not thread.is_alive()
         assert not errors
@@ -559,7 +573,8 @@ def test_pinned_submit_and_actual_owner_relay_never_attest_legacy_idle(
     # discovery and the socket dial are replaced by its in-process owner client.
     from gateway.session_contract import SessionRef
     from gateway.session_settlement_recovery import commit_and_publish
-    from hermes_state_runtime import (
+
+    from tests.fixtures.runtime_authority import (
         admit_session_input,
         begin_runtime_epoch,
         claim_session_input,
@@ -571,6 +586,20 @@ def test_pinned_submit_and_actual_owner_relay_never_attest_legacy_idle(
         Path(__file__).resolve().parents[1]
         / ".hermes-source/tests/tui_gateway/test_legacy_submit_forwards_to_owner.py"
     )
+    import tests
+    import tests.fixtures
+
+    monkeypatch.setattr(tests, "__path__", [*tests.__path__, str(path.parents[1])])
+    monkeypatch.setattr(
+        tests.fixtures, "__path__", [*tests.fixtures.__path__, str(path.parents[1] / "fixtures")]
+    )
+
+    @contextmanager
+    def persistence_for(handle):
+        yield handle.store if hasattr(handle, "store") else handle
+
+    monkeypatch.setattr(server, "_persistence_for", persistence_for)
+
     waiting_spec = importlib.util.spec_from_file_location(
         "tests.waiting", path.parents[1] / "waiting.py"
     )
@@ -583,12 +612,12 @@ def test_pinned_submit_and_actual_owner_relay_never_attest_legacy_idle(
     pinned = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(pinned)
     with server._session_db({}) as db:
-        sid, key, turns, emitted = pinned._legacy(monkeypatch, db)
+        sid, key, turns, emitted = pinned._legacy(monkeypatch, db.store)
         record = server._sessions[sid]
         record["profile_home"] = home
         db.create_session(key, source="test")
         epoch = begin_runtime_epoch(db, instance_id="gateway")
-        bot = admit_session_input(
+        bot, _ = admit_session_input(
             db,
             epoch=epoch,
             principal_id="bot",
@@ -598,7 +627,8 @@ def test_pinned_submit_and_actual_owner_relay_never_attest_legacy_idle(
         )
         claim = claim_session_input(db, epoch=epoch, session_id=key)
         assert isinstance(claim, dict)
-        authority = pinned._owner(monkeypatch, db, key, epoch)
+        authority = pinned._owner(monkeypatch, db.store, key, epoch)
+
         reply = server.handle_request(
             {
                 "id": "p",
@@ -628,18 +658,20 @@ def test_pinned_submit_and_actual_owner_relay_never_attest_legacy_idle(
         pinned.wait_until(lambda: any(e == "message.complete" for e, *_ in emitted), timeout=10)
         assert activity.snapshot("alpha")["sessions"][0]["status"] == "idle"
         assert "private" not in str(activity.snapshot("alpha"))
+        authority.persistence.close()
 
 
 def test_lost_owner_relay_and_unknown_recovery_do_not_claim_idle(registry):
     import asyncio
 
-    from hermes_state_runtime import (
+    from tui_gateway.owner_forward import _Relay
+
+    from tests.fixtures.runtime_authority import (
         admit_session_input,
         begin_runtime_epoch,
         claim_session_input,
         recover_session_inputs,
     )
-    from tui_gateway.owner_forward import _Relay
 
     server, home = registry
     record = {"profile_home": home, "session_key": "stored", "running": False}
@@ -673,3 +705,51 @@ def test_lost_owner_relay_and_unknown_recovery_do_not_claim_idle(registry):
         epoch = begin_runtime_epoch(db, instance_id="restarted-owner")
         recover_session_inputs(db, epoch=epoch)
         assert activity.snapshot("alpha")["sessions"][0]["status"] == "unknown"
+
+
+@pytest.mark.parametrize("running", [False, True])
+def test_unpinned_snapshot_change_discards_aliases_and_never_attests_idle(
+    registry, monkeypatch, running
+):
+    server, home = registry
+    record = {"profile_home": home, "session_key": "tip", "running": running}
+    server._sessions["runtime"] = record
+    with server._session_db(record) as db:
+        stale_sibling(db)
+        checks = iter([True, False])
+
+        @contextmanager
+        def changed_snapshot():
+            yield lambda: next(checks)
+
+        monkeypatch.setattr(db.messages, "read_snapshot", changed_snapshot)
+        result = activity.snapshot("alpha")["sessions"][0]
+        assert result["session_keys"] == ["tip"]
+        assert result["session_keys_complete"] is False
+        assert result["status"] == ("working" if running else "unknown")
+
+
+def test_long_straight_activity_lineage_avoids_repeated_forward_scans(registry, monkeypatch):
+    server, home = registry
+    with server._session_db({}) as db:
+        db.create_session("segment-0", source="desktop")
+        for index in range(1, 16):
+            db.publish_compression_child(
+                parent_session_id=f"segment-{index - 1}",
+                child_session_id=f"segment-{index}",
+                source="desktop",
+                messages=[{"role": "user", "content": "Synthetic summary"}],
+                require_compression_lease=False,
+            )
+        chain = db.lineage.chain
+        scans = []
+
+        def measured(key):
+            result = chain(key)
+            scans.append(len(result))
+            return result
+
+        monkeypatch.setattr(db.lineage, "chain", measured)
+        aliases = activity._compression_aliases(db, "segment-15")
+        assert aliases == {f"segment-{index}" for index in range(16)}
+        assert sum(scans) <= 32

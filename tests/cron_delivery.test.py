@@ -478,7 +478,7 @@ def test_delivery_rejects_job_owned_only_by_another_profile(runtime, monkeypatch
 
 
 def _cron_session(home, session_id, content, started_at=None):
-    from hermes_state import SessionDB
+    from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
     db = SessionDB(db_path=home / "state.db")
     try:
@@ -627,14 +627,21 @@ def test_deep_link_pages_session_history_and_closes_reader(runtime, monkeypatch)
     closed = []
 
     class SessionDB:
-        def list_cron_job_runs(self, job_id, limit, offset):
+        def __init__(self):
+            self.sessions = self
+
+        def list_cron_job_runs(self, job_id, window):
+            limit, offset = window.limit, window.offset
             assert job_id == "audit" and limit == 500
             offsets.append(offset)
-            return (
+            from types import SimpleNamespace
+
+            rows = (
                 [{"id": "cron_audit_20261018_102136", "started_at": start - 100}] * 500
                 if offset == 0
                 else [{"id": session_id, "started_at": start + 1}]
             )
+            return [SimpleNamespace(as_cron_row=lambda row=row: row) for row in rows]
 
         def close(self):
             closed.append(True)

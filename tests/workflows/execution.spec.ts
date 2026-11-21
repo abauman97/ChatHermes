@@ -77,6 +77,7 @@ test("thinking streams through Hermes and remains inspectable after completion",
     .locator(".activity")
     .filter({ has: page.locator("summary", { hasText: /Thinking|Thought/ }) });
   await expect(thought).toBeVisible();
+  await expect(thought).toHaveAttribute("open", "");
   await expect(page.locator(".message.assistant")).toContainText("Stream complete.");
   await expect(thought).not.toHaveAttribute("open", "");
   // Completed rows live inside the collapsed work group; inspect that group first.

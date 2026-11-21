@@ -128,7 +128,7 @@ def check_profile_session(profile, stored):
     with _config_profile_scope(profile):
         home = Path(get_hermes_home()).resolve()
         with server._profile_db({"profile": profile}) as db:
-            if db is not None and db.get_session(stored) is not None:
+            if db is not None and db.sessions.get(stored) is not None:
                 return
         with server._sessions_lock:
             for record in server._sessions.values():

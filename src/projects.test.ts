@@ -146,6 +146,35 @@ function setup(
   return fetch;
 }
 describe("authoritative gateway Projects", () => {
+  it("uses the current native continuation for Project scope without changing the root route", async () => {
+    setup();
+    history.replaceState({}, "", "/chathermes#/chat/compression-root?profile=alpha");
+    const wrapper = mount(App);
+    try {
+      await flushPromises();
+      const snapshot = {
+        profile: "beta",
+        session: "compression-root",
+        storedSession: "project_s1",
+        info: {},
+        generation: 1,
+      };
+      nativeOwner.settings.value = snapshot;
+      await flushPromises();
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+      nativeOwner.settings.value = { ...snapshot, profile: "alpha", session: "other-root" };
+      await flushPromises();
+      expect(wrapper.find(".header-project-subtitle").exists()).toBe(false);
+      nativeOwner.settings.value = { ...snapshot, profile: "alpha" };
+      await flushPromises();
+      expect(wrapper.get(".header-project-subtitle").text()).toBe("Project A");
+      expect(wrapper.findComponent(SessionSidebar).props("selected")).toBe("project_s1");
+      expect(wrapper.findComponent(SessionSidebar).text()).toContain("Native worktree chat");
+      expect(routeSession()).toBe("compression-root");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("keeps project context on Home across remount and resets repeated New chat without creation", async () => {
     setup();
     const create = vi.spyOn(api, "projectCreate");

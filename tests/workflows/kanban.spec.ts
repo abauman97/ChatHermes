@@ -306,7 +306,7 @@ board, title, sid = sys.argv[1:]
 with connect_closing(board=board) as conn:
     task = kb.create_task(conn, title=title, board=board)
     kb.complete_task(conn, task, summary='Finished worker task', metadata={'worker_session_id': sid})
-db = _open_session_db_for_profile('beta', read_only=False)
+db = FixtureStore(store=_open_session_db_for_profile('beta', read_only=False))
 db.create_session(sid, source='kanban')
 db.set_session_title(sid, title)
 identity = db.append_message(sid, 'assistant', 'Worker completion')

@@ -46,6 +46,7 @@ export function useNativeSession(
   const settings = ref<{
     profile: string;
     session: string;
+    storedSession?: string;
     info: SessionLiveInfo;
     generation: number;
   }>();
@@ -331,7 +332,15 @@ export function useNativeSession(
   }
   function restore(value: NativeSnapshot, current: number) {
     if (current === generation && selected && s)
-      settings.value = { profile: p, session: s, info: value.info, generation: current };
+      settings.value = {
+        profile: p,
+        session: s,
+        // Cold resume uses session_key; warm resume can use stored_session_id.
+        // Keep the native identity without changing info's publication state.
+        storedSession: value.stored_session_id || value.session_key || undefined,
+        info: value.info,
+        generation: current,
+      };
     recovering = true;
     omittedRecovery = value.messages_omitted === true;
     incompleteRecovery = !value.recovery.complete;

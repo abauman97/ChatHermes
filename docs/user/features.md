@@ -14,7 +14,7 @@ _Attach a file before sending. Remove it with the × beside its name if you chan
 
 Saved chats open at their latest messages. Scroll toward the top to load older history, or use **Show earlier messages**. Earlier messages remain available after context compaction and session rotation; **Context compacted** dividers mark persisted compression boundaries. Internal summaries and rewound messages stay hidden. Loading older messages preserves your reading position.
 
-Thinking and tool disclosures show the activity Hermes provides. Details stay collapsed by default, even while active. Expand a disclosure to inspect streaming or completed work. Approvals and clarification requests appear in the conversation; respond there to continue.
+Thinking and tool disclosures show the activity Hermes provides. Active details expand to show arriving data; untouched completed details collapse and remain available to inspect. Your explicit disclosure choices persist through completion. Approvals and clarification requests appear in the conversation; respond there to continue.
 
 Use **Copy response** below a completed reply to copy its text. **Branch in new chat** starts a separate conversation containing the history through that reply, preserving its profile and Project workspace. Branching is available when the chat is ready.
 

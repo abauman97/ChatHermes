@@ -267,7 +267,7 @@ export function fileUrl(file: Artifact, profile = "", download = false): string 
 // Block tokens keep backtick/tilde fences (including incomplete fences),
 // indented code, blockquotes and lists out of the delivery channel.
 const deliveryMarkdown = new MarkdownIt({ html: true });
-trackBlockSources(deliveryMarkdown);
+trackBlockSources(deliveryMarkdown, { inlineCodeOnly: true });
 const definitionEntry = deliveryMarkdown.block.ruler.__rules__.find(
   (rule) => rule.name === "reference",
 )!;
@@ -381,8 +381,11 @@ export function prepareArtifactSource(
   referenceEnd = text.length,
 ) {
   const originalLines = text.split("\n");
-  const hidden = memoryContextRanges(text, pending, boundaries);
-  const tokens = boundaryTokens(deliveryMarkdown, text, boundaries);
+  const initialEnv: { references?: Record<string, unknown> } = {};
+  const tokens = boundaryTokens(deliveryMarkdown, text, boundaries, initialEnv);
+  // Both classifiers need the same original Markdown quotation boundaries.
+  // Reuse their code spans instead of allocating another full token tree.
+  const hidden = memoryContextRanges(text, pending, boundaries, tokens);
   const env = {};
   const literalLines = new Set<number>();
   const quotedTags: Range[] = [];
@@ -469,7 +472,10 @@ export function prepareArtifactSource(
   });
   // Parse identical bytes again with definition eligibility, never whitespace
   // substitutes that could turn a paragraph continuation into a definition.
-  boundaryTokens(deliveryMarkdown, text, boundaries, env);
+  // Without actual definitions the first parse established an empty authority
+  // map. Only sources with definitions need a second eligibility-filtered parse.
+  if (Object.keys(initialEnv.references ?? {}).length)
+    boundaryTokens(deliveryMarkdown, text, boundaries, env);
   return { hidden, tokens, untrustedLines, env };
 }
 

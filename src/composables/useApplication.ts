@@ -217,13 +217,21 @@ export function useApplication() {
     profileGeneration: () => profileGeneration,
     refreshActivity: activity.refresh,
   });
+  const sidebarSession = computed(() => {
+    const current = native.settings.value;
+    // A root route can resume at a compression tip. Join the authoritative
+    // Project tree with that stored identity, only for this selected scope.
+    return current?.profile === profile.value && current.session === session.value
+      ? current.info?.stored_session_id || current.storedSession || session.value
+      : session.value;
+  });
   const contextProject = computed(() => {
     if (session.value)
       return (
         projects.value.find(
           (project) =>
-            project.sessionIds?.includes(session.value) ||
-            projectSessions(project).some((row) => row.id === session.value),
+            project.sessionIds?.includes(sidebarSession.value) ||
+            projectSessions(project).some((row) => row.id === sidebarSession.value),
         )?.id || ""
       );
     return route.name === "home"
@@ -1119,6 +1127,7 @@ export function useApplication() {
   return {
     profile,
     session,
+    sidebarSession,
     sessions,
     projects,
     selectedProject,

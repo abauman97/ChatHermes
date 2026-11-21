@@ -15,6 +15,9 @@ const sockets: Socket[] = [];
 const frames: any[] = [];
 let snapshot: any;
 let prepare: any;
+let replay: any;
+let replayBefore: any;
+let replayReads = 0;
 let beforeReply: ((socket: Socket, frame: any) => void) | undefined;
 class Socket {
   static OPEN = 1;
@@ -48,11 +51,15 @@ class Socket {
           ? snapshot
           : frame.method === "session.activate"
             ? snapshot.confirmed || { ...snapshot, running: false, queued: null }
-            : frame.method === "config.get"
-              ? { value: prepare.confirmedEffort ?? prepare.reasoning_effort }
-              : frame.method === "file.attach"
-                ? { attached: true, ref_text: "@file note.txt" }
-                : { status: "streaming" };
+            : frame.method === "session.events.since"
+              ? ++replayReads === 1
+                ? (replayBefore ?? replay)
+                : replay
+              : frame.method === "config.get"
+                ? { value: prepare.confirmedEffort ?? prepare.reasoning_effort }
+                : frame.method === "file.attach"
+                  ? { attached: true, ref_text: "@file note.txt" }
+                  : { status: "streaming" };
     queueMicrotask(() => {
       beforeReply?.(this, frame);
       this.receive({ jsonrpc: "2.0", id: frame.id, result });
@@ -63,6 +70,9 @@ beforeEach(() => {
   sockets.length = 0;
   frames.length = 0;
   beforeReply = undefined;
+  replay = undefined;
+  replayBefore = undefined;
+  replayReads = 0;
   snapshot = {
     session_id: "runtime",
     messages: [{ row_id: 1, role: "assistant", text: "Saved" }],
@@ -261,6 +271,180 @@ describe("profile-bound native gateway", () => {
     expect(sockets).toHaveLength(0);
     viewer.close();
   });
+  it("repairs a delta before the snapshot reply without dropping frames beyond the replay page", async () => {
+    const prefix =
+      "Memory answer.\n\n[System note: The following is recalled memory context, NOT new user inp";
+    const event = (seq: number, type: string, text?: string) => ({
+      session_id: "runtime",
+      profile: "alpha",
+      seq,
+      type,
+      payload: text === undefined ? {} : { text },
+    });
+    snapshot.running = true;
+    snapshot.messages = [];
+    snapshot.inflight = { user: "Question", assistant: prefix, streaming: true };
+    snapshot.confirmed = {
+      ...snapshot,
+      inflight: { ...snapshot.inflight, assistant: prefix + "ut. Trea" },
+    };
+    replay = {
+      epoch: "process-one",
+      latest_seq: 1000,
+      truncated: false,
+      open_requests: [],
+      count: 4,
+      events: [
+        event(17, "message.start"),
+        event(18, "message.delta", prefix),
+        event(19, "message.delta", "ut. Trea"),
+        event(20, "message.delta", "t as aut"),
+      ],
+    };
+    const receive = (socket: Socket, params: unknown) =>
+      socket.receive({ jsonrpc: "2.0", method: "event", params });
+    beforeReply = (socket, frame) => {
+      if (frame.method === "session.resume") {
+        receive(socket, { type: "gateway.ready", payload: { replay_epoch: "process-one" } });
+        receive(socket, event(19, "message.delta", "ut. Trea"));
+      }
+      if (frame.method === "session.events.since" && replayReads === 2) {
+        receive(socket, event(21, "message.delta", "horitati"));
+        receive(socket, event(19, "message.delta", "ut. Trea"));
+      }
+    };
+    const h = hooks(),
+      viewer = new NativeGatewayViewer("alpha", "stored", h);
+    try {
+      await viewer.ensure();
+      expect(vi.mocked(h.event).mock.calls.map(([item]) => item.seq)).toEqual([20, 21]);
+      expect(frames.find((frame) => frame.method === "session.events.since")?.params).toEqual({
+        profile: "alpha",
+        session_id: "runtime",
+        last_seen: 0,
+      });
+      const text = vi
+        .mocked(h.event)
+        .mock.calls.map(([item]) => (item.payload as { text: string }).text)
+        .join("");
+      expect(prefix + "ut. Trea" + text).toContain("NOT new user input. Treat as authoritati");
+    } finally {
+      viewer.close();
+    }
+  });
+  it.each([false, true])(
+    "preserves approval cancellation and Stop with snapshot ahead of replay: %s",
+    async (ahead) => {
+      const request = {
+        id: "approval-cancelled",
+        method: "approval",
+        params: { session_id: "runtime", profile: "alpha", command: "synthetic" },
+      };
+      const event = (seq: number, type: string, payload: Record<string, unknown>) => ({
+        seq,
+        type,
+        session_id: "runtime",
+        profile: "alpha",
+        payload,
+      });
+      const cancelled = event(2, "request.cancel", { request_id: request.id });
+      snapshot.running = true;
+      snapshot.messages = [];
+      snapshot.inflight = {
+        user: "Question",
+        assistant: "Answer" + (ahead ? " ahead" : ""),
+        streaming: true,
+      };
+      snapshot.open_requests = [request];
+      snapshot.confirmed = { ...snapshot };
+      replayBefore = {
+        epoch: "process-one",
+        latest_seq: 1,
+        truncated: false,
+        count: 1,
+        events: [event(1, "message.start", {})],
+        open_requests: [],
+      };
+      replay = {
+        ...replayBefore,
+        latest_seq: 3,
+        count: 3,
+        events: [...replayBefore.events, cancelled, event(3, "message.delta", { text: "Answer" })],
+      };
+      beforeReply = (socket, frame) => {
+        if (frame.method === "session.resume")
+          socket.receive({
+            jsonrpc: "2.0",
+            method: "event",
+            params: {
+              type: "gateway.ready",
+              payload: { replay_epoch: "process-one" },
+            },
+          });
+        if (frame.method === "session.activate")
+          socket.receive({ jsonrpc: "2.0", method: "event", params: cancelled });
+      };
+      const h = hooks(),
+        viewer = new NativeGatewayViewer("alpha", "stored", h);
+      try {
+        await viewer.ensure();
+        expect(h.requests).toHaveBeenLastCalledWith([]);
+        await expect(viewer.answer(request.id, { choice: "once" })).rejects.toMatchObject({
+          outcome: "rejected",
+        });
+        expect(frames.some((frame) => frame.id === request.id && frame.result)).toBe(false);
+        expect(h.snapshot).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            inflight: expect.objectContaining({ assistant: ahead ? "" : "Answer" }),
+          }),
+        );
+        expect(h.event).toHaveBeenCalledWith(cancelled);
+        expect(vi.mocked(h.event).mock.calls.some(([item]) => item.type === "message.delta")).toBe(
+          false,
+        );
+        // A foreign cancellation cannot close a newly arriving owned request.
+        const next = { ...request, id: "approval-next" };
+        sockets[0]!.receive({ jsonrpc: "2.0", ...next });
+        for (const foreign of [{ profile: "beta" }, { session_id: "foreign" }])
+          sockets[0]!.receive({
+            jsonrpc: "2.0",
+            method: "event",
+            params: {
+              ...cancelled,
+              ...foreign,
+              payload: { id: next.id },
+            },
+          });
+        expect(h.requests).toHaveBeenLastCalledWith([next]);
+        await viewer.answer(next.id, { choice: "deny" });
+        expect(h.requests).toHaveBeenLastCalledWith([]);
+        await viewer.rpc("session.interrupt");
+        expect(frames.at(-1)).toMatchObject({
+          method: "session.interrupt",
+          params: { session_id: "runtime", profile: "alpha" },
+        });
+        if (ahead) {
+          snapshot.confirmed = { ...snapshot, running: false, inflight: null, open_requests: [] };
+          sockets[0]!.receive({
+            jsonrpc: "2.0",
+            method: "event",
+            params: event(4, "message.complete", { text: "Answer ahead" }),
+          });
+          await vi.waitFor(() =>
+            expect(h.event).toHaveBeenLastCalledWith(
+              expect.objectContaining({
+                type: "message.complete",
+                payload: { text: "" },
+              }),
+            ),
+          );
+          expect(h.connection).toHaveBeenLastCalledWith("open");
+        }
+      } finally {
+        viewer.close();
+      }
+    },
+  );
   it("cannot dispatch after detach during preparation", async () => {
     const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
     await viewer.ensure();
@@ -277,6 +461,374 @@ describe("profile-bound native gateway", () => {
     await expect(sending).rejects.toMatchObject({ outcome: "rejected" });
     expect(frames.some((f) => f.method === "prompt.submit")).toBe(false);
   });
+  it.each([
+    ["id", true],
+    ["request_id", true],
+    ["id", false],
+    ["request_id", false],
+  ] as const)(
+    "does not resurrect a cancelled approval from stale open_requests (%s, already seen: %s)",
+    async (key, seen) => {
+      const request = {
+        id: "approval-cancelled",
+        method: "approval",
+        params: { session_id: "runtime", profile: "alpha", command: "synthetic" },
+      };
+      snapshot.open_requests = seen ? [request] : [];
+      const h = hooks(),
+        viewer = new NativeGatewayViewer("alpha", "stored", h);
+      try {
+        await viewer.ensure();
+        expect(h.requests).toHaveBeenLastCalledWith(seen ? [request] : []);
+        snapshot.open_requests = [request];
+        beforeReply = (socket, frame) => {
+          if (frame.method === "session.activate")
+            socket.receive({
+              jsonrpc: "2.0",
+              method: "event",
+              params: {
+                type: "request.cancel",
+                session_id: "runtime",
+                profile: "alpha",
+                payload: { [key]: request.id },
+              },
+            });
+        };
+        await viewer.rpc("state");
+        expect(h.requests).toHaveBeenLastCalledWith([]);
+        await expect(viewer.answer(request.id, { choice: "once" })).rejects.toMatchObject({
+          outcome: "rejected",
+        });
+        // Both live redelivery and another stale read must remain closed.
+        sockets[0]!.receive({ jsonrpc: "2.0", ...request });
+        beforeReply = undefined;
+        await viewer.rpc("state");
+        expect(h.requests).toHaveBeenLastCalledWith([]);
+        expect(frames.some((frame) => frame.id === request.id && frame.result)).toBe(false);
+        const next = { ...request, id: "approval-next" };
+        sockets[0]!.receive({ jsonrpc: "2.0", ...next });
+        expect(h.requests).toHaveBeenLastCalledWith([next]);
+      } finally {
+        viewer.close();
+      }
+    },
+  );
+  it.each(["failure", "invalid snapshot", "new turn", "detach"])(
+    "settles intercepted completion after failed history recovery: %s",
+    async (race) => {
+      snapshot.running = true;
+      snapshot.messages = [];
+      snapshot.inflight = { user: "Question", assistant: "Evicted prefix", streaming: true };
+      snapshot.confirmed = { ...snapshot };
+      replay = {
+        epoch: "process-one",
+        latest_seq: 900,
+        events: [],
+        count: 0,
+        truncated: true,
+        open_requests: [],
+      };
+      beforeReply = (socket, frame) => {
+        if (frame.method === "session.resume")
+          socket.receive({
+            jsonrpc: "2.0",
+            method: "event",
+            params: { type: "gateway.ready", payload: { replay_epoch: "process-one" } },
+          });
+      };
+      const h = hooks();
+      let busy = false;
+      vi.mocked(h.snapshot).mockImplementation((value) => {
+        busy = !!value.running;
+      });
+      vi.mocked(h.event).mockImplementation((event) => {
+        if (event.type === "message.start") busy = true;
+        if (event.type === "message.complete") busy = false;
+      });
+      const viewer = new NativeGatewayViewer("alpha", "stored", h);
+      const receive = (type: string, seq: number, payload = {}) =>
+        sockets[0]!.receive({
+          jsonrpc: "2.0",
+          method: "event",
+          params: { type, seq, session_id: "runtime", profile: "alpha", payload },
+        });
+      try {
+        await viewer.ensure();
+        expect(busy).toBe(true);
+        vi.mocked(h.event).mockClear();
+        vi.mocked(h.connection).mockClear();
+        beforeReply = (socket, frame) => {
+          if (frame.method !== "session.activate") return;
+          if (race === "new turn") receive("message.start", 902);
+          if (race === "detach") viewer.close();
+          if (race === "invalid snapshot") {
+            socket.receive({ jsonrpc: "2.0", id: frame.id, result: {} });
+            return;
+          }
+          socket.receive({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: { code: -32603, message: "synthetic activation failure" },
+          });
+        };
+        receive("message.complete", 901, { text: "Unverified terminal prose", status: "complete" });
+        await vi.waitFor(() =>
+          expect(frames.filter((frame) => frame.method === "session.activate")).toHaveLength(2),
+        );
+        if (race === "failure" || race === "invalid snapshot") {
+          await vi.waitFor(() => expect(busy).toBe(false));
+          expect(h.event).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              type: "message.complete",
+              payload: { text: "", status: "complete" },
+            }),
+          );
+          expect(h.connection).toHaveBeenLastCalledWith(
+            "open",
+            "Response history is unavailable. Reopen this chat to refresh it.",
+          );
+          // Failure cannot make previously uncertain prose safe to publish.
+          receive("message.delta", 903, { text: "Still unverified" });
+          expect(h.event).toHaveBeenCalledTimes(1);
+          await viewer.rpc("session.interrupt");
+        } else {
+          expect(busy).toBe(true);
+          expect(vi.mocked(h.event).mock.calls.some(([e]) => e.type === "message.complete")).toBe(
+            false,
+          );
+          if (race === "detach") expect(h.connection).not.toHaveBeenCalled();
+        }
+      } finally {
+        viewer.close();
+      }
+    },
+  );
+  it("does not resurrect an answered approval from an older snapshot", async () => {
+    const request = {
+      id: "approval-old",
+      method: "approval",
+      params: {
+        session_id: "runtime",
+        profile: "alpha",
+        command: "synthetic",
+      },
+    };
+    snapshot.open_requests = [request];
+    const h = hooks(),
+      viewer = new NativeGatewayViewer("alpha", "stored", h);
+    try {
+      await viewer.ensure();
+      expect(h.requests).toHaveBeenLastCalledWith([request]);
+      beforeReply = (_socket, frame) => {
+        if (frame.method === "session.activate") void viewer.answer(request.id, { choice: "deny" });
+      };
+      // The native snapshot was captured with this request open; its reply
+      // arrives after the decision was sent over the same ordered socket.
+      await viewer.rpc("state");
+      expect(h.requests).toHaveBeenLastCalledWith([]);
+      expect(frames.filter((frame) => frame.id === request.id && frame.result)).toHaveLength(1);
+      const next = { ...request, id: "approval-new" };
+      sockets[0]!.receive({ jsonrpc: "2.0", ...next });
+      expect(h.requests).toHaveBeenLastCalledWith([next]);
+    } finally {
+      viewer.close();
+    }
+  });
+  it.each(["Same", "Different"])(
+    "keeps controls connected across an unobserved turn change with %s text",
+    async (text) => {
+      snapshot.running = true;
+      snapshot.messages = [];
+      snapshot.inflight = { user: "First question", assistant: "Same", streaming: true };
+      snapshot.confirmed = { ...snapshot };
+      const event = (seq: number, type: string, text?: string) => ({
+        session_id: "runtime",
+        profile: "alpha",
+        seq,
+        type,
+        payload: text === undefined ? {} : { text },
+      });
+      replayBefore = {
+        epoch: "process-one",
+        events: [event(1, "message.start"), event(2, "message.delta", "Same")],
+        latest_seq: 999,
+        count: 2,
+        truncated: false,
+        open_requests: [],
+      };
+      replay = {
+        ...replayBefore,
+        events: [
+          ...replayBefore.events,
+          event(3, "message.complete", "Same"),
+          event(4, "message.start"),
+          event(5, "message.delta", text),
+        ],
+        count: 5,
+      };
+      // No session event reaches this viewer before either snapshot reply.
+      // Both native replay pages still contain the intervening turn boundary.
+      beforeReply = (socket, frame) => {
+        if (frame.method === "session.resume")
+          socket.receive({
+            jsonrpc: "2.0",
+            method: "event",
+            params: { type: "gateway.ready", payload: { replay_epoch: "process-one" } },
+          });
+      };
+      const h = hooks(),
+        viewer = new NativeGatewayViewer("alpha", "stored", h);
+      try {
+        await viewer.ensure();
+        expect(h.snapshot).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            inflight: expect.objectContaining({ assistant: "" }),
+          }),
+        );
+        expect(h.event).not.toHaveBeenCalled();
+        expect(h.connection).toHaveBeenLastCalledWith(
+          "open",
+          "Earlier response progress is unavailable.",
+        );
+        await viewer.rpc("session.interrupt");
+        expect(frames.at(-1)).toMatchObject({ method: "session.interrupt" });
+        snapshot.confirmed = {
+          ...snapshot,
+          running: false,
+          inflight: null,
+          messages: [{ role: "assistant", text: "Final answer", row_id: 2 }],
+        };
+        sockets[0]!.receive({
+          jsonrpc: "2.0",
+          method: "event",
+          params: event(6, "message.complete", "Final answer"),
+        });
+        await vi.waitFor(() =>
+          expect(h.event).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              type: "message.complete",
+              payload: { text: "" },
+            }),
+          ),
+        );
+        expect(h.snapshot).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: [{ role: "assistant", text: "Final answer", row_id: 2 }],
+          }),
+        );
+      } finally {
+        viewer.close();
+      }
+    },
+  );
+  it.each(["stop", "deny"])(
+    "keeps %s connected when earlier replay text was evicted",
+    async (choice) => {
+      snapshot.running = true;
+      snapshot.messages = [];
+      snapshot.inflight = { user: "Question", assistant: "Earlier prefix", streaming: true };
+      snapshot.confirmed = { ...snapshot };
+      replay = {
+        epoch: "process-one",
+        latest_seq: 900,
+        events: [],
+        count: 0,
+        truncated: true,
+        open_requests: [],
+      };
+      const receive = (socket: Socket, params: unknown) =>
+        socket.receive({ jsonrpc: "2.0", method: "event", params });
+      beforeReply = (socket, frame) => {
+        if (frame.method === "session.resume")
+          receive(socket, { type: "gateway.ready", payload: { replay_epoch: "process-one" } });
+        if (frame.method === "session.events.since" && replayReads === 2) {
+          receive(socket, {
+            session_id: "runtime",
+            type: "message.delta",
+            seq: 901,
+            payload: { text: "Unverifiable suffix" },
+          });
+          receive(socket, {
+            session_id: "runtime",
+            type: "tool.progress",
+            seq: 902,
+            payload: { tool_id: "tool", text: "Working" },
+          });
+          socket.receive({
+            jsonrpc: "2.0",
+            id: "approval",
+            method: "approval",
+            params: { session_id: "runtime", profile: "alpha", command: "synthetic" },
+          });
+        }
+      };
+      const h = hooks(),
+        viewer = new NativeGatewayViewer("alpha", "stored", h);
+      try {
+        await viewer.ensure();
+        expect(vi.mocked(h.event).mock.calls.map(([item]) => item.type)).toEqual(["tool.progress"]);
+        expect(h.connection).toHaveBeenLastCalledWith(
+          "open",
+          "Earlier response progress is unavailable.",
+        );
+        expect(h.snapshot).toHaveBeenCalledWith(
+          expect.objectContaining({
+            inflight: expect.objectContaining({ assistant: "", user: "Question" }),
+          }),
+        );
+        if (choice === "stop") {
+          await viewer.rpc("session.interrupt");
+          expect(frames.at(-1)).toMatchObject({
+            method: "session.interrupt",
+            params: { session_id: "runtime", profile: "alpha" },
+          });
+        } else {
+          await viewer.answer("approval", { choice: "deny" });
+          expect(frames.at(-1)).toEqual({
+            jsonrpc: "2.0",
+            id: "approval",
+            result: { choice: "deny" },
+          });
+        }
+        snapshot.confirmed = {
+          ...snapshot,
+          running: false,
+          inflight: null,
+          messages: [{ role: "assistant", text: "Complete answer", row_id: 2 }],
+        };
+        receive(sockets[0]!, {
+          session_id: "runtime",
+          type: "message.complete",
+          seq: 903,
+          payload: { text: "Complete answer", response_reused: true },
+        });
+        await vi.waitFor(() =>
+          expect(h.event).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              type: "message.complete",
+              payload: { text: "", response_reused: true },
+            }),
+          ),
+        );
+        expect(h.snapshot).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: [{ role: "assistant", text: "Complete answer", row_id: 2 }],
+          }),
+        );
+        receive(sockets[0]!, {
+          session_id: "runtime",
+          type: "message.delta",
+          seq: 904,
+          payload: { text: "Later answer" },
+        });
+        expect(h.event).toHaveBeenLastCalledWith(
+          expect.objectContaining({ payload: { text: "Later answer" } }),
+        );
+      } finally {
+        viewer.close();
+      }
+    },
+  );
   it("Stop during authenticated preparation cannot admit the pending prompt later", async () => {
     const viewer = new NativeGatewayViewer("alpha", "stored", hooks());
     await viewer.ensure();

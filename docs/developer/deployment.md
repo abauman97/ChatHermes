@@ -41,7 +41,7 @@ unwritable or invalid persistent VAPID state; never print the private state file
 
 The dashboard loads `dashboard/plugin_api.py` into its own Python process;
 `dashboard/manifest.json` does not provision dependencies. In the reviewed Hermes
-source (`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`), CLI dependency consent
+source (`caafe5389ae585ef77387a962aee05b1bcf17029`), CLI dependency consent
 is in `hermes_cli/plugins_cmd_install.py`, enable admission prepares the shared
 runtime through `hermes_cli/plugins_admission.py`, and backend imports occur in
 `hermes_cli/web_server_dashboard.py`. Copying files bypasses that admission.
@@ -58,11 +58,11 @@ See [notification setup](../user/notifications.md) for the device enable flow an
 
 ## Native runtime
 
-`npm run live` starts the deterministic Compose stack using the digest-pinned official Hermes v0.23.0 image and stock MockServer. Real providers are explicit opt-in through `npm run live:real` in a separate project. Follow the [test environment guide](../../tests/docker/README.md) for setup, rebuilds, and explicit project-scoped cleanup.
+`npm run live` starts the deterministic Compose stack using the digest-pinned official Hermes v0.23.3 image and stock MockServer. Real providers are explicit opt-in through `npm run live:real` in a separate project. Follow the [test environment guide](../../tests/docker/README.md) for setup, rebuilds, and explicit project-scoped cleanup.
 
 Deploy the whole plugin directory and rebuild assets after Python or frontend
-changes. The native contract targets Hermes v0.23.0 at
-`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. Capabilities describe the plugin's
+changes. The native contract targets Hermes v0.23.3 at
+`caafe5389ae585ef77387a962aee05b1bcf17029`. Capabilities describe the plugin's
 reviewed wire contract, not the running host's version or commit; `admission: true`
 declares submission support, not runtime identity or compatibility with every host.
 The browser rejects unsupported capability values and gateway probe responses,

@@ -426,3 +426,33 @@ it("keeps visible prose after a card when hidden context occupies its entire pre
   expect(sections[0]).toBe("");
   expect(sections[1]).toContain("AFTER");
 });
+
+it("does not acquire emphasis by removing a delivery from its original source", () => {
+  const delivery = textArtifactDelivery("**before[file](MEDIA:/tmp/a.txt)**after");
+  const sections = renderMarkdownSections(
+    delivery.text,
+    delivery.markdown!.placements,
+    delivery.markdown,
+  );
+  const element = document.createElement("div");
+  element.innerHTML = sections.join("");
+  expect(element.querySelector("strong")).toBeNull();
+  expect(element.textContent).toContain("**before");
+  expect(element.textContent).toContain("**after");
+});
+
+it("does not form an entity across a removed delivery and keeps original hard-break syntax", () => {
+  const delivery = textArtifactDelivery(
+    "Before &am[file](MEDIA:/tmp/a.txt)p; after\n\nTrailing slash\\\nMEDIA:/tmp/b.txt\n\nDone",
+  );
+  const sections = renderMarkdownSections(
+    delivery.text,
+    delivery.markdown!.placements,
+    delivery.markdown,
+  );
+  const element = document.createElement("div");
+  element.innerHTML = sections.join("");
+  expect(element.textContent).toContain("Before &amp; after");
+  expect(element.textContent).not.toContain("Trailing slash\\");
+  expect(element.querySelectorAll("br")).toHaveLength(1);
+});

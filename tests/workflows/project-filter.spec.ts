@@ -57,7 +57,7 @@ test("automatic project filter defaults on and persists without losing chats or 
 }, info) => {
   const marker = `filter-${randomUUID()}`;
   const seeded = runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; marker=sys.argv[1]; root=pathlib.Path('/opt/data/workflow-tests')/marker; root.mkdir(parents=True); db=_open_session_db_for_profile('default',read_only=False); sid=marker+'-chat'; db.create_session(sid,'desktop',cwd=str(root)); db.set_session_title(sid,marker+' conversation'); db.append_message(sid,'user','Keep this automatic workspace conversation'); db.append_message(sid,'assistant','Automatic workspace history is preserved.'); db.close(); print(json.dumps({'path':str(root),'session':sid}))",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; marker=sys.argv[1]; root=pathlib.Path('/opt/data/workflow-tests')/marker; root.mkdir(parents=True); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); sid=marker+'-chat'; db.create_session(sid,'desktop',cwd=str(root)); db.set_session_title(sid,marker+' conversation'); db.append_message(sid,'user','Keep this automatic workspace conversation'); db.append_message(sid,'assistant','Automatic workspace history is preserved.'); db.close(); print(json.dumps({'path':str(root),'session':sid}))",
     marker,
   );
   const explicitName = `Explicit ${marker}`;

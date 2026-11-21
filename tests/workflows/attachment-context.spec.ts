@@ -25,7 +25,7 @@ test("attachment review cases preserve Markdown grammar and literal recovered re
   // Count attempts even though the test safeguard aborts outbound traffic.
   await page.route("https://attacker.invalid/**", (route) => route.abort());
   runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,messages=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Retained grammar regression artifact'); db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',content) for content in json.loads(messages)]; db.close(); print(json.dumps(True))",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,messages=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Retained grammar regression artifact'); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',content) for content in json.loads(messages)]; db.close(); print(json.dumps(True))",
     identity,
     path,
     JSON.stringify(messages),
@@ -90,7 +90,7 @@ test("truncation preserves original code quotation and only retained authenticat
     ];
   });
   runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,messages=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Retained quotation regression artifact'); db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',content) for content in json.loads(messages)]; db.close(); print(json.dumps(True))",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,messages=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Retained quotation regression artifact'); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',content) for content in json.loads(messages)]; db.close(); print(json.dumps(True))",
     identity,
     path,
     JSON.stringify(messages),

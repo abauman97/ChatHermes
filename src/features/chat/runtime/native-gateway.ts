@@ -6,9 +6,12 @@ import {
 import type {
   SessionUsageResult,
   SessionContextBreakdownResult,
+  SessionEventsSinceResult,
+  MessageCompletePayload,
 } from "../../../vendor/hermes/gateway-contract.generated";
 import type { GatewayEvent } from "../../../vendor/hermes/gateway-events";
 import { NativeError, type NativeHooks, type NativeSnapshot } from "./native-chat";
+import { recoverReplyPrefix } from "./native-recovery";
 
 const pendingDrafts = new Map<
   string,
@@ -91,12 +94,21 @@ export class NativeGatewayViewer {
   private detached = false;
   private failed = false;
   private holding = true;
-  private snapshotReceived = false;
+  private replayEpoch?: string;
+  private recoveryFence = 0;
+  private replyUnavailable = false;
+  private starts = 0;
+  private refreshingTerminal = false;
+  private pendingTerminal?: GatewayEvent;
   private snapshotBoundary = 0;
   private held: GatewayEvent[] = [];
   private runtime = "";
   private sequence = 0;
   private requests = new Map<string, ServerRequest>();
+  // A snapshot captured before a decision or cancellation can arrive after it.
+  // Native request IDs are stable across replay; a closed ID cannot become open again
+  // in this viewer. A new viewer may still recover an unreceived decision.
+  private closedRequests = new Set<string>();
   readonly retainWhileHidden = true;
   private preparing = false;
   private preparationCancelled = false;
@@ -124,6 +136,7 @@ export class NativeGatewayViewer {
         request.decline?.("This viewer does not show that session");
         return true;
       }
+      if (this.closedRequests.has(request.id)) return true;
       this.requests.set(request.id, request);
       if (!this.holding) this.publishRequests();
       return true;
@@ -193,7 +206,6 @@ export class NativeGatewayViewer {
           const frame = JSON.parse(line);
           if (!frame || frame.jsonrpc !== "2.0" || Array.isArray(frame)) throw new Error();
           if (frame.result?.session_id && Array.isArray(frame.result.messages)) {
-            this.snapshotReceived = true;
             this.snapshotBoundary = this.held.length;
           }
           if (
@@ -202,10 +214,12 @@ export class NativeGatewayViewer {
             frame.params.payload?.session_authority === true
           )
             throw new Error("Unsupported native contract");
+          if (frame.method === "event" && frame.params?.type === "gateway.ready")
+            this.replayEpoch = frame.params.payload?.replay_epoch;
           this.channel.handleFrame(line);
           if (frame.method === "event") {
             if (!this.holding) this.event(frame.params);
-            else if (this.snapshotReceived) {
+            else {
               if (this.held.length >= 2048) throw new Error();
               this.held.push(frame.params);
             }
@@ -260,11 +274,18 @@ export class NativeGatewayViewer {
     if ("revision" in snapshot || "execution_generation" in snapshot)
       throw new NativeError("Unsupported native contract", "rejected");
     this.runtime = snapshot.session_id;
+    let beforeSnapshot: SessionEventsSinceResult | undefined;
     if (snapshot.running || snapshot.queued) {
       // A native resume can capture running=true just before completion and
       // return after that terminal event. Confirm once after its reply, while
       // retaining later events. This is a recovery barrier, not completion polling.
       this.requests.clear();
+      // Bracket the confirmation with replay reads. Neither a buffered frame
+      // nor equal prose identifies which turn the original resume captured.
+      beforeSnapshot = await this.call<SessionEventsSinceResult>("session.events.since", {
+        session_id: this.runtime,
+        last_seen: 0,
+      });
       const confirmed = await this.call<NativeSnapshot>("session.activate", {
         session_id: this.runtime,
         omit_messages: true,
@@ -272,8 +293,8 @@ export class NativeGatewayViewer {
       this.assertLive();
       if (confirmed.session_id !== this.runtime || !Array.isArray(confirmed.messages))
         throw new NativeError("Invalid native recovery confirmation");
+      snapshot = confirmed;
       if (!confirmed.running && !confirmed.queued) {
-        snapshot = confirmed;
         // The settled authoritative history covers frames before this reply.
         // Keep only events arriving after it, preventing duplicated text.
         this.held = this.held.filter(
@@ -281,11 +302,58 @@ export class NativeGatewayViewer {
         );
       }
     }
+    let recovered: GatewayEvent[] = [];
+    if (
+      snapshot.running &&
+      snapshot.inflight &&
+      (snapshot.inflight.assistant ||
+        this.held.some(
+          (event) => event.session_id === this.runtime && event.type === "message.delta",
+        ))
+    ) {
+      // A delta may arrive after snapshot capture but before its RPC reply.
+      // Keep it, then prove the snapshot's boundary using actual replay records.
+      const page = await this.call<SessionEventsSinceResult>("session.events.since", {
+        session_id: this.runtime,
+        last_seen: 0,
+      });
+      const replay = recoverReplyPrefix(
+        snapshot.inflight.assistant || "",
+        page,
+        { runtime: this.runtime, profile: this.profile, epoch: this.replayEpoch },
+        beforeSnapshot,
+      );
+      if (!replay)
+        throw new NativeError("Native recovery unavailable. Reconnect to restore this session.");
+      if (replay.unavailable) {
+        this.replyUnavailable = true;
+        // Its bytes are real but its live phase boundary is unverified. Saved
+        // history can still restore prior phases; do not publish a partial note.
+        snapshot = { ...snapshot, inflight: { ...snapshot.inflight, assistant: "" } };
+      } else {
+        recovered = replay.events;
+        this.recoveryFence = replay.through;
+      }
+    }
     if (pending && pendingDrafts.get(draftKey(this.profile, this.stored)) === pending) {
       pendingDrafts.delete(draftKey(this.profile, this.stored));
       clearTimeout(pending.timer);
       pending.viewer.close();
     }
+    this.publishSnapshot(snapshot);
+    this.holding = false;
+    for (const event of recovered) this.event(event, true);
+    for (const event of this.held) this.event(event);
+    this.held = [];
+    this.publishRequests();
+    this.channel.startHeartbeat();
+    this.hooks.connection(
+      "open",
+      this.replyUnavailable ? "Earlier response progress is unavailable." : undefined,
+    );
+    this.hooks.recovered();
+  }
+  private publishSnapshot(snapshot: NativeSnapshot) {
     this.hooks.snapshot({
       ...snapshot,
       // A cold deferred ack uses hydrating instead of messages_omitted at
@@ -293,24 +361,92 @@ export class NativeGatewayViewer {
       messages_omitted: snapshot.messages_omitted ?? snapshot.hydrating === true,
       recovery: { epoch: "native-snapshot", through: 0, base_row_ids: null, complete: false },
     });
-    this.holding = false;
-    for (const event of this.held) this.event(event);
-    this.held = [];
-    this.publishRequests();
-    this.channel.startHeartbeat();
-    this.hooks.connection("open");
-    this.hooks.recovered();
   }
-  private event(event: GatewayEvent & { profile?: string }) {
+  private async restoreCompletedReply(terminal: GatewayEvent) {
+    if (this.refreshingTerminal) {
+      this.pendingTerminal = terminal;
+      return;
+    }
+    this.refreshingTerminal = true;
+    const starts = this.starts;
+    const complete = () =>
+      this.hooks.event({
+        ...terminal,
+        payload: { ...(terminal.payload as MessageCompletePayload), text: "" },
+      });
+    try {
+      const snapshot = await this.call<NativeSnapshot>("session.activate", {
+        session_id: this.runtime,
+        omit_messages: true,
+      });
+      this.assertLive();
+      if (snapshot.session_id !== this.runtime || !Array.isArray(snapshot.messages))
+        throw new NativeError("Invalid native recovery snapshot");
+      // Another native turn can start while this read is pending. Its eventual
+      // completion will trigger a new read; never overwrite it with stale state.
+      if (starts !== this.starts) return;
+      this.replyUnavailable = false;
+      this.publishSnapshot(snapshot);
+      this.publishRequests();
+      // Preserve native reuse semantics: its text can be a recovery wrapper.
+      // The fresh snapshot delegates the actual answer to authenticated history.
+      // Apply only the observed terminal lifecycle, including when the native
+      // running bit is cleared slightly later by its post-turn hooks.
+      complete();
+      this.hooks.connection("open");
+      this.hooks.recovered();
+    } catch {
+      if (!this.detached && !this.failed && starts === this.starts) {
+        // The observed terminal edge is authoritative even when history cannot
+        // be refreshed. Settle its lifecycle without trusting its prose or
+        // clearing replyUnavailable. Never settle a newer turn or detached view.
+        complete();
+        this.hooks.connection(
+          "open",
+          "Response history is unavailable. Reopen this chat to refresh it.",
+        );
+      }
+    } finally {
+      this.refreshingTerminal = false;
+      const pending = this.pendingTerminal;
+      this.pendingTerminal = undefined;
+      if (pending && this.replyUnavailable && !this.detached && !this.failed)
+        void this.restoreCompletedReply(pending);
+    }
+  }
+  private event(event: GatewayEvent & { profile?: string }, recovered = false) {
     if (
       event.session_id !== this.runtime ||
       (event.profile && event.profile !== (this.profile || "default"))
     )
       return;
+    // The text fence does not attest request state: a snapshot can still carry
+    // an approval withdrawn before its text boundary. Cancellation is idempotent
+    // and must survive replay suppression, after the ownership checks above.
+    if (
+      !recovered &&
+      event.type !== "request.cancel" &&
+      typeof event.seq === "number" &&
+      event.seq <= this.recoveryFence
+    )
+      return;
     this.sequence++;
+    if (event.type === "message.start") this.starts++;
+    // An evicted turn prefix cannot prove which prose the snapshot covers.
+    // Keep native tools/requests/Stop connected, withholding only uncertain
+    // assistant text until its authoritative terminal event arrives.
+    if (this.replyUnavailable) {
+      if (event.type === "message.delta" || event.type === "message.interim") return;
+      if (event.type === "message.complete") {
+        void this.restoreCompletedReply(event);
+        return;
+      }
+    }
     if (event.type === "request.cancel") {
       const payload = event.payload as { id?: string; request_id?: string };
-      this.requests.delete(String(payload?.id || payload?.request_id || ""));
+      const id = String(payload?.id || payload?.request_id || "");
+      if (id) this.closedRequests.add(id);
+      this.requests.delete(id);
       this.publishRequests();
     }
     this.hooks.event(event);
@@ -537,6 +673,7 @@ export class NativeGatewayViewer {
     if (!this.channel.connected || !request)
       throw new NativeError("Request is no longer open", "rejected");
     request.respond(result);
+    this.closedRequests.add(id);
     this.requests.delete(id);
     this.publishRequests();
   }
@@ -560,6 +697,7 @@ export class NativeGatewayViewer {
       this.ws = undefined;
     }
     this.requests.clear();
+    this.closedRequests.clear();
   }
   close() {
     this.detached = true;

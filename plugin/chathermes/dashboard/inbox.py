@@ -279,14 +279,24 @@ class Source(HistorySource):
             try:
                 rows, offset = [], 0
                 while True:
-                    batch = db.list_sessions_rich(
-                        limit=200,
-                        offset=offset,
-                        include_archived=True,
-                        include_children=True,
-                        order_by_last_active=True,
-                        compact_rows=True,
+                    from persistence.conversation.sessions import (
+                        SessionOrder,
+                        SessionQuery,
+                        SessionWindow,
                     )
+
+                    batch = [
+                        entry.as_list_row()
+                        for entry in db.sessions.list_sessions(
+                            SessionQuery(
+                                include_archived=True,
+                                include_children=True,
+                                order=SessionOrder.LAST_ACTIVE,
+                            ),
+                            SessionWindow(limit=200, offset=offset),
+                            compact_rows=True,
+                        )
+                    ]
                     rows.extend(batch)
                     if len(batch) < 200:
                         return rows
@@ -318,16 +328,27 @@ class Source(HistorySource):
 
     def rows(self, profile, session, after, since=0):
         from hermes_cli.web_server_sessions import _open_session_db_for_profile
+        from persistence.conversation.messages import TranscriptRead, TranscriptView
 
         db = _open_session_db_for_profile(profile, read_only=True)
         try:
             if not after:
-                latest = db.get_messages(session, latest=True, limit=1, include_inactive=True)
+                latest = [
+                    row.as_wire_row()
+                    for row in db.messages.read_transcript(
+                        session, TranscriptRead(view=TranscriptView.ALL, latest=True, limit=1)
+                    )
+                ]
                 if latest and latest[0].get("timestamp", since) < since:
                     return latest
             rows = []
             while True:
-                batch = db.get_messages(session, after_id=after, limit=500, include_inactive=True)
+                batch = [
+                    row.as_wire_row()
+                    for row in db.messages.read_transcript(
+                        session, TranscriptRead(view=TranscriptView.ALL, after_id=after, limit=500)
+                    )
+                ]
                 rows.extend(batch)
                 if len(batch) < 500:
                     return rows

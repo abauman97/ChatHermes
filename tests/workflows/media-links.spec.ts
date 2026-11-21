@@ -12,7 +12,7 @@ test("MEDIA links preserve prose, authenticated file actions and resume", async 
   });
   expect(uploaded.status).toBe(201);
   const { identity, path } = runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid=sys.argv[1]; p=pathlib.Path('/opt/data/workflow-tests')/sid; p.mkdir(parents=True); f=p/'a report.txt'; f.write_text('Generated report content'); db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api',cwd=str(p)); db.append_message(sid,'user','Inspect upload\\nAttached file original.txt: '+sys.argv[2]+'\\nMEDIA:\"'+sys.argv[2]+'\"'); db.append_message(sid,'assistant','Here is [the report](<MEDIA:'+str(f)+'>) for review.\\n\\nOrdinary [documentation](https://example.test/docs) stays available.'); db.close(); print(json.dumps({'identity':sid,'path':str(f)}))",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid=sys.argv[1]; p=pathlib.Path('/opt/data/workflow-tests')/sid; p.mkdir(parents=True); f=p/'a report.txt'; f.write_text('Generated report content'); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api',cwd=str(p)); db.append_message(sid,'user','Inspect upload\\nAttached file original.txt: '+sys.argv[2]+'\\nMEDIA:\"'+sys.argv[2]+'\"'); db.append_message(sid,'assistant','Here is [the report](<MEDIA:'+str(f)+'>) for review.\\n\\nOrdinary [documentation](https://example.test/docs) stays available.'); db.close(); print(json.dumps({'identity':sid,'path':str(f)}))",
     marker,
     uploaded.body.path,
   );

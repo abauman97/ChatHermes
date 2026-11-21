@@ -800,13 +800,21 @@ def _record_inbox(profile, session, identity, kind):
     clean = _inbox.Source(sys.modules[__name__]).redact(profile)
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        row = db.get_session(session)
+        record = db.sessions.get(session)
+        row = record.as_session_row() if record else None
         if _inbox.is_subagent(row or {}):
             return
         title = clean((row or {}).get("title") or "Untitled chat")
         occurred = None
         if kind == "turn.complete":
-            message = next((m for m in db.get_messages(session) if m["id"] == identity), None)
+            message = next(
+                (
+                    m
+                    for m in [row.as_wire_row() for row in db.messages.read_transcript(session)]
+                    if m["id"] == identity
+                ),
+                None,
+            )
             origin = (message or {}).get("message_uid") or str(identity)
             occurred = (message or {}).get("timestamp")
         else:
@@ -931,15 +939,16 @@ async def chat_capabilities():
     """Describe the plugin's reviewed wire contract, not the running host revision."""
     return JSONResponse(
         {
-            "protocol": "hermes.native.2bd378ed",
+            "protocol": "hermes.native.caafe538",
             "mode": "native-gateway",
             "admission": True,
-            "reviewed_source": "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19",
+            "reviewed_source": "caafe5389ae585ef77387a962aee05b1bcf17029",
             "operations": [
                 "gateway.ping",
                 "session.create",
                 "session.resume",
                 "session.activate",
+                "session.events.since",
                 "prompt.submit",
                 "session.interrupt",
                 "session.steer",
@@ -985,7 +994,9 @@ def _branch_response_count(profile, stored, response_id):
 
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        _, history = db.get_resume_conversations(stored)
+        history = [
+            row.as_openai_message() for row in db.messages.read_resume_conversations(stored).display
+        ]
         count = 0
         for row in history:
             text = _coerce_message_text(row.get("content"))
@@ -1214,7 +1225,7 @@ async def _native_file(request, operation, path, session_id=None, name=None):
                 target = Path(result.path)
 
             else:
-                backend = await asyncio.to_thread(files._fs_backend, profile)
+                backend = await asyncio.to_thread(files._remote_fs_backend, path, profile)
                 if backend is None:
                     raise HTTPException(503, "File inspection unavailable")
                 canonical, size = await asyncio.to_thread(backend.inspect_file, path)
@@ -1958,6 +1969,7 @@ def _scheduled_runs_sync(profile, home, job_id, offset, limit):
     from hermes_cli.web_routers.cron import _doc_matches_session, _execution_contains
     from hermes_cli.web_server_cron import _cron_store_scope
     from hermes_cli.web_server_sessions import _open_session_db_for_profile
+    from persistence.conversation.sessions import SessionWindow
 
     _scheduled_job(profile, job_id)
     db = _open_session_db_for_profile(profile, read_only=True)
@@ -1966,7 +1978,12 @@ def _scheduled_runs_sync(profile, home, job_id, offset, limit):
         # Native dashboard caps history at 100. Page the actual DB contract so
         # older retained runs remain reachable, including mixed agent/script jobs.
         while True:
-            page = db.list_cron_job_runs(job_id, limit=500, offset=len(sessions))
+            page = [
+                row.as_cron_row()
+                for row in db.sessions.list_cron_job_runs(
+                    job_id, SessionWindow(limit=500, offset=len(sessions))
+                )
+            ]
             sessions.extend(page)
             if len(page) < 500:
                 break
@@ -2117,20 +2134,25 @@ def _scheduled_output_sync(profile, home, job_id, run_id):
         raise HTTPException(404, "Scheduled run not found")
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        session = db.get_session(run_id)
+        record = db.sessions.get(run_id)
+        session = record.as_session_row() if record else None
         if not session or session.get("source") != "cron":
             raise HTTPException(404, "Scheduled run not found")
         # A compressed cron run may continue under a child session ID; resolve
         # the persisted continuation lineage instead of losing its final turns.
-        resolve = getattr(db, "resolve_resume_session_id", None)
-        transcript_id = resolve(run_id) if resolve else run_id
-        transcript_session = db.get_session(transcript_id)
-        if not transcript_session or transcript_session.get("source") != "cron":
+        transcript_id = db.lineage.resolve_resume_target(run_id)
+        transcript_session = db.sessions.get(transcript_id)
+        if not transcript_session or transcript_session.source != "cron":
             transcript_id = run_id
-            transcript_session = session
-        messages = db.get_messages_as_conversation(
-            transcript_id, include_ancestors=True, include_compacted=True
-        )
+        from persistence.conversation.messages import ConversationRequest, TranscriptView
+
+        messages = [
+            row.as_openai_message()
+            for row in db.messages.read_conversation(
+                transcript_id,
+                ConversationRequest(view=TranscriptView.DISPLAY, include_lineage=True),
+            )
+        ]
         return {
             "session_id": run_id,
             "started_at": session.get("started_at"),

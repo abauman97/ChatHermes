@@ -9,9 +9,9 @@ test("native gate exposes one pinned contract and rejects unknown wire operation
   await signIn(page);
   const response = await page.request.get("/api/plugins/chathermes/chat/capabilities");
   expect(await response.json()).toMatchObject({
-    protocol: "hermes.native.2bd378ed",
+    protocol: "hermes.native.caafe538",
     mode: "native-gateway",
-    reviewed_source: "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19",
+    reviewed_source: "caafe5389ae585ef77387a962aee05b1bcf17029",
     guarantees: {
       offline_turn_lease: true,
       crash_safe_idempotency: false,
