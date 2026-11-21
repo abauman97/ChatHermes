@@ -11920,35 +11920,39 @@ function tv(e) {
 	return Number.isNaN(t.getTime()) ? "Last run date unavailable" : "Last run: " + t.toLocaleString();
 }
 function nv(e) {
-	let t = Q_(), n = Oc(), r = /* @__PURE__ */ B(!1), i = /* @__PURE__ */ B(""), a = /* @__PURE__ */ B(), o, s = Promise.resolve(), c = "", l = !1, u = () => JSON.stringify([
+	let t = Q_(), n = Oc(), r = /* @__PURE__ */ B(!1), i = /* @__PURE__ */ B(""), a = /* @__PURE__ */ B(), o = /* @__PURE__ */ B(""), s, c = Promise.resolve(), l = !1, u = () => JSON.stringify([
 		t.profile.value,
 		n.params.jobId,
 		n.params.runId
 	]);
 	function d() {
-		o?.abort();
-		let l = o = new AbortController(), d = u();
-		return r.value = !0, i.value = "", c = "", a.value = void 0, s = (async () => {
+		s?.abort();
+		let l = s = new AbortController(), d = u();
+		return r.value = !0, i.value = "", o.value = "", a.value = void 0, c = (async () => {
 			try {
-				await e(l.signal, t.profile.value, String(n.params.jobId || ""), String(n.params.runId || "")), l.signal.aborted || (c = d);
+				await e(l.signal, t.profile.value, String(n.params.jobId || ""), String(n.params.runId || "")), l.signal.aborted || (o.value = d);
 			} catch (e) {
 				l.signal.aborted || (i.value = e instanceof hl && e.status === 503 ? "Scheduled history is unavailable in this Hermes version." : "Could not load scheduled history. The job or output may no longer be available.");
 			} finally {
-				o === l && (r.value = !1);
+				s === l && (r.value = !1);
 			}
-		})(), s;
+		})(), c;
 	}
 	let f = {
 		loading: r,
 		error: i,
 		sessionId: a,
+		canResume: Z(() => !!a.value && o.value === u() && !r.value && !i.value && !t.offline.value && !t.creating.value),
+		resume() {
+			f.canResume.value && a.value && t.recentSession(a.value);
+		},
 		retry: d,
 		async whenLoaded() {
 			let e = u(), t;
 			do
-				t = s, await t;
-			while (t !== s);
-			return !l && !i.value && c === e;
+				t = c, await t;
+			while (t !== c);
+			return !l && !i.value && o.value === e;
 		}
 	};
 	return t.current.value = f, H([
@@ -11956,7 +11960,7 @@ function nv(e) {
 		() => n.params.jobId,
 		() => n.params.runId
 	], d, { immediate: !0 }), we(() => {
-		l = !0, o?.abort(), t.current.value === f && (t.current.value = void 0);
+		l = !0, s?.abort(), t.current.value === f && (t.current.value = void 0);
 	}), f;
 }
 async function rv(e, t, n) {
@@ -17179,27 +17183,37 @@ var FE = ["disabled"], IE = ["disabled"], LE = ["disabled"], RE = ["disabled"], 
 			}, [t[5] ||= J("span", null, "Hide automatic projects", -1), J("span", KE, R(V(i) ? "✓" : ""), 1)], 8, GE)
 		], 64));
 	}
-}), JE = ["disabled"], YE = ["disabled"], XE = /* @__PURE__ */ U({
+}), JE = ["disabled"], YE = ["disabled", "aria-describedby"], XE = {
+	key: 1,
+	id: "scheduled-resume-unavailable",
+	class: "max-w-64 px-3 pb-2 text-xs text-[#a3a3a3]",
+	role: "presentation"
+}, ZE = /* @__PURE__ */ U({
 	__name: "ScheduledActions",
 	setup(e) {
-		let { current: t, offline: n, creating: r, recentSession: i } = Q_();
-		return (e, a) => (K(), q(G, null, [J("button", {
-			role: "menuitem",
-			"data-test": "refresh-scheduled",
-			disabled: !V(t) || V(t).loading.value,
-			onClick: a[0] ||= (e) => V(t)?.retry()
-		}, " Refresh", 8, JE), V(t)?.sessionId.value ? (K(), q("button", {
-			key: 0,
-			role: "menuitem",
-			"data-test": "resume-scheduled-session",
-			disabled: V(n) || V(r) || V(t).loading.value,
-			onClick: a[1] ||= (e) => V(i)(V(t).sessionId.value)
-		}, " Resume Session ", 8, YE)) : X("v-if", !0)], 64));
+		let { current: t } = Q_(), n = Oc();
+		return (e, r) => (K(), q(G, null, [
+			J("button", {
+				role: "menuitem",
+				"data-test": "refresh-scheduled",
+				disabled: !V(t) || V(t).loading.value,
+				onClick: r[0] ||= (e) => V(t)?.retry()
+			}, " Refresh", 8, JE),
+			V(n).name === "scheduled-run" ? (K(), q("button", {
+				key: 0,
+				role: "menuitem",
+				"data-test": "resume-scheduled-session",
+				disabled: !V(t)?.canResume.value,
+				"aria-describedby": V(t)?.sessionId.value ? void 0 : "scheduled-resume-unavailable",
+				onClick: r[1] ||= (e) => V(t)?.resume()
+			}, " Resume Session ", 8, YE)) : X("v-if", !0),
+			V(n).name === "scheduled-run" && !V(t)?.sessionId.value ? (K(), q("span", XE, R(V(t)?.loading.value ? "Checking for an associated session…" : V(t)?.error.value ? "The associated session could not be checked. Retry loading this result." : "No associated session is available for this result."), 1)) : X("v-if", !0)
+		], 64));
 	}
 });
 //#endregion
 //#region src/router/index.ts
-function ZE(e = PE(), t) {
+function QE(e = PE(), t) {
 	let n = Ec({
 		history: e,
 		routes: [
@@ -17304,7 +17318,7 @@ function ZE(e = PE(), t) {
 				name: "scheduled",
 				components: {
 					default: BT,
-					actions: XE
+					actions: ZE
 				},
 				meta: {
 					title: "Scheduled",
@@ -17316,7 +17330,7 @@ function ZE(e = PE(), t) {
 				name: "scheduled-job",
 				components: {
 					default: qT,
-					actions: XE
+					actions: ZE
 				},
 				meta: {
 					title: "Scheduled",
@@ -17328,7 +17342,7 @@ function ZE(e = PE(), t) {
 				name: "scheduled-run",
 				components: {
 					default: QT,
-					actions: XE
+					actions: ZE
 				},
 				meta: {
 					title: "Scheduled",
@@ -17379,9 +17393,9 @@ function ZE(e = PE(), t) {
 }
 //#endregion
 //#region src/main.ts
-function QE(e, t) {
-	let n = No(ay).use(ZE(void 0, e));
+function $E(e, t) {
+	let n = No(ay).use(QE(void 0, e));
 	return t && n.provide(zc, t), n;
 }
 //#endregion
-export { ay as App, QE as createChatHermesApp };
+export { ay as App, $E as createChatHermesApp };
