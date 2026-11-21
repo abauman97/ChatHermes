@@ -23,15 +23,17 @@ describe("authenticated Kanban REST contract", () => {
     expect(new Headers(upload.headers).has("content-type")).toBe(false);
     expect(() => kanbanUrl("/board", "")).toThrow("Select a board");
   });
-  it("never renders upstream error bodies and distinguishes transition conflicts", async () => {
+  it.each([400, 409])("never renders upstream error bodies (status %s)", async (status) => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("sensitive provider diagnostics", { status: 409 })),
+      vi.fn(async () => new Response("sensitive provider diagnostics", { status })),
     );
     await expect(api.write("/tasks/t", "PATCH", { status: "done" }, "one")).rejects.toBeInstanceOf(
       KanbanError,
     );
-    await expect(api.write("/tasks/t", "PATCH", {}, "one")).rejects.toThrow("Hermes refused");
+    await expect(api.write("/tasks/t", "PATCH", {}, "one")).rejects.toThrow(
+      status === 409 ? "Hermes refused" : "Kanban request failed (400).",
+    );
   });
 });
 

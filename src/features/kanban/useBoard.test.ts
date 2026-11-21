@@ -72,7 +72,94 @@ function setup() {
   wrappers.push(wrapper);
   return { state, selected, active, wrapper };
 }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
 describe("Kanban snapshot and event lifecycle", () => {
+  it("settles each overlapping batch during sustained event invalidations without parallel reads", async () => {
+    const { state } = setup();
+    await flushPromises();
+    const reads: ReturnType<typeof deferred<Board>>[] = [];
+    vi.mocked(api.board).mockClear();
+    vi.mocked(api.board).mockImplementation(() => {
+      const read = deferred<Board>();
+      reads.push(read);
+      return read.promise;
+    });
+    const settled: number[] = [];
+    const refresh = (id: number) =>
+      state.refresh().then(() => {
+        settled.push(id);
+      });
+    const initial = refresh(-1);
+    const batches = [refresh(0), refresh(0)];
+    for (let i = 0; i < 12; i++) {
+      expect(reads).toHaveLength(i + 1);
+      // Continuous external events coalesce with explicit refresh/mutation callers.
+      Socket.all[0]!.onmessage?.({ data: JSON.stringify({ events: [{}] }) });
+      reads[i]!.resolve(boardData(`snapshot-${i}`));
+      await flushPromises();
+      expect(reads).toHaveLength(i + 2);
+      expect(settled).toEqual([-1, ...Array.from({ length: i }, (_, id) => [id, id]).flat()]);
+      expect(state.snapshot.value?.columns[0]?.tasks[0]?.id).toBe(`snapshot-${i}`);
+      batches.push(refresh(i + 1), refresh(i + 1));
+    }
+    reads[12]!.resolve(boardData("penultimate"));
+    await flushPromises();
+    expect(settled).not.toContain(12);
+    reads[13]!.resolve(boardData("final"));
+    await Promise.all([initial, ...batches]);
+    await flushPromises();
+    expect(reads).toHaveLength(14);
+    expect(settled.slice(-2)).toEqual([12, 12]);
+    expect(state.loading.value).toBe(false);
+  });
+  it("settles a failed batch while a later invalidation continues and recovers", async () => {
+    const { state } = setup();
+    await flushPromises();
+    const failed = deferred<Board>(),
+      recovery = deferred<Board>();
+    vi.mocked(api.board)
+      .mockImplementationOnce(() => failed.promise)
+      .mockImplementationOnce(() => recovery.promise);
+    const first = state.refresh();
+    let recovered = false;
+    const next = state.refresh().then(() => {
+      recovered = true;
+    });
+    failed.reject(new KanbanError(409));
+    await first;
+    await flushPromises();
+    expect(recovered).toBe(false);
+    expect(state.error.value).not.toBe("");
+    expect(state.loading.value).toBe(false);
+    recovery.resolve(boardData("recovered"));
+    await next;
+    expect(state.error.value).toBe("");
+    expect(state.snapshot.value?.columns[0]?.tasks[0]?.id).toBe("recovered");
+  });
+  it("releases queued callers on disposal without starting or applying obsolete reads", async () => {
+    const { state, active } = setup();
+    await flushPromises();
+    const late = deferred<Board>();
+    vi.mocked(api.board).mockClear();
+    vi.mocked(api.board).mockImplementationOnce(() => late.promise);
+    const first = state.refresh();
+    const queued = state.refresh();
+    active.value = false;
+    await queued;
+    expect(vi.mocked(api.board).mock.calls[0]![2]!.aborted).toBe(true);
+    late.resolve(boardData("obsolete"));
+    await first;
+    expect(api.board).toHaveBeenCalledTimes(1);
+    expect(state.snapshot.value).toBeUndefined();
+  });
   it("starts at snapshot tail, invalidates task details, reconnects with cursor and polls without a socket", async () => {
     const { state } = setup();
     await flushPromises();

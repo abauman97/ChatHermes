@@ -5,6 +5,16 @@ import { api, runtime } from "./helpers";
 test("Kanban opt-in, board isolation, task operations and upstream synchronization", async ({
   page,
 }, info) => {
+  // Verify that the browser endpoint serves the inspected fixture's build.
+  const asset = runtime(`
+import json
+from pathlib import Path
+root = Path('/opt/data/plugins/chathermes/dashboard/dist/assets')
+print(json.dumps(next(root.glob('app-*.js')).name))
+`);
+  const entry = await page.request.get("/dashboard-plugins/@default/chathermes/dist/index.js");
+  expect(entry.status()).toBe(200);
+  expect(await entry.text()).toContain(asset);
   const eventTasks = new Set<string>();
   page.on("websocket", (socket) => {
     if (!socket.url().includes("/api/plugins/kanban/events")) return;
@@ -124,6 +134,7 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
       triage.locator(".kanban-card").filter({ hasText: "First task " + marker }),
     ).toBeVisible();
   }
+  const completionTaskId = await card.getAttribute("data-task-id");
   await card.click();
   const detail = viewer.getByRole("region", { name: "Task details", exact: true });
   await expect(detail.getByRole("heading", { name: "First task " + marker })).toBeVisible();
@@ -174,6 +185,38 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
     .getByRole("button", { name: "Remove attachment kanban-note.txt", exact: true })
     .click();
   await expect(detail.getByRole("link", { name: "kanban-note.txt", exact: true })).toHaveCount(0);
+  // Completion must collect evidence before either UI path mutates Hermes.
+  const completion = viewer.getByRole("form", { name: "Complete task", exact: true });
+  const summary = viewer.getByRole("textbox", { name: "Completion summary", exact: true });
+  const move = detail.getByRole("combobox", { name: "Move task", exact: true });
+  await move.selectOption("ready");
+  await expect(move).toHaveValue("ready");
+  await move.selectOption("done");
+  await expect(summary).toBeFocused();
+  await expect(move).toHaveValue("ready");
+  await summary.fill("   ");
+  await expect(
+    completion.getByRole("button", { name: "Complete task", exact: true }),
+  ).toBeDisabled();
+  await viewer.getByRole("button", { name: "Cancel completion", exact: true }).click();
+  await expect(move).toBeFocused();
+  expect(
+    (await api(page, "/api/plugins/kanban/tasks/" + completionTaskId + "?board=" + marker)).body
+      .task.status,
+  ).toBe("ready");
+  await move.selectOption("done");
+  await summary.fill("Reconciled AP invoices and verified the ledger totals.");
+  await page.screenshot({
+    animations: "disabled",
+    path: info.outputPath("kanban-completion-summary.png"),
+  });
+  await completion.getByRole("button", { name: "Complete task", exact: true }).click();
+  await expect(move).toHaveValue("done");
+  await expect(move).toBeEnabled();
+  await expect(move).toBeFocused();
+  await detail.getByText("Result and latest summary", { exact: true }).click();
+  await expect(detail).toContainText("Reconciled AP invoices and verified the ledger totals.");
+  await page.screenshot({ animations: "disabled", path: info.outputPath("kanban-completed.png") });
   await detail.getByRole("button", { name: "Close task details", exact: true }).click();
   await expect(
     viewer.locator(".kanban-card").filter({ hasText: "Updated task " + marker }),
@@ -187,6 +230,34 @@ test("Kanban opt-in, board isolation, task operations and upstream synchronizati
   await expect(
     viewer.locator(".kanban-card").filter({ hasText: "External task " + marker }),
   ).toBeVisible();
+  if (info.project.name === "desktop") {
+    const externalCard = viewer
+      .locator(".kanban-card")
+      .filter({ hasText: "External task " + marker });
+    await externalCard.click();
+    await move.selectOption("ready");
+    await expect(move).toHaveValue("ready");
+    await detail.getByRole("button", { name: "Close task details", exact: true }).click();
+    await expect(externalCard).toHaveAttribute("draggable", "true");
+    const doneLane = viewer.getByRole("region", { name: "done tasks", exact: true });
+    await doneLane.scrollIntoViewIfNeeded();
+    await expect(externalCard).toBeInViewport();
+    await externalCard.dragTo(doneLane);
+    await expect(summary).toBeFocused();
+    await summary.fill("Verified the external AP reconciliation.");
+    await page.screenshot({
+      animations: "disabled",
+      path: info.outputPath("kanban-drop-summary.png"),
+    });
+    await completion.getByRole("button", { name: "Complete task", exact: true }).click();
+    await expect(
+      viewer
+        .getByRole("region", { name: "done tasks", exact: true })
+        .locator(".kanban-card")
+        .filter({ hasText: "External task " + marker }),
+    ).toBeVisible();
+    await expect(externalCard).toBeFocused();
+  }
   const boards = await api(page, "/api/plugins/kanban/boards");
   expect(boards.body.current).toBe(current); // UI selection never switches CLI/global current.
   const other = boards.body.boards.find((b: { slug: string }) => b.slug !== marker)?.slug;

@@ -13,6 +13,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
+  move: [id: string, status: string, origin: HTMLSelectElement];
   select: [id: string];
   operation: [path: string, method: string, body: unknown, nudge?: boolean, after?: () => void];
   upload: [file: File];
@@ -57,6 +58,12 @@ function upload(event: Event) {
   if (file) emit("upload", file);
   input.value = "";
 }
+function move(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  const status = select.value;
+  select.value = props.detail.task.status;
+  emit("move", props.detail.task.id, status, select);
+}
 function time(value: number) {
   return new Date(value * 1000).toLocaleString();
 }
@@ -100,7 +107,7 @@ function time(value: number) {
           aria-label="Move task"
           :value="detail.task.status"
           :disabled="busy || !workflow"
-          @change="operation('', 'PATCH', { status: ($event.target as HTMLSelectElement).value })"
+          @change="move"
         >
           <option :value="detail.task.status">{{ detail.task.status }}</option>
           <option

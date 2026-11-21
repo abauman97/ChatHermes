@@ -588,7 +588,15 @@ task writes, comments, attachment operations/downloads, logs, dispatch nudges an
 event connections carry an explicit board slug. No request calls `/boards/{slug}/switch`.
 `/workflow` supplies manual move targets, further restricted by `drag_target`;
 without that contract moves are disabled. Hermes validates the transition and owns
-all worker/dependency rules. Successful task writes nudge the existing `/dispatch`
+all worker/dependency rules. Both task details and drag/drop collect a nonblank,
+user-authored completion summary before PATCHing a task with
+`{status: "done", summary: "…"}`. Pending drafts retain board/task identity and
+are discarded on board/task changes or disabling the viewer. Cancellation sends
+no mutation. The submitted summary is disabled while saving and becomes editable
+again on failure. Successful completion restores focus after refresh and the DOM
+update enable controls, provided the board/task/view has not changed. Other
+transitions keep their status-only payload. Successful task
+writes nudge the existing `/dispatch`
 endpoint, as Desktop does; they never implement an executor or retry an uncertain
 write. Conflict messages are generic and retain the current task for inspection.
 
@@ -598,7 +606,9 @@ are siblings of `task` on `/tasks/{id}`. Events connect to
 `buildWsUrl` (fresh gated ticket or loopback credential on each dial), invalidate
 reads, and reconnect
 with bounded exponential backoff and the last received cursor. Eight-second
-snapshot/detail polling remains active as fallback. Board changes, disabling,
+snapshot/detail polling remains active as fallback. Overlapping board invalidations
+coalesce into the next read; each refresh waits for a read started after its own
+invalidation, without waiting for reads queued by later events. Board changes, disabling,
 hidden documents and unmount abort reads, close the socket and clear timers;
 obsolete callbacks cannot apply another board's data. Foregrounding refetches the
 snapshot before reconnecting. Task details remain inspectable with their drafts
