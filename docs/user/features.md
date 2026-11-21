@@ -138,8 +138,11 @@ Select a task to inspect dependencies, comments, attachments, activity, worker l
 run history and results. Add comments, upload/download/remove attachments, archive,
 restore or permanently delete a task. On desktop, drag cards between eligible
 columns; on mobile, use **Move task** in the task details. Hermes supplies the
-allowed move targets and enforces dependencies and lifecycle rules. Running,
-scheduled and review are not offered as drag targets. During dispatch, Hermes
+allowed move targets and enforces dependencies and lifecycle rules. Moving to Done
+opens a completion summary form. Describe what was completed, then select
+**Complete task**. Blank summaries cannot be submitted. **Cancel completion** or
+Escape closes the form without moving the task; changing boards or tasks discards
+the draft. Running, scheduled and review are not offered as drag targets. During dispatch, Hermes
 can immediately promote a dependency-free Todo task back to Ready.
 
 Changes from Hermes's other clients arrive through its event stream, with an

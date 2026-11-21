@@ -39,50 +39,60 @@ export function useBoard(
         return;
       }
       const controller = new AbortController();
-      let disposed = false,
-        running = false,
-        dirty = false;
+      let disposed = false;
+      let running: Promise<void> | undefined;
+      let queued: { promise: Promise<void>; resolve: () => void } | undefined;
       let cursor: number | undefined;
       let socket: WebSocket | undefined;
       let dialing = false;
       let reconnect: ReturnType<typeof setTimeout> | undefined;
       let retry = 1000;
-      async function read() {
-        if (disposed) return;
+      function read(): Promise<void> {
+        if (disposed) return Promise.resolve();
         if (running) {
-          dirty = true;
-          return;
-        }
-        running = true;
-        loading.value = !snapshot.value;
-        try {
-          const next = await api.board(slug, archived.value, controller.signal);
-          if (disposed) return;
-          snapshot.value = next;
-          cursor ??= typeof next.latest_event_id === "number" ? next.latest_event_id : undefined;
-          if (!socket && !reconnect && !dialing) void connect();
-          error.value = "";
-        } catch (err) {
-          if (!disposed) {
-            error.value =
-              err instanceof KanbanError
-                ? err.message
-                : "Could not load Kanban. Retry when the dashboard is connected.";
-            if (err instanceof KanbanError && [401, 403, 404, 503].includes(err.status)) {
-              // A removed selected board is handled by the page's catalog refresh.
-              if (err.status !== 404) unavailable();
-            }
+          // Invalidations during a read need the next read, not its stale result.
+          if (!queued) {
+            let resolve!: () => void;
+            const promise = new Promise<void>((done) => {
+              resolve = done;
+            });
+            queued = { promise, resolve };
           }
-        } finally {
-          running = false;
-          if (!disposed) {
-            loading.value = false;
-            if (dirty) {
-              dirty = false;
-              void read();
-            }
-          }
+          return queued.promise;
         }
+        // Each batch waits only for the read started after its invalidations.
+        // Later batches must not extend earlier callers' completion boundary.
+        const batch = queued;
+        queued = undefined;
+        running = (async () => {
+          loading.value = !snapshot.value;
+          try {
+            const next = await api.board(slug, archived.value, controller.signal);
+            if (disposed) return;
+            snapshot.value = next;
+            cursor ??= typeof next.latest_event_id === "number" ? next.latest_event_id : undefined;
+            if (!socket && !reconnect && !dialing) void connect();
+            error.value = "";
+          } catch (err) {
+            if (!disposed) {
+              error.value =
+                err instanceof KanbanError
+                  ? err.message
+                  : "Could not load Kanban. Retry when the dashboard is connected.";
+              if (err instanceof KanbanError && [401, 403, 404, 503].includes(err.status)) {
+                // A removed selected board is handled by the page's catalog refresh.
+                if (err.status !== 404) unavailable();
+              }
+            }
+          } finally {
+            if (!disposed) loading.value = false;
+          }
+        })().finally(() => {
+          running = undefined;
+          batch?.resolve();
+          if (queued && !disposed) void read();
+        });
+        return running;
       }
       async function connect() {
         if (disposed || dialing) return;
@@ -170,6 +180,8 @@ export function useBoard(
       void readDetail();
       cleanup(() => {
         disposed = true;
+        queued?.resolve();
+        queued = undefined;
         controller.abort();
         detailRequest?.abort();
         stopDetail();

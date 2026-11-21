@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api, KanbanError } from "../api";
 import { useKanban } from "../context";
@@ -302,14 +302,107 @@ function archiveBoard() {
     },
   );
 }
-function move(id: string, status: string) {
-  const task = snapshot.value?.columns.flatMap((c) => c.tasks).find((t) => t.id === id);
+const completion = shallowRef<{ board: string; id: string; title: string; token: number }>();
+const completionSummary = ref("");
+let completionOrigin: HTMLElement | undefined;
+let completionScope = 0;
+watch(
+  [selected, taskId, kanban.visible],
+  () => {
+    completionScope++;
+    completion.value = undefined;
+    completionSummary.value = "";
+  },
+  { flush: "sync" },
+);
+async function cancelCompletion() {
+  if (busy.value) return;
+  completion.value = undefined;
+  completionSummary.value = "";
+  await nextTick();
+  if (completionOrigin?.isConnected) completionOrigin.focus();
+}
+async function completeTask() {
+  const target = completion.value;
+  const summary = completionSummary.value.trim();
   if (
+    !target ||
+    !summary ||
+    busy.value ||
+    target.board !== selected.value ||
+    target.token !== generation
+  )
+    return;
+  const scope = completionScope;
+  const origin = completionOrigin;
+  let completed = false;
+  await perform(
+    () =>
+      api.write(
+        "/tasks/" + encodeURIComponent(target.id),
+        "PATCH",
+        { status: "done", summary },
+        target.board,
+      ),
+    () => {
+      if (completion.value === target) {
+        completion.value = undefined;
+        completionSummary.value = "";
+        completed = true;
+      }
+    },
+    true,
+  );
+  await nextTick();
+  if (
+    !completed ||
+    disposed ||
+    busy.value ||
+    !kanban.visible.value ||
+    scope !== completionScope ||
+    target.token !== generation ||
+    completion.value
+  )
+    return;
+  const focusTarget = origin?.isConnected
+    ? origin
+    : origin?.classList.contains("kanban-card")
+      ? Array.from(page.value?.querySelectorAll<HTMLButtonElement>(".kanban-card") || []).find(
+          (card) => card.dataset.taskId === target.id,
+        )
+      : undefined;
+  focusTarget?.focus();
+}
+async function move(id: string, status: string, origin?: HTMLElement) {
+  const task =
+    detail.value?.task.id === id
+      ? detail.value.task
+      : snapshot.value?.columns.flatMap((c) => c.tasks).find((t) => t.id === id);
+  if (
+    busy.value ||
+    !kanban.visible.value ||
     !task ||
     !workflow.value?.columns.some((c) => c.key === status && c.drag_target) ||
     !workflow.value.manual[task.status]?.includes(status)
   )
     return;
+  if (status === "done") {
+    const target = { board: selected.value, id, title: task.title, token: generation };
+    completionOrigin =
+      origin ||
+      (document.activeElement instanceof HTMLElement ? document.activeElement : undefined);
+    completionSummary.value = "";
+    completion.value = target;
+    await nextTick();
+    if (completion.value !== target) return;
+    const input = page.value?.querySelector<HTMLTextAreaElement>(
+      '[aria-label="Completion summary"]',
+    );
+    input?.focus();
+    input?.scrollIntoView?.({ block: "nearest" });
+    return;
+  }
+  completion.value = undefined;
   taskOperation("/tasks/" + encodeURIComponent(id), "PATCH", { status });
 }
 function drag(event: DragEvent, id: string) {
@@ -321,7 +414,12 @@ function drag(event: DragEvent, id: string) {
 function drop(event: DragEvent, status: string) {
   try {
     const data = JSON.parse(event.dataTransfer?.getData("application/x-chathermes-task") || "");
-    if (data.board === selected.value) move(data.id, status);
+    if (data.board === selected.value) {
+      const card = Array.from(
+        page.value?.querySelectorAll<HTMLButtonElement>(".kanban-card") || [],
+      ).find((element) => element.dataset.taskId === data.id);
+      void move(data.id, status, card);
+    }
   } catch {
     /* Ignore unrelated drags. */
   }
@@ -411,6 +509,31 @@ function drop(event: DragEvent, status: string) {
       <p v-else-if="!boards.length && !catalogError" class="kanban-empty">
         No boards available. Create a board to get started.
       </p>
+      <form
+        v-if="completion"
+        class="kanban-form"
+        aria-label="Complete task"
+        @submit.prevent="completeTask"
+        @keydown.esc.prevent="cancelCompletion"
+      >
+        <h2>Complete {{ completion.title }}</h2>
+        <label
+          >Completion summary<textarea
+            v-model="completionSummary"
+            aria-label="Completion summary"
+            :disabled="busy"
+            required
+            rows="3"
+            placeholder="Describe what was completed."
+          />
+        </label>
+        <div class="kanban-toolbar">
+          <button :disabled="busy || !completionSummary.trim()">Complete task</button>
+          <button type="button" :disabled="busy" @click="cancelCompletion">
+            Cancel completion
+          </button>
+        </div>
+      </form>
       <div class="kanban-workspace" :class="{ 'has-detail': taskId }">
         <div class="kanban-columns" aria-label="Board columns">
           <section
@@ -464,6 +587,7 @@ function drop(event: DragEvent, status: string) {
           :busy="busy"
           @close="closeTask"
           @select="taskId = $event"
+          @move="move"
           @operation="taskOperation"
           @upload="upload"
         />
