@@ -2,6 +2,75 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "./fixtures";
 import { runtime } from "./helpers";
 
+test("scheduled menu resumes the exact older run in its profile and explains missing sessions", async ({
+  page,
+}, info) => {
+  const seed = runtime(
+    `
+import json,sys
+from cron.jobs import create_job,save_job_output
+from hermes_cli.web_server_cron import _cron_store_scope,_cron_profile_home
+from hermes_cli.web_server_sessions import _open_session_db_for_profile
+with _cron_store_scope(_cron_profile_home('beta')[1]):
+    job=create_job(prompt='Resume private prompt',schedule='0 0 1 1 *',name=sys.argv[1],paused=True)
+    raw=save_job_output(job['id'],'Saved output without a session.')
+older='cron_'+job['id']+'_20260101_000000'
+newer='cron_'+job['id']+'_20260102_000000'
+for profile in ('default','beta'):
+    db=_open_session_db_for_profile(profile,read_only=False)
+    for sid,label in ((older,'Older'),(newer,'Newer')):
+        db.create_session(sid,source='cron')
+        db.append_message(sid,'user',profile+' '+label+' original prompt')
+        db.append_message(sid,'assistant',profile+' '+label+' exact result')
+    db.close()
+print(json.dumps({'job':job['id'],'older':older,'newer':newer,'raw':'output:'+raw.stem}))
+`,
+    "Resume result " + randomUUID(),
+  );
+  const origin = new URL(page.url()).origin;
+  const destination = (run: string) =>
+    `${origin}/chathermes#/scheduled/${seed.job}/${encodeURIComponent(run)}?profile=beta`;
+  const plugin = page.locator(".chathermes-embedded");
+  const result = plugin.locator(".scheduled-page");
+  const menu = plugin.getByRole("button", { name: "Screen options", exact: true });
+  const resume = plugin.getByRole("menuitem", { name: "Resume Session", exact: true });
+  await page.goto(destination(seed.newer));
+  await expect(result).toContainText("beta Newer exact result");
+  await page.goto(destination(seed.older));
+  await expect(result).toContainText("beta Older exact result");
+  await menu.click();
+  await expect(resume).toBeEnabled();
+  await page.screenshot({ path: info.outputPath("scheduled-resume-menu.png") });
+  await menu.press("Escape");
+  await expect(menu).toBeFocused();
+  await menu.click();
+  await resume.click();
+  await expect(page).toHaveURL(new RegExp(`/chat/${seed.older}\\?profile=beta$`));
+  await expect(plugin.locator(".topbar-profile")).toHaveText("beta");
+  await expect(plugin.locator(".message.user")).toHaveText("beta Older original prompt");
+  await expect(plugin.locator(".message.assistant")).toContainText("beta Older exact result");
+  await expect(plugin).not.toContainText("default Older");
+  await expect(plugin).not.toContainText("beta Newer exact result");
+  const composer = plugin.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill("Draft in the resumed session");
+  await expect(composer).toBeFocused();
+  await page.screenshot({ path: info.outputPath("scheduled-resumed-session.png") });
+  await page.reload();
+  await expect(plugin.locator(".message.user")).toHaveText("beta Older original prompt");
+  await page.goto(destination(seed.raw));
+  await expect(result).toContainText("Saved output without a session.");
+  await menu.click();
+  await expect(resume).toBeVisible();
+  await expect(resume).toBeDisabled();
+  await expect(plugin.locator("#scheduled-resume-unavailable")).toHaveText(
+    "No associated session is available for this result.",
+  );
+  await page.screenshot({ path: info.outputPath("scheduled-resume-unavailable.png") });
+  await menu.press("Escape");
+  await page.goBack();
+  await expect(plugin.locator(".message.user")).toHaveText("beta Older original prompt");
+});
+
 test("scheduled result renders only the final response, with raw output for runs without responses", async ({
   page,
 }, info) => {
