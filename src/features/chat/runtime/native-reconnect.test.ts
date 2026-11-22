@@ -79,6 +79,30 @@ afterEach(() => {
   localStorage.clear();
 });
 
+it.each(["stored_session_id", "session_key"] as const)(
+  "retains the stored continuation from a resume through %s when info omits it",
+  async (field) => {
+    const session = useNativeSession(vi.fn());
+    const attached = session.attach("alpha", "compression-root");
+    const viewer = latest();
+    viewer.hooks.snapshot({
+      ...snapshot("Earlier answer"),
+      [field]: "compression-tip",
+      info: { model: "fixture-model" },
+    });
+    viewer.hooks.recovered();
+    viewer.finish();
+    await attached;
+    expect(session.settings.value).toMatchObject({
+      profile: "alpha",
+      session: "compression-root",
+      storedSession: "compression-tip",
+      info: { model: "fixture-model" },
+    });
+    session.close();
+  },
+);
+
 describe("interrupted attachment draft recovery", () => {
   it.each(["background", "offline", "navigation"])(
     "recovers rejected text only in the original selection after %s",

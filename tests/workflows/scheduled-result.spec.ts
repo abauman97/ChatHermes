@@ -17,7 +17,7 @@ with _cron_store_scope(_cron_profile_home('beta')[1]):
 older='cron_'+job['id']+'_20260101_000000'
 newer='cron_'+job['id']+'_20260102_000000'
 for profile in ('default','beta'):
-    db=_open_session_db_for_profile(profile,read_only=False)
+    db=FixtureStore(store=_open_session_db_for_profile(profile,read_only=False))
     for sid,label in ((older,'Older'),(newer,'Newer')):
         db.create_session(sid,source='cron')
         db.append_message(sid,'user',profile+' '+label+' original prompt')
@@ -81,7 +81,7 @@ from cron.jobs import create_job,save_job_output
 from hermes_cli.web_server_sessions import _open_session_db_for_profile
 job=create_job(prompt='Private scheduled prompt',schedule='0 0 1 1 *',name=sys.argv[1],paused=True)
 sid='cron_'+job['id']+'_20260101_000000'
-db=_open_session_db_for_profile('default',read_only=False)
+db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False))
 db.create_session(sid,source='cron')
 db.append_message(sid,'user','Private scheduled prompt')
 db.append_message(sid,'assistant','Intermediate progress',reasoning='Private reasoning')

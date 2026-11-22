@@ -1,4 +1,4 @@
-// UI slice reviewed against Hermes v0.23.0 (2bd378ed) and Desktop's Kanban types.ts.
+// UI slice reviewed against Hermes v0.23.3 (caafe538) and Desktop's Kanban types.ts.
 export interface Task {
   id: string;
   title: string;

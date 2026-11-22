@@ -105,7 +105,7 @@ test("context suppression preserves original Markdown images in live and raw his
   // Raw multipart history bypasses upstream string sanitization and retains both notes.
   const history = `${marker}-history`;
   runtime(
-    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,source=sys.argv[1:]; db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api'); db.append_message(sid,'user','Markdown history'); db.append_message(sid,'assistant',[{'type':'text','text':source}]); db.close(); print('true')",
+    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,source=sys.argv[1:]; db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api'); db.append_message(sid,'user','Markdown history'); db.append_message(sid,'assistant',[{'type':'text','text':source}]); db.close(); print('true')",
     history,
     source,
   );

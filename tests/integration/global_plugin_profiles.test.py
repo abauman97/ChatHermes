@@ -1,7 +1,7 @@
 """Run in an isolated Hermes runtime, with /opt/plugins-src/chathermes copied in.
 
 Uses Hermes's real plugin dependency and profile scopes; no personal state or LLM.
-Reviewed contract: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19.
+Reviewed contract: caafe5389ae585ef77387a962aee05b1bcf17029.
 """
 
 import importlib.util

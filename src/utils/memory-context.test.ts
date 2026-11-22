@@ -58,7 +58,7 @@ it.skipIf(!existsSync(".hermes-source/agent/memory_context.py"))(
           "run",
           "python",
           "-c",
-          "import sys,json; sys.path.insert(0,'.hermes-source'); from agent.memory_context import build_memory_context_block,sanitize_context; from hermes_state import SessionDB; block=build_memory_context_block('fixture memory'); parts=[{'type':'text','text':block}]; print(json.dumps([block,sanitize_context(block),SessionDB._loaded_view_content('user',parts)]))",
+          "import sys,json; sys.path.insert(0,'.hermes-source'); from agent.memory_context import build_memory_context_block,sanitize_context; from persistence.sqlite.conversation._store.messages import _loaded_view_content; block=build_memory_context_block('fixture memory'); parts=[{'type':'text','text':block}]; print(json.dumps([block,sanitize_context(block),_loaded_view_content('user',parts)]))",
         ],
         { encoding: "utf8" },
       ),

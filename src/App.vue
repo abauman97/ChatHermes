@@ -12,7 +12,7 @@ const route = useRoute();
 const header = providePageHeader();
 const {
   profile,
-  session,
+  sidebarSession,
   sessions,
   projects,
   selectedProject,
@@ -73,7 +73,7 @@ const projectsLink = computed(() => {
 </script>
 <template>
   <div
-    class="app-shell flex h-dvh min-h-0 overflow-hidden bg-black font-sans text-white dark:bg-black dark:text-white"
+    class="app-shell flex h-dvh min-h-0 overflow-clip bg-black font-sans text-white dark:bg-black dark:text-white"
   >
     <aside
       :ref="(el) => (sidebar = el as HTMLElement | null)"
@@ -219,7 +219,7 @@ const projectsLink = computed(() => {
         :unread-sessions="unreadSessions"
         :working-sessions="workingSessions"
         @track="trackSession"
-        :selected="session"
+        :selected="sidebarSession"
         :loading="loading"
         :error="error"
         :has-more="hasMore"

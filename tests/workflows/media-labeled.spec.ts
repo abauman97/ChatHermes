@@ -19,7 +19,7 @@ for (const profile of ["default", "alpha"]) {
       (text) => text.includes("Desktop board:") || text.startsWith("Desktop:\n"),
     );
     runtime(
-      "import pathlib,sys,json,base64; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,text,paths,png,negatives,profile=sys.argv[1:]; paths=json.loads(paths); [(pathlib.Path(p).parent.mkdir(parents=True,exist_ok=True),pathlib.Path(p).write_bytes(base64.b64decode(png))) for p in paths]; db=_open_session_db_for_profile(profile,read_only=False); db.create_session(sid,'api'); db.append_message(sid,'user','Show the screenshots'); db.append_message(sid,'assistant',text); db.append_message(sid,'assistant',(chr(10)*2).join(json.loads(negatives))); db.append_message(sid,'assistant','Pair: MEDIA:'+paths[0]+' MEDIA:'+paths[1]); db.close(); print(json.dumps(True))",
+      "import pathlib,sys,json,base64; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,text,paths,png,negatives,profile=sys.argv[1:]; paths=json.loads(paths); [(pathlib.Path(p).parent.mkdir(parents=True,exist_ok=True),pathlib.Path(p).write_bytes(base64.b64decode(png))) for p in paths]; db=FixtureStore(store=_open_session_db_for_profile(profile,read_only=False)); db.create_session(sid,'api'); db.append_message(sid,'user','Show the screenshots'); db.append_message(sid,'assistant',text); db.append_message(sid,'assistant',(chr(10)*2).join(json.loads(negatives))); db.append_message(sid,'assistant','Pair: MEDIA:'+paths[0]+' MEDIA:'+paths[1]); db.close(); print(json.dumps(True))",
       identity,
       example.text,
       JSON.stringify(example.paths),

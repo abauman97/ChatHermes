@@ -9,7 +9,7 @@ const notes = [
 ];
 const open = "<memory-context>";
 const markdown = new MarkdownIt({ html: true });
-trackBlockSources(markdown);
+trackBlockSources(markdown, { inlineCodeOnly: true });
 
 export type Range = [number, number];
 const backticks = markdown.inline.ruler.__rules__.find((rule) => rule.name === "backticks")!.fn;
@@ -133,11 +133,16 @@ export function boundaryTokens(
   });
 }
 
-export function memoryContextRanges(text: string, pending = false, boundaries = [0]): Range[] {
+export function memoryContextRanges(
+  text: string,
+  pending = false,
+  boundaries = [0],
+  parsed?: ReturnType<typeof boundaryTokens>,
+): Range[] {
   if (!text.includes("<") && !text.includes("[")) return [];
   const starts = [0];
   for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
-  const tokens = boundaryTokens(markdown, text, boundaries);
+  const tokens = parsed ?? boundaryTokens(markdown, text, boundaries);
   const protectedRanges: Range[] = tokens.flatMap((token) =>
     token.map && ["fence", "code_block"].includes(token.type)
       ? [[starts[token.map[0]]!, starts[token.map[1]] ?? text.length] as Range]

@@ -9,7 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from hermes_state import SessionDB
+
+from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
 ROOT = Path(__file__).resolve().parents[1] / "plugin/chathermes/dashboard"
 spec = importlib.util.spec_from_file_location(

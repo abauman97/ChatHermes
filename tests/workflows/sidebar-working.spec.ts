@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
-import { runtime } from "./helpers";
+import { api, runtime } from "./helpers";
 
 async function showSidebar(page: Page) {
   const menu = page.locator(".mobile-menu");
@@ -32,7 +32,7 @@ test("sidebar working survives navigation and reconnect, isolates simultaneous p
 import json,sys
 from hermes_cli.web_server_sessions import _open_session_db_for_profile
 for profile, sid, title in [('alpha',sys.argv[1],'Alpha working'),('beta',sys.argv[1],'Beta working'),('alpha',sys.argv[2],'Second working')]:
-    db = _open_session_db_for_profile(profile, read_only=False)
+    db = FixtureStore(store=_open_session_db_for_profile(profile, read_only=False))
     db.create_session(sid, source='desktop')
     db.set_session_title(sid, title + ' ' + sid)
     db.append_message(sid, 'user', 'Earlier prompt')
@@ -315,7 +315,7 @@ test("compressed continuation follows the original attached viewer through polli
     `
 import json,sys
 from hermes_cli.web_server_sessions import _open_session_db_for_profile
-db = _open_session_db_for_profile('default', read_only=False)
+db = FixtureStore(store=_open_session_db_for_profile('default', read_only=False))
 try:
     root, tip = sys.argv[1:]
     db.create_session(root, source='desktop')
@@ -327,6 +327,11 @@ try:
     assert db.get_compression_lineage(tip) == [tip]
     assert db.resolve_resume_session_id(root) == tip
     db.set_session_title(tip, 'Compressed working ' + root)
+    sys.path.insert(0, '/opt/data/plugins')
+    from chathermes.dashboard import push_store, session_tracking
+    # The sidebar contract concerns an Open chat, not first-page recency. Prior
+    # transcript fixtures intentionally retain future timestamps in this profile.
+    session_tracking.mark(push_store, 'default', root, 'open')
     print(json.dumps(True))
 finally:
     db.close()
@@ -334,8 +339,17 @@ finally:
     id,
     tip,
   );
+  const tree = await api(page, "/api/plugins/chathermes/projects?profile=default");
+  expect(tree.status).toBe(200);
+  const project = tree.body.projects.find((row: { sessionIds?: string[] }) =>
+    row.sessionIds?.includes(tip),
+  );
+  expect(project).toBeDefined();
   const origin = new URL(page.url()).origin;
   await page.goto(`${origin}/chathermes#/chat/${id}?profile=default`);
+  // Native membership lists the continuation, while the route retains its root.
+  // Await the loaded scope so an early assertion cannot pass before the tree.
+  await expect(page.locator(".header-project-subtitle")).toHaveText(project.label);
   await page
     .getByRole("textbox", { name: "Message Hermes" })
     .fill(`[workflow-clarify] ${randomUUID()}`);
@@ -355,8 +369,12 @@ finally:
     .locator(".sidebar .session-select")
     .filter({ hasText: `Compressed working ${id}` });
   await expect(selected.locator(".session-working")).toBeVisible();
-  // A reload on Home discards the viewer and restores work by continuation ID.
-  await page.goto(`${origin}/chathermes#/?profile=default`);
+  await expect(selected).toHaveAttribute("aria-current", "page");
+  // A reload on scoped Home discards the viewer and restores native work.
+  await page.goto(
+    `${origin}/chathermes#/?profile=default&project=${encodeURIComponent(project.id)}`,
+  );
+  await page.reload();
   await showSidebar(page);
   await expect(selected.locator(".session-working")).toBeVisible();
   await selected.scrollIntoViewIfNeeded();

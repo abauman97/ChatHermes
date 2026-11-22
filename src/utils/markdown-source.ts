@@ -9,12 +9,19 @@ export const blockRanges = new WeakMap<Token, Span>();
 
 /** Capture provenance while the block parser still has its container-adjusted
  * line positions. Never search the document for repeated cell/paragraph text. */
-export function trackBlockSources(parser: InstanceType<typeof MarkdownIt>) {
+export function trackBlockSources(
+  parser: InstanceType<typeof MarkdownIt>,
+  { inlineCodeOnly = false } = {},
+) {
   const State = parser.block.State;
   const reads = new WeakMap<InstanceType<typeof State>, { text: string; spans: Span[] }[]>();
   parser.block.State = class extends State {
     override getLines(begin: number, end: number, indent: number, keepLastLF: boolean) {
       const text = super.getLines(begin, end, indent, keepLastLF);
+      // Trust/memory classifiers only project inline code spans. Plain prose
+      // needs no per-character provenance there; the renderer still tracks all
+      // tokens. A Markdown code span always has a literal backtick in its input.
+      if (inlineCodeOnly && !text.includes("`")) return text;
       const spans: Span[] = [];
       // Mirror getLines' indentation accounting, including tabs partly consumed
       // by list/quote/code indentation. Grammar and output remain the parser's.
@@ -94,6 +101,11 @@ export function trackBlockSources(parser: InstanceType<typeof MarkdownIt>) {
             ]);
           if (blockSources.has(token) || !["inline", "code_block", "fence"].includes(token.type))
             continue;
+          if (inlineCodeOnly && (token.type !== "inline" || !token.content.includes("`"))) {
+            // Cell indices belong to the original row, including untracked cells.
+            if (name === "table" && token.type === "inline") cell++;
+            continue;
+          }
           let record: { text: string; spans: Span[] } | undefined;
           if (name === "table") {
             record = cells[cell++] ?? { text: "", spans: [] };

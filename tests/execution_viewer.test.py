@@ -172,10 +172,18 @@ def test_read_body_uses_profile_store_and_redacts_credentials(monkeypatch):
     module = load("execution_viewer")
     opened, closed = [], []
     db = SimpleNamespace(
-        get_session=lambda s: {"id": s} if s == "stored" else None,
-        get_messages=lambda s: [
-            {"id": 2, "role": "assistant", "content": "Final provider-secret gateway-secret"}
-        ],
+        sessions=SimpleNamespace(get=lambda s: {"id": s} if s == "stored" else None),
+        messages=SimpleNamespace(
+            read_transcript=lambda s: [
+                SimpleNamespace(
+                    as_wire_row=lambda: {
+                        "id": 2,
+                        "role": "assistant",
+                        "content": "Final provider-secret gateway-secret",
+                    }
+                )
+            ]
+        ),
         close=lambda: closed.append(True),
     )
 

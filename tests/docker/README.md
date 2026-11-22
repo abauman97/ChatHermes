@@ -37,8 +37,8 @@ API override while `Notification.permission` remains denied and worker
 the integration runner still launches it headlessly.
 
 `test:env:build` builds ignored plugin assets and uses `docker compose build --pull`
-with the immutable official Hermes v0.23.0 image digest in `Dockerfile`. Its install
-stamp must match source commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`
+with the immutable official Hermes v0.23.3 image digest in `Dockerfile`. Its install
+stamp must match source commit `caafe5389ae585ef77387a962aee05b1bcf17029`
 (`hermes-pin.json`); build and integration startup both verify it. This does not
 follow `latest` or a mutable release tag. Ordinary test runs never rebuild,
 replace, or reseed running containers. After a rebuild, explicitly apply it with

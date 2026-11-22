@@ -6,7 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from hermes_state import SessionDB
+
+from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
 ROOT = Path(__file__).resolve().parents[1] / "plugin/chathermes/dashboard"
 spec = importlib.util.spec_from_file_location(
@@ -70,7 +71,9 @@ def test_listing_old_open_without_transcripts_archive_and_delete(state, history,
     tracking.mark(state, "alpha", "session-1", "settled")
     # Sidebar reads must never request a transcript or runtime viewer.
     for method in ("get_messages", "get_messages_as_conversation"):
-        monkeypatch.setattr(SessionDB, method, lambda *a, **k: pytest.fail("full history read"))
+        monkeypatch.setattr(
+            SessionDB, method, lambda *a, **k: pytest.fail("full history read"), raising=False
+        )
     result = tracking.listing(state, "alpha")
     assert [row["id"] for row in result["sessions"]] == ["session-0"]
     assert result["sessions"][0]["title"] == "Older open chat"

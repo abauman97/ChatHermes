@@ -76,6 +76,7 @@ def _result(home, job_id, execution_id, profile="default"):
     # Match epoch timestamps to this execution, never the latest run or a nearby
     # run after it finished. Page all retained sessions for delayed deliveries.
     from hermes_cli.web_server_sessions import _open_session_db_for_profile
+    from persistence.conversation.sessions import SessionWindow
 
     sessions = []
     # Script-only profiles may never initialize a session store. Do not create
@@ -85,7 +86,12 @@ def _result(home, job_id, execution_id, profile="default"):
         try:
             offset = 0
             while True:
-                page = db.list_cron_job_runs(job_id, limit=500, offset=offset)
+                page = [
+                    row.as_cron_row()
+                    for row in db.sessions.list_cron_job_runs(
+                        job_id, SessionWindow(limit=500, offset=offset)
+                    )
+                ]
                 sessions.extend(
                     row
                     for row in page

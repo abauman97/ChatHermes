@@ -1,6 +1,6 @@
 # Hermes session API contract
 
-The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
+The [Hermes API server source](https://github.com/NousResearch/hermes-agent/blob/caafe5389ae585ef77387a962aee05b1bcf17029/gateway/platforms/api_server.py) defines these authenticated routes. ChatHermes calls same-origin dashboard plugin routes. The Python proxy selects the Hermes profile and adds the gateway bearer key on the server.
 
 | Operation    | Hermes route                                                                          | Request            | Expected response                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,9 +18,9 @@ the newest end; each page is chronological. Native resume/activation requests us
 `omit_messages=true`; persisted hydration no longer downloads the native display
 history as well.
 
-The opt-in plugin extension opens the owning profile's SessionDB read-only,
+The opt-in plugin extension opens the owning profile's persistence handle read-only,
 resolves the resume tip, and delegates ancestor expansion, generation deduplication
-and rewind removal to `get_messages(...include_compacted=True, include_ancestors=True)`.
+and rewind removal to `messages.read_transcript(TranscriptRead(view=DISPLAY, include_lineage=True))`.
 It applies the pinned Desktop REST `_project_for_display` and honors
 `display_content`. Hidden rows retain their source ID but have an empty body;
 summary text is withheld. Inline image bytes become authenticated `artifact-images`
@@ -31,7 +31,7 @@ returned by Hermes still render normally.
 
 The response adds `transcript: {revision, next_offset, has_more}`. A one-row
 lookahead establishes `has_more`; `next_offset` consumes source rows, including
-hidden rows. Hermes's `conversation_revision(...include_ancestors=True)` fences
+hidden rows. Hermes's `messages.conversation_revision(...include_lineage=True)` fences
 offsets and detects in-place rewrites. Append, rewind, compaction, rotation or a
 mutation during reading returns 409. The client refreshes its loaded window
 before advancing; generation and request guards reject obsolete results.
@@ -41,7 +41,7 @@ Saved selection and order match the pinned Desktop REST path, including its
 limitations: uncovered user clones may appear after retained answers, and exact
 content/timestamp identities may collapse separate equal sends. No local
 reconstruction repairs these cases. The 120-row HTTP window does **not** bound
-backend work: the pin's multi-ancestor `get_messages` reads all retained payloads
+backend work: the pin's multi-ancestor transcript read reads all retained payloads
 before deduplication and paging. No metadata selector or transcript store is added.
 
 Earlier pages load near scroll-top and through a retryable button. A DOM anchor
@@ -74,9 +74,12 @@ verified compression ancestors and preferred continuation using the same edge
 selection as native resume. The original stored ID is included when verified on
 that path. Stale closed siblings, branches, resets, tools and delegates are excluded.
 Canonical chat owners require receipt lineage membership through the pinned
-`local_lineage_owner` helper; inherited `chat_id` alone proves no ownership.
-Aliases, validated canonical chat owners and pending ledger work are read in one SQLite
-snapshot so a concurrent rotation cannot splice different lineage versions.
+`bindings.lineage_owner` repository; inherited `chat_id` alone proves no ownership.
+Aliases, validated canonical chat owners and pending ledger work share
+`messages.read_snapshot()`. A pooled SQLite reader pins one transaction; without
+one, the storage consistency check rejects a concurrent write. An invalidated
+read withholds aliases and cannot attest idle, so rotation cannot splice different
+lineage versions.
 `session_keys_complete` reports successful lineage traversal independently of
 activity status: a failed traversal returns only the live lookup key and `false`,
 even when native activity confirms `working` or `waiting`. Successful traversal
@@ -126,15 +129,15 @@ lifecycle, not support for canonical or remote authority-owned sessions.
 
 ### Supported chat wire
 
-ChatHermes targets Hermes release v0.23.0, source
-`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. There is one wire contract:
+ChatHermes targets Hermes release v0.23.3, source
+`caafe5389ae585ef77387a962aee05b1bcf17029`. There is one wire contract:
 the dashboard's authenticated same-origin `/api/ws`, JSON-RPC 2.0, using
 `hermes-gateway-v1` and a single-use `hermes-gateway-ticket.*` subprotocol.
 Every session operation includes its profile. Revision/generation authority
 snapshots are rejected; there is no translation or alternate transport.
 The plugin registers no WebSocket route.
 
-`GET /chat/capabilities` reports `hermes.native.2bd378ed`, `native-gateway`,
+`GET /chat/capabilities` reports `hermes.native.caafe538`, `native-gateway`,
 and the reviewed source pin. The browser checks this contract before enabling
 sending and probes the native gateway without admitting a prompt.
 These fields describe the plugin's reviewed wire contract, not the running
@@ -203,10 +206,38 @@ runtime; the loopback target uses `HERMES_DASHBOARD_PORT` (default 9119).
 Browser recovery uses native snapshots and persisted history, with Desktop's deferred cold
 resume (`defer_history=true`, `cols=96`) and a second activation when completion
 races a busy resume. A cold `hydrating=true` ack also denotes omitted history. It does not claim lossless
-progress replay. Omitted native history is not an empty persisted transcript.
+progress replay. For a busy text snapshot, `session.events.since` reads before and
+after a fresh activation snapshot must bracket a single retained turn in the same
+process epoch and profile/session scope. A completion or new turn inside that
+bracket makes identity unavailable, even when the turns have identical text.
+Only then does its exact prefix locate the delta boundary within that contiguous
+turn, allowing the remaining records to replay. Frames arriving before the snapshot RPC reply
+are retained. Deduplication covers only actual replay records, never `latest_seq`;
+that field can advance after the page was read. Foreign scopes, epoch changes,
+sequence inconsistencies or mismatched text refuse live recovery with a generic
+reconnect error. When the verified native cache has evicted the turn prefix or the
+snapshot's turn cannot be identified, unverifiable assistant prose is withheld
+until a terminal event triggers a fresh native snapshot and saved-history recovery;
+tools, approvals and Stop stay connected. Earlier progress is reported as
+unavailable. If that terminal snapshot read fails, the observed completion still
+settles the same turn without publishing uncertain text. The history warning and
+text withholding remain; an intervening new turn or detached viewer cannot be
+settled by the older completion. The bounded native cache does not provide a general lossless
+guarantee. Omitted native history is not an empty persisted transcript.
+The same withholding applies when all retained delta text matches but the snapshot
+extends beyond it: the pinned runtime appends assistant text before emitting its
+delta, so even the later replay read can lag the snapshot. This does not disconnect
+the viewer. Owned `request.cancel` frames bypass the text recovery fence so a
+snapshot cannot leave a withdrawn approval actionable.
+Within one viewer, answered or canceled native request IDs stay settled even if
+a snapshot captured earlier replays them later, including cancellation observed
+before the request itself. Only owned profile/session cancellations close IDs.
+A different request ID remains
+actionable. Reopening creates a new viewer and can recover a request whose
+decision did not reach Hermes; decisions are never automatically resent.
 After reconnect, the browser automatically rebuilds the loaded saved-history
 window while preserving the active response and arriving events. Incomplete
-replay alone does not show a warning or require Refresh history. Failed reads
+persisted-history coverage alone does not show a warning or require Refresh history. Failed reads
 retain the transcript and retry after 1, 2 and 4 seconds; persistent failure keeps
 a generic error and an explicit refresh action. Profile/session changes, viewer
 replacement and unmount cancel retries and reject obsolete results. Reconciliation
@@ -272,9 +303,17 @@ contract. Existing job, run, profile and symlink checks apply before extraction.
 
 ## Test environment
 
-The Compose environment extends the digest-pinned official Hermes v0.23.0 release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
+The Compose environment extends the digest-pinned official Hermes v0.23.3 release with an anonymous volume and deterministic inference from stock MockServer. Real-provider credentials from the root `.env` are explicit opt-in only. The reviewed native contract is the pin above. See the [test environment guide](../../tests/docker/README.md) for launch and cleanup commands.
 
 ## Project metadata and draft history
+
+When a root chat URL resumes at a compression tip, Project membership and the
+selected sidebar row use the current native snapshot's stored identity. Lazy
+resume provides `session_key` beside `info`, while warm resume can provide
+`stored_session_id`; native settings retain either identity
+alongside the other session information. That identity is accepted only when the
+snapshot's profile and selected session match the current route. The root URL remains usable; the native Project tree
+still owns membership, and Home navigation retains its explicit Project scope.
 
 Chat turns use the TUI socket contract above. HTTP routes serve metadata and
 history only.
@@ -569,9 +608,9 @@ availability check.
 `src/features/kanban/` calls the existing authenticated, same-origin
 `/api/plugins/kanban/` API directly; it does not use the chat gateway, add Python
 routes, or persist task data. The contract was reviewed against Hermes
-`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19` and the upstream Desktop Kanban
-[`api.ts`](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/apps/desktop/src/plugins/kanban/api.ts),
-[`types.ts`](https://github.com/NousResearch/hermes-agent/blob/2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19/apps/desktop/src/plugins/kanban/types.ts),
+`caafe5389ae585ef77387a962aee05b1bcf17029` and the upstream Desktop Kanban
+[`api.ts`](https://github.com/NousResearch/hermes-agent/blob/caafe5389ae585ef77387a962aee05b1bcf17029/apps/desktop/src/plugins/kanban/api.ts),
+[`types.ts`](https://github.com/NousResearch/hermes-agent/blob/caafe5389ae585ef77387a962aee05b1bcf17029/apps/desktop/src/plugins/kanban/types.ts),
 `board.tsx` and `drawer.tsx`.
 
 The global browser preference `chathermes.kanban-viewer` defaults false. A valid
@@ -719,7 +758,7 @@ The pinned completer also omits quick commands: matching catalog entries supplem
 native results without reordering the native fuzzy matches.
 
 The transcript extension also applies Hermes's native
-`agent.skill_commands.describe_skill_invocation` to otherwise untyped user skill
+`session_rules.turns.describe_skill_invocation` to otherwise untyped user skill
 payloads (including text parts with images). This supplies the projection that
 native history has but Desktop REST omits. Typed/hidden rows retain their upstream
 meaning, model-facing SQLite content is unchanged, and row identity, pagination
@@ -790,7 +829,7 @@ versioned reconciliation checkpoint replaces previously indexed context-body rec
 image handling, validation or deletion records. Actual image parts and original
 authenticated uploads keep their existing handling.
 
-The pinned SessionDB sanitizes string user/assistant content on load but retains
+The pinned persistence reader sanitizes string user/assistant content on load but retains
 multipart content. Desktop's general hydration does not scrub memory; its
 `attachment-turn.ts` memory regex supports attachment matching. This plugin does
 not rewrite submission, reducers, persisted messages, REST history or model
@@ -813,6 +852,12 @@ translate through Markdown's newline normalization. A partly retained code block
 keeps its visible code as literal code; hiding its closing fence does not discard
 the retained body or turn it into executable Markdown. Fully hidden structures
 are removed as balanced token subtrees.
+
+The memory and artifact classifiers share original tokens and track character
+spans only for inline-code quotation; rendering retains full provenance. Sources
+with reference definitions still receive the separate eligibility-filtered
+reference map. Without actual definitions, its empty authority map needs no
+second parse. These allocation savings do not change Markdown or file authority.
 
 Accepted delivery syntax also supplies original spans. Card placement and removal
 never require parsing the concatenation of the remaining text. Hidden atomic

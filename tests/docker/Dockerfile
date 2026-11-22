@@ -1,5 +1,5 @@
-# Hermes v0.23.0; immutable multi-platform image, verified against the source pin.
-FROM nousresearch/hermes-agent:v0.23.0@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002
+# Hermes v0.23.3; immutable multi-platform image, verified against the source pin.
+FROM nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355
 USER root
 
 COPY tests/docker/hermes-pin.json tests/docker/verify-hermes.py /opt/chathermes/

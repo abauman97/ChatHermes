@@ -17,7 +17,7 @@ sys.path.insert(0, '/opt/data/plugins')
 from hermes_cli.web_server_sessions import _open_session_db_for_profile
 from chathermes.dashboard import inbox, push_store
 for profile in ('alpha', 'beta'):
-    db = _open_session_db_for_profile(profile, read_only=False)
+    db = FixtureStore(store=_open_session_db_for_profile(profile, read_only=False))
     db.create_session(sys.argv[1], source='desktop')
     db.set_session_title(sys.argv[1], 'Sidebar unread ' + profile + ' ' + sys.argv[1])
     db.append_message(sys.argv[1], 'user', 'Saved prompt')

@@ -18,7 +18,7 @@ test("indexed artifact pages preserve project scope, file actions and responsive
   expect(created.status).toBe(200);
   const project = created.body.project.id;
   const identity = runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; p=pathlib.Path(sys.argv[1]); db=_open_session_db_for_profile('default',read_only=False); sid=sys.argv[2]; db.create_session(sid,'api',cwd=str(p)); db.set_session_title(sid,sid); files=[p/('artifact-%02d.txt'%i) for i in range(55)]; [f.write_text('Indexed artifact content') for f in files]; db.append_message(sid,'user','Create explicit artifacts'); db.append_message(sid,'assistant','\\n'.join('MEDIA:'+str(f) for f in files)); db.close(); print(json.dumps(sid))",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; p=pathlib.Path(sys.argv[1]); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); sid=sys.argv[2]; db.create_session(sid,'api',cwd=str(p)); db.set_session_title(sid,sid); files=[p/('artifact-%02d.txt'%i) for i in range(55)]; [f.write_text('Indexed artifact content') for f in files]; db.append_message(sid,'user','Create explicit artifacts'); db.append_message(sid,'assistant','\\n'.join('MEDIA:'+str(f) for f in files)); db.close(); print(json.dumps(sid))",
     workspace,
     marker,
   );

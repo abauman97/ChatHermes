@@ -57,13 +57,13 @@ def deletion_ids(store, profile, session_id):
     if history is None:
         return [session_id]
     try:
-        targets = set(history.get_session_delete_targets(session_id)) | {session_id}
+        targets = set(history.sessions.delete_targets(session_id)) | {session_id}
         return list(
             targets
             | {
                 row["session_id"]
                 for row in rows
-                if history.resolve_resume_session_id(row["session_id"]) in targets
+                if history.lineage.resolve_resume_target(row["session_id"]) in targets
             }
         )
     finally:
@@ -89,7 +89,7 @@ def reconcile(store, profile, history):
     rows = entries(store, profile)
     resolved = []
     for row in rows:
-        target = history.resolve_resume_session_id(row["session_id"])
+        target = history.lineage.resolve_resume_target(row["session_id"])
         resolved.append((row, target or row["session_id"]))
     with database(store) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -127,21 +127,21 @@ def listing(store, profile):
         active = []
         aliases = {}
         for row in rows:
-            for ancestor in history.get_compression_lineage(row["session_id"]):
+            for ancestor in history.lineage.lineage(row["session_id"]):
                 if ancestor != row["session_id"]:
                     aliases[ancestor] = row["session_id"]
             if row["status"] != "open":
                 continue
-            summary = history.get_session_list_row(row["session_id"])
-            if summary and not summary.get("archived") and not summary.get("hidden"):
+            summary = history.sessions.list_row(row["session_id"])
+            if summary and not summary.archived and not summary.hidden:
                 # Allowlist metadata only; no messages, paths or runtime state.
                 active.append(
                     {
                         "id": row["session_id"],
                         **{
-                            key: summary[key]
+                            key: getattr(summary, key)
                             for key in ("title", "source", "started_at")
-                            if key in summary
+                            if hasattr(summary, key)
                         },
                     }
                 )
@@ -158,7 +158,7 @@ def set_status(store, profile, session_id, status):
         return mark(store, profile, session_id, status)
     try:
         reconcile(store, profile, history)
-        target = history.resolve_resume_session_id(session_id) or session_id
+        target = history.lineage.resolve_resume_target(session_id) or session_id
         return mark(store, profile, target, status)
     finally:
         history.close()

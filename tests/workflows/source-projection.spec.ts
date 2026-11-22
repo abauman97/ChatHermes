@@ -29,7 +29,7 @@ test("original-source spans suppress hidden tables, retain code and authorize th
   ).join("\n");
   const answer = `Visible answer\n${hidden}\n\nAfter memory.\n\n${quoted}\n\n${trust}\n\n${definitions}\n[scaled255]: MEDIA:${path}.quoted.pdf\n\n[Scaled download][scaled255]\n\n| PUBLIC | PUBLIC |\n|---|---|\n| left\\|${note}RIGHT | PUBLIC |\n\n![\`${note}\`](MEDIA:${path})\n\n[![inner](MEDIA:${path}.private.pdf)](MEDIA:${referencePath})`;
   runtime(
-    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,users,answer=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Original public upload bytes'); p.with_name('reference.txt').write_text('Original reference upload bytes'); pathlib.Path(path+'.private.pdf').write_text('Synthetic private fixture'); pathlib.Path(path+'.quoted.pdf').write_text('Synthetic quoted fixture'); db=_open_session_db_for_profile('default',read_only=False); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',[{'type':'text','text':text}]) for text in json.loads(users)]; db.append_message(sid,'assistant',[{'type':'text','text':answer}]); db.close(); print('true')",
+    "import pathlib,sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; sid,path,users,answer=sys.argv[1:]; p=pathlib.Path(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text('Original public upload bytes'); p.with_name('reference.txt').write_text('Original reference upload bytes'); pathlib.Path(path+'.private.pdf').write_text('Synthetic private fixture'); pathlib.Path(path+'.quoted.pdf').write_text('Synthetic quoted fixture'); db=FixtureStore(store=_open_session_db_for_profile('default',read_only=False)); db.create_session(sid,'api',cwd=str(p.parent)); [db.append_message(sid,'user',[{'type':'text','text':text}]) for text in json.loads(users)]; db.append_message(sid,'assistant',[{'type':'text','text':answer}]); db.close(); print('true')",
     identity,
     path,
     JSON.stringify(users),
@@ -105,7 +105,7 @@ test("original-source spans suppress hidden tables, retain code and authorize th
       .status,
   ).toBe(404);
   const stored = runtime(
-    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; db=_open_session_db_for_profile('default',read_only=True); rows=db._read_all('SELECT content FROM messages WHERE session_id = ? ORDER BY id',(sys.argv[1],)); print(json.dumps([db._decode_content(row[0]) for row in rows])); db.close()",
+    "import sys,json; from hermes_cli.web_server_sessions import _open_session_db_for_profile; db=FixtureStore(store=_open_session_db_for_profile('default',read_only=True)); rows=db._read_all('SELECT content FROM messages WHERE session_id = ? ORDER BY id',(sys.argv[1],)); print(json.dumps([db._decode_content(row[0]) for row in rows])); db.close()",
     identity,
   );
   expect(stored).toEqual([...users, answer].map((text) => [{ type: "text", text }]));

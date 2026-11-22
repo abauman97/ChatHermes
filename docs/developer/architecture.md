@@ -10,6 +10,11 @@ The Vue app mounts inside Hermes's React dashboard plugin SDK. Python routes in 
 
 The composer starts a native Hermes session on first send. New Other and Project chats use the dashboard’s authenticated, same-origin native gateway WebSocket for creation, snapshots, approvals, clarification, guidance and Stop. Default and secondary profiles carry an explicit profile on each native operation. Legacy REST run pointers are ignored; saved session history remains available. Unknown submission outcomes are never automatically retried. Images retain authenticated originals and use native multimodal content; other files upload into the selected profile. Provider and model selects affect the session runtime without changing profile defaults. See [API contract](api-contract.md) for recovery bounds, attachment limits and unavailable stronger guarantees.
 
+The outer Vue app shell clips its fixed viewport instead of acting as a hidden
+scroll container. The sidebar list and transcript own their scrolling. Long
+active-session lists therefore cannot move the whole header/chat when browser
+focus or visibility scrolling brings a control into view.
+
 ## Mobile shell and keyboard behavior
 
 The persistent shell is a bounded `100dvh` flex frame. The header and empty
@@ -259,8 +264,8 @@ changes refresh the tree and selected hierarchy. No separate Project database,
 frontend path classifier, or active Project mutation exists. Project management
 and session moves remain in Desktop/CLI for this initial workflow.
 
-The shared wire types target Hermes v0.23.0 at
-`2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`. Workspace
+The shared wire types target Hermes v0.23.3 at
+`caafe5389ae585ef77387a962aee05b1bcf17029`. Workspace
 creation sends `cwd_explicit: true` under the pinned native contract. Unsupported
 native creation fails closed; it is never retried after an ambiguous outcome. See the
 [source audit](../internal/plans/2026-10-01-projects.md),
@@ -279,8 +284,8 @@ in screen options opens the persisted session when one exists.
 
 The adapter follows the pinned Hermes dashboard contracts:
 `web_server_cron._cron_profile_home`, `_call_cron_for_profile` and
-`_cron_store_scope`; `SessionDB.list_cron_job_runs` and `get_messages_as_conversation` with resume
-lineage and compacted display history; and the
+`_cron_store_scope`; persistence `sessions.list_cron_job_runs(SessionWindow(...))`
+and `messages.read_conversation` with resume lineage and compacted display history; and the
 native cron output filename/timezone and session reconciliation helpers. The
 profile-scoped execution ledger supplies failed runs without saved output. It
 reads retained history rather than the transient gateway Runs buffer, pages
@@ -326,8 +331,9 @@ lookup key still belongs to that profile's prior group; profile changes, runtime
 absence, unrelated identities and complete replacement groups clear those aliases.
 Root completion therefore clears its continuation even after a failed lineage
 read reports confirmed working/waiting. Canonical
-owner lookup validates receipt lineage on the same read snapshot as compression
-aliases and pending work; inherited chat IDs cannot join unrelated children.
+owner lookup validates receipt lineage through `bindings.lineage_owner` on the
+same storage read snapshot as compression aliases and pending work. An unpinned
+snapshot invalidated by a write withholds aliases and reports unknown activity; inherited chat IDs cannot join unrelated children.
 See the [activity contract](api-contract.md#sidebar-session-activity)
 for ownership and transport limits.
 

@@ -10,7 +10,7 @@ test("Desktop-selected rotated history pages, survives reconnect and excludes re
 }, info) => {
   const id = `history-${randomUUID()}`;
   runtime(
-    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
+    `${seed}\nimport sys,json\nSessionDB=FixtureStore\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
     id,
   );
   const plugin = page.locator(".chathermes-embedded");
@@ -146,7 +146,7 @@ test("live tool response survives a changed backfill cursor without moving the r
 }, info) => {
   const id = `stream-history-${randomUUID()}`;
   runtime(
-    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
+    `${seed}\nimport sys,json\nSessionDB=FixtureStore\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
     id,
   );
   const origin = new URL(page.url()).origin;
@@ -229,7 +229,7 @@ test("mid-flight resume joins snapshot, persisted history and later deltas exact
 }, info) => {
   const id = `resume-history-${randomUUID()}`;
   runtime(
-    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
+    `${seed}\nimport sys,json\nSessionDB=FixtureStore\ndb=SessionDB()\ntry: print(json.dumps(seed(db,sys.argv[1])))\nfinally: db.close()`,
     id,
   );
   const url = `${new URL(page.url()).origin}/chathermes?profile=default#/chat/${id}?profile=default`;
@@ -439,7 +439,7 @@ test("archived multipart user and assistant images load through authenticated ro
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=";
   runtime(
-    `import sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry:\n db.create_session(sys.argv[1],source='desktop')\n image={'type':'image_url','image_url':{'url':'data:image/png;base64,'+sys.argv[2]}}\n db.append_message(sys.argv[1],'user',[{'type':'text','text':'Archived user image'},image])\n db.append_message(sys.argv[1],'assistant',[{'type':'text','text':'Archived assistant image'},image])\n for n in range(130): db.append_message(sys.argv[1],'user' if n%2==0 else 'assistant','Image history filler '+str(n))\n db.archive_and_compact(sys.argv[1],[{'role':'user','content':'INTERNAL IMAGE SUMMARY','_compressed_summary':True}])\n print(json.dumps({'id':sys.argv[1]}))\nfinally: db.close()`,
+    `import sys,json\nSessionDB=FixtureStore\ndb=SessionDB()\ntry:\n db.create_session(sys.argv[1],source='desktop')\n image={'type':'image_url','image_url':{'url':'data:image/png;base64,'+sys.argv[2]}}\n db.append_message(sys.argv[1],'user',[{'type':'text','text':'Archived user image'},image])\n db.append_message(sys.argv[1],'assistant',[{'type':'text','text':'Archived assistant image'},image])\n for n in range(130): db.append_message(sys.argv[1],'user' if n%2==0 else 'assistant','Image history filler '+str(n))\n db.archive_and_compact(sys.argv[1],[{'role':'user','content':'INTERNAL IMAGE SUMMARY','_compressed_summary':True}])\n print(json.dumps({'id':sys.argv[1]}))\nfinally: db.close()`,
     id,
     png,
   );
@@ -483,7 +483,7 @@ test("synthetic uncovered clones match Desktop REST order and retain the shared 
 }, info) => {
   const id = `clone-parity-${randomUUID()}`;
   runtime(
-    `${seed}\nimport sys,json\nfrom hermes_state import SessionDB\ndb=SessionDB()\ntry: print(json.dumps(seed_uncovered_clones(db,sys.argv[1])))\nfinally: db.close()`,
+    `${seed}\nimport sys,json\nSessionDB=FixtureStore\ndb=SessionDB()\ntry: print(json.dumps(seed_uncovered_clones(db,sys.argv[1])))\nfinally: db.close()`,
     id,
   );
   const origin = new URL(page.url()).origin;

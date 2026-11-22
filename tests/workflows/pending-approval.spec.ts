@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { test, expect } from "./fixtures";
 import { mockserverURL } from "../docker/compose.mjs";
 
@@ -111,11 +111,48 @@ for (const [choice, label, outcome] of [
     let canceled = false;
     let replayedIdle = false;
     const replies: { id: string; choice: string }[] = [];
+    const observations: object[] = [];
+    const observe = (value: object) => {
+      if (observations.length < 200) observations.push(value);
+    };
+    let socketIndex = 0;
+    // Retain only protocol identity/lifecycle fields from this synthetic fixture.
+    // No raw frames, request params, headers, tickets or model text are saved.
+    const diagnosticFile = info.outputPath("approval-observations.json");
     page.on("websocket", (ws) => {
+      const socket = ++socketIndex;
+      observe({ socket, kind: "open" });
+      ws.on("close", () => observe({ socket, kind: "close" }));
       ws.on("framereceived", ({ payload }) => {
         for (const line of String(payload).split("\n")) {
           try {
             const f = JSON.parse(line);
+            if (["approval", "clarify", "secret"].includes(f.method))
+              observe({ socket, kind: "request", id: f.id, method: f.method });
+            if (Array.isArray(f.result?.open_requests))
+              observe({
+                socket,
+                kind: "snapshot",
+                rpc: f.id,
+                running: f.result.running,
+                requests: f.result.open_requests.map((r: { id: string; method: string }) => ({
+                  id: r.id,
+                  method: r.method,
+                })),
+              });
+            if (
+              f.method === "event" &&
+              ["message.start", "message.complete", "request.cancel"].includes(f.params?.type)
+            )
+              observe({
+                socket,
+                kind: f.params.type,
+                seq: f.params.seq,
+                id:
+                  f.params.type === "request.cancel"
+                    ? f.params.payload?.id || f.params.payload?.request_id
+                    : undefined,
+              });
             if (f.method === "approval") pendingId = f.id;
             if (f.method === "event" && f.params.type === "message.complete") completed = true;
             if (
@@ -138,6 +175,9 @@ for (const [choice, label, outcome] of [
       ws.on("framesent", ({ payload }) => {
         try {
           const f = JSON.parse(String(payload));
+          if (f.id === pendingId && f.result?.choice) {
+            observe({ socket, kind: "reply", id: f.id, choice: f.result.choice });
+          }
           if (f.id === pendingId && f.result?.choice)
             replies.push({ id: f.id, choice: f.result.choice });
         } catch {
@@ -145,87 +185,97 @@ for (const [choice, label, outcome] of [
         }
       });
     });
-    const composer = page.getByRole("textbox", { name: "Message Hermes" });
-    await composer.fill(marker);
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
-    const allow = page.getByRole("button", { name: "Allow once", exact: true });
-    await expect(allow).toBeVisible();
-    await expect(allow).toBeEnabled();
-    expect(pendingId).not.toBe("");
-    const exactId = pendingId;
-    await page.screenshot({ path: info.outputPath("parent-active.png") });
-    await expect(page.locator(".message.assistant").last()).toContainText(final);
-    expect(completed).toBe(true);
-    expect(canceled).toBe(false);
-    await expect(allow).toBeEnabled();
-    await composer.fill("Draft while child awaits consent");
-    await expect(composer).toBeFocused();
-    await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
-    await page.screenshot({ path: info.outputPath("parent-complete-pending.png") });
-    await page.reload();
-    await expect(allow).toBeEnabled();
-    expect(replayedIdle).toBe(true);
-    expect(pendingId).toBe(exactId);
-    expect(canceled).toBe(false);
-    await expect(page.locator(".live-request")).toContainText("Approval required");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
-    );
-    await page.screenshot({ path: info.outputPath("reloaded-pending.png") });
-    await page.context().setOffline(true);
     try {
+      const composer = page.getByRole("textbox", { name: "Message Hermes" });
+      await composer.fill(marker);
+      await page.getByRole("button", { name: "Send message", exact: true }).click();
+      const allow = page.getByRole("button", { name: "Allow once", exact: true });
       await expect(allow).toBeVisible();
-      await expect(allow).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeDisabled();
-      await composer.fill("Editable offline draft");
+      await expect(allow).toBeEnabled();
+      expect(pendingId).not.toBe("");
+      const exactId = pendingId;
+      await page.screenshot({ path: info.outputPath("parent-active.png") });
+      await expect(page.locator(".message.assistant").last()).toContainText(final);
+      // The final text delta can render before native terminal persistence emits
+      // message.complete. Require that event before testing the completed parent.
+      await expect.poll(() => completed).toBe(true);
+      expect(canceled).toBe(false);
+      await expect(allow).toBeEnabled();
+      await composer.fill("Draft while child awaits consent");
       await expect(composer).toBeFocused();
-      expect(replies).toEqual([]);
-      await page.screenshot({ path: info.outputPath("offline-pending.png") });
-    } finally {
-      await page.context().setOffline(false);
-    }
-    await expect(allow).toBeEnabled();
-    expect(pendingId).toBe(exactId);
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await expect(page.locator(".live-request")).toHaveCount(0);
-    expect(replies).toEqual([{ id: exactId, choice }]);
-    // Verify Hermes resumed this child's exact tool call with the chosen outcome,
-    // rather than merely dismissing the card or sending a reply to another ID.
-    await expect
-      .poll(async () => {
-        const response = await fetch(`${mockserverURL()}/mockserver/verify`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            httpRequest: {
-              method: "POST",
-              path: "/v1/chat/completions",
-              body: {
-                type: "JSON_PATH",
-                jsonPath: `$[?(@.messages[-1].role == 'tool' && @.messages[-1].tool_call_id == '${childCall}' && @.messages[-1].content =~ /(?s).*${outcome}.*/)]`,
+      await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+      await page.screenshot({ path: info.outputPath("parent-complete-pending.png") });
+      await page.reload();
+      await expect(allow).toBeEnabled();
+      expect(replayedIdle).toBe(true);
+      expect(pendingId).toBe(exactId);
+      expect(canceled).toBe(false);
+      await expect(page.locator(".live-request")).toContainText("Approval required");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: info.outputPath("reloaded-pending.png") });
+      await page.context().setOffline(true);
+      try {
+        await expect(allow).toBeVisible();
+        await expect(allow).toBeDisabled();
+        await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeDisabled();
+        await composer.fill("Editable offline draft");
+        await expect(composer).toBeFocused();
+        expect(replies).toEqual([]);
+        await page.screenshot({ path: info.outputPath("offline-pending.png") });
+      } finally {
+        await page.context().setOffline(false);
+      }
+      await expect(allow).toBeEnabled();
+      expect(pendingId).toBe(exactId);
+      await page.getByRole("button", { name: label, exact: true }).click();
+      await expect(page.locator(".live-request")).toHaveCount(0);
+      expect(replies).toEqual([{ id: exactId, choice }]);
+      // Verify Hermes resumed this child's exact tool call with the chosen outcome,
+      // rather than merely dismissing the card or sending a reply to another ID.
+      await expect
+        .poll(async () => {
+          const response = await fetch(`${mockserverURL()}/mockserver/verify`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              httpRequest: {
+                method: "POST",
+                path: "/v1/chat/completions",
+                body: {
+                  type: "JSON_PATH",
+                  jsonPath: `$[?(@.messages[-1].role == 'tool' && @.messages[-1].tool_call_id == '${childCall}' && @.messages[-1].content =~ /(?s).*${outcome}.*/)]`,
+                },
               },
-            },
-            times: { atLeast: 1 },
-          }),
-        });
-        return response.ok;
-      })
-      .toBe(true);
-    await expect(page.locator(".message.assistant").last()).toContainText(
-      "Delegated child settled.",
-    );
-    await expect(page.locator(".live-request")).toHaveCount(0);
-    expect(pendingId).toBe(exactId);
-    expect(replies).toEqual([{ id: exactId, choice }]);
-    await page.screenshot({ path: info.outputPath(`resolved-${choice}.png`) });
-    console.log(
-      JSON.stringify({
-        target: info.project.name,
-        pendingId: exactId,
-        replayedIdle,
-        replies,
-        toolOutcomeVerified: true,
-      }),
-    );
+              times: { atLeast: 1 },
+            }),
+          });
+          return response.ok;
+        })
+        .toBe(true);
+      await expect(page.locator(".message.assistant").last()).toContainText(
+        "Delegated child settled.",
+      );
+      await expect(page.locator(".live-request")).toHaveCount(0);
+      expect(pendingId).toBe(exactId);
+      expect(replies).toEqual([{ id: exactId, choice }]);
+      await page.screenshot({ path: info.outputPath(`resolved-${choice}.png`) });
+      console.log(
+        JSON.stringify({
+          target: info.project.name,
+          pendingId: exactId,
+          replayedIdle,
+          replies,
+          toolOutcomeVerified: true,
+        }),
+      );
+    } finally {
+      await writeFile(diagnosticFile, JSON.stringify(observations, null, 2));
+      await info.attach("approval-observations", {
+        path: diagnosticFile,
+        contentType: "application/json",
+      });
+    }
   });
 }

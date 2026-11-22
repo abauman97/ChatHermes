@@ -9,7 +9,7 @@ import asyncio
 import json
 import os
 
-PIN = "2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19"
+PIN = "caafe5389ae585ef77387a962aee05b1bcf17029"
 
 
 def transcript(profile, stored):
@@ -17,7 +17,11 @@ def transcript(profile, stored):
 
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        return db.get_messages(stored) if db.get_session(stored) is not None else []
+        return (
+            [row.as_wire_row() for row in db.messages.read_transcript(stored)]
+            if db.sessions.get(stored) is not None
+            else []
+        )
     finally:
         db.close()
 
@@ -57,12 +61,12 @@ def read_body(api, profile, stored, row_id):
 
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        if db.get_session(stored) is None:
+        if db.sessions.get(stored) is None:
             return None
         row = next(
             (
                 row
-                for row in db.get_messages(stored)
+                for row in [row.as_wire_row() for row in db.messages.read_transcript(stored)]
                 if row.get("id") == row_id and row.get("role") == "assistant"
             ),
             None,

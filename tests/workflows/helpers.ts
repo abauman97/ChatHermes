@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { dockerExec, serviceContainer } from "../docker/compose.mjs";
@@ -5,6 +6,7 @@ import { dockerExec, serviceContainer } from "../docker/compose.mjs";
 // Prerequisites use the runtime's own storage APIs and service UID. They never
 // replace Hermes handlers or dispatch the action a workflow intends to verify.
 export function runtime(script: string, ...args: string[]) {
+  const fixture = readFileSync(new URL("../fixtures/runtime_store.py", import.meta.url), "utf8");
   const container = serviceContainer("hermes");
   const owner = dockerExec(
     container,
@@ -15,7 +17,16 @@ export function runtime(script: string, ...args: string[]) {
   return JSON.parse(
     execFileSync(
       "docker",
-      ["exec", "--user", owner, container, "/opt/hermes/.venv/bin/python", "-c", script, ...args],
+      [
+        "exec",
+        "--user",
+        owner,
+        container,
+        "/opt/hermes/.venv/bin/python",
+        "-c",
+        `${fixture}\n${script}`,
+        ...args,
+      ],
       { encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "pipe"] },
     ),
   );

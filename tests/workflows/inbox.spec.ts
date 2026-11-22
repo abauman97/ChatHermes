@@ -96,7 +96,7 @@ from chathermes.dashboard import inbox, push_store
 result = {}
 for profile in ('alpha', 'beta'):
     sid = 'inbox-filter-' + profile + '-' + sys.argv[1]
-    db = _open_session_db_for_profile(profile, read_only=False)
+    db = FixtureStore(store=_open_session_db_for_profile(profile, read_only=False))
     db.create_session(sid, source='desktop')
     db.set_session_title(sid, 'Filter regression ' + profile + ' ' + sys.argv[1])
     identity = db.append_message(sid, 'assistant', 'Saved filter response ' + profile)
@@ -210,7 +210,7 @@ import json, sys
 from hermes_cli.web_server_sessions import _open_session_db_for_profile
 result = {}
 for profile in ('alpha', 'beta'):
-    db = _open_session_db_for_profile(profile, read_only=False)
+    db = FixtureStore(store=_open_session_db_for_profile(profile, read_only=False))
     sid = 'inbox-recovery-' + profile + '-' + sys.argv[1]
     db.create_session(sid, source='desktop')
     db.set_session_title(sid, 'Recovered ' + profile + ' ' + sys.argv[1])
@@ -416,7 +416,7 @@ for i in range(7):
     profile = 'alpha' if i % 2 == 0 else 'beta'
     sid = 'home-preview-' + sys.argv[1] + '-' + str(i)
     title = 'Quick message ' + str(i) + ' ' + sys.argv[1]
-    db = _open_session_db_for_profile(profile, read_only=False)
+    db = FixtureStore(store=_open_session_db_for_profile(profile, read_only=False))
     db.create_session(sid, source='desktop')
     db.set_session_title(sid, title)
     identity = db.append_message(sid, 'assistant', 'Saved quick response ' + str(i))

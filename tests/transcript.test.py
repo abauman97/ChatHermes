@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from hermes_state import SessionDB
+
+from tests.fixtures.runtime_store import FixtureStore as SessionDB
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -157,15 +158,15 @@ def test_single_segment_page_limits_payloads(db, monkeypatch):
         for n in range(2400)
     ]
     db.append_messages_batch("large", rows)
-    original = db.get_messages
+    original = db.messages.read_transcript
     reads = []
 
     def bounded(*args, **kwargs):
-        reads.append(kwargs.get("limit"))
-        assert kwargs.get("limit") == 121
+        reads.append(args[1].limit)
+        assert args[1].limit == 121
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(db, "get_messages", bounded)
+    monkeypatch.setattr(db.messages, "read_transcript", bounded)
     result = transcript.read_page(db, "large", "default")
     assert len(result["data"]) == 120
     assert result["data"][0]["content"].startswith("02280 ")
@@ -308,16 +309,37 @@ def test_multi_rotation_work_is_measured_separately_from_response_size(db, monke
             messages=db.get_messages(parent)[-2:],
             require_compression_lease=False,
         )
-    read = db._read_all
+    from contextlib import contextmanager
+
+    read_ctx = db._holder._read_ctx
     payloads = []
 
-    def measured(sql, params=()):
-        result = read(sql, params)
-        if "SELECT * FROM messages" in sql and "session_id IN" in sql:
-            payloads.append((len(result), sum(len(str(row["content"])) for row in result)))
-        return result
+    class MeasuredConnection:
+        def __init__(self, conn):
+            self.conn = conn
 
-    monkeypatch.setattr(db, "_read_all", measured)
+        def __getattr__(self, name):
+            return getattr(self.conn, name)
+
+        def execute(self, sql, params=()):
+            cursor = self.conn.execute(sql, params)
+            if "SELECT * FROM messages" in sql and "session_id IN" in sql:
+                rows = cursor.fetchall()
+                payloads.append((len(rows), sum(len(str(row["content"])) for row in rows)))
+
+                class Buffered:
+                    def fetchall(self):
+                        return rows
+
+                return Buffered()
+            return cursor
+
+    @contextmanager
+    def measured(**kwargs):
+        with read_ctx(**kwargs) as conn:
+            yield MeasuredConnection(conn)
+
+    monkeypatch.setattr(db._holder, "_read_ctx", measured)
     result = transcript.read_page(db, "cost", "default")
     assert len(result["data"]) == 120
     assert payloads and payloads[0][0] >= 1200
@@ -334,14 +356,14 @@ def test_cursor_detects_in_place_rewrite_and_mid_read_mutation(db, monkeypatch):
     with pytest.raises(HTTPException) as error:
         transcript.read_page(db, "rewrite", "default", revision=first["transcript"]["revision"])
     assert error.value.status_code == 409
-    original = db.get_messages
+    original = db.messages.read_transcript
 
     def changed(*args, **kwargs):
         rows = original(*args, **kwargs)
         db.append_message("rewrite", "assistant", "Raced")
         return rows
 
-    monkeypatch.setattr(db, "get_messages", changed)
+    monkeypatch.setattr(db.messages, "read_transcript", changed)
     with pytest.raises(HTTPException) as error:
         transcript.read_page(db, "rewrite", "default")
     assert error.value.status_code == 409
@@ -403,7 +425,7 @@ def test_revision_rejects_rotation_and_cross_profile_lineage(db):
 
 
 def test_native_skill_display_survives_paging_and_preserves_model_history(db):
-    from agent.skill_commands import describe_skill_invocation
+    from session_rules.turns import describe_skill_invocation
 
     content = (
         '[IMPORTANT: The user has invoked the "work" skill. '
@@ -494,3 +516,29 @@ def test_native_binary_attachment_expansion_survives_persistence_and_history(
     with pytest.raises(HTTPException) as error:
         transcript.read_page(db, "attachment-context", "beta")
     assert error.value.status_code == 404
+
+
+def test_inline_images_use_bounded_rows_and_refuse_rewound_or_foreign_rows(db, monkeypatch):
+    from hermes_cli import web_server_sessions
+    from hermes_cli.web_routers import sessions
+
+    monkeypatch.setattr(sessions, "_history_profile_home", lambda profile: db.db_path.parent)
+    db.create_session("owned", source="desktop", profile_name="alpha")
+    db.create_session("foreign", source="desktop", profile_name="beta")
+    image = [{"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8="}}]
+    identity = db.append_message("owned", "user", image)
+    foreign = db.append_message("foreign", "assistant", image)
+    monkeypatch.setattr(web_server_sessions, "_open_session_db_for_profile", lambda *a, **kw: db)
+    monkeypatch.setattr(db, "close", lambda: None)
+    monkeypatch.setattr(
+        db.messages, "read_transcript", lambda *a, **kw: pytest.fail("unbounded image read")
+    )
+    assert (
+        transcript.read_inline_image("alpha", "owned", str(identity), 0)
+        == image[0]["image_url"]["url"]
+    )
+    with pytest.raises(ValueError, match="Image not found"):
+        transcript.read_inline_image("alpha", "owned", str(foreign), 0)
+    db.rewind_to_message("owned", identity)
+    with pytest.raises(ValueError, match="Image not found"):
+        transcript.read_inline_image("alpha", "owned", str(identity), 0)

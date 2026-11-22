@@ -251,13 +251,16 @@ describe("independent pending child requests", () => {
         expect(h.controller.view.request.value?.id).toBe("first");
         h.incoming(approval("second"));
         await flushPromises();
+        expect(h.native.requests.value.map((r) => r.id)).toEqual(["first"]);
+        h.incoming(approval("next"));
+        await flushPromises();
         await h.cancel("first", reason);
-        expect(h.controller.view.request.value?.id).toBe("second");
+        expect(h.controller.view.request.value?.id).toBe("next");
         await stale({ choice: "once" });
         expect(h.sent.filter((f) => !f.method)).toEqual([]);
         await h.wrapper.get("button:last-child").trigger("click");
         expect(h.sent.filter((f) => !f.method)).toEqual([
-          { jsonrpc: "2.0", id: "second", result: { choice: "deny" } },
+          { jsonrpc: "2.0", id: "next", result: { choice: "deny" } },
         ]);
       } finally {
         h.cleanup();
