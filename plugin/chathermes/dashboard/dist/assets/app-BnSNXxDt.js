@@ -15235,7 +15235,7 @@ var LS = ["open"], RS = {
 			"failed",
 			"interrupted",
 			"unknown"
-		].includes(r.value || "")), a = /* @__PURE__ */ z(null), o = X(() => a.value ?? n.value), s = /* @__PURE__ */ z(), c = /* @__PURE__ */ z(!0);
+		].includes(r.value || "")), a = /* @__PURE__ */ z(null), o = X(() => a.value ?? !1), s = /* @__PURE__ */ z(), c = /* @__PURE__ */ z(!0);
 		function l() {
 			let e = s.value;
 			e && (c.value = e.scrollHeight - e.scrollTop - e.clientHeight < 24);
