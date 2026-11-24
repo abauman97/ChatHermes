@@ -2,7 +2,7 @@
 
 1. [Install ChatHermes](installation.md), restart Hermes's dashboard, and open **ChatHermes** from the dashboard. Home opens by default with a preview of recent unread messages; links to specific pages or chats still open their destination.
 2. Select the Hermes profile you want to use. Optionally choose a provider and model.
-3. Type in the rounded composer and use the send button to send. On desktop, **Enter** sends and **Shift+Enter** adds a new line. On mobile, **Enter** adds a new line. Your first send starts a native Hermes session. Active thinking and tool details expand to show arriving data and collapse when complete. You can reopen completed details; your explicit disclosure choices persist as the response completes.
+3. Type in the rounded composer and use the send button to send. On desktop, **Enter** sends and **Shift+Enter** adds a new line. On mobile, **Enter** adds a new line. Your first send starts a native Hermes session. Thinking, tool, and delegated activity details start collapsed, including while active. Expand them to inspect arriving data; your manual expand/collapse choices persist through streaming and completion. Active status remains visible in the summary.
 4. Use **Stop** to interrupt work. The composer remains editable while a request runs; sending is enabled only when the session is ready.
 5. Open the drawer to resume a chat or browse Projects, Artifacts, and Scheduled results.
 

@@ -287,7 +287,7 @@ execution/delivery lifecycle.
 
 `POST /uploads` accepts a filename and base64 data URL (20 MB decoded maximum), validates the profile and body, and stores a generated filename under that profile's `uploads/chathermes/`. It returns the path for agent file tools. Image attachments use `{type: "image_url", image_url: {url: "data:image/..."}}` alongside text in the user message content array.
 
-TUI tool and reasoning events carry the available runtime activity. Tool completion/failure and final assistant text close active disclosures. The UI displays available reasoning exactly as Hermes emits it; it cannot create token-level reasoning when the provider only publishes a completed reasoning segment.
+TUI tool and reasoning events carry the available runtime activity. Thinking, tool, and delegated activity disclosures default collapsed, including while active; summaries show active status. Users can expand details to inspect arriving data, and manual expand/collapse choices persist through streaming and completion. The UI displays available reasoning exactly as Hermes emits it; it cannot create token-level reasoning when the provider only publishes a completed reasoning segment.
 
 Scheduled saved-output reads validate scheduler character frames on the server before
 credential redaction. The `output` field contains the extracted answer or whole

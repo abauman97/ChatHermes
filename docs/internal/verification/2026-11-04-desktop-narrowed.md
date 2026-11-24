@@ -106,6 +106,9 @@ Additional evidence during iteration:
 - Cold primary resume now sends Desktop's `cols=96`, `defer_history=true`,
   `omit_messages=true`; a deferred `hydrating=true` ack means history was omitted,
   even when this pin does not include the explicit omitted flag.
+
+> Superseded disclosure rule (2026-11-24): automatic expansion of active details described below is historical. The [current contract](../../developer/architecture.md) defaults thinking, tool, and delegated activity details to collapsed, including while active, shows active status in summaries, and preserves manual choices through streaming and completion. Historical results and manual inspection evidence are retained.
+
 - The mounted disclosure check established active tools defaulted closed, contrary
   to AGENTS.md's active-disclosure contract. Active tool bodies now open like
   reasoning, show updates, and collapse on untouched completion; manual intent

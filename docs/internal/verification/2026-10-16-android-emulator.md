@@ -39,6 +39,8 @@ Validation passed:
 - Dashboard focus, scrolling, profile/model controls, file and synthetic camera
   attachments, real native responses, and completed tool inspection: desktop and mobile.
 
+> Superseded disclosure rule (2026-11-24): automatic expansion of active details described below is historical. The [current contract](../../developer/architecture.md) defaults thinking, tool, and delegated activity details to collapsed, including while active, shows active status in summaries, and preserves manual choices through streaming and completion. Historical results and manual inspection evidence are retained.
+
 A broader, separate activity test failed at both viewport sizes:
 `chronological activity streams and preserves disclosure choices` expected an
 active tool disclosure to have its `open` attribute, but it was collapsed.

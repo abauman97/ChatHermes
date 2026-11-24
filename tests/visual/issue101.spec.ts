@@ -341,11 +341,13 @@ test("item 12 live work shows the command without a generic prefix and folds on 
     .filter({ has: page.locator(".activity-command-icon") })
     .last();
   await expect(active).toBeVisible({ timeout: 120_000 });
-  await expect(active).toHaveAttribute("open", "");
+  await expect(active).not.toHaveAttribute("open");
   const label = active.locator(".activity-label");
   await expect(label).toContainText("printf issue101-live-start");
   await expect(label).not.toContainText(/Using tool:|Running command/);
+  await active.locator("summary").click();
   await expect(active.locator("pre")).toBeVisible();
+  await active.locator("summary").click();
   await page.screenshot({ path: `tmp/issue101-verification/item12-live-${info.project.name}.png` });
   await area.fill("Focusable live draft");
   await expect(area).toBeFocused();
