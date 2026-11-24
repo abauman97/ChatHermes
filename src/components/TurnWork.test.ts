@@ -70,13 +70,13 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   expect(wrapper.get(".activity").element).toBe(first);
   expect(rowShown(wrapper.get(".activity"))).toBe(false);
   expect(rowShown(second)).toBe(true);
-  expect(second.attributes("open")).toBeDefined();
+  expect(second.attributes("open")).toBeUndefined();
   expect(second.get("summary").text()).toContain("Running…");
   activities[1]!.output += " arriving output";
   activities.push({ ...tool, id: "c", complete: false, state: "pending" });
   await nextTick();
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
-  expect(second.attributes("open")).toBeDefined();
+  expect(second.attributes("open")).toBeUndefined();
   expect(wrapper.get(".current-activity:last-child summary").text()).toContain("Waiting…");
   expect(second.get("pre").text()).toContain("arriving output");
   activities[1]!.complete = true;
@@ -102,7 +102,7 @@ it("summarizes settled calls as a reactive stream grows without exposing complet
   wrapper.unmount();
 });
 
-it("expands live tool details below collapsed history and preserves manual intent", async () => {
+it("defaults live tool details closed below collapsed history and preserves manual intent", async () => {
   const activities = reactive<Activity[]>([
     tool,
     {
@@ -120,15 +120,16 @@ it("expands live tool details below collapsed history and preserves manual inten
   const element = live.element;
   expect(groupSummary.attributes("aria-expanded")).toBe("false");
   expect(rowShown(live)).toBe(true);
-  expect(live.attributes("open")).toBeDefined();
+  expect(live.attributes("open")).toBeUndefined();
   expect(live.get("summary").isVisible()).toBe(true);
   expect(live.get("summary").text()).toContain("Waiting…");
   activities[1]!.state = "running";
   activities[1]!.content = '{"query":"arriving input"}';
   activities[1]!.output = "First output";
   await nextTick();
-  expect(live.attributes("open")).toBeDefined();
+  expect(live.attributes("open")).toBeUndefined();
   expect(live.get("summary").text()).toContain("Running…");
+  await live.get("summary").trigger("click");
   await live.get("summary").trigger("click");
   expect(live.attributes("open")).toBeUndefined();
   await live.get("summary").trigger("click");
@@ -166,7 +167,7 @@ it("keeps concurrent active calls visible and ordered when results arrive out of
   const elements = wrapper.findAll(".activity").map((row) => row.element);
   expect(wrapper.get(".work-summary").attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(3);
-  expect(wrapper.findAll(".activity").every((row) => row.attributes("open") !== undefined)).toBe(
+  expect(wrapper.findAll(".activity").every((row) => row.attributes("open") === undefined)).toBe(
     true,
   );
   await wrapper.setProps({
@@ -302,10 +303,9 @@ it("streams mixed activity below one collapsed history and folds delegation only
   expect(summary.attributes("aria-expanded")).toBe("false");
   expect(wrapper.findAll(".current-activity")).toHaveLength(2);
   expect(rows.every(rowShown)).toBe(true);
-  expect(rows[0]!.attributes("open")).toBeDefined();
-  expect(rows[1]!.attributes("open")).toBeDefined();
+  expect(rows[0]!.attributes("open")).toBeUndefined();
+  expect(rows[1]!.attributes("open")).toBeUndefined();
   expect(rows[1]!.get("summary").text()).toContain("Running…");
-  await rows[1]!.get("summary").trigger("click");
   await rows[1]!.get("summary").trigger("click");
   activities[0]!.content += " with arriving reasoning";
   activities[1]!.output += " and progress";
@@ -354,7 +354,7 @@ it.each(["thinking", "tool"] as const)(
   },
 );
 
-it("expands active reasoning and preserves independent disclosure choices", async () => {
+it("defaults active reasoning closed and preserves independent disclosure choices", async () => {
   const activities = reactive<Activity[]>([
     { id: "thought", kind: "thinking", title: "Thinking", content: "First", complete: false },
     { ...tool, id: "live", complete: false, state: "running" },
@@ -364,9 +364,10 @@ it("expands active reasoning and preserves independent disclosure choices", asyn
   const thought = wrapper.get(".activity-thinking");
   const element = thought.element;
   expect(rowShown(thought)).toBe(true);
-  expect(thought.attributes("open")).toBeDefined();
+  expect(thought.attributes("open")).toBeUndefined();
   await summary.trigger("click");
-  expect(thought.attributes("open")).toBeDefined();
+  expect(thought.attributes("open")).toBeUndefined();
+  await thought.get("summary").trigger("click");
   await thought.get("summary").trigger("click");
   expect(thought.attributes("open")).toBeUndefined();
   await thought.get("summary").trigger("click");
@@ -390,7 +391,7 @@ it("expands active reasoning and preserves independent disclosure choices", asyn
   expect(
     wrapper
       .findAll(".activity:not(.activity-thinking)")
-      .every((row) => row.attributes("open") !== undefined),
+      .every((row) => row.attributes("open") === undefined),
   ).toBe(true);
   await summary.trigger("click");
   await wrapper.setProps({ working: false });

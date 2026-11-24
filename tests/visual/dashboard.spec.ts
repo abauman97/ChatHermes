@@ -65,7 +65,8 @@ test("plugin composer, sent timeline, attachments, model and stream disclosures"
   await textarea.fill(prompt);
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.getByRole("log", { name: "Conversation" })).toContainText(prompt);
-  await expect(page.locator(".activity[open]").first()).toBeVisible();
+  await expect(page.locator(".current-activity .activity").first()).toBeVisible();
+  await expect(page.locator(".activity[open]")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("streaming.png") });
   await expect(page.locator(".message.assistant").last()).toContainText("Isolated Hermes reply", {
     timeout: 60_000,

@@ -874,8 +874,6 @@ test("chronological activity streams and preserves disclosure choices", async ({
   await expect(active).toBeVisible({ timeout: 60_000 });
   const originalActivity = await active.elementHandle();
   const originalTurn = await plugin.locator(".assistant-turn").last().elementHandle();
-  await expect(active).toHaveAttribute("open", "");
-  await active.locator("summary").click();
   await expect(active).not.toHaveAttribute("open");
   await page.screenshot({ path: info.outputPath("activity-live-compact.png") });
   await active.locator("summary").click();
@@ -1302,8 +1300,6 @@ for (const toolName of ["terminal", "edit_file", "write_file"]) {
     await expect(rows.nth(0)).not.toBeVisible();
     await expect(rows.nth(1)).toBeVisible();
     await expect(rows.nth(2)).toBeVisible();
-    await expect(rows.nth(1)).toHaveAttribute("open", "");
-    await rows.nth(1).locator("summary").click();
     await expect(rows.nth(1)).not.toHaveAttribute("open");
     await rows.nth(1).locator("summary").click();
     event("tool.progress", { tool_id: "second", name: toolName, text: "Arriving live output" });

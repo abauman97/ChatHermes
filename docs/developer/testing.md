@@ -284,3 +284,11 @@ budgets (4 seconds per size); these local wall-clock checks allow ordinary runne
 variation and do not establish a production latency guarantee. The mounted
 `source-projection.spec.ts` scenario checks that a real private file named in
 nested image-alt code creates neither a transcript card nor a Library entry.
+
+Disclosure regressions in `ActivityRow.test.ts`, `TurnWork.test.ts`,
+`ChatTranscript.test.ts` and `AssistantTurn.test.ts` cover collapsed defaults for
+active thinking, tools and delegated work, retained manual intent, independent
+turns, activity status and settled-history transitions without remounting. The
+`messaging.spec.ts` mixed-activity workflow checks native summary activation with
+Enter and Space, active collapsed screenshots, inspected streaming data,
+completion and reload in the actual desktop/mobile dashboard plugin.

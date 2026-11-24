@@ -17,6 +17,8 @@ The mounted plugin requests `interactive-widget=resizes-content` and restores th
 original host viewport configuration on unmount. No keyboard detection, viewport
 listeners, keyboard state, or runtime/API changes were added.
 
+> Superseded disclosure rule (2026-11-24): automatic expansion of active details described below is historical. The [current contract](../../developer/architecture.md) defaults thinking, tool, and delegated activity details to collapsed, including while active, shows active status in summaries, and preserves manual choices through streaming and completion. Historical results and manual inspection evidence are retained.
+
 ## Validation
 
 - `vp fmt` and `vp lint` passed (invoked through the local npm executable).

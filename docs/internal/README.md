@@ -4,6 +4,8 @@ These records preserve implementation history and verification at a particular p
 
 The former `docs/plans/`, `docs/verification/`, and `docs/reference/` trees moved here with their filenames and contents preserved, apart from link repairs, formatting, and explicit missing-evidence notes. Backticked source paths and commands in historical records describe their original checkout; old documentation paths map to the new trees here, or to `docs/developer/` for architecture, API, and deployment. The former push guide is now `docs/developer/notifications.md`. Use Git history to inspect an original tree.
 
+Historical references to automatic expansion of active disclosures describe a superseded rule. The [current disclosure contract](../developer/architecture.md) defaults thinking, tool, and delegated activity details to collapsed, including while active, keeps active status visible in summaries, and preserves manual choices through streaming and completion. Expanded screenshots and voluntary inspection steps remain historical evidence, not instructions to expand by default.
+
 ## Plans
 
 - [2026-09-29-chathermes](plans/2026-09-29-chathermes.md)
